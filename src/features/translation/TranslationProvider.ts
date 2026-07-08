@@ -1,4 +1,4 @@
-export type LanguageCode = 'en' | 'es';
+export type LanguageCode = 'en' | 'es' | 'bn';
 
 export type TranslationResult = {
   sourceText: string;

@@ -255,6 +255,20 @@ async function ingestBook(entry) {
   console.log(
     `${entry.id}: gutenberg #${found.gutenbergId} "${found.title}" — ${chapters.length} ${usedFallback ? 'parts (fallback split)' : 'chapters'}, ${totalPages} pages`,
   );
+
+  // Lightweight metadata only — no chapter text — so the app can eagerly parse
+  // the whole catalog for the Library shelf without loading every book's full
+  // text (megabytes each) into memory just to show a title and synopsis.
+  return {
+    id: book.id,
+    title: book.title,
+    author: book.author,
+    sourceLanguage: book.sourceLanguage,
+    synopsis: book.synopsis,
+    totalChapters: book.totalChapters,
+    isBundled: book.isBundled,
+    sourceFormat: 'gutenberg-json',
+  };
 }
 
 const SYNOPSES = {
@@ -270,7 +284,12 @@ const SYNOPSES = {
     'A destitute former student murders a pawnbroker, then spends the rest of the novel unraveling under the weight of his own guilt.',
 };
 
+const manifest = [];
 for (const entry of CATALOG) {
   entry.synopsis = SYNOPSES[entry.id];
-  await ingestBook(entry);
+  manifest.push(await ingestBook(entry));
 }
+
+mkdirSync(OUTPUT_DIR, { recursive: true });
+writeFileSync(join(OUTPUT_DIR, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n', 'utf8');
+console.log(`manifest.json: ${manifest.length} entries`);

@@ -42,11 +42,14 @@ export function BookSpine({
   height = 140,
   rotateDeg = 0,
 }: BookSpineProps) {
-  const { colors, typography, radius } = useTheme();
+  const { colors, typography, radius, scheme } = useTheme();
   const backgroundColor = spineColorForBook(bookId, toneIndex);
   const isDark = isDarkSpineColor(backgroundColor);
   const titleColor = isDark ? colors.lampText : colors.ink;
   const curlTint = isDark ? 'rgba(245,237,225,0.18)' : 'rgba(43,38,33,0.2)';
+  // A subtle edge so a cover whose color matches the page background (e.g. the
+  // charcoal Pride and Prejudice spine on the dark shelf) still reads as a card.
+  const edgeColor = scheme === 'lamp' ? 'rgba(240,230,214,0.16)' : 'rgba(43,38,33,0.10)';
 
   return (
     <Pressable onPress={onPress} style={{ transform: [{ rotate: `${rotateDeg}deg` }] }}>
@@ -57,6 +60,8 @@ export function BookSpine({
             width,
             height,
             backgroundColor,
+            borderWidth: 1,
+            borderColor: edgeColor,
             borderTopLeftRadius: radius.bookCoverSpine,
             borderBottomLeftRadius: radius.bookCoverSpine,
             borderTopRightRadius: radius.bookCoverOuter,

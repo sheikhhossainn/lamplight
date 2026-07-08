@@ -115,14 +115,14 @@ function QuoteCard({ variant, highlight, book }: { variant: Variant; highlight: 
       <View style={[styles.card, { backgroundColor: '#EFE4D2', borderRadius: radius.card }]}>
         <View style={styles.centeredContent}>
           <View style={styles.ruleLine} />
-          <Text style={[typography.quoteShareCard, { color: colors.ink, textAlign: 'center', marginTop: 22 }]}>
+          <Text style={[typography.quoteShareCard, { color: '#2B2621', textAlign: 'center', marginTop: 22 }]}>
             &ldquo;{highlight.quoteText}&rdquo;
           </Text>
           <View style={[styles.ruleLine, { marginTop: 22 }]} />
         </View>
         <View style={styles.bottomLeft}>
-          <Text style={[typography.uiRowTitle, { color: colors.fawn, fontSize: 11 }]}>{book.title}</Text>
-          <Text style={[typography.uiRowTitle, { color: colors.fawn, fontSize: 11, opacity: 0.7 }]}>
+          <Text style={[typography.uiRowTitle, { color: '#8A7F6E', fontSize: 11 }]}>{book.title}</Text>
+          <Text style={[typography.uiRowTitle, { color: '#8A7F6E', fontSize: 11, opacity: 0.7 }]}>
             {book.author}
           </Text>
         </View>
@@ -142,14 +142,14 @@ function QuoteCard({ variant, highlight, book }: { variant: Variant; highlight: 
           <Svg width={CARD_WIDTH} height={topHeight}>
             <Polygon
               points={`0,0 ${CARD_WIDTH},0 ${CARD_WIDTH},${topHeight * 0.78} 0,${topHeight}`}
-              fill={colors.parchment}
+              fill="#F5EDE1"
             />
           </Svg>
         </View>
         <Text
           style={[
             typography.quoteShareCard,
-            { color: colors.ink, position: 'absolute', top: 60, left: 34, right: 34, fontSize: 21 },
+            { color: '#2B2621', position: 'absolute', top: 60, left: 34, right: 34, fontSize: 21 },
           ]}
         >
           &ldquo;{highlight.quoteText}&rdquo;

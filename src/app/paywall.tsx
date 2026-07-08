@@ -56,7 +56,12 @@ export default function PaywallScreen() {
       <View style={[styles.content, { paddingHorizontal: spacing.xxl }]}>
         <FlameGlow size={56} variant="flicker" />
 
-        <Text style={[typography.wordmark, { color: colors.lampText, fontSize: 26, marginTop: spacing.md }]}>
+        <Text
+          style={[
+            typography.wordmark,
+            { color: colors.lampText, fontSize: 26, lineHeight: 34, marginTop: spacing.md },
+          ]}
+        >
           Keep the lamp lit
         </Text>
         <Text

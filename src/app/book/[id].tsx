@@ -9,6 +9,7 @@ import { BookmarkIcon, ChevronLeftIcon, MoreHorizontalIcon } from '@/components/
 import { type BookRow, getBook } from '@/db/repositories/books';
 import { listHighlightsForBook } from '@/db/repositories/highlights';
 import { getReadingPosition, type ReadingPosition } from '@/db/repositories/readingPosition';
+import { targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
 import { useTheme } from '@/theme/ThemeProvider';
 
 export default function BookDetailScreen() {
@@ -18,6 +19,7 @@ export default function BookDetailScreen() {
   const [book, setBook] = useState<BookRow | null>(null);
   const [position, setPosition] = useState<ReadingPosition | null>(null);
   const [quoteCount, setQuoteCount] = useState(0);
+  const targetLanguage = useTargetLanguage();
 
   useFocusEffect(
     useCallback(() => {
@@ -105,7 +107,7 @@ export default function BookDetailScreen() {
           ]}
         >
           <Text style={[typography.metadataCaption, { color: colors.pairPillText }]}>
-            {book.sourceLanguage.toUpperCase()} → ES
+            {book.sourceLanguage.toUpperCase()} → {targetLanguageLabel(targetLanguage)}
           </Text>
         </View>
         <View style={styles.quoteBadge}>

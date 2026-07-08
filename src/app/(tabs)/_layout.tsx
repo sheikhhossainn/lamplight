@@ -10,7 +10,9 @@ export default function TabsLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: colors.primaryDark,
+        // `ink` flips with the theme (charcoal in Day, cream in Lamp) so the
+        // active tab stays visible; `primaryDark` used to vanish on the dark bar.
+        tabBarActiveTintColor: colors.ink,
         tabBarInactiveTintColor: colors.straw,
         tabBarStyle: {
           height: layout.tabBarHeight,

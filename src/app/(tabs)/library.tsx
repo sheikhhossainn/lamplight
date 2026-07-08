@@ -8,6 +8,7 @@ import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import { BookSpine } from '@/components/BookSpine';
 import { type BookRow, listBooks } from '@/db/repositories/books';
 import { type ReadingPosition, listAllReadingPositions } from '@/db/repositories/readingPosition';
+import { targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
 import { useTheme } from '@/theme/ThemeProvider';
 
 const { width: screenWidth } = Dimensions.get('window');
@@ -51,6 +52,7 @@ function chunk<T>(items: T[], size: number): T[][] {
 export default function LibraryScreen() {
   const { colors, typography, spacing, radius } = useTheme();
   const insets = useSafeAreaInsets();
+  const targetLanguage = useTargetLanguage();
   const [books, setBooks] = useState<BookRow[]>([]);
   const [positions, setPositions] = useState<ReadingPosition[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -109,7 +111,8 @@ export default function LibraryScreen() {
             <View style={{ flex: 1, marginLeft: spacing.md }}>
               <Text style={[typography.uiRowTitle, { color: colors.ink }]}>{continueBook.title}</Text>
               <Text style={[typography.metadataCaption, { color: colors.umber, marginTop: 2 }]}>
-                {continueBook.author} · {continueBook.sourceLanguage.toUpperCase()} → ES
+                {continueBook.author} · {continueBook.sourceLanguage.toUpperCase()} →{' '}
+                {targetLanguageLabel(targetLanguage)}
               </Text>
               <View
                 style={[

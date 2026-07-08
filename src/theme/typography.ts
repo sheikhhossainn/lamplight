@@ -20,7 +20,7 @@ export const LamplightTypography = {
   wordmark: {
     fontFamily: FontFamily.loraItalicMedium,
     fontSize: 34,
-    lineHeight: 37,
+    lineHeight: 46, // generous clearance — italic descenders (the "g" in Lamplight) clip at a tight line-height
     letterSpacing: 0.3,
   },
   onboardingHeadline: {
@@ -87,7 +87,7 @@ export const LamplightTypography = {
   buttonLabel: {
     fontFamily: FontFamily.manropeBold,
     fontSize: 15,
-    lineHeight: 15,
+    lineHeight: 20, // must exceed fontSize — a line-height equal to it clips glyph descenders on Android
     letterSpacing: 0,
   },
   metadataCaption: {
@@ -95,6 +95,12 @@ export const LamplightTypography = {
     fontSize: 13,
     lineHeight: 18,
     letterSpacing: 0,
+  },
+  poeticTagline: {
+    fontFamily: FontFamily.loraItalicMedium,
+    fontSize: 14,
+    lineHeight: 20,
+    letterSpacing: 0.1,
   },
   eyebrowLabel: {
     fontFamily: FontFamily.manropeBold,

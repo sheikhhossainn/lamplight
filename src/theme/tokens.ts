@@ -39,6 +39,34 @@ export const LamplightColor = {
   quietOnLight: '#7A6F60', // Reader's "Chapter 1" chrome label — quieter than fawn
 } as const;
 
+// Dark ("Lamp") theme — the same token keys as the light theme with surface and
+// text values flipped to charcoal/cream. Brand, accent, highlight, and pill
+// colors are intentionally identical (amber stays amber). The always-dark
+// tokens (primaryDark, ember, lampText) are unchanged so components already
+// designed for a dark surface (popups, splash, paywall) keep working as-is.
+export const LamplightColorDark = {
+  ...LamplightColor,
+  parchment: '#1C1B1E', // main page background -> charcoal
+  libraryBackground: '#1B1A1D', // Library/Vocabulary/Settings page bg
+  card: '#26232A', // elevated surface, one step lighter than the page
+  ink: '#F0E6D6', // primary text -> cream
+  umber: '#C7BDB0', // secondary body copy
+  fawn: '#9C9186', // muted labels/timestamps
+  straw: '#6B6255', // inactive icon strokes, tab-bar inactive tint
+  hairline: '#332F2B', // borders, dividers, progress track
+  segmentedTrack: '#2A2723', // segmented-control track
+  quietOnLight: '#9C9186', // reader chrome label (day-mode chrome only)
+} as const;
+
+// Widened color-token type so the same shape describes both light and dark
+// palettes (their string literals differ, so the theme surface must accept any
+// string for the flippable tokens while keeping the highlight sub-object typed).
+export type LamplightColors = {
+  [K in keyof typeof LamplightColor]: (typeof LamplightColor)[K] extends string
+    ? string
+    : (typeof LamplightColor)[K];
+};
+
 export type HighlightColorKey = keyof typeof LamplightColor.highlight;
 
 // Spacing scale (px) — base unit 4px

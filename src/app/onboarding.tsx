@@ -179,17 +179,16 @@ export default function OnboardingScreen() {
             </Text>
           </Pressable>
 
-          <View style={styles.illustrationArea}>
+          <View style={styles.middleSection}>
             <Illustration />
-          </View>
-
-          <View style={[styles.copy, { gap: spacing.sm }]}>
-            <Text style={[typography.onboardingHeadline, { color: colors.lampText }]}>
-              {item.headline}
-            </Text>
-            <Text style={[typography.metadataCaption, { color: colors.mutedOnDark }]}>
-              {item.subtext}
-            </Text>
+            <View style={[styles.copy, { gap: spacing.sm, marginTop: 26 }]}>
+              <Text style={[typography.onboardingHeadline, { color: colors.lampText, textAlign: 'center' }]}>
+                {item.headline}
+              </Text>
+              <Text style={[typography.metadataCaption, { color: colors.mutedOnDark, textAlign: 'center' }]}>
+                {item.subtext}
+              </Text>
+            </View>
           </View>
         </View>
       );
@@ -222,7 +221,12 @@ export default function OnboardingScreen() {
         viewabilityConfig={{ itemVisiblePercentThreshold: 60 }}
       />
 
-      <View style={[styles.footer, { paddingHorizontal: spacing.xl }]}>
+      <View
+        style={[
+          isLastSlide ? styles.footerColumn : styles.footerRow,
+          { paddingHorizontal: spacing.xl },
+        ]}
+      >
         <View style={styles.dots}>
           {SLIDES.map((slide, index) => (
             <View
@@ -265,26 +269,35 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   slide: {
+    flex: 1,
     paddingHorizontal: 28,
     paddingTop: 41,
   },
   skip: {
     alignSelf: 'flex-end',
   },
-  illustrationArea: {
-    marginTop: 41,
+  middleSection: {
+    flex: 1,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   copy: {
-    marginTop: 46,
     maxWidth: 280,
+    alignItems: 'center',
   },
-  footer: {
+  footerRow: {
     paddingBottom: 48,
     paddingTop: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  footerColumn: {
+    paddingBottom: 48,
+    paddingTop: 12,
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 18,
   },
   dots: {
     flexDirection: 'row',
@@ -303,8 +316,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   getStartedButton: {
-    flex: 1,
-    marginLeft: 24,
+    width: '100%',
     height: 52,
     borderRadius: 100,
     alignItems: 'center',

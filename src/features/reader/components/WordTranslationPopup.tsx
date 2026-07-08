@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Path, Rect } from 'react-native-svg';
 
+import { targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
 import { isPremiumUser } from '@/features/subscription/subscriptionState';
 import { checkTranslationCap, recordTranslationUsage, translationProvider } from '@/features/translation';
 import { useTheme } from '@/theme/ThemeProvider';
@@ -39,6 +40,7 @@ function SaveIcon({ color }: { color: string }) {
 export function WordTranslationPopup({ word, onClose, onSave }: WordTranslationPopupProps) {
   const { colors, typography, spacing, radius } = useTheme();
   const [state, setState] = useState<LoadState>({ status: 'loading' });
+  const targetLanguage = useTargetLanguage();
 
   useEffect(() => {
     if (!word) return;
@@ -53,7 +55,7 @@ export function WordTranslationPopup({ word, onClose, onSave }: WordTranslationP
         return;
       }
       try {
-        const result = await translationProvider.translateWord(word, 'en', 'es');
+        const result = await translationProvider.translateWord(word, 'en', targetLanguage);
         await recordTranslationUsage(premium);
         if (!cancelled) setState({ status: 'ready', translation: result.translatedText });
       } catch {
@@ -64,7 +66,7 @@ export function WordTranslationPopup({ word, onClose, onSave }: WordTranslationP
     return () => {
       cancelled = true;
     };
-  }, [word]);
+  }, [word, targetLanguage]);
 
   return (
     <Modal visible={word != null} transparent animationType="fade" onRequestClose={onClose}>
@@ -77,9 +79,9 @@ export function WordTranslationPopup({ word, onClose, onSave }: WordTranslationP
           >
             <View style={styles.headerRow}>
               <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 12 }]}>{word}</Text>
-              <View style={[styles.pairTag, { backgroundColor: colors.ink }]}>
+              <View style={[styles.pairTag, { backgroundColor: '#2B2621' }]}>
                 <Text style={[typography.eyebrowLabel, { color: colors.quietOnLight, fontSize: 9 }]}>
-                  EN → ES
+                  EN → {targetLanguageLabel(targetLanguage)}
                 </Text>
               </View>
             </View>
@@ -119,7 +121,7 @@ export function WordTranslationPopup({ word, onClose, onSave }: WordTranslationP
                   {state.translation}
                 </Text>
                 <View style={styles.buttonRow}>
-                  <Pressable style={[styles.actionButton, { backgroundColor: colors.ink }]}>
+                  <Pressable style={[styles.actionButton, { backgroundColor: '#2B2621' }]}>
                     <CopyIcon color={colors.lampText} />
                     <Text style={[typography.uiRowTitle, { color: colors.lampText, fontSize: 11 }]}>Copy</Text>
                   </Pressable>

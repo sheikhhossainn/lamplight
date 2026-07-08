@@ -1,14 +1,21 @@
 import { router } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Line, Path } from 'react-native-svg';
 
+import { cycleTargetLanguage, targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
+import {
+  fontSizePxFromPref,
+  lineHeightMultiplierFromPref,
+  setFontSize,
+  setLineSpacing,
+  useReadingPrefs,
+} from '@/features/settings/readingPrefs';
+import { setReadingTheme, useReadingTheme } from '@/features/settings/readingTheme';
 import { isPremiumUser } from '@/features/subscription/subscriptionState';
 import { checkTranslationCap } from '@/features/translation';
 import { useTheme } from '@/theme/ThemeProvider';
-
-type ReadingTheme = 'day' | 'lamp';
 
 function SunIcon({ color }: { color: string }) {
   return (
@@ -83,11 +90,40 @@ export default function SettingsScreen() {
   const { colors, typography, spacing, radius } = useTheme();
   const insets = useSafeAreaInsets();
 
-  const [theme, setTheme] = useState<ReadingTheme>('day');
+  const theme = useReadingTheme();
+  const globalPrefs = useReadingPrefs();
+  const targetLanguage = useTargetLanguage();
   const [pageTurnSound, setPageTurnSound] = useState(true);
-  const [fontSize, setFontSize] = useState(0.55);
-  const [lineSpacing, setLineSpacing] = useState(0.65);
   const [translationsLeft, setTranslationsLeft] = useState<number | null>(null);
+
+  // The slider itself stays instantly responsive (local state), but writing
+  // through to the shared store — which is what re-renders the Reader's
+  // pages — is debounced until the user stops dragging. Applying on every
+  // intermediate tick was what made this feel laggy: each nudge forced a full
+  // reading-page re-render mid-gesture.
+  const [fontSize, setLocalFontSize] = useState(globalPrefs.fontSize);
+  const [lineSpacing, setLocalLineSpacing] = useState(globalPrefs.lineSpacing);
+  const fontSizeCommitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lineSpacingCommitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleFontSizeChange = (value: number) => {
+    setLocalFontSize(value);
+    if (fontSizeCommitTimer.current) clearTimeout(fontSizeCommitTimer.current);
+    fontSizeCommitTimer.current = setTimeout(() => setFontSize(value), 300);
+  };
+
+  const handleLineSpacingChange = (value: number) => {
+    setLocalLineSpacing(value);
+    if (lineSpacingCommitTimer.current) clearTimeout(lineSpacingCommitTimer.current);
+    lineSpacingCommitTimer.current = setTimeout(() => setLineSpacing(value), 300);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (fontSizeCommitTimer.current) clearTimeout(fontSizeCommitTimer.current);
+      if (lineSpacingCommitTimer.current) clearTimeout(lineSpacingCommitTimer.current);
+    };
+  }, []);
 
   useEffect(() => {
     checkTranslationCap(isPremiumUser()).then((cap) => {
@@ -95,8 +131,8 @@ export default function SettingsScreen() {
     });
   }, []);
 
-  const fontSizePx = Math.round(14 + fontSize * 8);
-  const lineSpacingValue = (1.5 + lineSpacing * 0.7).toFixed(2);
+  const fontSizePx = fontSizePxFromPref(fontSize);
+  const lineSpacingValue = lineHeightMultiplierFromPref(lineSpacing).toFixed(2);
 
   return (
     <View
@@ -123,7 +159,7 @@ export default function SettingsScreen() {
         </Text>
         <View style={[styles.segmented, { backgroundColor: colors.segmentedTrack, borderRadius: radius.pill }]}>
           <Pressable
-            onPress={() => setTheme('day')}
+            onPress={() => setReadingTheme('day')}
             style={[
               styles.segment,
               theme === 'day' && { backgroundColor: colors.primaryDark, borderRadius: radius.pill },
@@ -140,7 +176,7 @@ export default function SettingsScreen() {
             </Text>
           </Pressable>
           <Pressable
-            onPress={() => setTheme('lamp')}
+            onPress={() => setReadingTheme('lamp')}
             style={[
               styles.segment,
               theme === 'lamp' && { backgroundColor: colors.primaryDark, borderRadius: radius.pill },
@@ -180,7 +216,7 @@ export default function SettingsScreen() {
               {fontSizePx}px
             </Text>
           </View>
-          <SettingsSlider value={fontSize} onChange={setFontSize} />
+          <SettingsSlider value={fontSize} onChange={handleFontSizeChange} />
         </View>
 
         <View style={styles.settingsColumn}>
@@ -190,7 +226,7 @@ export default function SettingsScreen() {
               {lineSpacingValue}
             </Text>
           </View>
-          <SettingsSlider value={lineSpacing} onChange={setLineSpacing} />
+          <SettingsSlider value={lineSpacing} onChange={handleLineSpacingChange} />
         </View>
       </View>
 
@@ -207,9 +243,14 @@ export default function SettingsScreen() {
         <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
           Default language pair
         </Text>
-        <View style={[styles.pairPill, { backgroundColor: colors.pairPillBackground, borderRadius: radius.pill }]}>
-          <Text style={[typography.uiRowTitle, { color: colors.pairPillText, fontSize: 12 }]}>EN → ES</Text>
-        </View>
+        <Pressable
+          onPress={cycleTargetLanguage}
+          style={[styles.pairPill, { backgroundColor: colors.pairPillBackground, borderRadius: radius.pill }]}
+        >
+          <Text style={[typography.uiRowTitle, { color: colors.pairPillText, fontSize: 12 }]}>
+            EN → {targetLanguageLabel(targetLanguage)}
+          </Text>
+        </Pressable>
       </View>
 
       <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginBottom: spacing.sm }]}>
