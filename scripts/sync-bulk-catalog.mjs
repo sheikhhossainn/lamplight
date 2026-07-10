@@ -91,7 +91,16 @@ async function run() {
   let url = `${GUTENDEX_BASE}?sort=popular&languages=en&page=${page}`;
 
   while (url && pagesThisRun < PAGES_PER_RUN && importedCount < TARGET_BOOK_COUNT) {
-    const res = await fetch(url);
+    // Gutendex sits behind bot protection that 403s requests with no (or a bare
+    // `node`) User-Agent — especially from datacenter IPs like CI runners. Send
+    // a real UA + Accept so the request looks like an ordinary client.
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (compatible; LamplightCatalogSync/1.0; +https://github.com/sheikhhossainn/lamplight)',
+        Accept: 'application/json',
+      },
+    });
     if (!res.ok) throw new Error(`Gutendex page ${page} failed (${res.status})`);
     const data = await res.json();
 
