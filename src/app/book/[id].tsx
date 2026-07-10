@@ -5,10 +5,11 @@ import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { isDarkSpineColor, spineColorForBook } from '@/components/BookSpine';
-import { BookmarkIcon, ChevronLeftIcon, MoreHorizontalIcon } from '@/components/icons';
+import { BookmarkIcon, ChevronLeftIcon, ChevronRightIcon, MoreHorizontalIcon } from '@/components/icons';
 import { type BookRow, getBook } from '@/db/repositories/books';
 import { listHighlightsForBook } from '@/db/repositories/highlights';
 import { getReadingPosition, type ReadingPosition } from '@/db/repositories/readingPosition';
+import { listSavedWordsForBook, type SavedWord } from '@/db/repositories/savedWords';
 import { targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
 import { useTheme } from '@/theme/ThemeProvider';
 
@@ -19,21 +20,24 @@ export default function BookDetailScreen() {
   const [book, setBook] = useState<BookRow | null>(null);
   const [position, setPosition] = useState<ReadingPosition | null>(null);
   const [quoteCount, setQuoteCount] = useState(0);
+  const [savedWords, setSavedWords] = useState<SavedWord[]>([]);
   const targetLanguage = useTargetLanguage();
 
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
       (async () => {
-        const [bookRow, positionRow, highlights] = await Promise.all([
+        const [bookRow, positionRow, highlights, words] = await Promise.all([
           getBook(id),
           getReadingPosition(id),
           listHighlightsForBook(id),
+          listSavedWordsForBook(id),
         ]);
         if (!cancelled) {
           setBook(bookRow);
           setPosition(positionRow);
           setQuoteCount(highlights.length);
+          setSavedWords(words);
         }
       })();
       return () => {
@@ -44,7 +48,7 @@ export default function BookDetailScreen() {
 
   if (!book) return null;
 
-  const isAvailable = book.isBundled && book.totalChapters > 0;
+  const isAvailable = book.isAvailable && book.totalChapters > 0 && Boolean(book.textUrl);
   const percent = position ? position.percentComplete : 0;
   const chapterLabel = position
     ? `${Math.round(percent * 100)}% read · Chapter ${position.chapterIndex + 1} of ${book.totalChapters}`
@@ -63,6 +67,8 @@ export default function BookDetailScreen() {
         styles.content,
         { paddingHorizontal: layout.screenMargin, paddingTop: insets.top + 16 },
       ]}
+      showsVerticalScrollIndicator={false}
+      overScrollMode="never"
     >
       <View style={styles.topRow}>
         <Pressable onPress={() => router.back()} hitSlop={12}>
@@ -143,6 +149,56 @@ export default function BookDetailScreen() {
         {book.synopsis}
       </Text>
 
+      {savedWords.length > 0 ? (
+        <View style={{ marginTop: spacing.xl }}>
+          <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginBottom: spacing.sm }]}>
+            Saved from this book
+          </Text>
+          <View
+            style={[
+              styles.savedCard,
+              { backgroundColor: colors.card, borderColor: colors.hairline, borderRadius: radius.card },
+            ]}
+          >
+            {savedWords.map((word, index) => (
+              <Pressable
+                key={word.id}
+                // Tap a saved word -> reopen the book on the exact page it was
+                // saved from.
+                onPress={() =>
+                  router.push({
+                    pathname: '/reader/[bookId]',
+                    params: {
+                      bookId: word.bookId,
+                      jumpChapter: String(word.chapterIndex),
+                      jumpPage: String(word.pageIndex),
+                    },
+                  })
+                }
+                style={[
+                  styles.savedRow,
+                  index < savedWords.length - 1 && {
+                    borderBottomWidth: 1,
+                    borderBottomColor: 'rgba(43,38,33,0.08)',
+                  },
+                ]}
+              >
+                <Text
+                  style={[typography.translatedWordInline, { color: colors.ink, fontSize: 14 }]}
+                  numberOfLines={1}
+                >
+                  {word.sourceWord}{' '}
+                  <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 12 }]}>
+                    → {word.translation}
+                  </Text>
+                </Text>
+                <ChevronRightIcon color={colors.straw} size={14} />
+              </Pressable>
+            ))}
+          </View>
+        </View>
+      ) : null}
+
       <Pressable
         disabled={!isAvailable}
         onPress={() => router.push({ pathname: '/reader/[bookId]', params: { bookId: book.id } })}
@@ -219,6 +275,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+  },
+  savedCard: {
+    borderWidth: 1,
+    paddingHorizontal: 14,
+  },
+  savedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 11,
   },
   progressTrack: {
     height: 6,

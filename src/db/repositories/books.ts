@@ -7,7 +7,11 @@ export type BookRow = {
   sourceLanguage: string;
   synopsis: string;
   totalChapters: number;
-  isBundled: boolean;
+  isAvailable: boolean;
+  textUrl: string;
+  coverUrl: string | null;
+  gutenbergId: number | null;
+  chapter1Anchor: string | null;
 };
 
 type BookSqlRow = {
@@ -17,7 +21,11 @@ type BookSqlRow = {
   source_language: string;
   synopsis: string;
   total_chapters: number;
-  is_bundled: number;
+  is_available: number;
+  text_url: string;
+  cover_url: string | null;
+  gutenberg_id: number | null;
+  chapter1_anchor: string | null;
 };
 
 function fromSqlRow(row: BookSqlRow): BookRow {
@@ -28,7 +36,11 @@ function fromSqlRow(row: BookSqlRow): BookRow {
     sourceLanguage: row.source_language,
     synopsis: row.synopsis,
     totalChapters: row.total_chapters,
-    isBundled: row.is_bundled === 1,
+    isAvailable: row.is_available === 1,
+    textUrl: row.text_url,
+    coverUrl: row.cover_url,
+    gutenbergId: row.gutenberg_id,
+    chapter1Anchor: row.chapter1_anchor,
   };
 }
 

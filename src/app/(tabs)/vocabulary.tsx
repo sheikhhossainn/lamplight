@@ -1,6 +1,7 @@
 import { useFocusEffect } from '@react-navigation/native';
+import { router } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ChevronRightIcon } from '@/components/icons';
@@ -92,7 +93,11 @@ export default function VocabularyScreen() {
           </Text>
         </View>
       ) : (
-        <ScrollView contentContainerStyle={{ paddingBottom: 48 }} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={{ paddingBottom: 48 }}
+          showsVerticalScrollIndicator={false}
+          overScrollMode="never"
+        >
           {words.length === 0 ? (
             <Text style={[typography.metadataCaption, { color: colors.umber, marginTop: spacing.lg }]}>
               Words you save while reading will appear here.
@@ -111,10 +116,31 @@ export default function VocabularyScreen() {
                 {groupWords.map((word, index) => (
                   <Pressable
                     key={word.id}
-                    onLongPress={async () => {
-                      await deleteSavedWord(word.id);
-                      reload();
-                    }}
+                    // Tap -> open the book at exactly the page the word was saved
+                    // on. Long-press -> remove it (with a confirm).
+                    onPress={() =>
+                      router.push({
+                        pathname: '/reader/[bookId]',
+                        params: {
+                          bookId: word.bookId,
+                          jumpChapter: String(word.chapterIndex),
+                          jumpPage: String(word.pageIndex),
+                        },
+                      })
+                    }
+                    onLongPress={() =>
+                      Alert.alert('Remove word', `Remove "${word.sourceWord}" from your vocabulary?`, [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                          text: 'Remove',
+                          style: 'destructive',
+                          onPress: async () => {
+                            await deleteSavedWord(word.id);
+                            reload();
+                          },
+                        },
+                      ])
+                    }
                     style={[
                       styles.row,
                       index < groupWords.length - 1 && {

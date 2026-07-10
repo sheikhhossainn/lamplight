@@ -12,7 +12,8 @@ import {
   setLineSpacing,
   useReadingPrefs,
 } from '@/features/settings/readingPrefs';
-import { setReadingTheme, useReadingTheme } from '@/features/settings/readingTheme';
+import { useReadingTheme } from '@/features/settings/readingTheme';
+import { requestThemeChange } from '@/features/settings/themeTransition';
 import { isPremiumUser } from '@/features/subscription/subscriptionState';
 import { checkTranslationCap } from '@/features/translation';
 import { useTheme } from '@/theme/ThemeProvider';
@@ -159,7 +160,7 @@ export default function SettingsScreen() {
         </Text>
         <View style={[styles.segmented, { backgroundColor: colors.segmentedTrack, borderRadius: radius.pill }]}>
           <Pressable
-            onPress={() => setReadingTheme('day')}
+            onPress={() => requestThemeChange('day')}
             style={[
               styles.segment,
               theme === 'day' && { backgroundColor: colors.primaryDark, borderRadius: radius.pill },
@@ -176,7 +177,7 @@ export default function SettingsScreen() {
             </Text>
           </Pressable>
           <Pressable
-            onPress={() => setReadingTheme('lamp')}
+            onPress={() => requestThemeChange('lamp')}
             style={[
               styles.segment,
               theme === 'lamp' && { backgroundColor: colors.primaryDark, borderRadius: radius.pill },

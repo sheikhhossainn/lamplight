@@ -50,4 +50,22 @@ export const MIGRATIONS: string[] = [
     count_used INTEGER NOT NULL
   );
   `,
+  // v2 — record exactly where a word was saved so Vocabulary can jump back to
+  // the precise page (previously only the chapter was known).
+  `
+  ALTER TABLE saved_words ADD COLUMN page_index INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE saved_words ADD COLUMN paragraph_index INTEGER NOT NULL DEFAULT 0;
+  `,
+  // v3 — `books` is now a local cache of a remote (Supabase) catalog synced by
+  // scripts/sync-books.mjs, instead of a one-time seed from a bundled JSON
+  // manifest. text_url is where the reader downloads a book's actual text
+  // from, on demand; is_bundled is renamed since it no longer means "text
+  // ships in the binary" but "this row's text_url is available to download".
+  `
+  ALTER TABLE books RENAME COLUMN is_bundled TO is_available;
+  ALTER TABLE books ADD COLUMN text_url TEXT NOT NULL DEFAULT '';
+  ALTER TABLE books ADD COLUMN cover_url TEXT;
+  ALTER TABLE books ADD COLUMN gutenberg_id INTEGER;
+  ALTER TABLE books ADD COLUMN chapter1_anchor TEXT;
+  `,
 ];

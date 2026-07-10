@@ -2,6 +2,10 @@
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
+    // scripts/sync-books.mjs imports textParser.ts with an explicit .ts
+    // extension (required for a plain Node/tsx script) — needs this flag or
+    // the editor's TS server flags it, even though it's valid at runtime.
+    "allowImportingTsExtensions": true,
     "paths": {
       "@/*": [
         "./src/*"
@@ -14,6 +18,7 @@
   "include": [
     "**/*.ts",
     "**/*.tsx",
+    "scripts/**/*.mjs",
     ".expo/types/**/*.ts",
     "expo-env.d.ts"
   ]

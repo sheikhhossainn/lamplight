@@ -10,6 +10,8 @@ export type SavedWord = {
   translation: string;
   contextSentence: string;
   chapterIndex: number;
+  pageIndex: number;
+  paragraphIndex: number;
   createdAt: number;
 };
 
@@ -22,6 +24,8 @@ type SavedWordSqlRow = {
   translation: string;
   context_sentence: string;
   chapter_index: number;
+  page_index: number;
+  paragraph_index: number;
   created_at: number;
 };
 
@@ -35,6 +39,8 @@ function fromSqlRow(row: SavedWordSqlRow): SavedWord {
     translation: row.translation,
     contextSentence: row.context_sentence,
     chapterIndex: row.chapter_index,
+    pageIndex: row.page_index,
+    paragraphIndex: row.paragraph_index,
     createdAt: row.created_at,
   };
 }
@@ -43,6 +49,15 @@ export async function listSavedWords(): Promise<SavedWord[]> {
   const db = await getDb();
   const rows = await db.getAllAsync<SavedWordSqlRow>(
     'SELECT * FROM saved_words ORDER BY created_at DESC',
+  );
+  return rows.map(fromSqlRow);
+}
+
+export async function listSavedWordsForBook(bookId: string): Promise<SavedWord[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<SavedWordSqlRow>(
+    'SELECT * FROM saved_words WHERE book_id = ? ORDER BY created_at DESC',
+    [bookId],
   );
   return rows.map(fromSqlRow);
 }
@@ -61,8 +76,8 @@ export async function saveWord(input: Omit<SavedWord, 'id' | 'createdAt'>): Prom
   const id = generateId();
   const createdAt = Date.now();
   await db.runAsync(
-    `INSERT INTO saved_words (id, book_id, source_word, source_lang, target_lang, translation, context_sentence, chapter_index, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO saved_words (id, book_id, source_word, source_lang, target_lang, translation, context_sentence, chapter_index, page_index, paragraph_index, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       input.bookId,
@@ -72,6 +87,8 @@ export async function saveWord(input: Omit<SavedWord, 'id' | 'createdAt'>): Prom
       input.translation,
       input.contextSentence,
       input.chapterIndex,
+      input.pageIndex,
+      input.paragraphIndex,
       createdAt,
     ],
   );

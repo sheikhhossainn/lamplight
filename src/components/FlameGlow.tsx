@@ -90,8 +90,8 @@ export function FlameGlow({ size = 96, variant = 'flicker', showTile = true }: F
         <Svg width={size} height={size} viewBox="0 0 96 96">
           <Defs>
             <RadialGradient id="flameGlow" cx="48" cy="46" r="28" gradientUnits="userSpaceOnUse">
-              <Stop offset="0%" stopColor={LamplightColor.flameAmber} stopOpacity={0.5} />
-              <Stop offset="100%" stopColor={LamplightColor.flameAmber} stopOpacity={0} />
+              <Stop offset="0%" stopColor={LamplightColor.flameAmber} stopOpacity={1} />
+              <Stop offset="70%" stopColor={LamplightColor.flameAmber} stopOpacity={0} />
             </RadialGradient>
           </Defs>
           <Rect x={0} y={0} width={96} height={96} fill="url(#flameGlow)" />

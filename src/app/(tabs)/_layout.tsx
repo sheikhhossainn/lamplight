@@ -10,6 +10,12 @@ export default function TabsLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
+        // Crossfade between tabs instead of an instant cut.
+        animation: 'fade',
+        // The tab scene container defaults to white — theme it so navigating
+        // into the tabs (e.g. from Onboarding) never flashes white before the
+        // screen paints.
+        sceneStyle: { backgroundColor: colors.libraryBackground },
         // `ink` flips with the theme (charcoal in Day, cream in Lamp) so the
         // active tab stays visible; `primaryDark` used to vanish on the dark bar.
         tabBarActiveTintColor: colors.ink,

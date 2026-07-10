@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Path, Rect } from 'react-native-svg';
 
-import { targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
+import { cycleTargetLanguage, targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
 import { isPremiumUser } from '@/features/subscription/subscriptionState';
 import { checkTranslationCap, recordTranslationUsage, translationProvider } from '@/features/translation';
 import { useTheme } from '@/theme/ThemeProvider';
@@ -79,11 +79,17 @@ export function WordTranslationPopup({ word, onClose, onSave }: WordTranslationP
           >
             <View style={styles.headerRow}>
               <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 12 }]}>{word}</Text>
-              <View style={[styles.pairTag, { backgroundColor: '#2B2621' }]}>
-                <Text style={[typography.eyebrowLabel, { color: colors.quietOnLight, fontSize: 9 }]}>
-                  EN → {targetLanguageLabel(targetLanguage)}
+              {/* Tap to switch target language inline — re-runs the translation
+                  in the newly-chosen language (the effect depends on it). */}
+              <Pressable
+                onPress={cycleTargetLanguage}
+                hitSlop={8}
+                style={[styles.pairTag, { backgroundColor: '#2B2621' }]}
+              >
+                <Text style={[typography.eyebrowLabel, { color: colors.flameAmber, fontSize: 9 }]}>
+                  EN → {targetLanguageLabel(targetLanguage)} ⇄
                 </Text>
-              </View>
+              </Pressable>
             </View>
 
             {state.status === 'loading' ? (

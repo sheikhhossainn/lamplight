@@ -1,15 +1,6 @@
 import { router } from 'expo-router';
 import { Dimensions, Pressable, StyleSheet, Text, View } from 'react-native';
-import Animated, {
-  Easing,
-  FadeIn,
-  FadeInDown,
-  FadeInUp,
-  runOnJS,
-  useAnimatedStyle,
-  useSharedValue,
-  withTiming,
-} from 'react-native-reanimated';
+import Animated, { Easing, FadeIn, FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 
@@ -19,33 +10,19 @@ import { useTheme } from '@/theme/ThemeProvider';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
-const EXIT_MS = 380;
-
 export default function SplashScreen() {
   const { colors, typography, spacing } = useTheme();
   const insets = useSafeAreaInsets();
 
-  // Only the exit fade is a manually-driven shared value — the entrance uses
-  // Reanimated's mount-triggered `entering` animations instead of a useEffect
-  // assigning shared values, which is more robust across Fast Refresh (each
-  // real mount re-runs the entering animation fresh, rather than depending on
-  // an effect's assignment staying in sync with previously-compiled worklets).
-  const screenOpacity = useSharedValue(1);
-
+  // The exit is handled by the navigator's fade animation (see root layout) —
+  // no manual screen fade here, which used to fade the dark splash to
+  // transparent and briefly reveal the gap behind it as a flash.
   const handleBegin = () => {
-    screenOpacity.value = withTiming(
-      0,
-      { duration: EXIT_MS, easing: Easing.in(Easing.cubic) },
-      (finished) => {
-        if (finished) runOnJS(router.replace)('/onboarding');
-      },
-    );
+    router.replace('/onboarding');
   };
 
-  const screenStyle = useAnimatedStyle(() => ({ opacity: screenOpacity.value }));
-
   return (
-    <Animated.View style={[styles.container, { backgroundColor: colors.primaryDark }, screenStyle]}>
+    <View style={[styles.container, { backgroundColor: colors.primaryDark }]}>
       {/* Dark radial vignette + large ambient amber glow behind the mark —
           not a flat background. Matches the Figma splash export exactly. */}
       <Svg width={screenWidth} height={screenHeight} style={StyleSheet.absoluteFill}>
@@ -106,7 +83,7 @@ export default function SplashScreen() {
           </View>
         </Pressable>
       </Animated.View>
-    </Animated.View>
+    </View>
   );
 }
 

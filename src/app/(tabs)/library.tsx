@@ -83,6 +83,8 @@ export default function LibraryScreen() {
     <ScrollView
       style={{ backgroundColor: colors.libraryBackground }}
       contentContainerStyle={[styles.content, { paddingHorizontal: spacing.xl, paddingTop: insets.top + 16 }]}
+      showsVerticalScrollIndicator={false}
+      overScrollMode="never"
     >
       <Text style={[typography.screenTitle, { color: colors.ink }]}>Your shelf</Text>
       <Text style={[typography.metadataCaption, { color: colors.fawn, marginTop: 4 }]}>
