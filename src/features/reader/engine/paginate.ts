@@ -43,7 +43,11 @@ export function paginateBook(book: IngestedBook, m: PaginationMetrics): ReaderPa
     let pageIndexInChapter = 0;
     while (start < paragraphs.length) {
       const isChapterStart = pageIndexInChapter === 0;
-      const availablePx = m.contentHeightPx - (isChapterStart ? m.chapterTitleExtraPx : 0);
+      // Reserve the chapter-title zone on EVERY page (not just chapter starts):
+      // on a chapter start the "Chapter N" heading fills it; on a continuation
+      // page it's an empty top band. Either way the body's first line starts at
+      // the same Y, so paging never makes the text jump up/down.
+      const availablePx = m.contentHeightPx - m.chapterTitleExtraPx;
       // One extra fractional line of slack: the last line of each paragraph is
       // usually partial, so allowing a hair over the exact count fills the page
       // right to the bottom without the last line being clipped.

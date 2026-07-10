@@ -1,15 +1,28 @@
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Dimensions, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Path, Rect } from 'react-native-svg';
 
-import { cycleTargetLanguage, targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
+import { targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
 import { isPremiumUser } from '@/features/subscription/subscriptionState';
 import { checkTranslationCap, recordTranslationUsage, translationProvider } from '@/features/translation';
 import { useTheme } from '@/theme/ThemeProvider';
 
+const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+
+const CARD_WIDTH = 216;
+const POINTER_SIZE = 14;
+const EDGE_MARGIN = 12;
+// Vertical clearance between the tapped word and the card's near edge — the
+// pointer (the little diamond tail) sits inside this gap.
+const WORD_GAP = 16;
+
 type WordTranslationPopupProps = {
   word: string | null;
+  // Exact screen position of the tap (nativeEvent.pageX/pageY) — the popup
+  // anchors here instead of the middle of the screen, so the pointer tail
+  // actually points at the word that was translated.
+  anchor: { x: number; y: number } | null;
   onClose: () => void;
   onSave: (translation: string) => void;
 };
@@ -37,10 +50,29 @@ function SaveIcon({ color }: { color: string }) {
   );
 }
 
-export function WordTranslationPopup({ word, onClose, onSave }: WordTranslationPopupProps) {
+export function WordTranslationPopup({ word, anchor, onClose, onSave }: WordTranslationPopupProps) {
   const { colors, typography, spacing, radius } = useTheme();
   const [state, setState] = useState<LoadState>({ status: 'loading' });
   const targetLanguage = useTargetLanguage();
+
+  // Show below the word by default; flip above it when the tap is low enough
+  // on screen that a below-card would run off the bottom edge. Clamp
+  // horizontally so the card never runs off the left/right edges either.
+  const showBelow = !anchor || anchor.y < screenHeight * 0.55;
+  const cardLeft = anchor
+    ? Math.min(Math.max(anchor.x - CARD_WIDTH / 2, EDGE_MARGIN), screenWidth - CARD_WIDTH - EDGE_MARGIN)
+    : (screenWidth - CARD_WIDTH) / 2;
+  const pointerLeft = anchor
+    ? Math.min(
+        Math.max(anchor.x - cardLeft - POINTER_SIZE / 2, EDGE_MARGIN),
+        CARD_WIDTH - POINTER_SIZE - EDGE_MARGIN,
+      )
+    : CARD_WIDTH / 2 - POINTER_SIZE / 2;
+  const positionStyle = anchor
+    ? showBelow
+      ? { top: anchor.y + WORD_GAP }
+      : { bottom: screenHeight - anchor.y + WORD_GAP }
+    : { top: screenHeight / 2 - 80 };
 
   useEffect(() => {
     if (!word) return;
@@ -71,25 +103,27 @@ export function WordTranslationPopup({ word, onClose, onSave }: WordTranslationP
   return (
     <Modal visible={word != null} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose}>
-        <View style={styles.cardWrap}>
-          <View style={[styles.pointer, { backgroundColor: colors.primaryDark }]} />
+        <View style={[styles.cardWrap, { left: cardLeft }, positionStyle]}>
+          <View
+            style={[
+              styles.pointer,
+              { backgroundColor: colors.primaryDark, left: pointerLeft },
+              showBelow ? { top: -6 } : { bottom: -6 },
+            ]}
+          />
           <Pressable
             style={[styles.card, { backgroundColor: colors.primaryDark, borderRadius: radius.card }]}
             onPress={() => {}}
           >
             <View style={styles.headerRow}>
               <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 12 }]}>{word}</Text>
-              {/* Tap to switch target language inline — re-runs the translation
-                  in the newly-chosen language (the effect depends on it). */}
-              <Pressable
-                onPress={cycleTargetLanguage}
-                hitSlop={8}
-                style={[styles.pairTag, { backgroundColor: '#2B2621' }]}
-              >
+              {/* Display-only pair — the target language is chosen in Settings,
+                  never from the reading page. */}
+              <View style={[styles.pairTag, { backgroundColor: '#2B2621' }]}>
                 <Text style={[typography.eyebrowLabel, { color: colors.flameAmber, fontSize: 9 }]}>
-                  EN → {targetLanguageLabel(targetLanguage)} ⇄
+                  EN → {targetLanguageLabel(targetLanguage)}
                 </Text>
-              </Pressable>
+              </View>
             </View>
 
             {state.status === 'loading' ? (
@@ -153,18 +187,15 @@ export function WordTranslationPopup({ word, onClose, onSave }: WordTranslationP
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   cardWrap: {
-    width: 216,
+    position: 'absolute',
+    width: CARD_WIDTH,
   },
   pointer: {
     position: 'absolute',
-    top: -6,
-    left: 36,
-    width: 14,
-    height: 14,
+    width: POINTER_SIZE,
+    height: POINTER_SIZE,
     borderRadius: 2,
     transform: [{ rotate: '45deg' }],
   },

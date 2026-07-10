@@ -4,7 +4,7 @@ import { useCallback, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ChevronRightIcon } from '@/components/icons';
+import { ChevronRightIcon, TrashIcon } from '@/components/icons';
 import { type BookRow, listBooks } from '@/db/repositories/books';
 import { deleteSavedWord, listSavedWords, type SavedWord } from '@/db/repositories/savedWords';
 import { useTheme } from '@/theme/ThemeProvider';
@@ -29,6 +29,23 @@ export default function VocabularyScreen() {
     useCallback(() => {
       reload();
     }, [reload]),
+  );
+
+  const confirmRemoveWord = useCallback(
+    (word: SavedWord) => {
+      Alert.alert('Remove word', `Remove "${word.sourceWord}" from your vocabulary?`, [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            await deleteSavedWord(word.id);
+            reload();
+          },
+        },
+      ]);
+    },
+    [reload],
   );
 
   const bookTitle = (bookId: string) => books.find((b) => b.id === bookId)?.title ?? bookId;
@@ -117,7 +134,8 @@ export default function VocabularyScreen() {
                   <Pressable
                     key={word.id}
                     // Tap -> open the book at exactly the page the word was saved
-                    // on. Long-press -> remove it (with a confirm).
+                    // on. Long-press -> remove it (with a confirm) — same action
+                    // as the visible trash icon, just a faster gesture for it.
                     onPress={() =>
                       router.push({
                         pathname: '/reader/[bookId]',
@@ -128,19 +146,7 @@ export default function VocabularyScreen() {
                         },
                       })
                     }
-                    onLongPress={() =>
-                      Alert.alert('Remove word', `Remove "${word.sourceWord}" from your vocabulary?`, [
-                        { text: 'Cancel', style: 'cancel' },
-                        {
-                          text: 'Remove',
-                          style: 'destructive',
-                          onPress: async () => {
-                            await deleteSavedWord(word.id);
-                            reload();
-                          },
-                        },
-                      ])
-                    }
+                    onLongPress={() => confirmRemoveWord(word)}
                     style={[
                       styles.row,
                       index < groupWords.length - 1 && {
@@ -163,6 +169,9 @@ export default function VocabularyScreen() {
                         &ldquo;{word.contextSentence}&rdquo;
                       </Text>
                     </View>
+                    <Pressable onPress={() => confirmRemoveWord(word)} hitSlop={10} style={styles.rowTrash}>
+                      <TrashIcon color={colors.straw} size={16} />
+                    </Pressable>
                     <ChevronRightIcon color={colors.straw} size={15} />
                   </Pressable>
                 ))}
@@ -201,6 +210,9 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingVertical: 12,
     paddingHorizontal: 4,
+  },
+  rowTrash: {
+    padding: 4,
   },
   emptyState: {
     marginTop: 24,

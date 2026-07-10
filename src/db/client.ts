@@ -4,11 +4,13 @@ import { fetchRemoteCatalog, type RemoteBookRow } from '@/features/content-inges
 
 import { MIGRATIONS } from './schema';
 
-// Last-resort bootstrap only: used when the local `books` table is still
-// empty AND the very first fetchRemoteCatalog() call fails (a cold, offline
-// first launch) — otherwise the Library shelf would be completely blank.
-// Metadata only, trimmed down from the pre-Supabase manifest; no `textUrl`,
-// so books seeded from this can't be opened until the remote sync succeeds.
+// Seeded into `books` immediately on every cold start where the table is
+// still empty — before any network call — so the Library shelf always shows
+// something instantly instead of sitting empty for however long the remote
+// fetch takes (that round trip used to block getDb() itself). Metadata only,
+// trimmed down from the pre-Supabase manifest; no `textUrl`, so a book seeded
+// from this can't be opened until the real sync (below) upserts over it —
+// usually within a couple seconds, well before anyone's tapped into a book.
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const BOOTSTRAP_CATALOG: {
   id: string;
@@ -29,9 +31,19 @@ let dbPromise: Promise<SQLiteDatabase> | null = null;
 // so this is reachable from ordinary use, not an edge case. Wrapping the
 // handle returned to callers in a serializing queue lets call sites keep
 // writing Promise.all naturally while every statement still runs one at a
-// time under the hood. migrate()/syncBooksFromRemote() below intentionally
-// run against the *raw* db (not this wrapper) since they're already strictly
-// sequential and run once, before anything else can reach the connection.
+// time under the hood.
+//
+// The queue itself (`enqueue`) is exposed separately from the proxy, and
+// multi-statement helpers (upsertBooks, seedBootstrapIfEmpty — both use
+// withTransactionAsync with nested runAsync calls inside) always run against
+// the *raw* db, submitted to the queue as ONE job via `enqueue`. Running them
+// against the *wrapped* proxy instead would deadlock: the outer
+// withTransactionAsync call enqueues and starts running, but by the time its
+// callback fires, the queue has already moved on to "after this job" — so the
+// nested runAsync call queues up *behind* the very transaction it's part of,
+// and neither ever completes. (This actually shipped briefly — every DB call
+// in the app hangs forever the moment it happens, which is exactly what a
+// permanent black screen on opening a book looks like.)
 const SERIALIZED_METHODS = new Set([
   'execAsync',
   'getAllAsync',
@@ -40,25 +52,31 @@ const SERIALIZED_METHODS = new Set([
   'withTransactionAsync',
 ]);
 
-function serializeDb(db: SQLiteDatabase): SQLiteDatabase {
+type Enqueue = <T>(fn: () => Promise<T>) => Promise<T>;
+
+function createQueue(): Enqueue {
   let queue: Promise<unknown> = Promise.resolve();
+  return (fn) => {
+    const result = queue.then(fn, fn);
+    // Advance the queue on failure too — one rejected call must not wedge
+    // every call queued behind it.
+    queue = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  };
+}
+
+function serializeDb(db: SQLiteDatabase, enqueue: Enqueue): SQLiteDatabase {
   return new Proxy(db, {
     get(target, prop, receiver) {
       const value = Reflect.get(target, prop, receiver);
       if (typeof value !== 'function' || typeof prop !== 'string' || !SERIALIZED_METHODS.has(prop)) {
         return typeof value === 'function' ? value.bind(target) : value;
       }
-      return (...args: unknown[]) => {
-        const run = () => (value as (...a: unknown[]) => Promise<unknown>).apply(target, args);
-        const result = queue.then(run, run);
-        // Advance the queue on failure too — one rejected call must not wedge
-        // every call queued behind it.
-        queue = result.then(
-          () => undefined,
-          () => undefined,
-        );
-        return result;
-      };
+      return (...args: unknown[]) =>
+        enqueue(() => (value as (...a: unknown[]) => Promise<unknown>).apply(target, args));
     },
   });
 }
@@ -108,21 +126,10 @@ async function upsertBooks(db: SQLiteDatabase, rows: RemoteBookRow[]) {
   });
 }
 
-// Refreshes the local `books` cache from Supabase every app process (the
-// `dbPromise` singleton below already limits this to once). Network failure
-// (offline, timeout) is expected and non-fatal — whatever's already cached
-// locally from a previous successful sync just keeps being used. Only on a
-// genuinely first-ever, offline launch (local table still empty afterward)
-// does it fall back to the tiny bundled bootstrap catalog.
-async function syncBooksFromRemote(db: SQLiteDatabase) {
-  try {
-    const remoteRows = await fetchRemoteCatalog();
-    await upsertBooks(db, remoteRows);
-    return;
-  } catch (error) {
-    console.warn('[db] Remote catalog sync failed, using local cache:', error);
-  }
-
+// Instant, local-only — never touches the network. Guarantees the Library
+// always has *something* to show the moment the DB opens, on a completely
+// fresh install, before the real catalog has ever synced once.
+async function seedBootstrapIfEmpty(db: SQLiteDatabase) {
   const { count } = (await db.getFirstAsync<{ count: number }>(
     'SELECT COUNT(*) as count FROM books',
   )) ?? { count: 0 };
@@ -139,13 +146,30 @@ async function syncBooksFromRemote(db: SQLiteDatabase) {
   });
 }
 
+// Deliberately not awaited by getDb() — the whole point is that nothing in
+// the app blocks on this network round trip. The network fetch itself runs
+// completely outside the queue (it touches no DB call at all); only once it
+// resolves does the actual write get submitted to `enqueue` as one job, so it
+// never occupies the queue for the multi-second duration of the request.
+// Network failure (offline, timeout) is expected and non-fatal: whatever's
+// already cached locally just keeps being used until the next app launch.
+function refreshFromRemoteInBackground(db: SQLiteDatabase, enqueue: Enqueue) {
+  fetchRemoteCatalog()
+    .then((remoteRows) => enqueue(() => upsertBooks(db, remoteRows)))
+    .catch((error) => {
+      console.warn('[db] Remote catalog sync failed, using local cache:', error);
+    });
+}
+
 export async function getDb(): Promise<SQLiteDatabase> {
   if (!dbPromise) {
     dbPromise = (async () => {
       const db = await openDatabaseAsync('lamplight.db');
       await migrate(db);
-      await syncBooksFromRemote(db);
-      return serializeDb(db);
+      const enqueue = createQueue();
+      await enqueue(() => seedBootstrapIfEmpty(db));
+      refreshFromRemoteInBackground(db, enqueue);
+      return serializeDb(db, enqueue);
     })();
   }
   return dbPromise;

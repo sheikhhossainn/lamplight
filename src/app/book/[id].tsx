@@ -6,9 +6,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { isDarkSpineColor, spineColorForBook } from '@/components/BookSpine';
 import { BookmarkIcon, ChevronLeftIcon, ChevronRightIcon, MoreHorizontalIcon } from '@/components/icons';
+import { deleteBookCache } from '@/features/content-ingestion/bookDownloader';
 import { type BookRow, getBook } from '@/db/repositories/books';
 import { listHighlightsForBook } from '@/db/repositories/highlights';
-import { getReadingPosition, type ReadingPosition } from '@/db/repositories/readingPosition';
+import {
+  deleteReadingPosition,
+  getReadingPosition,
+  type ReadingPosition,
+} from '@/db/repositories/readingPosition';
 import { listSavedWordsForBook, type SavedWord } from '@/db/repositories/savedWords';
 import { targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
 import { useTheme } from '@/theme/ThemeProvider';
@@ -46,14 +51,58 @@ export default function BookDetailScreen() {
     }, [id]),
   );
 
-  if (!book) return null;
+  const handleMoreOptions = useCallback(() => {
+    if (!book) return;
+    Alert.alert(book.title, undefined, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete book',
+        style: 'destructive',
+        onPress: () => {
+          // A second confirm on top of the action-sheet choice itself — this
+          // clears reading progress and the downloaded copy (re-downloadable
+          // any time from the shared catalog), but never touches saved
+          // vocabulary/quotes, so make that distinction explicit before
+          // committing to it.
+          Alert.alert(
+            'Delete book?',
+            'This removes it from your library and clears your reading progress. Saved vocabulary and quotes from this book are kept. You can download it again anytime.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Delete',
+                style: 'destructive',
+                onPress: async () => {
+                  await Promise.all([deleteBookCache(book.id), deleteReadingPosition(book.id)]);
+                  router.back();
+                },
+              },
+            ],
+          );
+        },
+      },
+    ]);
+  }, [book]);
 
-  const isAvailable = book.isAvailable && book.totalChapters > 0 && Boolean(book.textUrl);
+  // Themed placeholder instead of bare null — null falls through to the root
+  // navigator's charcoal contentStyle, which reads as a black-screen flash
+  // during the (normally brief) moment before `book` loads.
+  if (!book) return <View style={[styles.loadingPlaceholder, { backgroundColor: colors.parchment }]} />;
+
+  // totalChapters === 0 means "not yet known" for a bulk-imported book (see
+  // scripts/sync-bulk-catalog.mjs) — it's filled in locally the first time
+  // the book is actually downloaded and parsed, not before. It does NOT mean
+  // unavailable — a working textUrl is all that actually gates reading.
+  const isAvailable = book.isAvailable && Boolean(book.textUrl);
   const percent = position ? position.percentComplete : 0;
   const chapterLabel = position
-    ? `${Math.round(percent * 100)}% read · Chapter ${position.chapterIndex + 1} of ${book.totalChapters}`
+    ? book.totalChapters > 0
+      ? `${Math.round(percent * 100)}% read · Chapter ${position.chapterIndex + 1} of ${book.totalChapters}`
+      : `${Math.round(percent * 100)}% read`
     : isAvailable
-      ? `${book.totalChapters} chapters`
+      ? book.totalChapters > 0
+        ? `${book.totalChapters} chapters`
+        : 'Tap to start reading'
       : 'Coming soon';
   const coverColor = spineColorForBook(book.id, book.id.length);
   const coverIsDark = isDarkSpineColor(coverColor);
@@ -74,10 +123,7 @@ export default function BookDetailScreen() {
         <Pressable onPress={() => router.back()} hitSlop={12}>
           <ChevronLeftIcon color={colors.ink} />
         </Pressable>
-        <Pressable
-          onPress={() => Alert.alert(book.title, 'More options coming in a later milestone.')}
-          hitSlop={12}
-        >
+        <Pressable onPress={handleMoreOptions} hitSlop={12}>
           <MoreHorizontalIcon color={colors.ink} />
         </Pressable>
       </View>
@@ -221,6 +267,9 @@ export default function BookDetailScreen() {
 }
 
 const styles = StyleSheet.create({
+  loadingPlaceholder: {
+    flex: 1,
+  },
   content: {
     paddingBottom: 48,
   },

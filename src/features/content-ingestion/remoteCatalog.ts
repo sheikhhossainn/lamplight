@@ -31,13 +31,26 @@ export async function fetchRemoteCatalog(): Promise<RemoteBookRow[]> {
     throw new Error('EXPO_PUBLIC_SUPABASE_URL / EXPO_PUBLIC_SUPABASE_ANON_KEY are not set.');
   }
 
-  const response = await fetch(`${SUPABASE_URL}/rest/v1/books?select=*`, {
-    headers: {
-      apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-    },
-    signal: AbortSignal.timeout(5000),
-  });
+  // Hermes (React Native's JS engine) doesn't implement AbortSignal.timeout,
+  // so the timeout is built by hand from AbortController + setTimeout. This
+  // call runs in the background (db/client.ts never awaits it for anything
+  // user-visible), so there's no UX cost to giving it real breathing room on
+  // a slow connection instead of aborting an otherwise-fine request early.
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 20000);
+
+  let response: Response;
+  try {
+    response = await fetch(`${SUPABASE_URL}/rest/v1/books?select=*`, {
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      },
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
   if (!response.ok) {
     throw new Error(`Remote catalog fetch failed (${response.status})`);
   }

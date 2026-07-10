@@ -6,13 +6,23 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
 import { BookSpine } from '@/components/BookSpine';
+import { ShelfEditorModal, type ShelfDraft } from '@/components/ShelfEditorModal';
 import { type BookRow, listBooks } from '@/db/repositories/books';
 import { type ReadingPosition, listAllReadingPositions } from '@/db/repositories/readingPosition';
+import {
+  createShelf,
+  deleteShelf,
+  listShelfItems,
+  listShelves,
+  renameShelf,
+  setShelfBooks,
+  type Shelf,
+  type ShelfItem,
+} from '@/db/repositories/shelves';
 import { targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
 import { useTheme } from '@/theme/ThemeProvider';
 
 const { width: screenWidth } = Dimensions.get('window');
-const ROW_SIZE = 4;
 // Small deterministic per-slot tilt so the shelf reads as covers leaning
 // against each other, not a flat grid — cycled, not randomized per render.
 const ROW_ROTATIONS = [-2, 1.5, -1, 2.5, -2.5, 1, -1.5, 2];
@@ -41,43 +51,98 @@ function WoodenPlank({ width }: { width: number }) {
   );
 }
 
-function chunk<T>(items: T[], size: number): T[][] {
-  const rows: T[][] = [];
-  for (let i = 0; i < items.length; i += size) {
-    rows.push(items.slice(i, i + size));
-  }
-  return rows;
-}
-
 export default function LibraryScreen() {
   const { colors, typography, spacing, radius } = useTheme();
   const insets = useSafeAreaInsets();
   const targetLanguage = useTargetLanguage();
   const [books, setBooks] = useState<BookRow[]>([]);
   const [positions, setPositions] = useState<ReadingPosition[]>([]);
+  const [shelves, setShelves] = useState<Shelf[]>([]);
+  const [shelfItems, setShelfItems] = useState<ShelfItem[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [editor, setEditor] = useState<{ visible: boolean; draft: ShelfDraft }>({ visible: false, draft: null });
+
+  const load = useCallback(async () => {
+    const [bookRows, positionRows, shelfRows, shelfItemRows] = await Promise.all([
+      listBooks(),
+      listAllReadingPositions(),
+      listShelves(),
+      listShelfItems(),
+    ]);
+    setBooks(bookRows);
+    setPositions(positionRows);
+    setShelves(shelfRows);
+    setShelfItems(shelfItemRows);
+    setLoaded(true);
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
-      (async () => {
-        const [bookRows, positionRows] = await Promise.all([listBooks(), listAllReadingPositions()]);
-        if (!cancelled) {
-          setBooks(bookRows);
-          setPositions(positionRows);
-          setLoaded(true);
-        }
+      void (async () => {
+        await load();
+        if (cancelled) return;
       })();
       return () => {
         cancelled = true;
       };
-    }, []),
+    }, [load]),
   );
 
   const continuePosition = positions[0];
   const continueBook = continuePosition ? books.find((b) => b.id === continuePosition.bookId) : undefined;
   const shelfBooks = continueBook ? books.filter((b) => b.id !== continueBook.id) : books;
-  const shelfRows = chunk(shelfBooks, ROW_SIZE);
+
+  const booksOnShelf = (shelfId: string): BookRow[] => {
+    const ids = new Set(shelfItems.filter((it) => it.shelfId === shelfId).map((it) => it.bookId));
+    return books.filter((b) => ids.has(b.id));
+  };
+
+  const handleSaveShelf = async (name: string, bookIds: string[]) => {
+    const draft = editor.draft;
+    if (draft) {
+      await renameShelf(draft.id, name);
+      await setShelfBooks(draft.id, bookIds);
+    } else {
+      await createShelf(name, bookIds);
+    }
+    setEditor({ visible: false, draft: null });
+    await load();
+  };
+
+  const handleDeleteShelf = async () => {
+    if (!editor.draft) return;
+    await deleteShelf(editor.draft.id);
+    setEditor({ visible: false, draft: null });
+    await load();
+  };
+
+  // One horizontal, slidable shelf of book spines sitting on a wooden plank.
+  const renderShelf = (shelfBookList: BookRow[], keyPrefix: string) => (
+    <>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        overScrollMode="never"
+        contentContainerStyle={styles.shelfRow}
+      >
+        {shelfBookList.map((book, i) => (
+          <View key={`${keyPrefix}-${book.id}`} style={{ marginRight: spacing.md }}>
+            <BookSpine
+              bookId={book.id}
+              title={book.title}
+              toneIndex={books.indexOf(book)}
+              rotateDeg={ROW_ROTATIONS[i % ROW_ROTATIONS.length]}
+              onPress={() => router.push({ pathname: '/book/[id]', params: { id: book.id } })}
+            />
+          </View>
+        ))}
+      </ScrollView>
+      <View style={{ marginTop: spacing.sm, marginBottom: spacing.xl }}>
+        <WoodenPlank width={screenWidth - spacing.xl * 2} />
+      </View>
+    </>
+  );
 
   return (
     <ScrollView
@@ -143,7 +208,7 @@ export default function LibraryScreen() {
       ) : null}
 
       <View style={[styles.shelfHeader, { marginTop: spacing.xl, marginBottom: spacing.md }]}>
-        <Text style={[typography.eyebrowLabel, { color: colors.fawn }]}>Your shelf</Text>
+        <Text style={[typography.eyebrowLabel, { color: colors.fawn }]}>All books</Text>
         <Pressable onPress={() => Alert.alert('Import EPUB', 'Coming in a later milestone.')}>
           <Text style={[typography.uiRowTitle, { color: colors.progressLabel, fontSize: 12 }]}>
             + Import EPUB
@@ -151,31 +216,57 @@ export default function LibraryScreen() {
         </Pressable>
       </View>
 
+      {loaded ? renderShelf(shelfBooks, 'all') : null}
+
+      {/* User-created category shelves. */}
       {loaded
-        ? shelfRows.map((row, rowIndex) => (
-            <View key={rowIndex} style={{ marginBottom: spacing.xl }}>
-              <View style={styles.shelfRow}>
-                {row.map((book, columnIndex) => {
-                  const overallIndex = rowIndex * ROW_SIZE + columnIndex;
-                  return (
-                    <View key={book.id} style={{ marginRight: spacing.md }}>
-                      <BookSpine
-                        bookId={book.id}
-                        title={book.title}
-                        toneIndex={books.indexOf(book)}
-                        rotateDeg={ROW_ROTATIONS[overallIndex % ROW_ROTATIONS.length]}
-                        onPress={() => router.push({ pathname: '/book/[id]', params: { id: book.id } })}
-                      />
-                    </View>
-                  );
-                })}
+        ? shelves.map((shelf) => {
+            const shelfBookList = booksOnShelf(shelf.id);
+            return (
+              <View key={shelf.id}>
+                <View style={[styles.shelfHeader, { marginBottom: spacing.md }]}>
+                  <Text style={[typography.eyebrowLabel, { color: colors.fawn }]}>{shelf.name}</Text>
+                  <Pressable
+                    onPress={() =>
+                      setEditor({
+                        visible: true,
+                        draft: { id: shelf.id, name: shelf.name, bookIds: shelfBookList.map((b) => b.id) },
+                      })
+                    }
+                    hitSlop={8}
+                  >
+                    <Text style={[typography.uiRowTitle, { color: colors.progressLabel, fontSize: 12 }]}>Edit</Text>
+                  </Pressable>
+                </View>
+                {shelfBookList.length > 0 ? (
+                  renderShelf(shelfBookList, shelf.id)
+                ) : (
+                  <Text style={[typography.metadataCaption, { color: colors.fawn, marginBottom: spacing.xl }]}>
+                    No books yet — tap Edit to add some.
+                  </Text>
+                )}
               </View>
-              <View style={{ marginTop: spacing.sm }}>
-                <WoodenPlank width={screenWidth - spacing.xl * 2} />
-              </View>
-            </View>
-          ))
+            );
+          })
         : null}
+
+      {loaded ? (
+        <Pressable
+          onPress={() => setEditor({ visible: true, draft: null })}
+          style={[styles.newShelf, { borderColor: colors.straw, borderRadius: radius.card }]}
+        >
+          <Text style={[typography.uiRowTitle, { color: colors.umber, fontSize: 13 }]}>+ New shelf</Text>
+        </Pressable>
+      ) : null}
+
+      <ShelfEditorModal
+        visible={editor.visible}
+        draft={editor.draft}
+        books={books}
+        onSave={handleSaveShelf}
+        onDelete={editor.draft ? handleDeleteShelf : undefined}
+        onClose={() => setEditor({ visible: false, draft: null })}
+      />
     </ScrollView>
   );
 }
@@ -197,6 +288,14 @@ const styles = StyleSheet.create({
   shelfRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
+    paddingRight: 8,
+  },
+  newShelf: {
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    paddingVertical: 15,
+    marginTop: 4,
   },
   progressTrack: {
     height: 5,

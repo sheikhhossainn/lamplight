@@ -68,4 +68,20 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE books ADD COLUMN gutenberg_id INTEGER;
   ALTER TABLE books ADD COLUMN chapter1_anchor TEXT;
   `,
+  // v4 — user-created shelves ("categories"): a named shelf and the set of books
+  // the user filed onto it. Membership is many-to-many, keyed on the pair.
+  `
+  CREATE TABLE IF NOT EXISTS shelves (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS shelf_items (
+    shelf_id TEXT NOT NULL REFERENCES shelves(id),
+    book_id TEXT NOT NULL REFERENCES books(id),
+    added_at INTEGER NOT NULL,
+    PRIMARY KEY (shelf_id, book_id)
+  );
+  `,
 ];

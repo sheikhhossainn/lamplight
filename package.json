@@ -47,6 +47,7 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "sync:books": "tsx scripts/sync-books.mjs",
+    "sync:bulk-catalog": "node scripts/sync-bulk-catalog.mjs",
     "update": "eas update --branch preview"
   },
   "private": true

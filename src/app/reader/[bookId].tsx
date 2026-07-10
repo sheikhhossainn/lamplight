@@ -12,20 +12,18 @@ import {
 } from 'react-native';
 import Animated, {
   Easing,
-  Extrapolation,
-  interpolate,
-  useAnimatedScrollHandler,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
-  type SharedValue,
 } from 'react-native-reanimated';
 import Svg, { Circle, Defs, LinearGradient, Path, Rect, Stop } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ChevronLeftIcon } from '@/components/icons';
+import { FlameGlow } from '@/components/FlameGlow';
 import { HighlightColorPicker } from '@/features/reader/components/HighlightColorPicker';
 import { ReaderPageView } from '@/features/reader/components/ReaderPageView';
+import { WordActionMenu } from '@/features/reader/components/WordActionMenu';
 import { WordTranslationPopup } from '@/features/reader/components/WordTranslationPopup';
 import {
   findGlobalIndex,
@@ -33,19 +31,20 @@ import {
   PAGINATION_MEASURE_SAMPLE,
   type ReaderPage,
 } from '@/features/reader/engine/paginate';
-import { splitIntoSentences } from '@/features/reader/engine/words';
+import {
+  buildGlyphWidths,
+  GLYPH_MEASURE_TEXT,
+  glyphWidthsReady,
+  setMeasuredGlyphWidths,
+} from '@/features/reader/engine/glyphWidths';
 import { getBookText } from '@/features/content-ingestion/bookDownloader';
 import type { IngestedBook } from '@/features/content-ingestion/textParser';
-import { getBook, type BookRow } from '@/db/repositories/books';
+import { getBook, updateBookTotalChapters, type BookRow } from '@/db/repositories/books';
 import { createHighlight, listHighlightsForBook, type Highlight } from '@/db/repositories/highlights';
 import { getReadingPosition, upsertReadingPosition } from '@/db/repositories/readingPosition';
 import { listSavedWordsForBook, saveWord, type SavedWord } from '@/db/repositories/savedWords';
 import { useTargetLanguage } from '@/features/settings/languagePair';
-import {
-  fontSizePxFromPref,
-  lineHeightMultiplierFromPref,
-  useReadingPrefs,
-} from '@/features/settings/readingPrefs';
+import { READING_FONT_SIZE_PX, READING_LINE_HEIGHT_PX } from '@/features/settings/readingPrefs';
 import { getReadingTheme, useReadingTheme } from '@/features/settings/readingTheme';
 import { requestThemeChange } from '@/features/settings/themeTransition';
 import { LamplightColor, type HighlightColorKey } from '@/theme/tokens';
@@ -69,68 +68,52 @@ const READING_DARK_STOPS = ['#1C1B1E', '#201E22', '#26221F'] as const;
 
 type ReaderMode = 'day' | 'lamp';
 
-// The reading-mode toggle shows the mode you'll switch TO (a common toggle
-// idiom): in Day it shows a moon ("tap for Lamp/dark"); in Lamp it shows a sun
-// ("tap for Day/light"). Clean, high-contrast glyphs — the old flame-drop read
-// as an unclear "circle-in-a-circle."
-function ModeIcon({
-  mode,
-  color,
-  carveColor,
-}: {
-  mode: ReaderMode;
-  color: string;
-  carveColor: string;
-}) {
-  if (mode === 'day') {
-    // Currently Day -> crescent moon (tap to switch to Lamp). Drawn as a full
-    // disc with a second disc, filled in the (solid) button color, offset over
-    // it to carve out the crescent — two plain circles, so it renders
-    // identically everywhere (no mask/path quirks that made it look broken).
-    return (
-      <Svg width={20} height={20} viewBox="0 0 24 24">
-        <Circle cx={12} cy={12} r={8.6} fill={color} />
-        <Circle cx={15.4} cy={9} r={7.8} fill={carveColor} />
-      </Svg>
-    );
-  }
-  // Currently Lamp -> sun (tap to switch to Day).
+// The reading-mode toggle's flame reflects the CURRENT mode rather than the
+// mode you'll switch to: lit while actually reading by lamplight (dark),
+// out during the day — a small thematic beat matching the app's own name,
+// and legible at a glance without a moon/sun metaphor to decode.
+function ModeIcon({ mode }: { mode: ReaderMode }) {
   return (
-    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
-      <Circle cx={12} cy={12} r={4} fill={color} />
-      <Path
-        d="M12 2.5v2.4M12 19.1v2.4M2.5 12h2.4M19.1 12h2.4M5.05 5.05l1.7 1.7M17.25 17.25l1.7 1.7M18.95 5.05l-1.7 1.7M6.75 17.25l-1.7 1.7"
-        stroke={color}
-        strokeWidth={1.8}
-        strokeLinecap="round"
-      />
-    </Svg>
+    <FlameGlow
+      size={20}
+      showTile={false}
+      lit={mode === 'lamp'}
+      variant={mode === 'lamp' ? 'flicker' : 'static'}
+    />
   );
 }
 
 type ReaderPageFrameProps = {
-  index: number;
-  scrollX: SharedValue<number>;
   children: React.ReactNode;
 };
 
-// The page-turn "feel": driven entirely by the live scroll offset on the UI
-// thread (no JS-thread involvement, so it can never stutter from React work
-// happening elsewhere). Deliberately subtle — a heavier scale/fade fights the
-// eye's read of hundreds of word glyphs moving at once and reads as jank even
-// at a perfect frame rate; a bare hint of recession sells "lifting off a stack."
-function ReaderPageFrame({ index, scrollX, children }: ReaderPageFrameProps) {
-  const style = useAnimatedStyle(() => {
-    const inputRange = [(index - 1) * screenWidth, index * screenWidth, (index + 1) * screenWidth];
-    return {
-      opacity: interpolate(scrollX.value, inputRange, [0.94, 1, 0.94], Extrapolation.CLAMP),
-      transform: [
-        { scale: interpolate(scrollX.value, inputRange, [0.985, 1, 0.985], Extrapolation.CLAMP) },
-      ],
-    };
-  });
+// A page is hundreds of per-word <Text> nodes. Applying a per-frame scale/
+// opacity to that subtree forced the GPU to rasterize the whole page into an
+// offscreen layer every frame of a swipe — the actual cause of the page-turn
+// lag. Dropping it lets pages ride the native horizontal paging directly,
+// which is the smoothest path there is (and the old recession effect was
+// nearly invisible anyway).
+function ReaderPageFrame({ children }: ReaderPageFrameProps) {
+  return <View style={styles.pageFrame}>{children}</View>;
+}
 
-  return <Animated.View style={[styles.pageFrame, style]}>{children}</Animated.View>;
+// The exact selected substring across a word-aligned range, joining paragraphs
+// in reading order — used both for the saved quote text and the live word count.
+function selectedText(
+  page: ReaderPage,
+  startParagraph: number,
+  startOffset: number,
+  endParagraph: number,
+  endOffset: number,
+): string {
+  const parts: string[] = [];
+  for (let p = startParagraph; p <= endParagraph; p += 1) {
+    const paragraph = page.paragraphs[p] ?? '';
+    const s = p === startParagraph ? startOffset : 0;
+    const e = p === endParagraph ? endOffset : paragraph.length;
+    parts.push(paragraph.slice(s, e).trim());
+  }
+  return parts.filter(Boolean).join(' ');
 }
 
 export default function ReaderScreen() {
@@ -169,14 +152,37 @@ export default function ReaderScreen() {
   const chromeOpacity = useSharedValue(1);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Tap a word -> translate (activeWord). Long-press a word -> anchor quote
-  // selection at that exact sentence immediately (no intermediate menu) and
-  // drag, still holding, to extend it — see ReaderPageView's PanResponder.
-  const [activeWord, setActiveWord] = useState<{ word: string; paragraphIndex: number } | null>(null);
-  // Selection holds `${paragraphIndex}:${sentenceIndex}` keys — always a
-  // contiguous range (keys[0]..keys[last]), starting as the single sentence
-  // long-pressed and adjustable from either end via drag handles.
-  const [selection, setSelection] = useState<{ page: ReaderPage; keys: string[] } | null>(null);
+  // Hold a word -> action menu (Translate / Save as quote). `wordMenu` is the
+  // held word while the menu is open; picking Translate promotes it to
+  // `activeWord` (the translation popup), picking Save-as-quote opens `selection`
+  // (the two-handle sentence picker). The held/active word is highlighted in the
+  // text throughout so the reader sees exactly which word they're acting on.
+  const [wordMenu, setWordMenu] = useState<{
+    word: string;
+    paragraphIndex: number;
+    page: ReaderPage;
+    start: number;
+    end: number;
+    anchor: { x: number; y: number };
+  } | null>(null);
+  const [activeWord, setActiveWord] = useState<{
+    word: string;
+    paragraphIndex: number;
+    pageGlobalIndex: number;
+    start: number;
+    end: number;
+    anchor: { x: number; y: number };
+  } | null>(null);
+  // Selection is a word-aligned char range across the page's paragraphs, always
+  // normalized so start <= end. It begins as the single held word and is
+  // adjusted at word granularity from either end via the two drag handles.
+  const [selection, setSelection] = useState<{
+    page: ReaderPage;
+    startParagraph: number;
+    startOffset: number;
+    endParagraph: number;
+    endOffset: number;
+  } | null>(null);
   const [colorPickerVisible, setColorPickerVisible] = useState(false);
 
   // First-run gesture hint — fades/slides in a couple seconds after the book
@@ -184,35 +190,36 @@ export default function ReaderScreen() {
   // (or immediately on tap). Shows once per app session, never again after.
   const [hintVisible, setHintVisible] = useState(false);
   const hintOpacity = useSharedValue(0);
-  const hintTranslateY = useSharedValue(10);
+  // Slides in horizontally from the top-right corner (translateX 28 -> 0), so
+  // it reads as a quiet toast tucked under the lamp icon, not a modal.
+  const hintTranslateX = useSharedValue(28);
   const dismissHint = useCallback(() => {
-    hintOpacity.value = withTiming(0, { duration: 260, easing: Easing.in(Easing.cubic) });
-    hintTranslateY.value = withTiming(8, { duration: 260, easing: Easing.in(Easing.cubic) });
-    setTimeout(() => setHintVisible(false), 260);
-  }, [hintOpacity, hintTranslateY]);
+    hintOpacity.value = withTiming(0, { duration: 240, easing: Easing.in(Easing.cubic) });
+    hintTranslateX.value = withTiming(28, { duration: 240, easing: Easing.in(Easing.cubic) });
+    setTimeout(() => setHintVisible(false), 240);
+  }, [hintOpacity, hintTranslateX]);
   useEffect(() => {
     if (hasShownReaderHint || !book) return;
     hasShownReaderHint = true;
     let hideTimer: ReturnType<typeof setTimeout> | null = null;
     const showTimer = setTimeout(() => {
       setHintVisible(true);
-      hintOpacity.value = withTiming(1, { duration: 380, easing: Easing.out(Easing.cubic) });
-      hintTranslateY.value = withTiming(0, { duration: 380, easing: Easing.out(Easing.cubic) });
+      hintOpacity.value = withTiming(1, { duration: 420, easing: Easing.out(Easing.cubic) });
+      hintTranslateX.value = withTiming(0, { duration: 420, easing: Easing.out(Easing.cubic) });
       hideTimer = setTimeout(dismissHint, 5600);
     }, 2200);
     return () => {
       clearTimeout(showTimer);
       if (hideTimer) clearTimeout(hideTimer);
     };
-  }, [book, hintOpacity, hintTranslateY, dismissHint]);
+  }, [book, hintOpacity, hintTranslateX, dismissHint]);
   const hintAnimatedStyle = useAnimatedStyle(() => ({
     opacity: hintOpacity.value,
-    transform: [{ translateY: hintTranslateY.value }],
+    transform: [{ translateX: hintTranslateX.value }],
   }));
 
-  const { fontSize, lineSpacing } = useReadingPrefs();
-  const readingFontSizePx = fontSizePxFromPref(fontSize);
-  const readingLineHeight = Math.round(readingFontSizePx * lineHeightMultiplierFromPref(lineSpacing));
+  const readingFontSizePx = READING_FONT_SIZE_PX;
+  const readingLineHeight = READING_LINE_HEIGHT_PX;
   const targetLanguage = useTargetLanguage();
 
   const sharedTheme = useReadingTheme();
@@ -246,13 +253,6 @@ export default function ReaderScreen() {
     bgProgress.value = isLamp ? 1 : 0;
   }, [isLamp, bgProgress]);
   const darkBgStyle = useAnimatedStyle(() => ({ opacity: bgProgress.value }));
-
-  // Drives the per-page transform in ReaderPageFrame — updated directly on the
-  // UI thread from the native scroll event, never touching the JS thread.
-  const scrollX = useSharedValue(0);
-  const scrollHandler = useAnimatedScrollHandler((event) => {
-    scrollX.value = event.contentOffset.x;
-  });
 
   useEffect(() => {
     let cancelled = false;
@@ -291,6 +291,11 @@ export default function ReaderScreen() {
         );
         if (cancelled) return;
         setBookTextState({ status: 'ready', book: ingested });
+        // Bulk-imported books sync with an unknown (0) chapter count — now
+        // that it's actually been parsed, fill in the real number locally.
+        if (bookRow.totalChapters === 0 && ingested.chapters.length > 0) {
+          updateBookTotalChapters(bookRow.id, ingested.chapters.length);
+        }
       } catch (err) {
         if (cancelled) return;
         setBookTextState({
@@ -363,8 +368,7 @@ export default function ReaderScreen() {
     const idx = findGlobalIndex(pages, startPosition.chapterIndex, startPosition.pageIndex);
     setInitialIndex(idx);
     setCurrentIndex(idx);
-    scrollX.value = idx * screenWidth;
-  }, [pages, startPosition, initialIndex, scrollX]);
+  }, [pages, startPosition, initialIndex]);
 
   // Lowercased set of saved words for this book — matched in the reader text so
   // already-looked-up words get an amber marker. Reference-stable via useMemo
@@ -398,18 +402,32 @@ export default function ReaderScreen() {
 
   const chromeStyle = useAnimatedStyle(() => ({ opacity: chromeOpacity.value }));
 
+  // FlatList requires onViewableItemsChanged to keep the same identity across
+  // renders (it warns/throws if it changes), so the callback itself must be
+  // built once via useRef — but that means it can never close over `book`/
+  // `pages` directly: only the very first render's values would ever be
+  // seen (both null/[] at mount), so upsertReadingPosition below would
+  // silently never fire. These two refs are updated every render instead, so
+  // the stable callback always reads the current values.
+  const bookRef = useRef(book);
+  bookRef.current = book;
+  const pagesRef = useRef(pages);
+  pagesRef.current = pages;
+
   const onViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: ViewToken[] }) => {
       const first = viewableItems[0];
       if (first?.index == null) return;
       const page = first.item as ReaderPage;
       setCurrentIndex(first.index);
-      if (book) {
+      const currentBook = bookRef.current;
+      const currentPages = pagesRef.current;
+      if (currentBook) {
         upsertReadingPosition({
-          bookId: book.id,
+          bookId: currentBook.id,
           chapterIndex: page.chapterIndex,
           pageIndex: page.pageIndexInChapter,
-          percentComplete: pages.length > 1 ? first.index / (pages.length - 1) : 1,
+          percentComplete: currentPages.length > 1 ? first.index / (currentPages.length - 1) : 1,
         });
       }
     },
@@ -439,36 +457,54 @@ export default function ReaderScreen() {
     try {
       const ingested = await getBookText(book.id, book.title, book.textUrl, book.chapter1Anchor ?? undefined);
       setBookTextState({ status: 'ready', book: ingested });
+      if (book.totalChapters === 0 && ingested.chapters.length > 0) {
+        updateBookTotalChapters(book.id, ingested.chapters.length);
+      }
     } catch (err) {
       setBookTextState({ status: 'error', message: err instanceof Error ? err.message : 'Download failed' });
     }
   }, [book]);
 
-  const handleWordPress = useCallback((word: string, paragraphIndex: number) => {
-    setActiveWord({ word, paragraphIndex });
-  }, []);
+  const handleWordLongPress = useCallback(
+    (payload: {
+      word: string;
+      paragraphIndex: number;
+      page: ReaderPage;
+      start: number;
+      end: number;
+      pageX: number;
+      pageY: number;
+    }) => {
+      setWordMenu({
+        word: payload.word,
+        paragraphIndex: payload.paragraphIndex,
+        page: payload.page,
+        start: payload.start,
+        end: payload.end,
+        anchor: { x: payload.pageX, y: payload.pageY },
+      });
+    },
+    [],
+  );
 
-  const handleWordLongPress = useCallback((paragraphIndex: number, page: ReaderPage, sentenceIndex: number) => {
-    setSelection({ page, keys: [`${paragraphIndex}:${sentenceIndex}`] });
-  }, []);
-
-  // Drives both the initial drag (right after the long-press, before the
-  // finger lifts — always moves 'end') and the two adjustment handles
-  // afterward (each moves its own edge). Whichever edge isn't being dragged
-  // stays fixed as the pivot, so the range is always the contiguous span
-  // between the two, in reading order — never a scatter of tapped sentences.
-  const handleRangeEdgeDrag = useCallback((edge: 'start' | 'end', key: string) => {
+  // Moves one edge of the selection to the word-boundary the handle reports,
+  // keeping the OTHER edge fixed. Clamps so the dragged edge can't cross past
+  // the fixed one (the range never inverts) — native-style.
+  const handleRangeEdgeDrag = useCallback((edge: 'start' | 'end', pos: { paragraphIndex: number; offset: number }) => {
+    // true when (p1,o1) is at or before (p2,o2) in reading order.
+    const atOrBefore = (p1: number, o1: number, p2: number, o2: number) => p1 < p2 || (p1 === p2 && o1 <= o2);
     setSelection((prev) => {
       if (!prev) return prev;
-      const flat = prev.page.paragraphs.flatMap((paragraph, p) =>
-        splitIntoSentences(paragraph).map((_, s) => `${p}:${s}`),
-      );
-      const pivotKey = edge === 'start' ? prev.keys[prev.keys.length - 1] : prev.keys[0];
-      const pivotPos = flat.indexOf(pivotKey);
-      const dragPos = flat.indexOf(key);
-      if (pivotPos === -1 || dragPos === -1) return prev;
-      const [lo, hi] = pivotPos <= dragPos ? [pivotPos, dragPos] : [dragPos, pivotPos];
-      return { ...prev, keys: flat.slice(lo, hi + 1) };
+      if (edge === 'start') {
+        // Clamp new start to not pass the fixed end.
+        return atOrBefore(pos.paragraphIndex, pos.offset, prev.endParagraph, prev.endOffset)
+          ? { ...prev, startParagraph: pos.paragraphIndex, startOffset: pos.offset }
+          : { ...prev, startParagraph: prev.endParagraph, startOffset: prev.endOffset };
+      }
+      // Clamp new end to not pass the fixed start.
+      return atOrBefore(prev.startParagraph, prev.startOffset, pos.paragraphIndex, pos.offset)
+        ? { ...prev, endParagraph: pos.paragraphIndex, endOffset: pos.offset }
+        : { ...prev, endParagraph: prev.startParagraph, endOffset: prev.startOffset };
     });
   }, []);
 
@@ -495,27 +531,18 @@ export default function ReaderScreen() {
 
   const handleSelectHighlightColor = useCallback(
     async (colorKey: HighlightColorKey) => {
-      if (!book || !selection || selection.keys.length === 0) return;
-      const { page, keys } = selection;
-      // Rebuild the quote text from the selected sentence keys, in reading
-      // order, and store the paragraph span for re-rendering the highlight.
-      const parsed = keys
-        .map((k) => {
-          const [p, s] = k.split(':').map(Number);
-          return { p, s };
-        })
-        .sort((a, b) => (a.p !== b.p ? a.p - b.p : a.s - b.s));
-      const quoteText = parsed
-        .map(({ p, s }) => splitIntoSentences(page.paragraphs[p] ?? '')[s]?.trim() ?? '')
-        .filter(Boolean)
-        .join(' ');
-      const paragraphIndices = parsed.map((x) => x.p);
+      if (!book || !selection) return;
+      const { page, startParagraph, startOffset, endParagraph, endOffset } = selection;
+      // Rebuild the quote text as the exact selected substring across the range's
+      // paragraphs, in reading order; store the paragraph span for re-rendering
+      // the in-book highlight (which marks whole paragraphs).
+      const quoteText = selectedText(page, startParagraph, startOffset, endParagraph, endOffset);
       const created = await createHighlight({
         bookId: book.id,
         chapterIndex: page.chapterIndex,
         pageIndex: page.pageIndexInChapter,
-        startOffset: Math.min(...paragraphIndices),
-        endOffset: Math.max(...paragraphIndices),
+        startOffset: startParagraph,
+        endOffset: endParagraph,
         colorKey,
         quoteText,
       });
@@ -528,11 +555,29 @@ export default function ReaderScreen() {
   );
 
   const renderPage = useCallback(
-    ({ item, index }: { item: ReaderPage; index: number }) => {
-      const selectedForItem =
-        selection && selection.page.globalIndex === item.globalIndex ? selection.keys : null;
+    ({ item }: { item: ReaderPage; index: number }) => {
+      const selectionForItem =
+        selection && selection.page.globalIndex === item.globalIndex
+          ? {
+              startParagraph: selection.startParagraph,
+              startOffset: selection.startOffset,
+              endParagraph: selection.endParagraph,
+              endOffset: selection.endOffset,
+            }
+          : null;
+      // The word to highlight on this page: the held word (menu open) or the one
+      // currently being translated.
+      const hl = wordMenu
+        ? { pageGlobalIndex: wordMenu.page.globalIndex, paragraphIndex: wordMenu.paragraphIndex, start: wordMenu.start, end: wordMenu.end }
+        : activeWord
+          ? { pageGlobalIndex: activeWord.pageGlobalIndex, paragraphIndex: activeWord.paragraphIndex, start: activeWord.start, end: activeWord.end }
+          : null;
+      const activeWordForItem =
+        hl && hl.pageGlobalIndex === item.globalIndex
+          ? { paragraphIndex: hl.paragraphIndex, start: hl.start, end: hl.end }
+          : null;
       return (
-        <ReaderPageFrame index={index} scrollX={scrollX}>
+        <ReaderPageFrame>
           <Pressable style={styles.pageTouchable} onPress={selection ? undefined : toggleChrome}>
             <ReaderPageView
               page={item}
@@ -546,9 +591,11 @@ export default function ReaderScreen() {
               savedWordSet={savedWordSet}
               savedWordColor={savedWordColor}
               savedWordTextColor={savedWordTextColor}
-              selectionKeys={selectedForItem}
+              activeWordRange={activeWordForItem}
+              activeWordColor={colors.highlight.amber}
+              activeWordTextColor="#2B2621"
+              selectionRange={selectionForItem}
               selectionColor={colors.highlight.amber}
-              onWordPress={handleWordPress}
               onWordLongPress={handleWordLongPress}
               onRangeEdgeDrag={handleRangeEdgeDrag}
             />
@@ -562,17 +609,17 @@ export default function ReaderScreen() {
       savedWordSet,
       savedWordColor,
       savedWordTextColor,
-      handleWordPress,
       handleWordLongPress,
       handleRangeEdgeDrag,
       toggleChrome,
       textColor,
-      scrollX,
       readingFontSizePx,
       readingLineHeight,
       insets.top,
       insets.bottom,
       selection,
+      activeWord,
+      wordMenu,
     ],
   );
 
@@ -595,6 +642,21 @@ export default function ReaderScreen() {
       >
         {PAGINATION_MEASURE_SAMPLE}
       </Text>
+      {/* One-time hidden pass measuring each character's real advance in the
+          reading font — each glyph is on its own line, so its reported line
+          width IS its advance. Feeds precise touch->character selection. */}
+      {!glyphWidthsReady() ? (
+        <Text
+          style={[typography.readingBody, { fontSize: readingFontSizePx }]}
+          onTextLayout={(e) => {
+            if (glyphWidthsReady()) return;
+            const map = buildGlyphWidths(e.nativeEvent.lines.map((l) => l.width));
+            if (map) setMeasuredGlyphWidths(map);
+          }}
+        >
+          {GLYPH_MEASURE_TEXT}
+        </Text>
+      ) : null}
     </View>
   );
 
@@ -613,7 +675,15 @@ export default function ReaderScreen() {
   if (bookTextState.status === 'loading') {
     return (
       <View style={[styles.centered, { backgroundColor: colors.parchment, padding: 24 }]}>
-        <Text style={[typography.uiRowTitle, { color: colors.ink, textAlign: 'center' }]}>Downloading…</Text>
+        <FlameGlow size={64} variant="flicker" />
+        <Text
+          style={[
+            typography.uiRowTitle,
+            { color: colors.ink, textAlign: 'center', marginTop: 20 },
+          ]}
+        >
+          Downloading {book.title}
+        </Text>
       </View>
     );
   }
@@ -687,9 +757,10 @@ export default function ReaderScreen() {
         initialScrollIndex={initialIndex}
         getItemLayout={(_, index) => ({ length: screenWidth, offset: screenWidth * index, index })}
         renderItem={renderPage}
-        extraData={`${mode}-${readingFontSizePx}-${readingLineHeight}-${savedWordSet.size}-${selection ? selection.keys.join(',') : ''}`}
-        onScroll={scrollHandler}
-        scrollEventThrottle={16}
+        extraData={`${mode}-${readingFontSizePx}-${readingLineHeight}-${savedWordSet.size}-${selection ? `${selection.page.globalIndex}:${selection.startParagraph}:${selection.startOffset}:${selection.endParagraph}:${selection.endOffset}` : ''}-${activeWord ? `${activeWord.pageGlobalIndex}:${activeWord.start}` : ''}-${wordMenu ? `${wordMenu.page.globalIndex}:${wordMenu.start}` : ''}`}
+        // Detach off-screen pages' (heavy, per-word) native view trees so only
+        // the visible page and its immediate neighbors composite during a swipe.
+        removeClippedSubviews
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={{ itemVisiblePercentThreshold: 90 }}
         // Kill Android's overscroll edge glow (defaults to the accent color and
@@ -699,9 +770,16 @@ export default function ReaderScreen() {
         // page you're selecting on would lose the selection context.
         scrollEnabled={!selection}
         decelerationRate="fast"
-        windowSize={3}
+        // Keep the very first open of a book fast (1 page rendered up front),
+        // but render a couple pages ahead in each direction during idle time
+        // between swipes — otherwise the neighboring page's first mount (word
+        // tokenization + its ~hundreds of per-word Text nodes) happens right
+        // at the moment you swipe to it instead of before, which is what
+        // "page change lags" actually was.
+        windowSize={5}
         initialNumToRender={1}
-        maxToRenderPerBatch={2}
+        maxToRenderPerBatch={3}
+        updateCellsBatchingPeriod={30}
       />
 
       {/* Corner hot-zone advances the page (fold motif tap-to-turn); tapping elsewhere on
@@ -738,9 +816,8 @@ export default function ReaderScreen() {
       </Animated.View>
 
       {/* Day/Lamp toggle — the single reading-mode control (no brightness).
-          Solid button fill so the crescent-moon glyph (carved with this exact
-          color) reads cleanly. Routed through the app-wide theme transition so
-          the whole screen crossfades day<->night. */}
+          Routed through the app-wide theme transition so the whole screen
+          crossfades day<->night. */}
       <Pressable
         hitSlop={12}
         style={[
@@ -753,11 +830,7 @@ export default function ReaderScreen() {
         ]}
         onPress={() => requestThemeChange(isLamp ? 'day' : 'lamp')}
       >
-        <ModeIcon
-          mode={mode}
-          color={isLamp ? colors.flameAmber : colors.ink}
-          carveColor={modeButtonBg}
-        />
+        <ModeIcon mode={mode} />
       </Pressable>
 
       {/* First-run gesture hint — tap a word to translate, hold + drag to
@@ -767,17 +840,21 @@ export default function ReaderScreen() {
         <Animated.View
           style={[
             styles.hintCard,
-            { bottom: insets.bottom + 96, backgroundColor: colors.card, borderColor: colors.hairline },
+            { top: insets.top + 72, backgroundColor: colors.card, borderColor: colors.hairline },
             hintAnimatedStyle,
           ]}
         >
-          <Pressable onPress={dismissHint} hitSlop={8}>
-            <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
-              Tap a word to translate
-            </Text>
-            <Text style={[typography.metadataCaption, { color: colors.umber, fontSize: 12, marginTop: 3 }]}>
-              Hold and drag over the text to save a quote
-            </Text>
+          <Pressable onPress={dismissHint} hitSlop={8} style={styles.hintRow}>
+            {/* The one amber accent — reads as the lamp glow tucked into the card. */}
+            <View style={[styles.hintAccent, { backgroundColor: colors.flameAmber }]} />
+            <View style={styles.hintTextCol}>
+              <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
+                Hold a word
+              </Text>
+              <Text style={[typography.metadataCaption, { color: colors.umber, fontSize: 11.5, marginTop: 2 }]}>
+                Then Translate or Save a quote
+              </Text>
+            </View>
           </Pressable>
         </Animated.View>
       ) : null}
@@ -789,7 +866,18 @@ export default function ReaderScreen() {
             <Text style={[typography.uiRowTitle, { color: colors.mutedOnDark, fontSize: 13 }]}>Cancel</Text>
           </Pressable>
           <Text style={[typography.metadataCaption, { color: colors.lampText, fontSize: 12 }]}>
-            {`${selection.keys.length} sentence${selection.keys.length > 1 ? 's' : ''} selected`}
+            {(() => {
+              const n = selectedText(
+                selection.page,
+                selection.startParagraph,
+                selection.startOffset,
+                selection.endParagraph,
+                selection.endOffset,
+              )
+                .split(/\s+/)
+                .filter(Boolean).length;
+              return `${n} word${n === 1 ? '' : 's'} selected`;
+            })()}
           </Text>
           <Pressable
             onPress={() => setColorPickerVisible(true)}
@@ -802,8 +890,38 @@ export default function ReaderScreen() {
         </View>
       ) : null}
 
+      <WordActionMenu
+        word={wordMenu?.word ?? null}
+        anchor={wordMenu?.anchor ?? null}
+        onTranslate={() => {
+          if (!wordMenu) return;
+          setActiveWord({
+            word: wordMenu.word,
+            paragraphIndex: wordMenu.paragraphIndex,
+            pageGlobalIndex: wordMenu.page.globalIndex,
+            start: wordMenu.start,
+            end: wordMenu.end,
+            anchor: wordMenu.anchor,
+          });
+          setWordMenu(null);
+        }}
+        onSaveQuote={() => {
+          if (!wordMenu) return;
+          setSelection({
+            page: wordMenu.page,
+            startParagraph: wordMenu.paragraphIndex,
+            startOffset: wordMenu.start,
+            endParagraph: wordMenu.paragraphIndex,
+            endOffset: wordMenu.end,
+          });
+          setWordMenu(null);
+        }}
+        onClose={() => setWordMenu(null)}
+      />
+
       <WordTranslationPopup
         word={activeWord?.word ?? null}
+        anchor={activeWord?.anchor ?? null}
         onClose={() => setActiveWord(null)}
         onSave={handleSaveWord}
       />
@@ -892,18 +1010,31 @@ const styles = StyleSheet.create({
   },
   hintCard: {
     position: 'absolute',
-    alignSelf: 'center',
-    maxWidth: 280,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    right: 16,
+    maxWidth: 250,
     borderRadius: 12,
     borderWidth: 1,
     shadowColor: '#000',
     shadowOpacity: 0.18,
-    shadowRadius: 12,
+    shadowRadius: 14,
     shadowOffset: { width: 0, height: 6 },
     elevation: 6,
     zIndex: 25,
+  },
+  hintRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    paddingVertical: 11,
+    paddingLeft: 12,
+    paddingRight: 15,
+  },
+  hintAccent: {
+    width: 3,
+    borderRadius: 2,
+    marginRight: 11,
+  },
+  hintTextCol: {
+    flexShrink: 1,
   },
   selectionSave: {
     paddingHorizontal: 16,

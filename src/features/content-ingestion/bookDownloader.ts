@@ -42,3 +42,15 @@ export async function getBookText(
   bookCache.set(bookId, book);
   return book;
 }
+
+// "Delete book" (Book Detail's more-options menu) — frees the on-device
+// download, not the catalog entry itself (that's shared, synced from
+// Supabase; deleting it here just means it downloads again next time this
+// book is opened). Reading position is cleared by the caller alongside this;
+// saved vocabulary/quotes are left untouched — they're independently valuable
+// and a user wouldn't expect removing a book to wipe them incidentally.
+export async function deleteBookCache(bookId: string): Promise<void> {
+  bookCache.delete(bookId);
+  const cacheFile = new File(booksDirectory, `${bookId}.json`);
+  if (cacheFile.exists) cacheFile.delete();
+}

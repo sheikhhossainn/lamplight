@@ -443,6 +443,23 @@ insert into public.app_config (key, value, description) values
 on conflict (key) do nothing;
 
 -- ============================================================================
+-- 13. Sync state — internal bookkeeping for scripts/sync-bulk-catalog.mjs.
+--     No public read policy at all (unlike app_config) — nothing in the app
+--     needs this, only the service-role-authenticated sync script, which
+--     bypasses RLS entirely regardless.
+-- ============================================================================
+create table if not exists public.sync_state (
+  key          text primary key,
+  value        jsonb not null,
+  updated_at   timestamptz not null default now()
+);
+
+drop trigger if exists set_sync_state_updated_at on public.sync_state;
+create trigger set_sync_state_updated_at
+  before update on public.sync_state
+  for each row execute function public.set_updated_at();
+
+-- ============================================================================
 -- Row Level Security — public/catalog tables are readable by anyone (the
 -- app's anon key); every per-user table is owner-only, checked against
 -- auth.uid(). All writes to `books`/`plans`/`app_config` go through the
@@ -467,6 +484,7 @@ alter table public.subscriptions enable row level security;
 alter table public.user_preferences enable row level security;
 alter table public.feedback enable row level security;
 alter table public.app_config enable row level security;
+alter table public.sync_state enable row level security;
 
 -- CREATE POLICY has no IF NOT EXISTS / OR REPLACE in Postgres — DROP IF
 -- EXISTS first is the idempotent pattern, same as the triggers above.

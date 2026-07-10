@@ -55,3 +55,12 @@ export async function getBook(bookId: string): Promise<BookRow | null> {
   const row = await db.getFirstAsync<BookSqlRow>('SELECT * FROM books WHERE id = ?', [bookId]);
   return row ? fromSqlRow(row) : null;
 }
+
+// Bulk-imported books (scripts/sync-bulk-catalog.mjs) don't get a real
+// chapter count until someone actually downloads and parses the text — this
+// fills that in locally the first time that happens, so the count stops
+// reading as "unknown" from then on for this device.
+export async function updateBookTotalChapters(bookId: string, totalChapters: number): Promise<void> {
+  const db = await getDb();
+  await db.runAsync('UPDATE books SET total_chapters = ? WHERE id = ?', [totalChapters, bookId]);
+}
