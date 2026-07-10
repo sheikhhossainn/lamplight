@@ -1,49 +1,15 @@
-import { useSyncExternalStore } from 'react';
+// Fixed, tuned reading-body metrics — the design system's locked reading values
+// (Lora, 18px, line-height 1.85). Font size / line spacing are intentionally
+// NOT user-adjustable: the paginator measures each device's real page width and
+// height (see paginateBook), so the layout stays robust across screen sizes
+// without a per-user knob. Centralized here so the Reader is the single source
+// of truth for what "reading body" means.
 
-export type ReadingPrefs = {
-  fontSize: number; // 0-1 slider value
-  lineSpacing: number; // 0-1 slider value
-};
+// 18px sits comfortably above the design system's 17px reading-body floor
+// ("never shrink below 17px").
+export const READING_FONT_SIZE_PX = 18;
 
-// In-memory only for now — resets on app restart, same tradeoff as
-// readingTheme.ts. Shared between Settings (where the sliders live) and the
-// Reader (which the sliders would otherwise have no effect on).
-let current: ReadingPrefs = { fontSize: 0.55, lineSpacing: 0.65 };
-const listeners = new Set<() => void>();
-
-function emit(): void {
-  listeners.forEach((listener) => listener());
-}
-
-export function getReadingPrefs(): ReadingPrefs {
-  return current;
-}
-
-export function setFontSize(fontSize: number): void {
-  current = { ...current, fontSize };
-  emit();
-}
-
-export function setLineSpacing(lineSpacing: number): void {
-  current = { ...current, lineSpacing };
-  emit();
-}
-
-function subscribe(listener: () => void): () => void {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
-}
-
-export function useReadingPrefs(): ReadingPrefs {
-  return useSyncExternalStore(subscribe, getReadingPrefs);
-}
-
-// Centralized here (not duplicated in Settings and the Reader separately) so
-// the two screens can never disagree about what a given slider value means.
-export function fontSizePxFromPref(fontSize: number): number {
-  return Math.round(14 + fontSize * 8);
-}
-
-export function lineHeightMultiplierFromPref(lineSpacing: number): number {
-  return 1.5 + lineSpacing * 0.7;
-}
+// 1.85 is the design system's reading-body line-height — "the single most
+// important number in the system." Never tighten below it. Kept as a resolved
+// pixel value so the paginator's line math stays integer-stable.
+export const READING_LINE_HEIGHT_PX = Math.round(READING_FONT_SIZE_PX * 1.85); // 33

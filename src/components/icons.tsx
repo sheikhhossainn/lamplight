@@ -81,6 +81,35 @@ export function MoreHorizontalIcon({ color, size = 20 }: IconProps) {
   );
 }
 
+export function TrashIcon({ color, size = 18 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M5 7H19"
+        stroke={color}
+        strokeWidth={1.7}
+        strokeLinecap="round"
+      />
+      <Path
+        d="M9 7V4.8C9 4.358 9.358 4 9.8 4H14.2C14.642 4 15 4.358 15 4.8V7"
+        stroke={color}
+        strokeWidth={1.7}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path
+        d="M6.5 7L7.2 19.2C7.234 19.812 7.74 20.286 8.353 20.286H15.647C16.26 20.286 16.766 19.812 16.8 19.2L17.5 7"
+        stroke={color}
+        strokeWidth={1.7}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path d="M10.3 10.5V17" stroke={color} strokeWidth={1.7} strokeLinecap="round" />
+      <Path d="M13.7 10.5V17" stroke={color} strokeWidth={1.7} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
 export function BookmarkIcon({ color, size = 18, filled = false }: IconProps & { filled?: boolean }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">

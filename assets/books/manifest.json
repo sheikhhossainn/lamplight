@@ -5,9 +5,7 @@
     "author": "Jane Austen",
     "sourceLanguage": "en",
     "synopsis": "A novel of manners set among the landed gentry — wit, courtship, and first impressions undone. This 1813 English text is in the public domain.",
-    "totalChapters": 60,
-    "isBundled": true,
-    "sourceFormat": "gutenberg-json"
+    "totalChapters": 60
   },
   {
     "id": "don-quixote",
@@ -15,9 +13,7 @@
     "author": "Miguel de Cervantes",
     "sourceLanguage": "en",
     "synopsis": "The ingenious hidalgo who tilts at windmills — a knight errant’s delusions of chivalry collide with the real world, in the book that gave us the modern novel.",
-    "totalChapters": 52,
-    "isBundled": true,
-    "sourceFormat": "gutenberg-json"
+    "totalChapters": 52
   },
   {
     "id": "the-odyssey",
@@ -25,9 +21,7 @@
     "author": "Homer",
     "sourceLanguage": "en",
     "synopsis": "Odysseus’s ten-year voyage home from Troy — monsters, gods, and the long wait of a wife who never stopped believing.",
-    "totalChapters": 24,
-    "isBundled": true,
-    "sourceFormat": "gutenberg-json"
+    "totalChapters": 24
   },
   {
     "id": "anna-karenina",
@@ -35,9 +29,7 @@
     "author": "Leo Tolstoy",
     "sourceLanguage": "en",
     "synopsis": "A married aristocrat’s affair unravels her standing in Russian high society, set against her brother-in-law’s parallel search for meaning.",
-    "totalChapters": 239,
-    "isBundled": true,
-    "sourceFormat": "gutenberg-json"
+    "totalChapters": 239
   },
   {
     "id": "crime-and-punishment",
@@ -45,8 +37,6 @@
     "author": "Fyodor Dostoevsky",
     "sourceLanguage": "en",
     "synopsis": "A destitute former student murders a pawnbroker, then spends the rest of the novel unraveling under the weight of his own guilt.",
-    "totalChapters": 39,
-    "isBundled": true,
-    "sourceFormat": "gutenberg-json"
+    "totalChapters": 39
   }
 ]

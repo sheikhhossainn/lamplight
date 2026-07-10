@@ -219,6 +219,7 @@ export default function OnboardingScreen() {
         renderItem={renderSlide}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={{ itemVisiblePercentThreshold: 60 }}
+        overScrollMode="never"
       />
 
       <View

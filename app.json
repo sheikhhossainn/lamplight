@@ -1,16 +1,22 @@
 {
   "expo": {
     "name": "LampLight",
-    "slug": "LampLight",
+    "slug": "lamplight",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "lamplight",
     "userInterfaceStyle": "automatic",
+    "backgroundColor": "#1C1B1E",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "bundleIdentifier": "com.lamplight.app"
     },
     "android": {
+      "package": "com.lamplight.app",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -38,6 +44,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "3ed86887-d341-4861-9854-22d3b2a233ff"
+      }
+    },
+    "owner": "sheikhhossainns-team"
   }
 }

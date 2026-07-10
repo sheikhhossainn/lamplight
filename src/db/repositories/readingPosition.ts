@@ -55,6 +55,11 @@ export async function upsertReadingPosition(position: Omit<ReadingPosition, 'upd
   );
 }
 
+export async function deleteReadingPosition(bookId: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync('DELETE FROM reading_positions WHERE book_id = ?', [bookId]);
+}
+
 export async function listAllReadingPositions(): Promise<ReadingPosition[]> {
   const db = await getDb();
   const rows = await db.getAllAsync<ReadingPositionSqlRow>(

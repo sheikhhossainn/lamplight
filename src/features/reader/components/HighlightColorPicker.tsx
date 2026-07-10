@@ -25,6 +25,23 @@ function SwatchGlyph({ colorKey }: { colorKey: HighlightColorKey }) {
   return <View style={styles.ringGlyph} />;
 }
 
+// A proper quotation-mark glyph — "Save Quote" was previously a plain
+// bookmark icon, which reads as "save my place," not "save this passage."
+function QuoteIcon({ color, size = 13 }: { color: string; size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 20 20" fill="none">
+      <Path
+        d="M4 12c0-3.5 1.8-6 4.6-7l.6 1.7c-1.8.8-2.7 2-2.9 3.3.4-.2.9-.3 1.4-.3 1.5 0 2.6 1.1 2.6 2.6 0 1.6-1.3 2.7-2.8 2.7C5.5 15 4 13.5 4 12z"
+        fill={color}
+      />
+      <Path
+        d="M12 12c0-3.5 1.8-6 4.6-7l.6 1.7c-1.8.8-2.7 2-2.9 3.3.4-.2.9-.3 1.4-.3 1.5 0 2.6 1.1 2.6 2.6 0 1.6-1.3 2.7-2.8 2.7-1.9 0-3.4-1.5-3.4-3z"
+        fill={color}
+      />
+    </Svg>
+  );
+}
+
 type HighlightColorPickerProps = {
   visible: boolean;
   onClose: () => void;
@@ -60,9 +77,9 @@ export function HighlightColorPicker({ visible, onClose, onSelect }: HighlightCo
           <View style={styles.divider} />
 
           <Pressable style={styles.saveQuote} onPress={() => onSelect('amber')}>
-            <Svg width={13} height={13} viewBox="0 0 20 20">
-              <Path d="M5 2h10v16l-5-4-5 4V2z" fill={colors.flameAmber} />
-            </Svg>
+            <View style={[styles.saveQuoteBadge, { backgroundColor: 'rgba(245,166,35,0.16)' }]}>
+              <QuoteIcon color={colors.flameAmber} size={13} />
+            </View>
             <Text style={[typography.uiRowTitle, { color: colors.lampText, fontSize: 11 }]}>
               Save Quote
             </Text>
@@ -125,7 +142,14 @@ const styles = StyleSheet.create({
   saveQuote: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 7,
     paddingRight: 2,
+  },
+  saveQuoteBadge: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

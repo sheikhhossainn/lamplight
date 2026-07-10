@@ -1,20 +1,15 @@
 import { router } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Line, Path } from 'react-native-svg';
 
-import { cycleTargetLanguage, targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
-import {
-  fontSizePxFromPref,
-  lineHeightMultiplierFromPref,
-  setFontSize,
-  setLineSpacing,
-  useReadingPrefs,
-} from '@/features/settings/readingPrefs';
-import { setReadingTheme, useReadingTheme } from '@/features/settings/readingTheme';
+import { setTargetLanguage, targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
+import { useReadingTheme } from '@/features/settings/readingTheme';
+import { requestThemeChange } from '@/features/settings/themeTransition';
 import { isPremiumUser } from '@/features/subscription/subscriptionState';
 import { checkTranslationCap } from '@/features/translation';
+import { LanguagePicker } from '@/components/LanguagePicker';
 import { useTheme } from '@/theme/ThemeProvider';
 
 function SunIcon({ color }: { color: string }) {
@@ -48,91 +43,21 @@ function ToggleSwitch({ value, onChange }: { value: boolean; onChange: (v: boole
   );
 }
 
-function SettingsSlider({
-  value,
-  onChange,
-}: {
-  value: number;
-  onChange: (v: number) => void;
-}) {
-  const { colors } = useTheme();
-  const [trackWidth, setTrackWidth] = useState(0);
-
-  return (
-    <Pressable
-      onLayout={(e) => setTrackWidth(e.nativeEvent.layout.width)}
-      onPress={(e) => {
-        if (trackWidth > 0) {
-          onChange(Math.max(0, Math.min(1, e.nativeEvent.locationX / trackWidth)));
-        }
-      }}
-      style={styles.sliderHitArea}
-    >
-      <View style={[styles.sliderTrack, { backgroundColor: colors.hairline }]}>
-        <View
-          style={[
-            styles.sliderFill,
-            { width: `${value * 100}%`, backgroundColor: colors.flameAmber },
-          ]}
-        />
-      </View>
-      <View
-        style={[
-          styles.sliderThumb,
-          { left: `${value * 100}%`, backgroundColor: colors.flameAmber, borderColor: colors.parchment },
-        ]}
-      />
-    </Pressable>
-  );
-}
-
 export default function SettingsScreen() {
   const { colors, typography, spacing, radius } = useTheme();
   const insets = useSafeAreaInsets();
 
   const theme = useReadingTheme();
-  const globalPrefs = useReadingPrefs();
   const targetLanguage = useTargetLanguage();
   const [pageTurnSound, setPageTurnSound] = useState(true);
   const [translationsLeft, setTranslationsLeft] = useState<number | null>(null);
-
-  // The slider itself stays instantly responsive (local state), but writing
-  // through to the shared store — which is what re-renders the Reader's
-  // pages — is debounced until the user stops dragging. Applying on every
-  // intermediate tick was what made this feel laggy: each nudge forced a full
-  // reading-page re-render mid-gesture.
-  const [fontSize, setLocalFontSize] = useState(globalPrefs.fontSize);
-  const [lineSpacing, setLocalLineSpacing] = useState(globalPrefs.lineSpacing);
-  const fontSizeCommitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lineSpacingCommitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const handleFontSizeChange = (value: number) => {
-    setLocalFontSize(value);
-    if (fontSizeCommitTimer.current) clearTimeout(fontSizeCommitTimer.current);
-    fontSizeCommitTimer.current = setTimeout(() => setFontSize(value), 300);
-  };
-
-  const handleLineSpacingChange = (value: number) => {
-    setLocalLineSpacing(value);
-    if (lineSpacingCommitTimer.current) clearTimeout(lineSpacingCommitTimer.current);
-    lineSpacingCommitTimer.current = setTimeout(() => setLineSpacing(value), 300);
-  };
-
-  useEffect(() => {
-    return () => {
-      if (fontSizeCommitTimer.current) clearTimeout(fontSizeCommitTimer.current);
-      if (lineSpacingCommitTimer.current) clearTimeout(lineSpacingCommitTimer.current);
-    };
-  }, []);
+  const [languagePickerVisible, setLanguagePickerVisible] = useState(false);
 
   useEffect(() => {
     checkTranslationCap(isPremiumUser()).then((cap) => {
       setTranslationsLeft(cap.remaining === Infinity ? null : cap.remaining);
     });
   }, []);
-
-  const fontSizePx = fontSizePxFromPref(fontSize);
-  const lineSpacingValue = lineHeightMultiplierFromPref(lineSpacing).toFixed(2);
 
   return (
     <View
@@ -159,7 +84,7 @@ export default function SettingsScreen() {
         </Text>
         <View style={[styles.segmented, { backgroundColor: colors.segmentedTrack, borderRadius: radius.pill }]}>
           <Pressable
-            onPress={() => setReadingTheme('day')}
+            onPress={() => requestThemeChange('day')}
             style={[
               styles.segment,
               theme === 'day' && { backgroundColor: colors.primaryDark, borderRadius: radius.pill },
@@ -176,7 +101,7 @@ export default function SettingsScreen() {
             </Text>
           </Pressable>
           <Pressable
-            onPress={() => setReadingTheme('lamp')}
+            onPress={() => requestThemeChange('lamp')}
             style={[
               styles.segment,
               theme === 'lamp' && { backgroundColor: colors.primaryDark, borderRadius: radius.pill },
@@ -204,29 +129,9 @@ export default function SettingsScreen() {
           { backgroundColor: colors.card, borderColor: colors.hairline, borderRadius: radius.card, marginBottom: spacing.xl, paddingVertical: 4 },
         ]}
       >
-        <View style={[styles.settingsRow, { borderBottomColor: 'rgba(43,38,33,0.08)', borderBottomWidth: 1 }]}>
+        <View style={styles.settingsRow}>
           <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>Page-turn sound</Text>
           <ToggleSwitch value={pageTurnSound} onChange={setPageTurnSound} />
-        </View>
-
-        <View style={[styles.settingsColumn, { borderBottomColor: 'rgba(43,38,33,0.08)', borderBottomWidth: 1 }]}>
-          <View style={styles.sliderHeader}>
-            <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>Font size</Text>
-            <Text style={[typography.translatedWordInline, { color: colors.fawn, fontSize: 12 }]}>
-              {fontSizePx}px
-            </Text>
-          </View>
-          <SettingsSlider value={fontSize} onChange={handleFontSizeChange} />
-        </View>
-
-        <View style={styles.settingsColumn}>
-          <View style={styles.sliderHeader}>
-            <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>Line spacing</Text>
-            <Text style={[typography.translatedWordInline, { color: colors.fawn, fontSize: 12 }]}>
-              {lineSpacingValue}
-            </Text>
-          </View>
-          <SettingsSlider value={lineSpacing} onChange={handleLineSpacingChange} />
         </View>
       </View>
 
@@ -244,7 +149,7 @@ export default function SettingsScreen() {
           Default language pair
         </Text>
         <Pressable
-          onPress={cycleTargetLanguage}
+          onPress={() => setLanguagePickerVisible(true)}
           style={[styles.pairPill, { backgroundColor: colors.pairPillBackground, borderRadius: radius.pill }]}
         >
           <Text style={[typography.uiRowTitle, { color: colors.pairPillText, fontSize: 12 }]}>
@@ -260,12 +165,26 @@ export default function SettingsScreen() {
         style={[
           styles.card,
           styles.settingsRow,
-          { backgroundColor: colors.primaryDark, borderRadius: radius.card },
+          {
+            // Day: deliberate inverted dark card on parchment. Lamp: primaryDark
+            // == page bg, so an inverted card disappears — use the elevated
+            // surface + hairline border to lift it off the background instead.
+            backgroundColor: theme === 'day' ? colors.primaryDark : colors.card,
+            borderColor: theme === 'day' ? colors.primaryDark : colors.hairline,
+            borderRadius: radius.card,
+          },
         ]}
       >
         <View>
-          <Text style={[typography.uiRowTitle, { color: colors.lampText, fontSize: 13 }]}>Free plan</Text>
-          <Text style={[typography.metadataCaption, { color: colors.mutedOnDark, fontSize: 11, marginTop: 2 }]}>
+          <Text style={[typography.uiRowTitle, { color: theme === 'day' ? colors.lampText : colors.ink, fontSize: 13 }]}>
+            Free plan
+          </Text>
+          <Text
+            style={[
+              typography.metadataCaption,
+              { color: theme === 'day' ? colors.mutedOnDark : colors.fawn, fontSize: 11, marginTop: 2 },
+            ]}
+          >
             {translationsLeft == null ? 'Unlimited translations' : `${translationsLeft} translations left today`}
           </Text>
         </View>
@@ -276,6 +195,16 @@ export default function SettingsScreen() {
           <Text style={[typography.uiRowTitle, { color: colors.primaryDark, fontSize: 12 }]}>Upgrade</Text>
         </Pressable>
       </View>
+
+      <LanguagePicker
+        visible={languagePickerVisible}
+        selected={targetLanguage}
+        onSelect={(code) => {
+          setTargetLanguage(code);
+          setLanguagePickerVisible(false);
+        }}
+        onClose={() => setLanguagePickerVisible(false)}
+      />
     </View>
   );
 }
@@ -304,35 +233,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingVertical: 14,
-  },
-  settingsColumn: {
-    paddingVertical: 14,
-  },
-  sliderHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  sliderHitArea: {
-    height: 20,
-    justifyContent: 'center',
-  },
-  sliderTrack: {
-    height: 4,
-    borderRadius: 2,
-    overflow: 'hidden',
-  },
-  sliderFill: {
-    height: 4,
-  },
-  sliderThumb: {
-    position: 'absolute',
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    marginLeft: -8,
-    borderWidth: 2,
   },
   toggleTrack: {
     width: 40,
