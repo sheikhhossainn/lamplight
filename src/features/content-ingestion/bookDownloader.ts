@@ -13,6 +13,16 @@ const booksDirectory = new Directory(Paths.document, 'books');
 // A book parsed once this app session never needs re-reading from disk.
 const bookCache = new Map<string, IngestedBook>();
 
+// Gutendex's text_url (e.g. https://www.gutenberg.org/ebooks/1342.txt.utf-8)
+// 302-redirects to an http:// (not https://) cache URL — Android blocks
+// cleartext redirects by default, so the fetch fails on every device before
+// it ever reaches the real file. Resolve straight to the https cache path
+// Gutenberg actually redirects to, skipping the insecure hop entirely.
+function resolveDirectUrl(textUrl: string): string {
+  const match = textUrl.match(/gutenberg\.org\/ebooks\/(\d+)\.txt/);
+  return match ? `https://www.gutenberg.org/cache/epub/${match[1]}/pg${match[1]}.txt` : textUrl;
+}
+
 export async function getBookText(
   bookId: string,
   title: string,
@@ -35,7 +45,7 @@ export async function getBookText(
     throw new BookFormatError(`"${title}" isn't available in a readable format.`);
   }
 
-  const response = await fetch(textUrl);
+  const response = await fetch(resolveDirectUrl(textUrl));
   if (!response.ok) {
     throw new Error(`Failed to download "${title}" (${response.status})`);
   }

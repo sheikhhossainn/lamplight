@@ -722,9 +722,21 @@ export default function ReaderScreen() {
   if (bookTextState.status === 'error') {
     return (
       <View style={[styles.centered, { backgroundColor: colors.parchment, padding: 24 }]}>
-        <Text style={[typography.uiRowTitle, { color: colors.ink, textAlign: 'center', marginBottom: 16 }]}>
+        <Text style={[typography.uiRowTitle, { color: colors.ink, textAlign: 'center', marginBottom: 4 }]}>
           Couldn't download {book.title}.
         </Text>
+        {/* Temporary diagnostic — surfaces the raw error while debugging the
+            Gutenberg redirect issue; not meant to stay user-facing long-term. */}
+        {bookTextState.message ? (
+          <Text
+            style={[
+              typography.metadataCaption,
+              { color: colors.fawn, textAlign: 'center', marginBottom: 16 },
+            ]}
+          >
+            {bookTextState.message}
+          </Text>
+        ) : null}
         <Pressable
           onPress={retryDownload}
           style={[styles.selectionSave, { backgroundColor: colors.flameAmber }]}
