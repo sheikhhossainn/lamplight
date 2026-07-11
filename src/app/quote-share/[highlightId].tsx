@@ -1,8 +1,12 @@
+import * as Sharing from 'expo-sharing';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { Dimensions, Pressable, Share, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Alert, Dimensions, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, LinearGradient, Path, Polygon, RadialGradient, Rect, Stop } from 'react-native-svg';
+import { captureRef } from 'react-native-view-shot';
 
+import { CloseIcon } from '@/components/icons';
 import { getBook, type BookRow } from '@/db/repositories/books';
 import { getHighlight, type Highlight } from '@/db/repositories/highlights';
 import { useTheme } from '@/theme/ThemeProvider';
@@ -11,6 +15,7 @@ const CARD_WIDTH = Math.min(Dimensions.get('window').width - 48, 300);
 const CARD_HEIGHT = (CARD_WIDTH * 16) / 9;
 
 type Variant = 'parchment' | 'gradient' | 'foldSplit';
+const VARIANTS: Variant[] = ['parchment', 'gradient', 'foldSplit'];
 
 const FLAME_PATH =
   'M100 46 C 78 78, 70 100, 84 122 C 84 108, 92 98, 100 92 C 108 98, 116 108, 116 122 C 130 100, 122 78, 100 46 Z';
@@ -26,9 +31,29 @@ function FlameMark({ size }: { size: number }) {
 export default function QuoteShareScreen() {
   const { highlightId } = useLocalSearchParams<{ highlightId: string }>();
   const { colors, typography, spacing, radius } = useTheme();
+  const insets = useSafeAreaInsets();
   const [highlight, setHighlight] = useState<Highlight | null>(null);
   const [book, setBook] = useState<BookRow | null>(null);
   const [variant, setVariant] = useState<Variant>('parchment');
+  const [sharing, setSharing] = useState(false);
+  const cardRef = useRef<View>(null);
+
+  // Functional update (not a captured index) so the responder — created once —
+  // always cycles from the current variant instead of a stale closure value.
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, gesture) =>
+        Math.abs(gesture.dx) > 12 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.5,
+      onPanResponderRelease: (_, gesture) => {
+        if (Math.abs(gesture.dx) < 30) return;
+        const dir = gesture.dx < 0 ? 1 : -1;
+        setVariant((prev) => {
+          const idx = VARIANTS.indexOf(prev);
+          return VARIANTS[(idx + dir + VARIANTS.length) % VARIANTS.length];
+        });
+      },
+    }),
+  ).current;
 
   useEffect(() => {
     (async () => {
@@ -40,48 +65,68 @@ export default function QuoteShareScreen() {
 
   if (!highlight || !book) return null;
 
-  const onShare = () => {
-    Share.share({
-      message: `"${highlight.quoteText}"\n\n— ${book.title}, ${book.author}\n\nShared from Lamplight`,
-    });
+  const onShare = async () => {
+    if (sharing) return;
+    setSharing(true);
+    try {
+      const uri = await captureRef(cardRef, { format: 'png', quality: 1 });
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, { mimeType: 'image/png', dialogTitle: 'Share quote' });
+      } else {
+        Alert.alert('Sharing unavailable', 'This device can’t share files directly.');
+      }
+    } catch {
+      Alert.alert('Share failed', 'Could not create the quote image. Try again.');
+    } finally {
+      setSharing(false);
+    }
   };
 
   const shareButtonIsDark = variant !== 'gradient';
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.primaryDark, padding: 24 }]}>
-      <Pressable onPress={() => router.back()} style={styles.close} hitSlop={12}>
-        <Text style={[typography.uiRowTitle, { color: colors.lampText }]}>{'✕'}</Text>
+    <View
+      style={[
+        styles.container,
+        { backgroundColor: colors.primaryDark, padding: 24, paddingTop: insets.top + 24 },
+      ]}
+    >
+      <Pressable onPress={() => router.back()} style={styles.close} hitSlop={16}>
+        <CloseIcon color={colors.lampText} size={18} />
       </Pressable>
 
-      <View style={styles.cardWrap}>
-        <QuoteCard variant={variant} highlight={highlight} book={book} />
+      <View style={styles.cardWrap} {...panResponder.panHandlers}>
+        <View ref={cardRef} collapsable={false}>
+          <QuoteCard variant={variant} highlight={highlight} book={book} />
+        </View>
       </View>
 
-      <View style={[styles.variantRow, { gap: spacing.sm, marginTop: spacing.lg }]}>
-        {(['parchment', 'gradient', 'foldSplit'] as Variant[]).map((v) => (
-          <Pressable
-            key={v}
-            onPress={() => setVariant(v)}
-            style={[
-              styles.variantDot,
-              {
-                backgroundColor: variant === v ? colors.flameAmber : colors.hairline,
-                borderRadius: radius.pill,
-              },
-            ]}
-          />
+      <View style={[styles.variantRow, { marginTop: spacing.lg }]}>
+        {VARIANTS.map((v) => (
+          <Pressable key={v} onPress={() => setVariant(v)} hitSlop={10} style={styles.variantDotTouchable}>
+            <View
+              style={[
+                styles.variantDot,
+                {
+                  backgroundColor: variant === v ? colors.flameAmber : colors.hairline,
+                  borderRadius: radius.pill,
+                },
+              ]}
+            />
+          </Pressable>
         ))}
       </View>
 
       <Pressable
         onPress={onShare}
+        disabled={sharing}
         style={[
           styles.shareButton,
           {
             backgroundColor: shareButtonIsDark ? colors.primaryDark : colors.flameAmber,
             borderRadius: radius.pill,
             marginTop: spacing.xl,
+            opacity: sharing ? 0.6 : 1,
           },
         ]}
       >
@@ -100,7 +145,7 @@ export default function QuoteShareScreen() {
             { color: shareButtonIsDark ? colors.lampText : colors.primaryDark, marginLeft: 8 },
           ]}
         >
-          Share
+          {sharing ? 'Preparing…' : 'Share'}
         </Text>
       </Pressable>
     </View>
@@ -270,6 +315,9 @@ const styles = StyleSheet.create({
   },
   variantRow: {
     flexDirection: 'row',
+  },
+  variantDotTouchable: {
+    padding: 12,
   },
   variantDot: {
     width: 8,

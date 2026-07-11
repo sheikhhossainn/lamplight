@@ -1,3 +1,5 @@
+import { Image } from 'expo-image';
+import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useTheme } from '@/theme/ThemeProvider';
@@ -28,6 +30,9 @@ type BookSpineProps = {
   title: string;
   toneIndex: number;
   onPress: () => void;
+  // Real cover art (Gutenberg JPEG) — painted spine + title is the fallback
+  // when absent or when the image fails to load.
+  coverUrl?: string | null;
   width?: number;
   height?: number;
   rotateDeg?: number;
@@ -38,15 +43,19 @@ export function BookSpine({
   title,
   toneIndex,
   onPress,
+  coverUrl,
   width = 96,
   height = 140,
   rotateDeg = 0,
 }: BookSpineProps) {
   const { colors, typography, radius, scheme } = useTheme();
+  const [coverFailed, setCoverFailed] = useState(false);
+  const showCover = !!coverUrl && !coverFailed;
   const backgroundColor = spineColorForBook(bookId, toneIndex);
   const isDark = isDarkSpineColor(backgroundColor);
   const titleColor = isDark ? colors.lampText : colors.ink;
-  const curlTint = isDark ? 'rgba(245,237,225,0.18)' : 'rgba(43,38,33,0.2)';
+  // Over a photo the curl needs the dark tint regardless of the fallback tone.
+  const curlTint = showCover || isDark ? 'rgba(245,237,225,0.18)' : 'rgba(43,38,33,0.2)';
   // A subtle edge so a cover whose color matches the page background (e.g. the
   // charcoal Pride and Prejudice spine on the dark shelf) still reads as a card.
   const edgeColor = scheme === 'lamp' ? 'rgba(240,230,214,0.16)' : 'rgba(43,38,33,0.10)';
@@ -69,9 +78,19 @@ export function BookSpine({
           },
         ]}
       >
-        <Text numberOfLines={3} style={[typography.bookSpineTitle, { color: titleColor }]}>
-          {title}
-        </Text>
+        {showCover ? (
+          <Image
+            source={{ uri: coverUrl }}
+            style={StyleSheet.absoluteFill}
+            contentFit="cover"
+            transition={180}
+            onError={() => setCoverFailed(true)}
+          />
+        ) : (
+          <Text numberOfLines={3} style={[typography.bookSpineTitle, { color: titleColor }]}>
+            {title}
+          </Text>
+        )}
         <View style={[styles.curl, { borderBottomColor: curlTint }]} />
       </View>
     </Pressable>

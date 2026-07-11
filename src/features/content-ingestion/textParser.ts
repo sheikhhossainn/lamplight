@@ -20,7 +20,7 @@ export type IngestedBook = {
   chapters: BookChapter[];
 };
 
-const PAGE_CHAR_BUDGET = 1400;
+export const PAGE_CHAR_BUDGET = 1400;
 
 // Candidate chapter-heading patterns, tried in order — different Gutenberg
 // editions/translators format headings differently. The first pattern
@@ -89,11 +89,22 @@ export function chunkIntoPages(paragraphs: string[], charBudget: number): string
   return pages;
 }
 
+// Thrown when the downloaded file isn't a usable Gutenberg plain-text book
+// (e.g. a README stub for an HTML-only title). Distinct from a network
+// failure: retrying won't help, so the reader shows "unavailable", not a
+// retryable "download failed".
+export class BookFormatError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'BookFormatError';
+  }
+}
+
 export function extractBody(raw: string, title: string): string {
   const startMatch = raw.match(/\*\*\* START OF (?:THE|THIS) PROJECT GUTENBERG EBOOK[^*]*\*\*\*/i);
   const endMatch = raw.match(/\*\*\* END OF (?:THE|THIS) PROJECT GUTENBERG EBOOK[^*]*\*\*\*/i);
   if (!startMatch || !endMatch || startMatch.index == null) {
-    throw new Error(`Could not find Gutenberg START/END markers for "${title}"`);
+    throw new BookFormatError(`"${title}" isn't available in a readable format.`);
   }
   return raw.slice(startMatch.index + startMatch[0].length, endMatch.index);
 }

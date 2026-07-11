@@ -5,7 +5,8 @@
     "author": "Jane Austen",
     "sourceLanguage": "en",
     "synopsis": "A novel of manners set among the landed gentry — wit, courtship, and first impressions undone. This 1813 English text is in the public domain.",
-    "totalChapters": 60
+    "totalChapters": 60,
+    "categories": ["Fiction", "Romance", "Domestic fiction", "Courtship"]
   },
   {
     "id": "don-quixote",
@@ -13,7 +14,8 @@
     "author": "Miguel de Cervantes",
     "sourceLanguage": "en",
     "synopsis": "The ingenious hidalgo who tilts at windmills — a knight errant’s delusions of chivalry collide with the real world, in the book that gave us the modern novel.",
-    "totalChapters": 52
+    "totalChapters": 52,
+    "categories": ["Fiction", "Adventure", "Satire"]
   },
   {
     "id": "the-odyssey",
@@ -21,7 +23,8 @@
     "author": "Homer",
     "sourceLanguage": "en",
     "synopsis": "Odysseus’s ten-year voyage home from Troy — monsters, gods, and the long wait of a wife who never stopped believing.",
-    "totalChapters": 24
+    "totalChapters": 24,
+    "categories": ["Poetry", "Epic poetry", "Adventure", "Mythology"]
   },
   {
     "id": "anna-karenina",
@@ -29,7 +32,8 @@
     "author": "Leo Tolstoy",
     "sourceLanguage": "en",
     "synopsis": "A married aristocrat’s affair unravels her standing in Russian high society, set against her brother-in-law’s parallel search for meaning.",
-    "totalChapters": 239
+    "totalChapters": 239,
+    "categories": ["Fiction", "Romance", "Domestic fiction"]
   },
   {
     "id": "crime-and-punishment",
@@ -37,6 +41,7 @@
     "author": "Fyodor Dostoevsky",
     "sourceLanguage": "en",
     "synopsis": "A destitute former student murders a pawnbroker, then spends the rest of the novel unraveling under the weight of his own guilt.",
-    "totalChapters": 39
+    "totalChapters": 39,
+    "categories": ["Fiction", "Philosophy", "Psychological fiction", "Crime"]
   }
 ]

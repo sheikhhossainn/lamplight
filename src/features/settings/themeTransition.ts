@@ -1,4 +1,4 @@
-import { setReadingTheme, type ReadingTheme } from './readingTheme';
+import { getReadingTheme, setReadingTheme, type ReadingTheme } from './readingTheme';
 
 // A single mounted overlay (ThemeTransitionOverlay) registers a runner here.
 // Callers use requestThemeChange() instead of setReadingTheme() directly so the
@@ -14,6 +14,9 @@ export function registerThemeTransitionRunner(r: Runner | null): void {
 }
 
 export function requestThemeChange(next: ReadingTheme): void {
+  // Already in the requested theme — running the overlay anyway plays the
+  // full-screen cover for nothing, which reads as a wrong-color flash.
+  if (next === getReadingTheme()) return;
   if (runner) {
     runner(next);
   } else {

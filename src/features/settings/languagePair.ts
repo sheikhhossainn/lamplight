@@ -1,5 +1,9 @@
 import { useSyncExternalStore } from 'react';
 
+import { getSetting, setSetting } from '@/db/repositories/appSettings';
+
+const STORAGE_KEY = 'target_language';
+
 // The bundled/source books are English, so the source side of the pair is fixed
 // — only the learner's target language is a choice. Codes are ISO 639-1 (a few
 // with region), passed straight to the translation endpoint's `tl` param. Each
@@ -65,6 +69,23 @@ export function setTargetLanguage(lang: TargetLanguage): void {
   if (lang === current) return;
   current = lang;
   emit();
+  // Persist so the choice survives an app restart (fire-and-forget; a failed
+  // write just means the default is used next launch).
+  void setSetting(STORAGE_KEY, lang);
+}
+
+// Load the saved language once at startup (called from the root layout). Only
+// applies a value that's still a known code, and never downgrades a choice the
+// user has already made this session.
+let hydrated = false;
+export async function hydrateTargetLanguage(): Promise<void> {
+  if (hydrated) return;
+  hydrated = true;
+  const saved = await getSetting(STORAGE_KEY);
+  if (saved && BY_CODE.has(saved as TargetLanguage) && current === 'es') {
+    current = saved as TargetLanguage;
+    emit();
+  }
 }
 
 function subscribe(listener: () => void): () => void {

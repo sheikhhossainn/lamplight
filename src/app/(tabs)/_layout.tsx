@@ -41,7 +41,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="vocabulary"
         options={{
-          title: 'Vocabulary',
+          title: 'Notebook',
           tabBarIcon: ({ color }) => <VocabularyIcon color={color} />,
         }}
       />

@@ -1,12 +1,13 @@
 // Drip-feeds Gutenberg's most-popular books into Supabase, a batch of pages
-// per run — meant to run on a DAILY schedule (see
-// .github/workflows/sync-bulk-catalog.yml) until it reaches TARGET_BOOK_COUNT
-// or Gutendex runs out of pages, then becomes a harmless no-op on every run
-// after that. Separate from scripts/sync-books.mjs (the 5 curated "hero"
-// books) on purpose: this script never downloads a book's actual text, only
-// Gutendex's own bibliographic metadata — total_chapters is stored as 0
-// (unknown) and only becomes accurate once the app itself downloads and
-// parses that book locally, the first time someone actually opens it.
+// per run. RUN LOCALLY (`npm run sync:bulk-catalog`), repeatedly, until it
+// reaches TARGET_BOOK_COUNT or Gutendex runs out of pages, then it's a
+// harmless no-op. There is deliberately NO GitHub Actions cron for this:
+// Gutendex blocks datacenter/CI IPs (403), so scheduled runs never worked —
+// it must run from a real machine. Separate from scripts/sync-books.mjs (the 5
+// curated "hero" books) on purpose: this script never downloads a book's
+// actual text, only Gutendex's own bibliographic metadata — total_chapters is
+// stored as 0 (unknown) and only becomes accurate once the app itself
+// downloads and parses that book locally, the first time someone opens it.
 import { createClient } from '@supabase/supabase-js';
 
 const GUTENDEX_BASE = 'https://gutendex.com/books/';
@@ -56,8 +57,15 @@ async function fetchExistingHeroGutenbergIds() {
 }
 
 function toBulkRow(entry) {
-  const textFormat = Object.entries(entry.formats ?? {}).find(([type]) => type.startsWith('text/plain'));
-  if (!textFormat) return null; // no plain-text edition available — skip
+  // Some Gutenberg titles (e.g. the CIA World Factbooks — HTML-only reference
+  // works) expose a text/plain format whose URL is just a README, not the
+  // book. Downloading that "succeeds" but has no book text, so the reader
+  // fails to parse it. Prefer a real plain-text file and skip the entry
+  // entirely if the only text/plain on offer is a README.
+  const textFormat = Object.entries(entry.formats ?? {})
+    .filter(([type]) => type.startsWith('text/plain'))
+    .find(([, url]) => !/readme/i.test(url));
+  if (!textFormat) return null; // no real plain-text edition available — skip
 
   const subjects = (entry.subjects ?? []).slice(0, 3);
   const categories = Array.from(new Set([...(entry.subjects ?? []), ...(entry.bookshelves ?? [])])).slice(0, 8);

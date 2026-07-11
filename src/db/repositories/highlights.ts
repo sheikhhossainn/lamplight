@@ -59,6 +59,12 @@ export async function getHighlight(id: string): Promise<Highlight | null> {
   return row ? fromSqlRow(row) : null;
 }
 
+export async function listAllHighlights(): Promise<Highlight[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<HighlightSqlRow>('SELECT * FROM highlights ORDER BY created_at DESC');
+  return rows.map(fromSqlRow);
+}
+
 export async function listHighlightsForBook(bookId: string): Promise<Highlight[]> {
   const db = await getDb();
   const rows = await db.getAllAsync<HighlightSqlRow>(

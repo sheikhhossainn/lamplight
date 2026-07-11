@@ -7,6 +7,7 @@
     "@expo-google-fonts/manrope": "^0.4.2",
     "@expo/ui": "~0.2.0-beta.9",
     "expo": "~54.0.35",
+    "expo-audio": "~1.1.1",
     "expo-constants": "~18.0.13",
     "expo-device": "~8.0.10",
     "expo-file-system": "~19.0.23",
@@ -15,6 +16,7 @@
     "expo-image": "~3.0.11",
     "expo-linking": "~8.0.12",
     "expo-router": "~6.0.24",
+    "expo-sharing": "~14.0.8",
     "expo-splash-screen": "~31.0.13",
     "expo-sqlite": "~16.0.10",
     "expo-status-bar": "~3.0.9",
@@ -22,6 +24,7 @@
     "expo-system-ui": "~6.0.9",
     "expo-updates": "~29.0.18",
     "expo-web-browser": "~15.0.11",
+    "jszip": "^3.10.1",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-native": "0.81.5",
@@ -30,6 +33,7 @@
     "react-native-safe-area-context": "~5.6.0",
     "react-native-screens": "~4.16.0",
     "react-native-svg": "15.12.1",
+    "react-native-view-shot": "4.0.3",
     "react-native-web": "~0.21.0",
     "react-native-worklets": "0.5.1"
   },
@@ -48,6 +52,7 @@
     "lint": "expo lint",
     "sync:books": "tsx scripts/sync-books.mjs",
     "sync:bulk-catalog": "node scripts/sync-bulk-catalog.mjs",
+    "upload:ambience": "node scripts/upload-ambience.mjs assets/nature-music/trimmed",
     "update": "eas update --branch preview"
   },
   "private": true

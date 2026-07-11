@@ -84,4 +84,31 @@ export const MIGRATIONS: string[] = [
     PRIMARY KEY (shelf_id, book_id)
   );
   `,
+  // v5 — let the user clear a book from the Library's "Continue reading" list
+  // WITHOUT losing its bookmark. This is an activity-history flag, not a
+  // delete: the reading position stays, so opening the book from the shelf
+  // still resumes where they left off; reading it again un-hides it (see
+  // upsertReadingPosition).
+  `
+  ALTER TABLE reading_positions ADD COLUMN continue_hidden INTEGER NOT NULL DEFAULT 0;
+  `,
+  // v6 — cache each book's raw Gutendex subjects/bookshelves (a JSON string
+  // array) locally so the Library's category filter runs entirely on-device:
+  // no per-tap network call, works offline. Canonical buckets (Philosophy,
+  // Religion, ...) are derived from these strings at read time by
+  // features/content-ingestion/bookCategories.ts — kept as raw strings here so
+  // the taxonomy can change without a re-sync.
+  `
+  ALTER TABLE books ADD COLUMN categories TEXT NOT NULL DEFAULT '';
+  `,
+  // v7 — a generic key/value store for user settings that must survive an app
+  // restart (the in-memory stores in features/settings reset on relaunch). The
+  // translation language pair is the first to move here; ambience track,
+  // page-turn sound, and reading theme can follow the same pattern.
+  `
+  CREATE TABLE IF NOT EXISTS app_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
+  `,
 ];

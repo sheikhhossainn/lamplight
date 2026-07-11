@@ -4,8 +4,10 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Line, Path } from 'react-native-svg';
 
+import { ChevronRightIcon } from '@/components/icons';
 import { setTargetLanguage, targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
 import { useReadingTheme } from '@/features/settings/readingTheme';
+import { setPageTurnSoundEnabled, usePageTurnSoundEnabled } from '@/features/settings/soundPrefs';
 import { requestThemeChange } from '@/features/settings/themeTransition';
 import { isPremiumUser } from '@/features/subscription/subscriptionState';
 import { checkTranslationCap } from '@/features/translation';
@@ -49,7 +51,7 @@ export default function SettingsScreen() {
 
   const theme = useReadingTheme();
   const targetLanguage = useTargetLanguage();
-  const [pageTurnSound, setPageTurnSound] = useState(true);
+  const pageTurnSound = usePageTurnSoundEnabled();
   const [translationsLeft, setTranslationsLeft] = useState<number | null>(null);
   const [languagePickerVisible, setLanguagePickerVisible] = useState(false);
 
@@ -131,7 +133,7 @@ export default function SettingsScreen() {
       >
         <View style={styles.settingsRow}>
           <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>Page-turn sound</Text>
-          <ToggleSwitch value={pageTurnSound} onChange={setPageTurnSound} />
+          <ToggleSwitch value={pageTurnSound} onChange={setPageTurnSoundEnabled} />
         </View>
       </View>
 
@@ -157,6 +159,21 @@ export default function SettingsScreen() {
           </Text>
         </Pressable>
       </View>
+
+      <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginBottom: spacing.sm }]}>
+        Storage
+      </Text>
+      <Pressable
+        onPress={() => router.push('/saved-books')}
+        style={[
+          styles.card,
+          styles.settingsRow,
+          { backgroundColor: colors.card, borderColor: colors.hairline, borderRadius: radius.card, marginBottom: spacing.xl },
+        ]}
+      >
+        <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>Saved books</Text>
+        <ChevronRightIcon color={colors.straw} size={15} />
+      </Pressable>
 
       <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginBottom: spacing.sm }]}>
         Account

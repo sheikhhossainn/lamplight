@@ -1,5 +1,6 @@
 import { openDatabaseAsync, type SQLiteDatabase } from 'expo-sqlite';
 
+import { beginLibrarySync, endLibrarySync } from '@/features/content-ingestion/librarySync';
 import { fetchRemoteCatalog, type RemoteBookRow } from '@/features/content-ingestion/remoteCatalog';
 
 import { MIGRATIONS } from './schema';
@@ -19,6 +20,7 @@ const BOOTSTRAP_CATALOG: {
   sourceLanguage: string;
   synopsis: string;
   totalChapters: number;
+  categories?: string[];
 }[] = require('../../assets/books/manifest.json');
 
 let dbPromise: Promise<SQLiteDatabase> | null = null;
@@ -96,8 +98,8 @@ async function upsertBooks(db: SQLiteDatabase, rows: RemoteBookRow[]) {
   await db.withTransactionAsync(async () => {
     for (const book of rows) {
       await db.runAsync(
-        `INSERT INTO books (id, title, author, source_language, synopsis, total_chapters, is_available, text_url, cover_url, gutenberg_id, chapter1_anchor)
-         VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
+        `INSERT INTO books (id, title, author, source_language, synopsis, total_chapters, is_available, text_url, cover_url, gutenberg_id, chapter1_anchor, categories)
+         VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            title = excluded.title,
            author = excluded.author,
@@ -108,7 +110,8 @@ async function upsertBooks(db: SQLiteDatabase, rows: RemoteBookRow[]) {
            text_url = excluded.text_url,
            cover_url = excluded.cover_url,
            gutenberg_id = excluded.gutenberg_id,
-           chapter1_anchor = excluded.chapter1_anchor`,
+           chapter1_anchor = excluded.chapter1_anchor,
+           categories = excluded.categories`,
         [
           book.id,
           book.title,
@@ -120,6 +123,7 @@ async function upsertBooks(db: SQLiteDatabase, rows: RemoteBookRow[]) {
           book.coverUrl,
           book.gutenbergId,
           book.chapter1Anchor,
+          JSON.stringify(book.categories),
         ],
       );
     }
@@ -138,12 +142,35 @@ async function seedBootstrapIfEmpty(db: SQLiteDatabase) {
   await db.withTransactionAsync(async () => {
     for (const book of BOOTSTRAP_CATALOG) {
       await db.runAsync(
-        `INSERT INTO books (id, title, author, source_language, synopsis, total_chapters, is_available, text_url)
-         VALUES (?, ?, ?, ?, ?, ?, 0, '')`,
-        [book.id, book.title, book.author, book.sourceLanguage, book.synopsis, book.totalChapters],
+        `INSERT INTO books (id, title, author, source_language, synopsis, total_chapters, is_available, text_url, categories)
+         VALUES (?, ?, ?, ?, ?, ?, 0, '', ?)`,
+        [
+          book.id,
+          book.title,
+          book.author,
+          book.sourceLanguage,
+          book.synopsis,
+          book.totalChapters,
+          JSON.stringify(book.categories ?? []),
+        ],
       );
     }
   });
+}
+
+// Hero books (manifest) aren't in the remote catalog sync, so on an install
+// that predates the categories column their rows keep the empty default and
+// would never appear under any filter. Idempotent backfill: set categories
+// for the manifest books whose row is still uncategorized. Cheap (5 rows),
+// runs once per launch, no-ops once they're filled.
+async function backfillBootstrapCategories(db: SQLiteDatabase) {
+  for (const book of BOOTSTRAP_CATALOG) {
+    if (!book.categories || book.categories.length === 0) continue;
+    await db.runAsync(
+      `UPDATE books SET categories = ? WHERE id = ? AND (categories = '' OR categories = '[]')`,
+      [JSON.stringify(book.categories), book.id],
+    );
+  }
 }
 
 // Deliberately not awaited by getDb() — the whole point is that nothing in
@@ -154,11 +181,13 @@ async function seedBootstrapIfEmpty(db: SQLiteDatabase) {
 // Network failure (offline, timeout) is expected and non-fatal: whatever's
 // already cached locally just keeps being used until the next app launch.
 function refreshFromRemoteInBackground(db: SQLiteDatabase, enqueue: Enqueue) {
+  beginLibrarySync();
   fetchRemoteCatalog()
     .then((remoteRows) => enqueue(() => upsertBooks(db, remoteRows)))
     .catch((error) => {
       console.warn('[db] Remote catalog sync failed, using local cache:', error);
-    });
+    })
+    .finally(() => endLibrarySync());
 }
 
 export async function getDb(): Promise<SQLiteDatabase> {
@@ -168,6 +197,7 @@ export async function getDb(): Promise<SQLiteDatabase> {
       await migrate(db);
       const enqueue = createQueue();
       await enqueue(() => seedBootstrapIfEmpty(db));
+      await enqueue(() => backfillBootstrapCategories(db));
       refreshFromRemoteInBackground(db, enqueue);
       return serializeDb(db, enqueue);
     })();
