@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Dimensions, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Path, Rect } from 'react-native-svg';
 
+import { logEvent } from '@/features/analytics/analytics';
 import { targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
 import { isPremiumUser } from '@/features/subscription/subscriptionState';
 import { checkTranslationCap, recordTranslationUsage, translationProvider } from '@/features/translation';
@@ -89,6 +90,7 @@ export function WordTranslationPopup({ word, anchor, onClose, onSave }: WordTran
       try {
         const result = await translationProvider.translateWord(word, 'en', targetLanguage);
         await recordTranslationUsage(premium);
+        logEvent('translate_tap', { target_lang: targetLanguage });
         if (!cancelled) setState({ status: 'ready', translation: result.translatedText });
       } catch {
         if (!cancelled) setState({ status: 'error' });

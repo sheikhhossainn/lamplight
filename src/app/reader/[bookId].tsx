@@ -41,6 +41,7 @@ import {
   setMeasuredGlyphWidths,
 } from '@/features/reader/engine/glyphWidths';
 import { getBookText } from '@/features/content-ingestion/bookDownloader';
+import { logEvent } from '@/features/analytics/analytics';
 import { BookFormatError, type IngestedBook } from '@/features/content-ingestion/textParser';
 import { getBook, updateBookTotalChapters, type BookRow } from '@/db/repositories/books';
 import { createHighlight, listHighlightsForBook, type Highlight } from '@/db/repositories/highlights';
@@ -563,6 +564,7 @@ export default function ReaderScreen() {
       });
       setSavedWords((prev) => [created, ...prev]); // reflect the amber marker immediately
       setActiveWord(null);
+      logEvent('word_saved', { book_id: book.id, target_lang: targetLanguage });
     },
     [book, activeWord, pages, currentIndex, targetLanguage],
   );

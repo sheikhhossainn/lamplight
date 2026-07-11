@@ -20,6 +20,7 @@ import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
 import { BookSpine } from '@/components/BookSpine';
 import { CloseIcon, FilterIcon, SearchIcon } from '@/components/icons';
+import { logEvent } from '@/features/analytics/analytics';
 import { BOOK_CATEGORIES, categoriesForBook } from '@/features/content-ingestion/bookCategories';
 import { useLibrarySyncing } from '@/features/content-ingestion/librarySync';
 import { ShelfEditorModal, type ShelfDraft } from '@/components/ShelfEditorModal';
@@ -234,6 +235,7 @@ export default function LibraryScreen() {
       if (!file) return;
       setImporting(true);
       const book = await importEpubFromFile(file);
+      logEvent('book_imported', { book_id: book.id });
       await load();
       router.push({ pathname: '/book/[id]', params: { id: book.id } });
     } catch (err) {
