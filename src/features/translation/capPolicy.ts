@@ -2,7 +2,7 @@ import { getTodayUsageCount, incrementTodayUsage } from '@/db/repositories/trans
 
 // Free-tier daily cap. Premium bypasses this entirely — see index.ts. Must
 // match supabase/schema.sql's plans.translations_per_day for the free plan.
-export const FREE_DAILY_TRANSLATION_LIMIT = 25;
+export const FREE_DAILY_TRANSLATION_LIMIT = 100;
 
 export type CapCheck = {
   allowed: boolean;

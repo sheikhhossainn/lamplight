@@ -152,72 +152,96 @@ export default function QuoteShareScreen() {
   );
 }
 
+// Adaptive quote sizing: a longer quote gets a smaller font so it always fits
+// the card. Real quotes fill fully; only an extreme selection would be capped
+// by the per-variant numberOfLines safety net below.
+function quoteFontStyle(text: string, big = 22): { fontSize: number; lineHeight: number } {
+  const len = text.length;
+  const fontSize =
+    len <= 90 ? big : len <= 160 ? 20 : len <= 240 ? 18 : len <= 340 ? 16 : len <= 470 ? 14 : 12.5;
+  return { fontSize, lineHeight: Math.round(fontSize * 1.45) };
+}
+
+// A big opening quotation mark that sits behind the quote — a literary flourish
+// that anchors the card and reads instantly as "a quote".
+function QuoteGlyph({ color }: { color: string }) {
+  return (
+    <Svg width={44} height={38} viewBox="0 0 44 38" fill="none">
+      <Path
+        d="M4 24c0-10 5.5-18 15-21l1.6 4.6C15 10 12 14 11.4 18.5c1.1-.5 2.4-.8 3.8-.8 4.1 0 7 3 7 7.2 0 4.4-3.4 7.6-7.8 7.6C8.5 32.5 4 28.5 4 24Zm22 0c0-10 5.5-18 15-21l1.6 4.6C37 10 34 14 33.4 18.5c1.1-.5 2.4-.8 3.8-.8 4.1 0 7 3 7 7.2 0 4.4-3.4 7.6-7.8 7.6C30.5 32.5 26 28.5 26 24Z"
+        fill={color}
+      />
+    </Svg>
+  );
+}
+
+// Consistent branded credit for every card variant: the book attribution and
+// the "Shared from Lamplight" flame tag, always centered at the card's foot so
+// a shared image is recognisably from the app.
+function CardCredit({ book, tone }: { book: BookRow; tone: 'dark' | 'light' }) {
+  const attribution = tone === 'dark' ? 'rgba(240,230,214,0.62)' : 'rgba(43,38,33,0.55)';
+  const ruleColor = tone === 'dark' ? 'rgba(240,230,214,0.18)' : 'rgba(43,38,33,0.14)';
+  return (
+    <View style={styles.credit}>
+      <Text style={[styles.attribution, { color: attribution }]} numberOfLines={2}>
+        {book.title} · {book.author}
+      </Text>
+      <View style={[styles.creditRule, { backgroundColor: ruleColor }]} />
+      <View style={styles.brandRow}>
+        <FlameMark size={13} />
+        <Text style={styles.brandTag}>Shared from Lamplight</Text>
+      </View>
+    </View>
+  );
+}
+
 function QuoteCard({ variant, highlight, book }: { variant: Variant; highlight: Highlight; book: BookRow }) {
-  const { colors, typography, radius } = useTheme();
+  const { colors, radius } = useTheme();
+  const quote = highlight.quoteText;
+  const q = quoteFontStyle(quote);
 
   if (variant === 'parchment') {
     return (
-      <View style={[styles.card, { backgroundColor: '#EFE4D2', borderRadius: radius.card }]}>
-        <View style={styles.centeredContent}>
-          <View style={styles.ruleLine} />
-          <Text style={[typography.quoteShareCard, { color: '#2B2621', textAlign: 'center', marginTop: 22 }]}>
-            &ldquo;{highlight.quoteText}&rdquo;
-          </Text>
-          <View style={[styles.ruleLine, { marginTop: 22 }]} />
-        </View>
-        <View style={styles.bottomLeft}>
-          <Text style={[typography.uiRowTitle, { color: '#8A7F6E', fontSize: 11 }]}>{book.title}</Text>
-          <Text style={[typography.uiRowTitle, { color: '#8A7F6E', fontSize: 11, opacity: 0.7 }]}>
-            {book.author}
+      <View style={[styles.card, { backgroundColor: '#EFE4D2', borderRadius: radius.card, overflow: 'hidden' }]}>
+        <View style={styles.quoteBlock}>
+          <QuoteGlyph color="rgba(180,134,58,0.35)" />
+          <Text
+            numberOfLines={13}
+            adjustsFontSizeToFit
+            style={[styles.quoteText, q, { color: '#2B2621', marginTop: 14 }]}
+          >
+            {quote}
           </Text>
         </View>
-        <View style={styles.bottomRightIcon}>
-          <FlameMark size={26} />
-        </View>
-        <View style={[styles.foldCurl, { borderBottomColor: 'rgba(43,38,33,0.14)' }]} />
+        <CardCredit book={book} tone="light" />
+        <View style={[styles.foldCurl, { borderBottomColor: 'rgba(43,38,33,0.16)' }]} />
       </View>
     );
   }
 
   if (variant === 'foldSplit') {
-    const topHeight = 280;
+    const topHeight = CARD_HEIGHT * 0.58;
+    // Keep the quote inside the light triangle — bounded height + line cap so a
+    // long quote can never bleed into the dark lower half.
+    const fold = quoteFontStyle(quote, 20);
     return (
       <View style={[styles.card, { backgroundColor: colors.primaryDark, borderRadius: radius.card, overflow: 'hidden' }]}>
         <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: topHeight }}>
           <Svg width={CARD_WIDTH} height={topHeight}>
-            <Polygon
-              points={`0,0 ${CARD_WIDTH},0 ${CARD_WIDTH},${topHeight * 0.78} 0,${topHeight}`}
-              fill="#F5EDE1"
-            />
+            <Polygon points={`0,0 ${CARD_WIDTH},0 ${CARD_WIDTH},${topHeight * 0.82} 0,${topHeight}`} fill="#F5EDE1" />
           </Svg>
         </View>
-        <Text
-          style={[
-            typography.quoteShareCard,
-            { color: '#2B2621', position: 'absolute', top: 60, left: 34, right: 34, fontSize: 21 },
-          ]}
-        >
-          &ldquo;{highlight.quoteText}&rdquo;
-        </Text>
-        <View style={{ position: 'absolute', top: 310, left: 34, right: 34, alignItems: 'center' }}>
-          <FlameMark size={30} />
+        <View style={{ position: 'absolute', top: 40, left: 32, right: 32, maxHeight: topHeight - 70 }}>
+          <QuoteGlyph color="rgba(180,134,58,0.35)" />
           <Text
-            style={[
-              typography.uiRowTitle,
-              { color: colors.lampText, opacity: 0.6, fontSize: 12, marginTop: 16, textAlign: 'center' },
-            ]}
+            numberOfLines={9}
+            adjustsFontSizeToFit
+            style={[styles.quoteText, fold, { color: '#2B2621', textAlign: 'left', marginTop: 10 }]}
           >
-            {book.title} — {book.author}
-          </Text>
-          <Text
-            style={[
-              typography.eyebrowLabel,
-              { color: colors.flameAmber, opacity: 0.6, marginTop: 6, textAlign: 'center' },
-            ]}
-          >
-            Shared from Lamplight
+            {quote}
           </Text>
         </View>
+        <CardCredit book={book} tone="dark" />
       </View>
     );
   }
@@ -231,7 +255,7 @@ function QuoteCard({ variant, highlight, book }: { variant: Variant; highlight: 
             <Stop offset="55%" stopColor="#241F1A" />
             <Stop offset="100%" stopColor="#1C1B1E" />
           </LinearGradient>
-          <RadialGradient id="gradGlow" cx="50%" cy="38%" r="55%">
+          <RadialGradient id="gradGlow" cx="50%" cy="36%" r="55%">
             <Stop offset="0%" stopColor={colors.flameAmber} stopOpacity={0.22} />
             <Stop offset="62%" stopColor={colors.flameAmber} stopOpacity={0} />
           </RadialGradient>
@@ -239,26 +263,17 @@ function QuoteCard({ variant, highlight, book }: { variant: Variant; highlight: 
         <Rect x={0} y={0} width={CARD_WIDTH} height={CARD_HEIGHT} fill="url(#gradBase)" />
         <Rect x={0} y={0} width={CARD_WIDTH} height={CARD_HEIGHT} fill="url(#gradGlow)" />
       </Svg>
-      <View style={styles.centeredContent}>
-        <FlameMark size={36} />
+      <View style={styles.quoteBlock}>
+        <FlameMark size={34} />
         <Text
-          style={[
-            typography.quoteShareCard,
-            { color: colors.lampText, textAlign: 'center', marginTop: 22 },
-          ]}
+          numberOfLines={13}
+          adjustsFontSizeToFit
+          style={[styles.quoteText, q, { color: colors.lampText, marginTop: 20 }]}
         >
-          &ldquo;{highlight.quoteText}&rdquo;
+          {quote}
         </Text>
       </View>
-      <View style={styles.bottomLeft}>
-        <Text style={[typography.uiRowTitle, { color: colors.lampText, fontSize: 11, opacity: 0.55 }]}>
-          {book.title}
-        </Text>
-        <Text style={[typography.uiRowTitle, { color: colors.lampText, fontSize: 11, opacity: 0.4 }]}>
-          {book.author}
-        </Text>
-      </View>
-      <Text style={[styles.wordmarkTag, { color: colors.flameAmber }]}>Lamplight</Text>
+      <CardCredit book={book} tone="dark" />
     </View>
   );
 }
@@ -279,39 +294,54 @@ const styles = StyleSheet.create({
     width: CARD_WIDTH,
     height: CARD_HEIGHT,
   },
-  centeredContent: {
+  // Quote sits in the upper-middle; the credit footer owns the bottom band.
+  quoteBlock: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
-    bottom: 0,
+    bottom: 96,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 34,
   },
-  ruleLine: {
-    width: 26,
-    height: 2,
-    backgroundColor: '#B4863A',
+  quoteText: {
+    fontFamily: 'Lora_500Medium_Italic',
+    fontSize: 22,
+    lineHeight: 33,
+    letterSpacing: 0,
+    textAlign: 'center',
   },
-  bottomLeft: {
+  credit: {
     position: 'absolute',
     left: 24,
-    bottom: 22,
-  },
-  bottomRightIcon: {
-    position: 'absolute',
-    right: 20,
-    bottom: 20,
-  },
-  wordmarkTag: {
-    position: 'absolute',
     right: 24,
     bottom: 26,
+    alignItems: 'center',
+  },
+  attribution: {
+    fontFamily: 'Manrope_600SemiBold',
+    fontSize: 11.5,
+    letterSpacing: 0.2,
+    textAlign: 'center',
+  },
+  creditRule: {
+    width: 30,
+    height: 1,
+    marginTop: 12,
+    marginBottom: 10,
+  },
+  brandRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  brandTag: {
     fontFamily: 'Manrope_700Bold',
-    fontSize: 11,
-    opacity: 0.7,
-    letterSpacing: 0.5,
+    fontSize: 9.5,
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    color: '#F5A623',
   },
   variantRow: {
     flexDirection: 'row',

@@ -1,9 +1,10 @@
 import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ChevronLeftIcon, ChevronRightIcon, TrashIcon } from '@/components/icons';
 import {
   FlashcardsIllustration,
@@ -30,6 +31,9 @@ export default function VocabularyScreen() {
   const [books, setBooks] = useState<BookRow[]>([]);
   const [quotes, setQuotes] = useState<Highlight[]>([]);
   const [tab, setTab] = useState<Tab>('list');
+  // One themed confirm for both remove flows (word / quote), replacing the OS
+  // alert. Holds the title/message and the action to run on confirm.
+  const [confirm, setConfirm] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
 
   const reload = useCallback(() => {
     Promise.all([listSavedWords(), listBooks(), listAllHighlights()]).then(([w, b, q]) => {
@@ -47,34 +51,28 @@ export default function VocabularyScreen() {
 
   const confirmRemoveWord = useCallback(
     (word: SavedWord) => {
-      Alert.alert('Remove word', `Remove "${word.sourceWord}" from your vocabulary?`, [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: async () => {
-            await deleteSavedWord(word.id);
-            reload();
-          },
+      setConfirm({
+        title: 'Remove word',
+        message: `Remove “${word.sourceWord}” from your vocabulary?`,
+        onConfirm: async () => {
+          await deleteSavedWord(word.id);
+          reload();
         },
-      ]);
+      });
     },
     [reload],
   );
 
   const confirmRemoveQuote = useCallback(
     (quote: Highlight) => {
-      Alert.alert('Remove quote', 'Remove this saved quote?', [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: async () => {
-            await deleteHighlight(quote.id);
-            reload();
-          },
+      setConfirm({
+        title: 'Remove quote',
+        message: 'Remove this saved quote?',
+        onConfirm: async () => {
+          await deleteHighlight(quote.id);
+          reload();
         },
-      ]);
+      });
     },
     [reload],
   );
@@ -240,6 +238,19 @@ export default function VocabularyScreen() {
           )}
         </ScrollView>
       )}
+
+      <ConfirmDialog
+        visible={confirm != null}
+        title={confirm?.title ?? ''}
+        message={confirm?.message}
+        confirmLabel="Remove"
+        destructive
+        onConfirm={() => {
+          confirm?.onConfirm();
+          setConfirm(null);
+        }}
+        onCancel={() => setConfirm(null)}
+      />
     </View>
   );
 }

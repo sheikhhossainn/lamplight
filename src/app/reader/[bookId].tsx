@@ -25,7 +25,6 @@ import { useAmbienceTrackId } from '@/features/ambience/ambiencePreference';
 import { useAmbiencePlayer } from '@/features/ambience/useAmbiencePlayer';
 import { usePageTurnSound } from '@/features/reader/usePageTurnSound';
 import { BookLoadingScreen } from '@/features/reader/components/BookLoadingScreen';
-import { HighlightColorPicker } from '@/features/reader/components/HighlightColorPicker';
 import { ReaderPageView } from '@/features/reader/components/ReaderPageView';
 import { WordActionMenu } from '@/features/reader/components/WordActionMenu';
 import { WordTranslationPopup } from '@/features/reader/components/WordTranslationPopup';
@@ -199,7 +198,6 @@ export default function ReaderScreen() {
     endParagraph: number;
     endOffset: number;
   } | null>(null);
-  const [colorPickerVisible, setColorPickerVisible] = useState(false);
 
   // First-run gesture hint — fades/slides in a couple seconds after the book
   // opens, holds long enough to actually read, then eases back out on its own
@@ -569,30 +567,30 @@ export default function ReaderScreen() {
     [book, activeWord, pages, currentIndex, targetLanguage],
   );
 
-  const handleSelectHighlightColor = useCallback(
-    async (colorKey: HighlightColorKey) => {
-      if (!book || !selection) return;
-      const { page, startParagraph, startOffset, endParagraph, endOffset } = selection;
-      // Rebuild the quote text as the exact selected substring across the range's
-      // paragraphs, in reading order; store the paragraph span for re-rendering
-      // the in-book highlight (which marks whole paragraphs).
-      const quoteText = selectedText(page, startParagraph, startOffset, endParagraph, endOffset);
-      const created = await createHighlight({
-        bookId: book.id,
-        chapterIndex: page.chapterIndex,
-        pageIndex: page.pageIndexInChapter,
-        startOffset: startParagraph,
-        endOffset: endParagraph,
-        colorKey,
-        quoteText,
-      });
-      setHighlights((prev) => [created, ...prev]);
-      setColorPickerVisible(false);
-      setSelection(null);
-      router.push({ pathname: '/quote-share/[highlightId]', params: { highlightId: created.id } });
-    },
-    [book, selection],
-  );
+  // Save the current selection as a quote. Highlights are always the app's
+  // single amber accent — no color picker (its swatches read as confusing
+  // +/- controls and duplicated this Save action), keeping the flow one tap:
+  // adjust the handles, then Save quote.
+  const handleSaveQuote = useCallback(async () => {
+    if (!book || !selection) return;
+    const { page, startParagraph, startOffset, endParagraph, endOffset } = selection;
+    // Rebuild the quote text as the exact selected substring across the range's
+    // paragraphs, in reading order; store the paragraph span for re-rendering
+    // the in-book highlight (which marks whole paragraphs).
+    const quoteText = selectedText(page, startParagraph, startOffset, endParagraph, endOffset);
+    const created = await createHighlight({
+      bookId: book.id,
+      chapterIndex: page.chapterIndex,
+      pageIndex: page.pageIndexInChapter,
+      startOffset: startParagraph,
+      endOffset: endParagraph,
+      colorKey: 'amber',
+      quoteText,
+    });
+    setHighlights((prev) => [created, ...prev]);
+    setSelection(null);
+    router.push({ pathname: '/quote-share/[highlightId]', params: { highlightId: created.id } });
+  }, [book, selection]);
 
   const renderPage = useCallback(
     ({ item }: { item: ReaderPage; index: number }) => {
@@ -740,7 +738,15 @@ export default function ReaderScreen() {
     return <View style={styles.container}>{measurement}</View>;
   }
 
-  const percent = Math.round(((Math.min(currentIndex, pages.length - 1) + 1) / pages.length) * 100);
+  const pageNumber = Math.min(currentIndex, pages.length - 1) + 1;
+  const totalPages = pages.length;
+  const percent = Math.round((pageNumber / totalPages) * 100);
+  // Rough "time left" so a long book doesn't feel bottomless — ~40s a page is
+  // a calm reading pace for this 18px/1.85 body; floored to whole minutes.
+  const pagesLeft = totalPages - pageNumber;
+  const minutesLeft = Math.round((pagesLeft * 40) / 60);
+  const timeLeftLabel =
+    pagesLeft <= 0 ? 'Last page' : minutesLeft < 1 ? 'Almost done' : `${minutesLeft} min left`;
 
   // Chrome (top bar) colors, pinned to the reading surface rather than the
   // app-wide theme tokens, so the bar reads correctly in both reader modes.
@@ -844,10 +850,29 @@ export default function ReaderScreen() {
           >
             <ChevronLeftIcon color={chromeChevron} size={18} />
           </Pressable>
-          {/* Reading progress, centered at the top. */}
-          <Text style={[typography.uiRowTitle, { color: chromePercent, fontSize: 13 }]}>{percent}%</Text>
+          {/* Reading progress, centered at the top: which page of how many,
+              plus how much reading is left, so a long book has a visible end. */}
+          <View style={styles.topBarProgress}>
+            <Text style={[typography.uiRowTitle, { color: chromePercent, fontSize: 13 }]}>
+              Page {pageNumber} of {totalPages}
+            </Text>
+            <Text style={[typography.metadataCaption, { color: chromeChevron, fontSize: 11, opacity: 0.6 }]}>
+              {percent}% · {timeLeftLabel}
+            </Text>
+          </View>
         </View>
       </Animated.View>
+
+      {/* Always-visible hairline progress at the very bottom edge — a constant,
+          non-intrusive sense of position even while the chrome is hidden. */}
+      <View style={[styles.readerProgressTrack, { bottom: insets.bottom }]} pointerEvents="none">
+        <View
+          style={[
+            styles.readerProgressFill,
+            { width: `${percent}%`, backgroundColor: LamplightColor.flameAmber },
+          ]}
+        />
+      </View>
 
       {/* Day/Lamp toggle — the single reading-mode control (no brightness).
           Routed through the app-wide theme transition so the whole screen
@@ -933,7 +958,7 @@ export default function ReaderScreen() {
             })()}
           </Text>
           <Pressable
-            onPress={() => setColorPickerVisible(true)}
+            onPress={handleSaveQuote}
             style={[styles.selectionSave, { backgroundColor: colors.flameAmber }]}
           >
             <Text style={[typography.uiRowTitle, { color: colors.primaryDark, fontSize: 12 }]}>
@@ -977,11 +1002,6 @@ export default function ReaderScreen() {
         anchor={activeWord?.anchor ?? null}
         onClose={() => setActiveWord(null)}
         onSave={handleSaveWord}
-      />
-      <HighlightColorPicker
-        visible={colorPickerVisible}
-        onClose={() => setColorPickerVisible(false)}
-        onSelect={handleSelectHighlightColor}
       />
     </View>
   );
@@ -1056,6 +1076,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  topBarProgress: {
+    alignItems: 'center',
+    gap: 1,
+  },
   // Same 38px box as modeCycleButton so the chevron centers on the same line.
   topBarBack: {
     position: 'absolute',
@@ -1063,6 +1087,16 @@ const styles = StyleSheet.create({
     height: 38,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  readerProgressTrack: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 2.5,
+    backgroundColor: 'rgba(140,130,115,0.18)',
+  },
+  readerProgressFill: {
+    height: 2.5,
   },
   selectionBar: {
     position: 'absolute',

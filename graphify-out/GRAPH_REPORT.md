@@ -1,173 +1,240 @@
-# Graph Report - D:/Coding/LampLight  (2026-07-10)
+# Graph Report - .  (2026-07-11)
 
 ## Corpus Check
-- 19 files · ~81,142 words
+- 107 files · ~99,309 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 482 nodes · 759 edges · 23 communities (17 shown, 6 thin omitted)
-- Extraction: 95% EXTRACTED · 5% INFERRED · 1% AMBIGUOUS · INFERRED: 35 edges (avg confidence: 0.62)
-- Token cost: 80,749 input · 0 output
+- 623 nodes · 1275 edges · 33 communities (31 shown, 2 thin omitted)
+- Extraction: 96% EXTRACTED · 3% INFERRED · 0% AMBIGUOUS · INFERRED: 44 edges (avg confidence: 0.61)
+- Token cost: 0 input · 0 output
 
 ## Community Hubs (Navigation)
-- Book Detail + Quote Share
-- Package Dependencies
-- context.md Architecture Doc
-- Splash + Onboarding
-- Book Sync + Reader Screen
-- Root Layout + Settings
-- Library Shelf + Book Spine
-- Vocabulary + Translation Popup
-- Sync Workflow + Premium Roadmap
+- Reader Engine Core
+- CLAUDE.md + Roadmap Docs
+- Settings + Language Picker
+- Root Layout + Design System
 - app.json Config
-- Highlight Picker + Design Docs
-- Reader Drag Selection Engine
+- Book Catalog Sync
+- Package Dependencies
+- Reader Text Hit-Testing
+- Vocabulary Notebook Screen
+- SQLite Client + Migrations
+- Library Shelf Screen
+- Saved Books + Tab Icons
+- Book Detail + Spine
+- Splash Screen + Flame Glow
+- Shelf Editor + Books Repo
+- Notebook Empty-State Illustrations
+- NPM Scripts
+- Onboarding Screens
+- Quote Share Cards
 - Unused Expo Template Icons
+- package.json Metadata
 - reset-project Script
 - tsconfig
-- Lamplight Brand Assets
-- Expo/Android Platform Icons
+- Paywall Screen
+- EPUB Import + Save Word
+- Reading Position Repo
+- Expo/Splash Icon Assets
+- Android Adaptive Icons + Badge
+- Ambience + Design Motion Spec
+- Expo App Setup (README)
+- Ambience Upload Script
 - ESLint Config
-- Color System (Design Doc)
-- Fold Motif (Design Doc)
-- Icons & Motion (Design Doc)
-- Spacing & Shape (Design Doc)
-- Typography System (Design Doc)
+- Verify Habits
 
 ## God Nodes (most connected - your core abstractions)
-1. `useTheme()` - 29 edges
-2. `getDb()` - 26 edges
-3. `expo` - 14 edges
-4. `SettingsScreen()` - 13 edges
-5. `Codebase map` - 13 edges
-6. `parseBookText()` - 11 edges
-7. `useTargetLanguage()` - 9 edges
-8. `getBook()` - 9 edges
-9. `Phase 1 — Premium, v1` - 9 edges
-10. `LibraryScreen()` - 8 edges
+1. `useTheme()` - 59 edges
+2. `getDb()` - 48 edges
+3. `Codebase map section` - 28 edges
+4. `ReaderScreen()` - 26 edges
+5. `expo` - 17 edges
+6. `LibraryScreen()` - 17 edges
+7. `useTargetLanguage()` - 15 edges
+8. `BookDetailScreen()` - 14 edges
+9. `Architecture tree (src/ layout)` - 13 edges
+10. `scripts` - 11 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `Expo Framework` --semantically_similar_to--> `React Native + Expo SDK 54 Stack`  [INFERRED] [semantically similar]
-  README.md → context.md
-- `File-based Routing` --semantically_similar_to--> `Expo Router (file-based, src/app/)`  [INFERRED] [semantically similar]
-  README.md → context.md
-- `Weekly Monday 06:00 UTC cron schedule` --semantically_similar_to--> `Role & operating rules`  [INFERRED] [semantically similar]
-  .github/workflows/sync-books.yml → CLAUDE.md
-- `Role & operating rules` --semantically_similar_to--> `Phasing philosophy`  [INFERRED] [semantically similar]
-  CLAUDE.md → ROADMAP.md
-- `Schema-to-feature map` --conceptually_related_to--> `Codebase map`  [INFERRED]
-  ROADMAP.md → CLAUDE.md
+- `Codebase map section` --references--> `ReaderScreen()`  [EXTRACTED]
+  CLAUDE.md → src/app/reader/[bookId].tsx
+- `Codebase map section` --references--> `getDb()`  [EXTRACTED]
+  CLAUDE.md → src/db/client.ts
+- `Data layer (expo-sqlite, serializing queue)` --references--> `getDb()`  [EXTRACTED]
+  context.md → src/db/client.ts
+- `Codebase map section` --references--> `useTargetLanguage()`  [EXTRACTED]
+  CLAUDE.md → src/features/settings/languagePair.ts
+- `Translation & settings section` --references--> `useTargetLanguage()`  [EXTRACTED]
+  context.md → src/features/settings/languagePair.ts
 
 ## Import Cycles
 - None detected.
 
 ## Hyperedges (group relationships)
-- **Design token consistency mechanism** — claude_design_source_of_truth, src_theme_tokens, src_theme_typography, claude_before_ui_change_workflow [INFERRED 0.85]
-- **Free tier cap design pattern** — roadmap_free_tier_philosophy, roadmap_phase_0_alpha, supabase_schema_sql_plans_table [INFERRED 0.80]
-- **Book catalog sync pipeline** — github_workflows_sync_books_sync_book_catalog, github_workflows_sync_books_npm_run_sync_books, src_features_content_ingestion_catalog, scripts_ingest_books [INFERRED 0.75]
-- **Reader Chrome System (Day/Lamp modes)** — context_reader_mode_enum, context_lampglowoverlay, context_warmthpicker, context_flameglow, context_pageturnflash [EXTRACTED 1.00]
-- **Book Ingestion Pipeline (Gutendex to bundled JSON)** — context_ingest_books_script, context_gutendex, context_strip_leading_toc, context_chapter1_anchor, context_book_catalog [EXTRACTED 1.00]
-- **Translation System (provider, endpoint, cap policy)** — context_translationprovider, context_cloudtranslationprovider, context_google_translate_endpoint, context_cappolicy [EXTRACTED 1.00]
+- **On-device reader pagination & word-selection flow** — src_app_reader_bookid_readerscreen, src_features_reader_engine_paginate, src_features_reader_components_wordactionmenu, src_features_reader_glyphwidths, src_features_settings_readingprefs [EXTRACTED 1.00]
+- **Free-tier rate-limiting & premium-gating pattern** — src_features_translation_cappolicy, src_features_subscription_ispremiumuser, roadmap_free_tier_philosophy [INFERRED 0.85]
+- **Token-first design enforcement pattern** — claude_role_operating_rules, claude_design_language, src_theme_tokens, src_theme_typography [EXTRACTED 1.00]
 
-## Communities (23 total, 6 thin omitted)
+## Communities (33 total, 2 thin omitted)
 
-### Community 0 - "Book Detail + Quote Share"
-Cohesion: 0.08
-Nodes (43): BookDetailScreen(), styles, CARD_WIDTH, QuoteCard(), QuoteShareScreen(), styles, Variant, styles (+35 more)
-
-### Community 1 - "Package Dependencies"
-Cohesion: 0.04
-Nodes (46): dependencies, expo, expo-constants, expo-device, expo-file-system, expo-font, expo-glass-effect, @expo-google-fonts/lora (+38 more)
-
-### Community 2 - "context.md Architecture Doc"
-Cohesion: 0.05
-Nodes (46): Project Architecture (src/ layout), BOOK_CATALOG / catalog.ts, Full Build Plan (floating-noodling-metcalfe.md), capPolicy.ts Daily Translation Cap (20/day), chapter1Anchor Override (Pride and Prejudice), cloudTranslationProvider.ts, Color Palette (Flame Amber, Parchment, Primary Dark), Content Ingestion Feature (catalog.ts) (+38 more)
-
-### Community 3 - "Splash + Onboarding"
+### Community 0 - "Reader Engine Core"
 Cohesion: 0.06
-Nodes (34): SplashScreen(), styles, { width: screenWidth, height: screenHeight }, ILLUSTRATIONS, illustrationStyles, OnboardingScreen(), ReadIllustration(), ShelfIllustration() (+26 more)
+Nodes (48): Reader engine (pagination, glyph hit-testing, word interaction), ReaderMode, ReaderPageFrameProps, ReaderScreen(), READING_DARK_STOPS, selectedText(), styles, { width: screenWidth, height: screenHeight } (+40 more)
 
-### Community 4 - "Book Sync + Reader Screen"
+### Community 1 - "CLAUDE.md + Roadmap Docs"
+Cohesion: 0.06
+Nodes (48): CLAUDE.md (project instructions), Codebase map section, context.md (fast-path project context), Architecture tree (src/ layout), Not built yet section, Translation & settings section, Q&A: Why does Codebase map connect Vocabulary+Translation, Splash+Onboarding, etc.?, ROADMAP.md (product roadmap) (+40 more)
+
+### Community 2 - "Settings + Language Picker"
 Cohesion: 0.08
-Nodes (33): CATALOG, findBook(), rows, supabase, syncOneBook(), SYNOPSES, ReaderMode, ReaderPageFrameProps (+25 more)
+Nodes (32): SettingsScreen(), styles, CloseIcon(), LanguagePicker(), LanguagePickerProps, styles, getSetting(), setSetting() (+24 more)
 
-### Community 5 - "Root Layout + Settings"
-Cohesion: 0.10
-Nodes (27): SettingsScreen(), SettingsSlider(), styles, ToggleSwitch(), current, emit(), fontSizePxFromPref(), getReadingPrefs() (+19 more)
-
-### Community 6 - "Library Shelf + Book Spine"
+### Community 3 - "Root Layout + Design System"
 Cohesion: 0.09
-Nodes (29): chunk(), getShelfSubtitle(), LibraryScreen(), ROW_ROTATIONS, styles, { width: screenWidth }, BookSpine(), BookSpineProps (+21 more)
+Nodes (33): Before implementing a UI change (checklist), Design source of truth section, Design system section (locked, src/theme/), Q&A: Does Codebase map (CLAUDE.md) reference all its listed theme files? (correction), Lamplight Reading App.zip (design spec: 12 mockups + design-system doc + moodboard), RootLayout(), AppUpdateBanner(), styles (+25 more)
 
-### Community 7 - "Vocabulary + Translation Popup"
+### Community 4 - "app.json Config"
+Cohesion: 0.06
+Nodes (34): backgroundColor, backgroundImage, foregroundImage, monochromeImage, adaptiveIcon, package, predictiveBackGestureEnabled, projectId (+26 more)
+
+### Community 5 - "Book Catalog Sync"
 Cohesion: 0.11
-Nodes (21): Codebase map, Core hubs (useTheme, getDb, ReaderScreen, useTargetLanguage), src/db/repositories (SQLite-backed repos, getDb), getTodayUsageCount(), incrementTodayUsage(), todayKey(), LoadState, styles (+13 more)
+Nodes (30): Content ingestion (remote, on-demand), CATALOG, findBook(), rows, supabase, syncOneBook(), SYNOPSES, bookCache (+22 more)
 
-### Community 8 - "Sync Workflow + Premium Roadmap"
-Cohesion: 0.08
-Nodes (27): Role & operating rules, npm run sync:books step, SUPABASE_SERVICE_ROLE_KEY secret, SUPABASE_URL secret, Sync book catalog (workflow), Weekly Monday 06:00 UTC cron schedule, workflow_dispatch manual trigger, Billing (subscriptions table + provider) (+19 more)
+### Community 6 - "Package Dependencies"
+Cohesion: 0.06
+Nodes (34): dependencies, expo, expo-audio, expo-constants, expo-device, expo-file-system, expo-font, expo-glass-effect (+26 more)
 
-### Community 9 - "app.json Config"
-Cohesion: 0.08
-Nodes (25): backgroundColor, backgroundImage, foregroundImage, monochromeImage, adaptiveIcon, predictiveBackGestureEnabled, reactCompiler, typedRoutes (+17 more)
+### Community 7 - "Reader Text Hit-Testing"
+Cohesion: 0.12
+Nodes (28): charIndexAtFraction(), charInLine(), fractionAtCharIndex(), getTokenOffsets(), getTokens(), HandlePixel, lineCharOffset(), lineStartOffsets() (+20 more)
 
-### Community 10 - "Highlight Picker + Design Docs"
-Cohesion: 0.11
-Nodes (20): Before implementing a UI change (workflow), Design source of truth, COLOR_KEYS, HighlightColorPicker(), HighlightColorPickerProps, styles, src/theme/ThemeTransitionOverlay.tsx, LamplightTheme (+12 more)
+### Community 8 - "Vocabulary Notebook Screen"
+Cohesion: 0.14
+Nodes (25): Data layer (expo-sqlite, serializing queue), styles, Tab, TABS, VocabularyScreen(), ConfirmDialog(), ConfirmDialogProps, styles (+17 more)
 
-### Community 11 - "Reader Drag Selection Engine"
-Cohesion: 0.17
-Nodes (18): getSentenceEndOffsets(), getSentences(), getTokens(), getTokenSentenceIndices(), HandlePixel, locateOffsetPixel(), locateSentenceKey(), ParagraphLayout (+10 more)
+### Community 9 - "SQLite Client + Migrations"
+Cohesion: 0.13
+Nodes (21): backfillBootstrapCategories(), BOOTSTRAP_CATALOG, createQueue(), Enqueue, migrate(), refreshFromRemoteInBackground(), seedBootstrapIfEmpty(), SERIALIZED_METHODS (+13 more)
 
-### Community 12 - "Unused Expo Template Icons"
+### Community 10 - "Library Shelf Screen"
+Cohesion: 0.16
+Nodes (20): getShelfSubtitle(), LibraryScreen(), ROW_ROTATIONS, styles, { width: screenWidth }, createShelf(), deleteShelf(), listShelfItems() (+12 more)
+
+### Community 11 - "Saved Books + Tab Icons"
+Cohesion: 0.13
+Nodes (18): SavedBooksScreen(), styles, TabsLayout(), BookmarkIcon(), CheckIcon(), ChevronLeftIcon(), FilterIcon(), IconProps (+10 more)
+
+### Community 12 - "Book Detail + Spine"
+Cohesion: 0.22
+Nodes (14): BookDetailScreen(), styles, BookSpine(), BookSpineProps, FALLBACK_TONES, isDarkSpineColor(), SPINE_COLOR_BY_BOOK, spineColorForBook() (+6 more)
+
+### Community 13 - "Splash Screen + Flame Glow"
+Cohesion: 0.14
+Nodes (13): SplashScreen(), styles, { width: screenWidth, height: screenHeight }, FLAME_BBOX, FLAME_OPACITY, FlameGlow(), FlameGlowProps, GLOW_INTENSITY (+5 more)
+
+### Community 14 - "Shelf Editor + Books Repo"
+Cohesion: 0.19
+Nodes (11): Library shelves (user category shelves), ShelfDraft, ShelfEditorModal(), ShelfEditorModalProps, styles, BookRow, BookSqlRow, fromSqlRow() (+3 more)
+
+### Community 15 - "Notebook Empty-State Illustrations"
+Cohesion: 0.22
+Nodes (13): ReadIllustration(), SkeletonShelf(), ToggleSwitch(), EmptyPrompt(), FlashcardDeck(), AnimatedLine, FlashcardsIllustration(), LampGlowScene() (+5 more)
+
+### Community 16 - "NPM Scripts"
+Cohesion: 0.18
+Nodes (11): scripts, android, ios, lint, reset-project, start, sync:books, sync:bulk-catalog (+3 more)
+
+### Community 17 - "Onboarding Screens"
+Cohesion: 0.18
+Nodes (9): ILLUSTRATIONS, illustrationStyles, OnboardingScreen(), ShelfIllustration(), Slide, SLIDES, styles, TranslateIllustration() (+1 more)
+
+### Community 18 - "Quote Share Cards"
+Cohesion: 0.22
+Nodes (7): CARD_WIDTH, QuoteCard(), quoteFontStyle(), QuoteShareScreen(), styles, Variant, VARIANTS
+
+### Community 19 - "Unused Expo Template Icons"
 Cohesion: 0.29
 Nodes (10): React Logo (2x) - Unused Expo Scaffold Asset, React Logo (3x) - Unused Expo Scaffold Asset, React Logo (1x) - Unused Expo Scaffold Asset, Explore Tab Icon (2x) - Unused Expo Default, Explore Tab Icon (3x) - Unused Expo Default, Explore Tab Icon (1x) - Unused Expo Default, Home Tab Icon (2x) - Unused Expo Default, Home Tab Icon (3x) - Unused Expo Default (+2 more)
 
-### Community 13 - "reset-project Script"
+### Community 20 - "package.json Metadata"
+Cohesion: 0.20
+Nodes (9): devDependencies, @supabase/supabase-js, tsx, @types/react, typescript, main, name, private (+1 more)
+
+### Community 21 - "reset-project Script"
 Cohesion: 0.22
 Nodes (7): exampleDirPath, fs, oldDirs, path, readline, rl, root
 
-### Community 14 - "tsconfig"
+### Community 22 - "tsconfig"
 Cohesion: 0.22
 Nodes (8): compilerOptions, allowImportingTsExtensions, paths, strict, extends, include, @/*, @/assets/*
 
-### Community 15 - "Lamplight Brand Assets"
+### Community 23 - "Paywall Screen"
+Cohesion: 0.29
+Nodes (5): FEATURES, PaywallScreen(), Plan, styles, { width: screenWidth, height: screenHeight }
+
+### Community 24 - "EPUB Import + Save Word"
+Cohesion: 0.48
+Nodes (5): createLocalBook(), saveWord(), cacheImportedBook(), importEpubFromFile(), generateId()
+
+### Community 25 - "Reading Position Repo"
+Cohesion: 0.38
+Nodes (6): fromSqlRow(), hideFromContinueReading(), listActiveReadingPositions(), listAllReadingPositions(), ReadingPosition, ReadingPositionSqlRow
+
+### Community 26 - "Expo/Splash Icon Assets"
 Cohesion: 0.47
 Nodes (6): Expo Icon Vector Symbol (Chevron/Mountain Path), Expo Icon Grid Background Texture, Favicon (Blue Arrow Mark), App Icon (Blue Arrow Mark), Logo Glow Effect Asset, Splash Screen Icon
 
-### Community 16 - "Expo/Android Platform Icons"
+### Community 27 - "Android Adaptive Icons + Badge"
 Cohesion: 0.53
 Nodes (6): Android Adaptive Icon Background Layer, Android Adaptive Icon Foreground Layer (Expo Arrow Mark, Blue Gradient), Android Adaptive Icon Monochrome Layer (Expo Arrow Mark, Gray), Expo 'Powered by Expo' Badge (Black, Dark Theme), Expo 'Powered by Expo' Badge (White, Light Theme), Expo Logo (Template Asset, Content Not Visually Resolvable at Render Scale)
 
+### Community 28 - "Ambience + Design Motion Spec"
+Cohesion: 0.33
+Nodes (6): assets/sfx/page-turn.mp3 (bundled page-turn rustle SFX), Design language (mood, color, typography, spacing, motion), Icons & motion spec, Reading body typography spec (17px / line-height 1.85), Role & operating rules, Fixed reading base: 18px / line-height 1.85
+
+### Community 29 - "Expo App Setup (README)"
+Cohesion: 0.33
+Nodes (6): create-expo-app, ESLint + Prettier Setup, Expo Framework, File-based Routing, Jest Unit Testing, Expo App Setup (README)
+
+### Community 30 - "Ambience Upload Script"
+Cohesion: 0.67
+Nodes (3): ensureBucket(), run(), supabase
+
 ## Ambiguous Edges - Review These
-- `Splash Screen Icon` → `Logo Glow Effect Asset`  [AMBIGUOUS]
-  assets/images/logo-glow.png · relation: conceptually_related_to
+- `sync-bulk-catalog.mjs` → `scripts/ingest-books.mjs (Gutendex API -> bundled JSON)`  [AMBIGUOUS]
+  context.md · relation: semantically_similar_to
 - `Android Adaptive Icon Foreground Layer (Expo Arrow Mark, Blue Gradient)` → `Expo Logo (Template Asset, Content Not Visually Resolvable at Render Scale)`  [AMBIGUOUS]
   assets/images/expo-logo.png · relation: conceptually_related_to
 - `Expo 'Powered by Expo' Badge (Black, Dark Theme)` → `Expo Logo (Template Asset, Content Not Visually Resolvable at Render Scale)`  [AMBIGUOUS]
   assets/images/expo-logo.png · relation: conceptually_related_to
+- `Logo Glow Effect Asset` → `Splash Screen Icon`  [AMBIGUOUS]
+  assets/images/logo-glow.png · relation: conceptually_related_to
 - `React Logo (1x) - Unused Expo Scaffold Asset` → `Expo Starter Tutorial Screenshot (Welcome to Expo, web)`  [AMBIGUOUS]
   assets/images/tutorial-web.png · relation: conceptually_related_to
+- `Reading body typography spec (17px / line-height 1.85)` → `Fixed reading base: 18px / line-height 1.85`  [AMBIGUOUS]
+  context.md · relation: conceptually_related_to
 
 ## Knowledge Gaps
-- **195 isolated node(s):** `name`, `slug`, `version`, `orientation`, `icon` (+190 more)
+- **215 isolated node(s):** `name`, `slug`, `version`, `orientation`, `icon` (+210 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **6 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **2 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **What is the exact relationship between `Splash Screen Icon` and `Logo Glow Effect Asset`?**
-  _Edge tagged AMBIGUOUS (relation: conceptually_related_to) - confidence is low._
+- **What is the exact relationship between `sync-bulk-catalog.mjs` and `scripts/ingest-books.mjs (Gutendex API -> bundled JSON)`?**
+  _Edge tagged AMBIGUOUS (relation: semantically_similar_to) - confidence is low._
 - **What is the exact relationship between `Android Adaptive Icon Foreground Layer (Expo Arrow Mark, Blue Gradient)` and `Expo Logo (Template Asset, Content Not Visually Resolvable at Render Scale)`?**
   _Edge tagged AMBIGUOUS (relation: conceptually_related_to) - confidence is low._
 - **What is the exact relationship between `Expo 'Powered by Expo' Badge (Black, Dark Theme)` and `Expo Logo (Template Asset, Content Not Visually Resolvable at Render Scale)`?**
   _Edge tagged AMBIGUOUS (relation: conceptually_related_to) - confidence is low._
+- **What is the exact relationship between `Logo Glow Effect Asset` and `Splash Screen Icon`?**
+  _Edge tagged AMBIGUOUS (relation: conceptually_related_to) - confidence is low._
 - **What is the exact relationship between `React Logo (1x) - Unused Expo Scaffold Asset` and `Expo Starter Tutorial Screenshot (Welcome to Expo, web)`?**
   _Edge tagged AMBIGUOUS (relation: conceptually_related_to) - confidence is low._
-- **Why does `Codebase map` connect `Vocabulary + Translation Popup` to `Splash + Onboarding`, `Book Sync + Reader Screen`, `Library Shelf + Book Spine`, `Sync Workflow + Premium Roadmap`, `Highlight Picker + Design Docs`, `Reader Drag Selection Engine`?**
-  _High betweenness centrality (0.157) - this node is a cross-community bridge._
-- **Why does `Schema-to-feature map` connect `Sync Workflow + Premium Roadmap` to `Vocabulary + Translation Popup`?**
-  _High betweenness centrality (0.066) - this node is a cross-community bridge._
-- **Why does `useTheme()` connect `Splash + Onboarding` to `Book Detail + Quote Share`, `Root Layout + Settings`, `Library Shelf + Book Spine`, `Vocabulary + Translation Popup`, `Highlight Picker + Design Docs`?**
-  _High betweenness centrality (0.062) - this node is a cross-community bridge._
+- **What is the exact relationship between `Reading body typography spec (17px / line-height 1.85)` and `Fixed reading base: 18px / line-height 1.85`?**
+  _Edge tagged AMBIGUOUS (relation: conceptually_related_to) - confidence is low._
+- **Why does `useTheme()` connect `Notebook Empty-State Illustrations` to `Reader Engine Core`, `CLAUDE.md + Roadmap Docs`, `Settings + Language Picker`, `Root Layout + Design System`, `Reader Text Hit-Testing`, `Vocabulary Notebook Screen`, `Library Shelf Screen`, `Saved Books + Tab Icons`, `Book Detail + Spine`, `Splash Screen + Flame Glow`, `Shelf Editor + Books Repo`, `Onboarding Screens`, `Quote Share Cards`, `Paywall Screen`, `Ambience + Design Motion Spec`?**
+  _High betweenness centrality (0.147) - this node is a cross-community bridge._
