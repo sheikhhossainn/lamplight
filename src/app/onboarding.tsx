@@ -12,6 +12,7 @@ import {
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
 import { ChevronRightIcon } from '@/components/icons';
+import { markOnboardingComplete } from '@/features/settings/onboardingStatus';
 import { useTheme } from '@/theme/ThemeProvider';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
@@ -44,6 +45,7 @@ const SLIDES: Slide[] = [
 ];
 
 function finishOnboarding() {
+  markOnboardingComplete();
   router.replace('/library');
 }
 
