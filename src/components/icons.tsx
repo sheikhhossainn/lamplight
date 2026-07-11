@@ -110,6 +110,113 @@ export function TrashIcon({ color, size = 18 }: IconProps) {
   );
 }
 
+// Reading-ambience toggle. Three rising arcs read as sound whether or not
+// audio is playing; the reader tints it amber when a track is active.
+export function SoundWaveIcon({ color, size = 20 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M8 9.5c1.6 1.6 1.6 3.4 0 5"
+        stroke={color}
+        strokeWidth={1.7}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path
+        d="M11.5 6.5c3 3 3 8 0 11"
+        stroke={color}
+        strokeWidth={1.7}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path
+        d="M15 4c4.2 4.2 4.2 11.8 0 16"
+        stroke={color}
+        strokeWidth={1.7}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
+export function SunIcon({ color, size = 20 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Circle cx="12" cy="12" r="4.2" stroke={color} strokeWidth={1.7} />
+      <Line x1="12" y1="2.8" x2="12" y2="5" stroke={color} strokeWidth={1.7} strokeLinecap="round" />
+      <Line x1="12" y1="19" x2="12" y2="21.2" stroke={color} strokeWidth={1.7} strokeLinecap="round" />
+      <Line x1="2.8" y1="12" x2="5" y2="12" stroke={color} strokeWidth={1.7} strokeLinecap="round" />
+      <Line x1="19" y1="12" x2="21.2" y2="12" stroke={color} strokeWidth={1.7} strokeLinecap="round" />
+      <Line x1="5.5" y1="5.5" x2="7.1" y2="7.1" stroke={color} strokeWidth={1.7} strokeLinecap="round" />
+      <Line x1="16.9" y1="16.9" x2="18.5" y2="18.5" stroke={color} strokeWidth={1.7} strokeLinecap="round" />
+      <Line x1="5.5" y1="18.5" x2="7.1" y2="16.9" stroke={color} strokeWidth={1.7} strokeLinecap="round" />
+      <Line x1="16.9" y1="7.1" x2="18.5" y2="5.5" stroke={color} strokeWidth={1.7} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+export function MoonIcon({ color, size = 20 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M20.2 13.6A8.4 8.4 0 1110.4 3.8a6.6 6.6 0 009.8 9.8Z"
+        stroke={color}
+        strokeWidth={1.7}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
+export function SearchIcon({ color, size = 18 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Circle cx="10.5" cy="10.5" r="6.5" stroke={color} strokeWidth={1.7} />
+      <Line x1="15.3" y1="15.3" x2="20" y2="20" stroke={color} strokeWidth={1.7} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+export function CheckIcon({ color, size = 14 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M5 12.5L10 17.5L19 7"
+        stroke={color}
+        strokeWidth={1.8}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
+// Funnel — signals the "All books" header is a category filter.
+export function FilterIcon({ color, size = 16 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M4 5.5h16l-6 7v5l-4 2v-7l-6-7Z"
+        stroke={color}
+        strokeWidth={1.7}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
+export function CloseIcon({ color, size = 16 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Line x1="6" y1="6" x2="18" y2="18" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+      <Line x1="18" y1="6" x2="6" y2="18" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
 export function BookmarkIcon({ color, size = 18, filled = false }: IconProps & { filled?: boolean }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">

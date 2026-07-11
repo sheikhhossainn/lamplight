@@ -14,7 +14,10 @@ type ReaderPageViewProps = {
   bottomInset: number;
   fontSize: number;
   lineHeight: number;
-  highlightMap: Map<string, HighlightColorKey>;
+  // Per-paragraph saved-highlight marker. quoteText is non-null only for
+  // single-paragraph highlights, where it's the exact selected substring —
+  // lets the page mark just that run instead of the whole paragraph.
+  highlightMap: Map<string, { colorKey: HighlightColorKey; quoteText: string | null }>;
   highlightColors: Record<HighlightColorKey, string>;
   // Lowercased set of words this book has saved to Vocabulary — matched words
   // get a marker. Styling differs by theme (see reader): amber background +
@@ -649,17 +652,31 @@ function ReaderPageViewImpl({
         // resolved by hit-testing the tap against the wrapped-line geometry
         // captured below (handleWordTap / handleSentenceLongPress). Saved-vocab
         // words are the only per-word spans, and only when they exist.
-        const highlightKey = highlightMap.get(
+        const highlightEntry = highlightMap.get(
           `${page.chapterIndex}-${page.pageIndexInChapter}-${paragraphIndex}`,
         );
-        const highlightColor = highlightKey ? highlightColors[highlightKey] : undefined;
-        const paragraphTextColor = highlightColor ? '#2B2621' : textColor;
+        // Translucent wash (~35%) of the picker hue instead of the old solid
+        // block + forced dark text: the page background shows through, so the
+        // same marker reads correctly on both the parchment and charcoal pages
+        // and the body text keeps its normal theme color.
+        const highlightWash = highlightEntry ? `${highlightColors[highlightEntry.colorKey]}59` : undefined;
+        // Single-paragraph highlight: mark only the exact saved substring, not
+        // the whole paragraph.
+        let highlightRun: { start: number; end: number } | null = null;
+        if (highlightEntry?.quoteText) {
+          const runStart = paragraph.indexOf(highlightEntry.quoteText);
+          if (runStart !== -1) highlightRun = { start: runStart, end: runStart + highlightEntry.quoteText.length };
+        }
         return (
           <Text
             key={paragraphIndex}
             style={[
               typography.readingBody,
-              { color: paragraphTextColor, backgroundColor: highlightColor, ...baseParagraphStyle },
+              {
+                color: textColor,
+                backgroundColor: highlightWash && !highlightRun ? highlightWash : undefined,
+                ...baseParagraphStyle,
+              },
             ]}
             onLongPress={(e) => handleWordLongPress(paragraphIndex, e)}
             onLayout={(e) => {
@@ -675,19 +692,21 @@ function ReaderPageViewImpl({
               );
             }}
           >
-            {highlightColor
-              ? paragraph
-              : renderParagraphRuns(
-                  paragraphTokens[paragraphIndex],
-                  savedWordSet,
-                  savedWordColor,
-                  savedWordTextColor,
-                  activeWordRange && activeWordRange.paragraphIndex === paragraphIndex
-                    ? { start: activeWordRange.start, end: activeWordRange.end }
-                    : null,
-                  activeWordColor,
-                  activeWordTextColor,
-                )}
+            {highlightWash && highlightRun
+              ? renderSelectionRuns(paragraph, highlightRun.start, highlightRun.end, highlightWash, textColor)
+              : highlightWash
+                ? paragraph
+                : renderParagraphRuns(
+                    paragraphTokens[paragraphIndex],
+                    savedWordSet,
+                    savedWordColor,
+                    savedWordTextColor,
+                    activeWordRange && activeWordRange.paragraphIndex === paragraphIndex
+                      ? { start: activeWordRange.start, end: activeWordRange.end }
+                      : null,
+                    activeWordColor,
+                    activeWordTextColor,
+                  )}
           </Text>
         );
       })}

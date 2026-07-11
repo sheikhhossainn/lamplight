@@ -1,101 +1,77 @@
 # Lamplight — Reading App
 
-React Native + Expo SDK 54, Expo Router (file-based routing, `src/app/`), TypeScript.
+React Native + Expo SDK 54, Expo Router (`src/app/`), TypeScript. Deep gotchas, institutional
+memory, and architecture rationale not covered below live in `context.md` — read it only if
+graphify + source don't answer the question.
 
-## Role & operating rules
+## Role
 
-- Senior React Native (Expo) engineer. Match the design exactly — never redesign unless asked.
+Senior React Native (Expo) engineer. Match the design exactly — never redesign unless asked.
+Concise output: don't restate the diff, don't explain obvious code, no summary unless asked.
+
+## Context loading strategy — graphify first, always
+
+Never cold-scan the repo (no blind `grep`/`ls`/directory walk as a first move). Order:
+
+1. `graphify query "<question>"` (or `path`/`explain`) — this is how you discover architecture,
+   dependencies, and features. The graph is the map; don't rebuild it by reading files.
+2. **Staleness check**: if `graphify-out/GRAPH_REPORT.md`'s date is older than the most recent
+   commit touching the area you're working in, the graph may describe deleted/renamed code — run
+   `/graphify --update` before trusting it for that area. A stale graph is worse than no graph.
+3. From the query result, identify the **smallest relevant community**. Stay inside it — never
+   follow edges into an unrelated community "just in case," never walk the whole graph.
+4. Read only the files graphify actually named for this task. Expand to one more file only if
+   the community's result is genuinely insufficient.
+5. Stop reading the moment you have enough to implement. Reading source is the *last* step,
+   after graphify, not the first.
+
+**God-node files** — `useTheme()`, `getDb()`, `ReaderScreen()`, `useTargetLanguage()` — fan out
+into nearly every community. Query graphify for the specific edge/behavior you need from them;
+don't open the file itself unless the change is actually inside it.
+
+## Design system — pointer, not documentation
+
+Source of truth, in order: `src/theme/tokens.ts` (colors/spacing/radius/motion), `typography.ts`
+(named type styles), `ThemeProvider.tsx` (`useTheme()`, Day/Lamp). Never hardcode a hex/px/
+fontFamily that already exists as a token — extend the token file if a value is genuinely
+missing, don't ad-hoc it in the screen. For anything else about color/spacing/type/motion:
+query graphify or read tokens.ts — don't ask, don't guess, and don't duplicate it here.
+
+Two constants locked enough to state directly (cheap guardrail — wrong values here are a visible
+regression, not just a missing lookup):
+- Brand (fixed, never altered): Primary Dark `#1C1B1E`, Flame Amber `#F5A623` (the one recurring
+  accent), Parchment `#F5EDE1`.
+- Reading body floor: Lora, never below 17px, never tighten line-height below 1.85.
+
+## Engineering rules
+
 - Smallest possible diff. Never refactor or "clean up" code unrelated to the task.
-- Preserve spacing, typography, colors, shadows, and animations exactly as specified.
-- Reuse existing components before creating new ones.
-- Follow the existing design system (below) — never hardcode a value that already exists as a token.
-- Ask instead of guessing when a spec is unclear or a screen/interaction isn't covered below.
-- Don't touch native config (`app.json`, `ios/`, `android/`) or add dependencies without asking first.
-- Don't chase performance work unless asked — it competes with "smallest diff."
-- Concise explanations. Don't restate the diff back to the user.
+- Reuse an existing component before writing a new one.
+- No new dependency, and no native config change (`app.json`, `ios/`, `android/`), without
+  asking first.
+- Don't chase performance unless asked — it competes with "smallest diff."
+- Ask instead of guessing when a spec or interaction isn't covered by tokens/graphify/code.
 
-## Design source of truth
+## React Native / Expo — hard-won, not generic advice
 
-The design spec lives in `Lamplight Reading App.zip` (12 annotated mobile screens + a design-system
-reference + moodboard). It has already been fully transcribed into code — **read code tokens first,
-the zip only when a screen/interaction isn't covered by them**:
+- **SDK pin**: phone's Expo Go must match SDK 54 exactly. On `Incompatible SDK version`: update
+  Expo Go, or re-pin `expo` in `package.json` then `npx expo install --fix` — never hand-edit
+  other RN/Expo versions.
+- **Expo Router**: adding/moving/deleting a route file doesn't reliably hot-reload —
+  `npx expo start -c` + force-reopen Expo Go. Always `router.push({ pathname, params })` object
+  form; typed routes reject template-string paths.
+- **expo-sqlite (Android)**: concurrent statements corrupt native state — every DB call goes
+  through the serializing queue in `db/client.ts`. Never bypass it, never call the raw db handle.
 
-- [src/theme/tokens.ts](src/theme/tokens.ts) — colors, spacing, radius, motion timing, icon stroke spec
-- [src/theme/typography.ts](src/theme/typography.ts) — named type styles, font family mapping
-- [src/theme/ThemeProvider.tsx](src/theme/ThemeProvider.tsx) — day/lamp theme context, `useTheme()`
-- [src/theme/ThemeTransitionOverlay.tsx](src/theme/ThemeTransitionOverlay.tsx) — theme-switch transition
+## Implementation workflow
 
-Never inline a raw hex, px, or font family in a screen/component — pull from these files. If a value
-is genuinely missing from tokens (not just hard to find), add it there, don't ad-hoc it in the screen.
+Understand request → `graphify query` → smallest relevant community → read only files named
+there → implement (smallest diff) → `npx tsc --noEmit` → for a visual/interactive change, ask
+the user what they see on-device, don't assume it worked → stop. Never continue "improving"
+code outside the task's community.
 
-## Design language (condensed from the design system doc)
+## Debug workflow
 
-**Mood:** intimate, analog, candlelit. Never flat/corporate. Reading content is serif and warm;
-app chrome is sans and quiet.
-
-**Color**
-- Brand core (fixed, never altered): Primary Dark `#1C1B1E`, Flame Amber `#F5A623`, Parchment `#F5EDE1`.
-- Amber is the ONE recurring accent — CTAs, active/selected state, progress fill, bookmark, lamp glow.
-  One accent per screen, never decorative.
-- Neutrals are always warmed toward charcoal/parchment — never pure black/gray.
-- Highlight colors (amber/sage/clay/dusk) are reserved for the highlighter tool + status pills only;
-  each pairs a hue with an icon glyph so meaning never depends on color alone. Don't reuse elsewhere.
-- Day and Lamp (dark) themes share the same token *keys* with flipped surface/text values — see
-  `LamplightColor` vs `LamplightColorDark` in tokens.ts. Always theme through `useTheme()`, never branch
-  manually on light/dark.
-
-**Typography** — two families, strict separation, never mixed:
-- **Lora** (serif, italic-leaning) — anything that *is* the book: reading text, titles, quotes, wordmark,
-  literary-voice headlines.
-- **Manrope** (sans) — app chrome: buttons, nav, labels, settings, metadata.
-- Reading body is Lora 17px / line-height 1.85 — "the single most important number in the system."
-  Never shrink below 17px, never tighten that line-height.
-- UI chrome sets line-height 1 (compact, immediate) next to loose reading prose.
-- Minimum on-page size 11px. Letter-spacing 0 everywhere except eyebrow labels (+1.2px uppercase),
-  pills/badges (+0.3–0.5px), wordmark (+0.3px).
-- Use the named styles in `LamplightTypography`, never a raw `TextStyle` with hardcoded `fontFamily`.
-
-**Spacing & shape**
-- Base unit 4px scale: 4/8/12/16/20/24/32. Screen margins 22–28px, card padding 14–18px,
-  section gaps 20–26px. Tab bar 66px fixed, buttons 52px tall pill.
-- Radius: pill `100` (buttons/tags/tab pills), card `12` (panels/popups/sheets), circle `50%`
-  (swatches/avatars/lamp icon).
-- **The fold motif** (from the logo's negative-space flame = a folded page) recurs three ways: page-curl
-  corner on every book cover/share card, dog-ear-shaped Save/bookmark glyph, page-curl page-turn
-  transition. Never substitute a generic drop-shadow card corner where a curl belongs.
-
-**Icons & motion**
-- Thin line strokes, 1.6–1.8px weight, rounded caps/joins. Warm charcoal on light, cream on dark.
-  Bookmark/save icon is the one filled glyph; everything else stroked. No icon fonts, no emoji.
-- Flame flicker: 2.6–3.2s ease-in-out, multi-keyframe scale+skew+glow — never a plain opacity pulse.
-- Lamp glow pulse: 4s ease-in-out, opacity 0.7→1.
-- Page turn: page-curl transition, ~350–450ms.
-- Chrome fade (reader top bar): ~200–250ms, auto-hides ~2s after last tap.
-- No bounce/overshoot easing anywhere — calm, not playful.
-
-## Codebase map
-
-- `src/app/` — Expo Router screens (file-based). Tabs: library, vocabulary, settings. Also
-  onboarding, book detail, reader, quote-share, paywall.
-- `src/features/reader/` — reading engine: `engine/paginate.ts`, `engine/words.ts` (tokenization),
-  `components/ReaderPageView.tsx`, `WordTranslationPopup.tsx`, `WordActionMenu.tsx`,
-  `HighlightColorPicker.tsx`.
-- `src/features/translation/` — translation provider abstraction (`TranslationProvider.ts`,
-  `cloudTranslationProvider.ts`), daily usage cap (`capPolicy.ts`).
-- `src/features/settings/` — reading prefs, reading theme, language pair, theme transition state.
-- `src/features/content-ingestion/` — book catalog (`catalog.ts`), fed by `scripts/ingest-books.mjs`
-  (Gutendex API → bundled JSON).
-- `src/db/repositories/` — SQLite-backed repos (highlights, savedWords, reading position via `getDb()`).
-- `src/components/` — shared: `BookSpine.tsx`, `FlameGlow.tsx`, `icons.tsx`.
-
-**Core hubs (touch with care, they fan out wide):** `useTheme()`, `getDb()`, `ReaderScreen()`,
-`useTargetLanguage()`.
-
-## Before implementing a UI change
-
-1. Check `src/theme/tokens.ts` and `typography.ts` for the value/style you need — don't invent one.
-2. Check `src/components/` and `src/features/*/components/` for an existing component to reuse.
-3. If the change touches a specific one of the 12 mockup screens and the tokens above don't fully
-   answer it, open `Lamplight Reading App.zip` → `Lamplight Mobile App.dc.html` for that screen's
-   annotation before guessing.
-4. If still unclear, ask — don't guess.
+Identify the entry point (the screen/function named in the report or query result) → graphify
+`query`/`path` from there → inspect only directly connected files → stop at root cause. No
+broad repository search.

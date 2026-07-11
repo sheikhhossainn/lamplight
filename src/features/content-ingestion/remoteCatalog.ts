@@ -21,6 +21,9 @@ export type RemoteBookRow = {
   // this marks where that unheaded chapter actually starts. null for the
   // (common) case where the first detected heading is genuinely Chapter 1.
   chapter1Anchor: string | null;
+  // Raw Gutendex subjects/bookshelves (Supabase `books.categories` text[]);
+  // normalized into filter buckets on-device by bookCategories.ts.
+  categories: string[];
 };
 
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
@@ -79,5 +82,6 @@ function parseRow(row: unknown): RemoteBookRow {
     textUrl: r.text_url,
     coverUrl: typeof r.cover_url === 'string' ? r.cover_url : null,
     chapter1Anchor: typeof r.chapter1_anchor === 'string' ? r.chapter1_anchor : null,
+    categories: Array.isArray(r.categories) ? r.categories.filter((c): c is string => typeof c === 'string') : [],
   };
 }

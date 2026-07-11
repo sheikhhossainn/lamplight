@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Dimensions, FlatList, Keyboard, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
@@ -57,6 +57,10 @@ export function ShelfEditorModal({ visible, draft, books, onSave, onDelete, onCl
   }, []);
 
   const toggle = (bookId: string) => {
+    // Any interaction below the name field means typing is over — close the
+    // keyboard here so by the time Create is tapped the sheet is stable
+    // (a tap while the keyboard is up gets eaten by its dismissal on Android).
+    Keyboard.dismiss();
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(bookId)) next.delete(bookId);
@@ -66,6 +70,13 @@ export function ShelfEditorModal({ visible, draft, books, onSave, onDelete, onCl
   };
 
   const canSave = name.trim().length > 0;
+  // One save per press-gesture, whichever of onPressIn/onPress fires first.
+  const savedThisPress = useRef(false);
+  const fireSave = () => {
+    if (!canSave || savedThisPress.current) return;
+    savedThisPress.current = true;
+    onSave(name.trim(), Array.from(selected));
+  };
   const listMaxHeight = Math.max(
     120,
     Math.min(LIST_MAX_HEIGHT, SCREEN_H - insets.top - keyboardHeight - SHEET_CHROME_H),
@@ -77,6 +88,14 @@ export function ShelfEditorModal({ visible, draft, books, onSave, onDelete, onCl
       <View style={styles.root}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
         <View
+          // Capture phase: the first touch anywhere on the sheet while the
+          // keyboard is up dismisses it (returning false still lets the touch
+          // continue to whatever was tapped, e.g. the Create button's
+          // onPressIn below).
+          onStartShouldSetResponderCapture={() => {
+            if (keyboardHeight > 0) Keyboard.dismiss();
+            return false;
+          }}
           style={[
             styles.sheet,
             {
@@ -106,6 +125,8 @@ export function ShelfEditorModal({ visible, draft, books, onSave, onDelete, onCl
             placeholder="Shelf name (e.g. Classics, To read)"
             placeholderTextColor={colors.fawn}
             autoCorrect={false}
+            returnKeyType="done"
+            onSubmitEditing={() => Keyboard.dismiss()}
             style={[
               typography.uiRowTitle,
               styles.nameInput,
@@ -121,6 +142,7 @@ export function ShelfEditorModal({ visible, draft, books, onSave, onDelete, onCl
             data={books}
             keyExtractor={(item) => item.id}
             keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
             style={[styles.list, { maxHeight: listMaxHeight }]}
             ListEmptyComponent={
               <Text style={[typography.metadataCaption, { color: colors.fawn, textAlign: 'center', marginTop: spacing.lg }]}>
@@ -166,7 +188,15 @@ export function ShelfEditorModal({ visible, draft, books, onSave, onDelete, onCl
 
           <Pressable
             disabled={!canSave}
-            onPress={() => onSave(name.trim(), Array.from(selected))}
+            // While the keyboard is up, save on touch-DOWN: the tap that
+            // dismisses the keyboard shifts the sheet mid-gesture, so the
+            // release lands outside the button and a plain onPress gets
+            // cancelled — that's why creating used to take two taps.
+            onPressIn={() => {
+              savedThisPress.current = false;
+              if (keyboardHeight > 0) fireSave();
+            }}
+            onPress={fireSave}
             style={[
               styles.saveButton,
               { backgroundColor: canSave ? colors.flameAmber : colors.hairline, borderRadius: radius.pill },

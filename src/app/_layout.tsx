@@ -12,6 +12,7 @@ import { useEffect } from 'react';
 import { View } from 'react-native';
 
 import { AppUpdateBanner } from '@/components/AppUpdateBanner';
+import { hydrateTargetLanguage } from '@/features/settings/languagePair';
 import { LamplightThemeProvider } from '@/theme/ThemeProvider';
 import { ThemeTransitionOverlay } from '@/theme/ThemeTransitionOverlay';
 
@@ -29,6 +30,11 @@ export default function RootLayout() {
   });
 
   const ready = fontsLoaded || Boolean(fontError);
+
+  // Load persisted settings (translation language pair) once on launch.
+  useEffect(() => {
+    void hydrateTargetLanguage();
+  }, []);
 
   useEffect(() => {
     if (ready) {

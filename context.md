@@ -1,106 +1,91 @@
 # Lamplight — Project Context
 
-Read this before touching the code. It's the fast path to full context — architecture, decisions, what's built, what's known-broken-on-purpose.
+Fast path to full context. Read before touching code.
 
-## What this is
+## What it is
 
-A mobile reading app: read public-domain classics with live word/quote translation and vocabulary saving, in a warm "reading by lamplight" aesthetic. Android-first via Expo Go; iOS is a cheap follow-on later (same RN codebase, just a build profile).
+Mobile reading app: read public-domain classics with live word/quote translation + vocabulary saving, in a warm "reading by lamplight" aesthetic. Android-first via Expo Go; iOS is a later build profile (same RN codebase).
 
-Full build plan (milestones, rationale): `C:\Users\Mahi-Shahi\.claude\plans\floating-noodling-metcalfe.md`
+Roadmap: `ROADMAP.md` (phases, Free/Premium features, schema-to-feature map). Design rules: `CLAUDE.md`.
 
-## Stack & why
+## Stack
 
-- **React Native + Expo SDK 54** (`~54.0.35`, pinned — see "SDK version" below), TypeScript strict, **Expo Router** (file-based, in `src/app/`).
-- Chosen over an earlier Kotlin Multiplatform + Compose Multiplatform plan because the user's dev environment is **VS Code**, not Android Studio/IntelliJ — CMP's tooling assumes a JetBrains IDE; RN + Expo has first-class VS Code support and Expo Go lets you iterate on a physical phone with near-zero native setup.
-- **Staying in Expo Go** (no custom Dev Client) through the current feature set — deliberately avoided any native module that would force that transition early (see Translation and Billing below).
+- **React Native + Expo SDK 54** (pinned), TypeScript strict, **Expo Router** (file-based, `src/app/`), **reanimated 4** + **gesture-handler** (available; reader uses core `PanResponder`).
+- Deliberately staying in **plain Expo Go** — no native module that forces a Dev Client yet (blocks on-device ML translation + real billing, see below).
 
-### SDK version — read this if the app won't launch on a phone
+**SDK pin gotcha:** phone's Expo Go must match SDK 54 exactly. On `Incompatible SDK version`: update Expo Go, or re-pin — edit `expo` in package.json, then `npx expo install --fix` (never hand-edit other RN/Expo versions).
 
-Expo Go on the phone must match the project's Expo SDK **exactly**. This project is pinned to **SDK 54** because that's what the phone's Expo Go build supported when this was set up (`client version 54.0.8, supported sdk 54`). If you see `Incompatible SDK version` at launch: either update Expo Go on the phone, or re-pin this project to whatever SDK the phone's Expo Go reports, via:
-```
-# edit "expo" version in package.json, then:
-npm install expo@~<target>.0.x
-npx expo install --fix   # realigns react, react-native, expo-router, reanimated, etc.
-rm -rf node_modules package-lock.json && npm install
-```
-Do **not** hand-edit the other Expo/RN package versions — always let `expo install --fix` resolve them.
+**Expo Router gotcha:** adding/moving/deleting route files doesn't reliably hot-reload. On stale screens: `npx expo start -c` + force-reopen Expo Go. Always use the object form `router.push({ pathname: '/reader/[bookId]', params })` — typed routes reject template-string paths.
 
-### Known Expo Router gotcha
+## Design system (locked — `src/theme/`)
 
-Deleting/adding/restructuring route files (e.g. moving a screen into a route group) does **not** reliably hot-reload. If a screen shows stale/deleted content after an edit, stop Metro and restart with `npx expo start -c` (clears cache, forces route-table rebuild), then force-close and reopen Expo Go on the phone.
+`tokens.ts` (colors/spacing/radius/motion) + `typography.ts` (named styles) + `ThemeProvider.tsx` (`useTheme()`, Day/Lamp). Never inline raw hex/px/fontFamily — pull tokens.
 
-## Design system (locked — do not tweak ad hoc)
-
-Source of truth: `src/theme/tokens.ts` (colors, spacing, radius, motion timings) and `src/theme/typography.ts` (11 named text styles). Both transcribed directly from the Figma Design System doc — see the color/typography rules below, they're not arbitrary.
-
-- **Colors**: Primary Dark `#1C1B1E`, Flame Amber `#F5A623` (the ONE recurring accent — CTAs, progress, active states — never decorative), Parchment `#F5EDE1`. Derived neutrals (ink/umber/fawn/straw/hairline/card/ember/lampText) for text/surfaces — never pure black/gray. Highlight colors (sage/clay/dusk + amber) are reserved for the highlighter tool only — never reused elsewhere in the UI.
-- **Typography**: Lora (serif) = anything that IS the book (reading text, titles, quotes). Manrope (sans) = app chrome. Reading body line-height is **1.85** — the single most important number in the system, never shrink it.
-- **Motif**: fold/flame (lifted-corner page-curl) appears on book covers/cards (`BookSpine.tsx`), the bookmark glyph, and the reader's page-turn transition (`PageTurnFlash.tsx`).
-- **Brand mark**: `src/components/FlameGlow.tsx` renders the exact logo SVG (tile + flame + fold bars). Only a glow layer behind it animates (opacity pulse) — the mark itself is always fully static/opaque. (Earlier version scaled+rotated the flame and dipped its opacity to 0 — looked like distortion/glitching. Don't reintroduce that.)
+- **Colors:** Primary Dark `#1C1B1E`, Flame Amber `#F5A623` (the ONE accent — CTAs/active/progress, never decorative), Parchment `#F5EDE1`. Neutrals warmed, never pure gray. Highlight hues (amber/sage/clay/dusk) reserved for the highlighter + status pills.
+- **Type:** Lora (serif) = the book (reading text, titles, quotes). Manrope (sans) = chrome. Reading body **18px / line-height 1.85** (fixed, see reader). Day + Lamp share token keys with flipped surface/text.
+- **Motif:** fold/flame (page-curl corner) on covers (`BookSpine`), the bookmark glyph, page-turn. Brand mark = `FlameGlow.tsx` (static SVG; only a glow layer pulses — never scale/rotate/opacity-0 the flame).
 
 ## Architecture
 
 ```
 src/
-  app/                    Expo Router routes (thin — compose features, handle nav params)
-    index.tsx             Splash (animated logo, auto-advances to /onboarding)
-    onboarding.tsx         3-slide onboarding
-    (tabs)/               Library / Vocabulary / Settings bottom tabs
-    book/[id].tsx          Book Detail
-    reader/[bookId].tsx    Reader (all 3 chrome variants live here)
-    quote-share/[highlightId].tsx   Quote/share card (3 visual variants)
-  components/              Shared dumb UI: BookSpine, FlameGlow, icons
-  theme/                   tokens.ts, typography.ts, ThemeProvider.tsx (useTheme())
-  db/                      SQLite: schema.ts (versioned migrations), client.ts, repositories/*
+  app/                       Expo Router routes (thin: compose features, handle nav)
+    index / onboarding       splash → onboarding
+    (tabs)/                  library · vocabulary · settings
+    book/[id]                book detail
+    reader/[bookId]          reader (Day/Lamp chrome, one screen)
+    quote-share/[id]         quote card
+    paywall                  (stub)
+  components/                shared UI: BookSpine, FlameGlow, icons,
+                             LanguagePicker, ShelfEditorModal
+  theme/                     tokens, typography, ThemeProvider, transition overlay
+  db/                        SQLite: schema.ts (versioned migrations), client.ts,
+                             repositories/* (only these touch SQL)
   features/
-    content-ingestion/     catalog.ts — book metadata + require()'d bundled text (see Content below)
-    reader/                engine/ (pagination, word tokenizing), components/ (chrome pieces)
-    translation/           TranslationProvider interface + cloud impl + daily cap policy
-    subscription/          isPremiumUser() stub — always false until Milestone 7
-  lib/                      generateId() etc.
-scripts/
-  ingest-books.mjs          Dev-time only. Fetches + cleans book text. Re-run to add/refresh books.
-assets/books/*.json          Ingested book text (bundled into the JS bundle via require()).
+    content-ingestion/       remoteCatalog · bookDownloader · textParser
+    reader/                  engine/ (paginate, words, glyphWidths), components/
+    translation/             provider iface + cloud impl + daily cap
+    settings/                readingPrefs, readingTheme, languagePair, themeTransition
+    subscription/            isPremiumUser() → false stub (until billing)
+  lib/                       generateId() etc.
+scripts/ + .github/workflows/  bulk Gutenberg → Supabase catalog sync
+supabase/schema.sql          remote catalog + Premium-shaped tables (source of truth)
 ```
-
-Routing note: `useLocalSearchParams` + `router.push({ pathname: '/reader/[bookId]', params: {...} })` — Expo Router's typed routes reject plain template-string paths like `` `/reader/${id}` ``; always use the object form.
 
 ## Data layer
 
-SQLite (`expo-sqlite`, modern async API) via `src/db/client.ts` → `getDb()` singleton, runs versioned migrations (`src/db/schema.ts`) then seeds `books` from `BOOK_CATALOG` on first launch. Tables: `books`, `reading_positions`, `saved_words`, `highlights`, `translation_usage`. Repositories in `src/db/repositories/*` are the only thing that should touch SQL directly.
+`expo-sqlite` async via `getDb()` singleton (`db/client.ts`) — runs versioned migrations (`schema.ts`), then **seeds `books` metadata instantly** from `assets/books/manifest.json` and, in the background, upserts the **remote Supabase catalog** (`fetchRemoteCatalog`). All DB calls are funneled through a **serializing queue** (expo-sqlite Android corrupts state on concurrent statements — don't remove it; multi-statement helpers run as one `enqueue` job).
 
-## Content ingestion (Gutenberg via Gutendex)
+Tables (v4): `books`, `reading_positions`, `saved_words`, `highlights`, `translation_usage`, **`shelves` + `shelf_items`** (user category shelves). Repos in `db/repositories/*`.
 
-`scripts/ingest-books.mjs` — dev-time Node script, not run on-device. Looks up each catalog title via **Gutendex** (`https://gutendex.com`, the de facto public API for Project Gutenberg's catalog — Gutenberg itself has no official REST API), downloads the plain-text edition, cleans it, splits into chapters, paginates by a character budget (1400 chars/page), writes `assets/books/<id>.json`. Run with `node scripts/ingest-books.mjs`.
+## Content ingestion (remote, on-demand)
 
-All 5 catalog books are ingested and fully readable: Pride and Prejudice (60 ch.), Don Quixote Part 1 (52 ch.), The Odyssey (24 books), Anna Karenina (239 ch.), Crime and Punishment (39 ch.) — chapter counts verified against the real books.
+Books are **remote metadata** (Supabase `books`, synced from Gutendex by `scripts/sync-bulk-catalog.mjs` on a daily GitHub-Actions cron — targets ~5000 popular titles; needs `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` secrets; **not** triggered by push). No book text is bundled. On first open, `bookDownloader.ts` fetches the plain-text edition from `text_url` and `textParser.ts` cleans/splits it on-device (`total_chapters` starts 0, filled in after first parse).
 
-**Non-obvious things the script handles** (re-derive these from source before "fixing" the script, they're not bugs):
-- Gutenberg mirrors serve **CRLF** line endings — raw text is normalized to `\n` before any regex runs.
-- Many editions print a duplicate **Table of Contents** (every chapter heading listed once, tightly packed, then again at the real heading) — `stripLeadingToc()` detects a run of ≥3 suspiciously small gaps between heading matches at the start and drops that whole run. TOC entries cluster far more tightly than any real chapter body ever does, regardless of book length, so this generalizes across books.
-- Front matter (title page, translator's intro/biography) before the first real chapter heading is **discarded by default** — genuinely ambiguous to detect generically (a translator's bio can be many paragraphs long, same as real prose). Only `pride-and-prejudice` has an explicit `chapter1Anchor` override (`"It is a truth universally acknowledged"`) because that specific Gutenberg edition's real Chapter 1 has no heading at all and sits after a critic's introduction essay. If a newly-added book's Chapter 1 goes missing, check whether it needs the same kind of anchor rather than adding a generic heuristic — a generic "paragraph length" heuristic was tried and reverted; it can't distinguish "real unheaded chapter 1" from "long editorial introduction."
-- Author-name matching guards against Gutendex spelling variants (e.g. it's "Dostoyevsky" with a Y in Gutendex's data — matched via substring `'dosto'`).
-- Book bundling is via static `require()` (Metro needs static paths) — adding a 6th book means adding both a `CATALOG` entry in the script **and** a `require()` line in `src/features/content-ingestion/catalog.ts`. `BOOK_CATALOG` (shelf metadata) is derived from the required JSON, not hand-maintained — don't reintroduce a parallel hardcoded array.
-- Current bundle size cost: ~14MB JS bundle with all 5 books statically required in (vs ~5MB with just one). Acceptable for now; if it becomes a problem, the fix is loading chapter text via `expo-file-system` from a copied asset instead of `require()`, per the original plan.
+`textParser` handles Gutenberg quirks: CRLF→`\n`, duplicate leading TOC stripping, front-matter discard (only Pride & Prejudice needs a `chapter1Anchor` override — its Ch.1 is unheaded). Don't add a generic paragraph-length heuristic (tried, reverted — can't tell an unheaded Ch.1 from a long intro essay).
 
-## Reader engine
+## Reader engine (`src/app/reader/[bookId].tsx` + `features/reader/`)
 
-- **Pagination**: chapters are pre-chunked at ingestion time by character budget, not measured against actual on-device rendered glyph layout. Pragmatic simplification — real per-device text measurement is the more-correct, much-harder approach. `src/features/reader/engine/paginate.ts` flattens a book into a flat page list (`{chapterIndex, pageIndexInChapter, paragraphs}`) for the horizontal `FlatList` pager.
-- **3 chrome variants**, all sharing one `ReaderScreen` (`src/app/reader/[bookId].tsx`) + one pagination engine, switched via a `ReaderMode` enum — never forked into separate screens:
-  - **Day**: parchment/ink, chrome auto-hides ~2s after last tap, corner hot-zone taps to turn page.
-  - **Lamp default**: charcoal/cream + `LampGlowOverlay` (radial amber glow, opacity tied to a warmth value), persistent floating lamp icon (reuses `FlameGlow` in `glowPulse` mode) opens a discrete 5-preset `WarmthPicker` (not a continuous drag slider — pragmatic simplification).
-  - **Lamp alt**: zero persistent chrome; long-press left/right screen edges summons the same warmth picker transiently; an invisible top-left 44×44 tap zone is the only way back to Day mode (an affordance not literally in the Figma spec, added so users aren't stranded in a chromeless mode).
-- **Word tap → translate**: paragraphs render as nested tappable `Text` spans (`ReaderPageView.tsx` + `engine/words.ts` tokenizer). **Highlight**: long-press a paragraph (not arbitrary text-range selection — paragraph-level granularity is a deliberate scope cut; the `highlights` table's `start_offset`/`end_offset` columns are repurposed to hold the paragraph index, not a character offset, when read back in the Reader — see `highlightMap` in `reader/[bookId].tsx`).
-- **Page-turn transition**: `PageTurnFlash.tsx` — a brief amber corner flash, not a 3D page-flip sim (matches the design system's "calm, not playful" motion rule).
+- **On-device pagination** (`engine/paginate.ts`): sizes pages from real device metrics — `contentWidthPx/Height` (screen − margins − safe-area) and a one-shot **measured chars-per-line** sample. Paragraph-atomic (never splits a paragraph → ragged bottom is intentional). A fixed **chapter-title zone is reserved on every page** so body's first line lands at the same Y (no jump when paging).
+- **Fixed reading base:** 18px / line-height 1.85 (`settings/readingPrefs.ts` constants — the old font/line-spacing sliders were removed; cross-device robustness comes from the paginator, not a user knob).
+- **Smooth swipe:** each paragraph is **one `<Text>`** (not one per word) so pages mount cheap; native horizontal `FlatList` paging, `removeClippedSubviews`, no per-frame transform.
+- **Word interaction = hold, not tap.** Long-press a word → `WordActionMenu` (Translate / Save as quote). Tap toggles chrome. The held/active word gets an amber highlight.
+- **Precise selection** (the hard part — RN exposes no per-glyph metrics): hit-testing maps touch→char via **measured real glyph advances** (`engine/glyphWidths.ts`, one hidden measure pass) normalized per line, with **exact `indexOf` line-start offsets** (not a `+1`-per-wrap guess). Quote handles drag **char-by-char** with a **native grab-offset** (capture finger↔edge delta on touch-down, apply on move). `highlights.start_offset/end_offset` store first/last **paragraph index** (the in-book marker is paragraph-level); the saved `quote_text` is the exact selected substring.
+- **Day/Lamp** share one screen via a `ReaderMode` enum — never forked.
 
-## Translation
+## Translation & settings
 
-`src/features/translation/` — `TranslationProvider` interface is the swap seam; `cloudTranslationProvider.ts` is the only implementation so far, calling the **unofficial, key-free** `translate.googleapis.com/translate_a/single` endpoint (works well, but unofficial — could break or rate-limit without warning; a paid API is the durable fallback if that happens). In-memory cache only (no persisted cache yet). Daily free-tier cap (`capPolicy.ts`, 20/day) is enforced **only** at the word-tap/quote-translate call sites — reading, highlighting, and vocabulary viewing must never gate on it. On-device translation (ML Kit) and real billing are both deferred to Milestone 7+ because they require leaving Expo Go for a custom Dev Client; `isPremiumUser()` is a hardcoded `false` stub until then.
+- `features/translation/`: `TranslationProvider` iface (swap seam) → `cloudTranslationProvider` (unofficial key-free `translate.googleapis.com` endpoint; in-memory cache). Daily free cap = **25/day** (`capPolicy.ts`, `FREE_DAILY_TRANSLATION_LIMIT`) — **currently disabled by an early-return for the beta**; gates only word/quote translate, never reading/vocab. `isPremiumUser()` is a `false` stub.
+- **Language:** `settings/languagePair.ts` — 39 ISO target languages; chosen via the searchable `LanguagePicker` sheet in Settings only (the reader popup shows the pair read-only). `LanguageCode` is a plain string (endpoint takes any ISO code).
 
-## What's NOT built yet
+## Library shelves
 
-Milestone 7 onward from the plan: RevenueCat/Play Billing, on-device ML Kit translation ("offline language packs"), extra lamp themes, page-turn sounds, real Settings screen, accessibility/contrast verification pass, production store readiness. All of these require the Expo Go → Dev Client transition (`eas build --profile development`), which hasn't happened yet — everything built so far runs in plain Expo Go.
+Horizontal, slidable shelves. "All books" + **user category shelves** (`shelves`/`shelf_items`): `ShelfEditorModal` names a shelf + multi-selects books; each renders as its own slidable shelf.
 
-## Verification habits for this project
+## Not built yet
 
-After any non-trivial change: `npx tsc --noEmit` (must be clean), then `npx expo export --platform android` as a bundling smoke test (catches Metro/require errors tsc won't), then `rm -rf dist`. Neither replaces actually checking the phone when the change is visual/interactive — ask the user what they see rather than assuming.
+Billing (RevenueCat/IAP), on-device ML Kit translation, spaced repetition, reading insights, cloud sync, premium ambience/themes — all require leaving Expo Go for a Dev Client, not done. Schema already has room (Premium is additive; see ROADMAP).
+
+## Verify habits
+
+After non-trivial change: `npx tsc --noEmit` (must be clean). For visual/interactive changes, ask the user what they see on the phone — don't assume. Branches: `feature/ui-ux-polish` (active) merges to `dev`; `main` is base.

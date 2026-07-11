@@ -42,3 +42,10 @@ example
 # generated native folders
 /ios
 /android
+
+# raw ambience recordings — hours-long source MP3s (100MB+ each); only the
+# trimmed loop exports (hosted on Supabase Storage) ever leave this machine
+assets/nature-music/
+
+# raw page-turn recording — only the trimmed clip assets/sfx/page-turn.mp3 ships
+assets/page-turn-sounds/

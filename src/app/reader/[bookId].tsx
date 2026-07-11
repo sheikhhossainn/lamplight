@@ -19,9 +19,12 @@ import Animated, {
 import Svg, { Circle, Defs, LinearGradient, Path, Rect, Stop } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ChevronLeftIcon } from '@/components/icons';
-import { FlameGlow } from '@/components/FlameGlow';
-import { HighlightColorPicker } from '@/features/reader/components/HighlightColorPicker';
+import { ChevronLeftIcon, MoonIcon, SoundWaveIcon, SunIcon } from '@/components/icons';
+import { AmbiencePicker } from '@/features/ambience/AmbiencePicker';
+import { useAmbienceTrackId } from '@/features/ambience/ambiencePreference';
+import { useAmbiencePlayer } from '@/features/ambience/useAmbiencePlayer';
+import { usePageTurnSound } from '@/features/reader/usePageTurnSound';
+import { BookLoadingScreen } from '@/features/reader/components/BookLoadingScreen';
 import { ReaderPageView } from '@/features/reader/components/ReaderPageView';
 import { WordActionMenu } from '@/features/reader/components/WordActionMenu';
 import { WordTranslationPopup } from '@/features/reader/components/WordTranslationPopup';
@@ -38,7 +41,7 @@ import {
   setMeasuredGlyphWidths,
 } from '@/features/reader/engine/glyphWidths';
 import { getBookText } from '@/features/content-ingestion/bookDownloader';
-import type { IngestedBook } from '@/features/content-ingestion/textParser';
+import { BookFormatError, type IngestedBook } from '@/features/content-ingestion/textParser';
 import { getBook, updateBookTotalChapters, type BookRow } from '@/db/repositories/books';
 import { createHighlight, listHighlightsForBook, type Highlight } from '@/db/repositories/highlights';
 import { getReadingPosition, upsertReadingPosition } from '@/db/repositories/readingPosition';
@@ -68,18 +71,14 @@ const READING_DARK_STOPS = ['#1C1B1E', '#201E22', '#26221F'] as const;
 
 type ReaderMode = 'day' | 'lamp';
 
-// The reading-mode toggle's flame reflects the CURRENT mode rather than the
-// mode you'll switch to: lit while actually reading by lamplight (dark),
-// out during the day — a small thematic beat matching the app's own name,
-// and legible at a glance without a moon/sun metaphor to decode.
+// The reading-mode toggle shows the CURRENT mode: sun while reading in Day,
+// moon while reading by lamplight. Thin-line glyphs per the icon spec — the
+// old mini flame-glow rendered muddy at 20px inside the chrome circle.
 function ModeIcon({ mode }: { mode: ReaderMode }) {
-  return (
-    <FlameGlow
-      size={20}
-      showTile={false}
-      lit={mode === 'lamp'}
-      variant={mode === 'lamp' ? 'flicker' : 'static'}
-    />
+  return mode === 'lamp' ? (
+    <MoonIcon color={READING_TEXT_DARK} size={19} />
+  ) : (
+    <SunIcon color={READING_TEXT_LIGHT} size={19} />
   );
 }
 
@@ -136,7 +135,7 @@ export default function ReaderScreen() {
   const [bookTextState, setBookTextState] = useState<
     | { status: 'loading' }
     | { status: 'ready'; book: IngestedBook }
-    | { status: 'unavailable' }
+    | { status: 'unavailable'; message?: string }
     | { status: 'error'; message: string }
   >({ status: 'loading' });
   const [startPosition, setStartPosition] = useState<{ chapterIndex: number; pageIndex: number } | null>(
@@ -151,6 +150,22 @@ export default function ReaderScreen() {
   const [chromeVisible, setChromeVisible] = useState(true);
   const chromeOpacity = useSharedValue(1);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [ambienceOpen, setAmbienceOpen] = useState(false);
+
+  // Reading ambience: plays the chosen loop while this screen is mounted and
+  // stops automatically when leaving the book (expo-audio releases on unmount).
+  useAmbiencePlayer();
+  const ambienceTrackId = useAmbienceTrackId();
+
+  // Soft page-turn sound. Stored in a ref so the stable onViewableItemsChanged
+  // callback (built once via useRef) can reach the latest play fn — same reason
+  // book/pages are mirrored into refs below.
+  const playPageTurn = usePageTurnSound();
+  const playPageTurnRef = useRef(playPageTurn);
+  playPageTurnRef.current = playPageTurn;
+  // Null until the first page settles, so opening a book (or jumping to a saved
+  // page) never fires the sound — only an actual turn does.
+  const lastPageIndexRef = useRef<number | null>(null);
 
   // Hold a word -> action menu (Translate / Save as quote). `wordMenu` is the
   // held word while the menu is open; picking Translate promotes it to
@@ -183,7 +198,6 @@ export default function ReaderScreen() {
     endParagraph: number;
     endOffset: number;
   } | null>(null);
-  const [colorPickerVisible, setColorPickerVisible] = useState(false);
 
   // First-run gesture hint — fades/slides in a couple seconds after the book
   // opens, holds long enough to actually read, then eases back out on its own
@@ -298,10 +312,16 @@ export default function ReaderScreen() {
         }
       } catch (err) {
         if (cancelled) return;
-        setBookTextState({
-          status: 'error',
-          message: err instanceof Error ? err.message : 'Download failed',
-        });
+        // A format error (README stub / not a Gutenberg text) is permanent —
+        // show "unavailable", not a retryable "download failed".
+        if (err instanceof BookFormatError) {
+          setBookTextState({ status: 'unavailable', message: err.message });
+        } else {
+          setBookTextState({
+            status: 'error',
+            message: err instanceof Error ? err.message : 'Download failed',
+          });
+        }
       }
     })();
     return () => {
@@ -419,6 +439,12 @@ export default function ReaderScreen() {
       const first = viewableItems[0];
       if (first?.index == null) return;
       const page = first.item as ReaderPage;
+      // Play the turn sound only on a genuine page change — not the initial
+      // page settling on open, and not a re-emit of the same index.
+      if (lastPageIndexRef.current != null && first.index !== lastPageIndexRef.current) {
+        playPageTurnRef.current();
+      }
+      lastPageIndexRef.current = first.index;
       setCurrentIndex(first.index);
       const currentBook = bookRef.current;
       const currentPages = pagesRef.current;
@@ -436,10 +462,18 @@ export default function ReaderScreen() {
   const highlightMap = useMemo(() => {
     // Highlighting operates at paragraph granularity: start_offset/end_offset
     // hold the first/last selected paragraph index (a quote can span several).
-    const map = new Map<string, HighlightColorKey>();
+    // For a single-paragraph highlight the saved quote_text is the exact
+    // selected substring, so the page can mark just that run instead of
+    // washing the whole paragraph; multi-paragraph spans keep the whole-
+    // paragraph wash (the char offsets within outer paragraphs aren't stored).
+    const map = new Map<string, { colorKey: HighlightColorKey; quoteText: string | null }>();
     for (const h of highlights) {
+      const single = h.startOffset === h.endOffset;
       for (let p = h.startOffset; p <= h.endOffset; p += 1) {
-        map.set(`${h.chapterIndex}-${h.pageIndex}-${p}`, h.colorKey);
+        map.set(`${h.chapterIndex}-${h.pageIndex}-${p}`, {
+          colorKey: h.colorKey,
+          quoteText: single ? h.quoteText : null,
+        });
       }
     }
     return map;
@@ -461,7 +495,11 @@ export default function ReaderScreen() {
         updateBookTotalChapters(book.id, ingested.chapters.length);
       }
     } catch (err) {
-      setBookTextState({ status: 'error', message: err instanceof Error ? err.message : 'Download failed' });
+      if (err instanceof BookFormatError) {
+        setBookTextState({ status: 'unavailable', message: err.message });
+      } else {
+        setBookTextState({ status: 'error', message: err instanceof Error ? err.message : 'Download failed' });
+      }
     }
   }, [book]);
 
@@ -529,30 +567,30 @@ export default function ReaderScreen() {
     [book, activeWord, pages, currentIndex, targetLanguage],
   );
 
-  const handleSelectHighlightColor = useCallback(
-    async (colorKey: HighlightColorKey) => {
-      if (!book || !selection) return;
-      const { page, startParagraph, startOffset, endParagraph, endOffset } = selection;
-      // Rebuild the quote text as the exact selected substring across the range's
-      // paragraphs, in reading order; store the paragraph span for re-rendering
-      // the in-book highlight (which marks whole paragraphs).
-      const quoteText = selectedText(page, startParagraph, startOffset, endParagraph, endOffset);
-      const created = await createHighlight({
-        bookId: book.id,
-        chapterIndex: page.chapterIndex,
-        pageIndex: page.pageIndexInChapter,
-        startOffset: startParagraph,
-        endOffset: endParagraph,
-        colorKey,
-        quoteText,
-      });
-      setHighlights((prev) => [created, ...prev]);
-      setColorPickerVisible(false);
-      setSelection(null);
-      router.push({ pathname: '/quote-share/[highlightId]', params: { highlightId: created.id } });
-    },
-    [book, selection],
-  );
+  // Save the current selection as a quote. Highlights are always the app's
+  // single amber accent — no color picker (its swatches read as confusing
+  // +/- controls and duplicated this Save action), keeping the flow one tap:
+  // adjust the handles, then Save quote.
+  const handleSaveQuote = useCallback(async () => {
+    if (!book || !selection) return;
+    const { page, startParagraph, startOffset, endParagraph, endOffset } = selection;
+    // Rebuild the quote text as the exact selected substring across the range's
+    // paragraphs, in reading order; store the paragraph span for re-rendering
+    // the in-book highlight (which marks whole paragraphs).
+    const quoteText = selectedText(page, startParagraph, startOffset, endParagraph, endOffset);
+    const created = await createHighlight({
+      bookId: book.id,
+      chapterIndex: page.chapterIndex,
+      pageIndex: page.pageIndexInChapter,
+      startOffset: startParagraph,
+      endOffset: endParagraph,
+      colorKey: 'amber',
+      quoteText,
+    });
+    setHighlights((prev) => [created, ...prev]);
+    setSelection(null);
+    router.push({ pathname: '/quote-share/[highlightId]', params: { highlightId: created.id } });
+  }, [book, selection]);
 
   const renderPage = useCallback(
     ({ item }: { item: ReaderPage; index: number }) => {
@@ -666,26 +704,17 @@ export default function ReaderScreen() {
     return (
       <View style={[styles.centered, { backgroundColor: colors.parchment, padding: 24 }]}>
         <Text style={[typography.uiRowTitle, { color: colors.ink, textAlign: 'center' }]}>
-          {book.title} isn't available to read yet.
+          {bookTextState.message ?? `${book.title} isn't available to read yet.`}
+        </Text>
+        <Text style={[typography.metadataCaption, { color: colors.fawn, textAlign: 'center', marginTop: 10 }]}>
+          This title has no readable text edition on Project Gutenberg.
         </Text>
       </View>
     );
   }
 
   if (bookTextState.status === 'loading') {
-    return (
-      <View style={[styles.centered, { backgroundColor: colors.parchment, padding: 24 }]}>
-        <FlameGlow size={64} variant="flicker" />
-        <Text
-          style={[
-            typography.uiRowTitle,
-            { color: colors.ink, textAlign: 'center', marginTop: 20 },
-          ]}
-        >
-          Downloading {book.title}
-        </Text>
-      </View>
-    );
+    return <BookLoadingScreen title={book.title} />;
   }
 
   if (bookTextState.status === 'error') {
@@ -709,7 +738,15 @@ export default function ReaderScreen() {
     return <View style={styles.container}>{measurement}</View>;
   }
 
-  const percent = Math.round(((Math.min(currentIndex, pages.length - 1) + 1) / pages.length) * 100);
+  const pageNumber = Math.min(currentIndex, pages.length - 1) + 1;
+  const totalPages = pages.length;
+  const percent = Math.round((pageNumber / totalPages) * 100);
+  // Rough "time left" so a long book doesn't feel bottomless — ~40s a page is
+  // a calm reading pace for this 18px/1.85 body; floored to whole minutes.
+  const pagesLeft = totalPages - pageNumber;
+  const minutesLeft = Math.round((pagesLeft * 40) / 60);
+  const timeLeftLabel =
+    pagesLeft <= 0 ? 'Last page' : minutesLeft < 1 ? 'Almost done' : `${minutesLeft} min left`;
 
   // Chrome (top bar) colors, pinned to the reading surface rather than the
   // app-wide theme tokens, so the bar reads correctly in both reader modes.
@@ -802,18 +839,40 @@ export default function ReaderScreen() {
           </Defs>
           <Rect x={0} y={0} width={screenWidth} height={insets.top + 64} fill="url(#chromeFade)" />
         </Svg>
-        <View style={[styles.topBarRow, { paddingTop: insets.top + 8 }]}>
+        {/* Back, percent, and the mode toggle (rendered outside this bar) all
+            center on the same line: the mode button's 38px circle sits at
+            insets.top + 10, so its centerline is insets.top + 29. */}
+        <View style={[styles.topBarRow, { paddingTop: insets.top + 19 }]}>
           <Pressable
             onPress={() => router.back()}
             hitSlop={12}
-            style={[styles.topBarBack, { left: spacing.lg, top: insets.top + 6 }]}
+            style={[styles.topBarBack, { left: spacing.lg, top: insets.top + 10 }]}
           >
             <ChevronLeftIcon color={chromeChevron} size={18} />
           </Pressable>
-          {/* Reading progress, centered at the top. */}
-          <Text style={[typography.uiRowTitle, { color: chromePercent, fontSize: 13 }]}>{percent}%</Text>
+          {/* Reading progress, centered at the top: which page of how many,
+              plus how much reading is left, so a long book has a visible end. */}
+          <View style={styles.topBarProgress}>
+            <Text style={[typography.uiRowTitle, { color: chromePercent, fontSize: 13 }]}>
+              Page {pageNumber} of {totalPages}
+            </Text>
+            <Text style={[typography.metadataCaption, { color: chromeChevron, fontSize: 11, opacity: 0.6 }]}>
+              {percent}% · {timeLeftLabel}
+            </Text>
+          </View>
         </View>
       </Animated.View>
+
+      {/* Always-visible hairline progress at the very bottom edge — a constant,
+          non-intrusive sense of position even while the chrome is hidden. */}
+      <View style={[styles.readerProgressTrack, { bottom: insets.bottom }]} pointerEvents="none">
+        <View
+          style={[
+            styles.readerProgressFill,
+            { width: `${percent}%`, backgroundColor: LamplightColor.flameAmber },
+          ]}
+        />
+      </View>
 
       {/* Day/Lamp toggle — the single reading-mode control (no brightness).
           Routed through the app-wide theme transition so the whole screen
@@ -832,6 +891,25 @@ export default function ReaderScreen() {
       >
         <ModeIcon mode={mode} />
       </Pressable>
+
+      {/* Reading ambience — same circular chrome button, left of the mode
+          toggle. Amber icon while a track is playing, quiet otherwise. */}
+      <Pressable
+        hitSlop={12}
+        style={[
+          styles.ambienceButton,
+          {
+            top: insets.top + 10,
+            backgroundColor: modeButtonBg,
+            borderColor: isLamp ? 'rgba(240,230,214,0.30)' : 'rgba(43,38,33,0.22)',
+          },
+        ]}
+        onPress={() => setAmbienceOpen(true)}
+      >
+        <SoundWaveIcon color={ambienceTrackId ? colors.flameAmber : chromeChevron} size={18} />
+      </Pressable>
+
+      <AmbiencePicker visible={ambienceOpen} onClose={() => setAmbienceOpen(false)} />
 
       {/* First-run gesture hint — tap a word to translate, hold + drag to
           quote. Fades in a few seconds after opening the book, auto-dismisses,
@@ -880,7 +958,7 @@ export default function ReaderScreen() {
             })()}
           </Text>
           <Pressable
-            onPress={() => setColorPickerVisible(true)}
+            onPress={handleSaveQuote}
             style={[styles.selectionSave, { backgroundColor: colors.flameAmber }]}
           >
             <Text style={[typography.uiRowTitle, { color: colors.primaryDark, fontSize: 12 }]}>
@@ -924,11 +1002,6 @@ export default function ReaderScreen() {
         anchor={activeWord?.anchor ?? null}
         onClose={() => setActiveWord(null)}
         onSave={handleSaveWord}
-      />
-      <HighlightColorPicker
-        visible={colorPickerVisible}
-        onClose={() => setColorPickerVisible(false)}
-        onSelect={handleSelectHighlightColor}
       />
     </View>
   );
@@ -979,6 +1052,19 @@ const styles = StyleSheet.create({
     zIndex: 20,
     elevation: 6,
   },
+  // Sits one 38px button + a 10px gap to the left of the mode toggle.
+  ambienceButton: {
+    position: 'absolute',
+    right: 64,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 20,
+    elevation: 6,
+  },
   topBar: {
     position: 'absolute',
     top: 0,
@@ -990,8 +1076,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  topBarProgress: {
+    alignItems: 'center',
+    gap: 1,
+  },
+  // Same 38px box as modeCycleButton so the chevron centers on the same line.
   topBarBack: {
     position: 'absolute',
+    width: 38,
+    height: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  readerProgressTrack: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 2.5,
+    backgroundColor: 'rgba(140,130,115,0.18)',
+  },
+  readerProgressFill: {
+    height: 2.5,
   },
   selectionBar: {
     position: 'absolute',

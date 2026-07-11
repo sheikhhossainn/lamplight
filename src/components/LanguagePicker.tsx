@@ -1,18 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Dimensions, FlatList, Keyboard, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { FlatList, Keyboard, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Path } from 'react-native-svg';
 
+import { CloseIcon } from '@/components/icons';
 import { TARGET_LANGUAGES, type TargetLanguage } from '@/features/settings/languagePair';
 import { useTheme } from '@/theme/ThemeProvider';
-
-const SCREEN_H = Dimensions.get('window').height;
-// Bounded height so the list scrolls within the sheet (a FlatList needs a
-// definite height to scroll — a maxHeight-only parent won't give it one).
-const LIST_MAX_HEIGHT = SCREEN_H * 0.58;
-// Rough height of the sheet chrome above the list (grabber + title + search +
-// paddings) — used to keep the list fitting above the keyboard.
-const SHEET_CHROME_H = 150;
 
 type LanguagePickerProps = {
   visible: boolean;
@@ -38,34 +31,20 @@ function CheckIcon({ color }: { color: string }) {
   );
 }
 
+// Full-screen picker (not a bottom sheet). A sheet shrank and "settled" as the
+// keyboard toggled or results emptied — jarring. Full screen keeps the search
+// pinned at top and the results list simply flexes above the keyboard, so the
+// empty-state message never slides out of view.
 export function LanguagePicker({ visible, selected, onSelect, onClose }: LanguagePickerProps) {
   const { colors, typography, spacing, radius } = useTheme();
   const insets = useSafeAreaInsets();
   const [query, setQuery] = useState('');
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const searchRef = useRef<TextInput>(null);
 
   // Reset the search each time it opens so it never re-opens pre-filtered.
   useEffect(() => {
     if (visible) setQuery('');
   }, [visible]);
-
-  // Track the keyboard so the sheet lifts above it and the list shrinks to stay
-  // visible — otherwise the keyboard covers the results as you type.
-  useEffect(() => {
-    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const show = Keyboard.addListener(showEvt, (e) => setKeyboardHeight(e.endCoordinates?.height ?? 0));
-    const hide = Keyboard.addListener(hideEvt, () => setKeyboardHeight(0));
-    return () => {
-      show.remove();
-      hide.remove();
-    };
-  }, []);
-
-  const listMaxHeight = Math.max(
-    140,
-    Math.min(LIST_MAX_HEIGHT, SCREEN_H - insets.top - keyboardHeight - SHEET_CHROME_H),
-  );
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -76,80 +55,79 @@ export function LanguagePicker({ visible, selected, onSelect, onClose }: Languag
   }, [query]);
 
   return (
-    <Modal visible={visible} transparent animationType="slide" statusBarTranslucent onRequestClose={onClose}>
-      <View style={styles.root}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+    <Modal visible={visible} animationType="slide" statusBarTranslucent onRequestClose={onClose}>
+      <View style={[styles.root, { backgroundColor: colors.parchment, paddingTop: insets.top + 8 }]}>
+        <View style={[styles.header, { paddingHorizontal: spacing.xl }]}>
+          <Text style={[typography.screenTitle, { color: colors.ink }]}>Translate to</Text>
+          <Pressable onPress={onClose} hitSlop={12} style={styles.close}>
+            <CloseIcon color={colors.ink} size={18} />
+          </Pressable>
+        </View>
+
         <View
           style={[
-            styles.sheet,
+            styles.searchRow,
             {
               backgroundColor: colors.card,
               borderColor: colors.hairline,
-              // Lift the whole sheet above the keyboard; drop the safe-area bottom
-              // padding when lifted (it would sit under the keyboard anyway).
-              marginBottom: keyboardHeight,
-              paddingBottom: keyboardHeight > 0 ? 12 : insets.bottom + 12,
+              borderRadius: radius.pill,
+              marginHorizontal: spacing.xl,
+              marginTop: spacing.md,
             },
           ]}
         >
-          <View style={[styles.grabber, { backgroundColor: colors.hairline }]} />
+          <SearchIcon color={colors.fawn} />
+          <TextInput
+            ref={searchRef}
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Search languages"
+            placeholderTextColor={colors.fawn}
+            autoCorrect={false}
+            autoCapitalize="none"
+            autoFocus
+            style={[typography.uiRowTitle, styles.searchInput, { color: colors.ink }]}
+          />
+        </View>
 
-          <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginBottom: spacing.sm }]}>
-            Translate to
-          </Text>
-
-          <View
+        {filtered.length === 0 ? (
+          <Text
             style={[
-              styles.searchRow,
-              { backgroundColor: colors.segmentedTrack, borderColor: colors.hairline, borderRadius: radius.pill },
+              typography.metadataCaption,
+              { color: colors.fawn, textAlign: 'center', marginTop: spacing.xl, paddingHorizontal: spacing.xl },
             ]}
           >
-            <SearchIcon color={colors.fawn} />
-            <TextInput
-              value={query}
-              onChangeText={setQuery}
-              placeholder="Search languages"
-              placeholderTextColor={colors.fawn}
-              autoCorrect={false}
-              autoCapitalize="none"
-              style={[typography.uiRowTitle, styles.searchInput, { color: colors.ink }]}
-            />
-          </View>
-
+            No languages match “{query.trim()}”.
+          </Text>
+        ) : (
           <FlatList
             data={filtered}
             keyExtractor={(item) => item.code}
             keyboardShouldPersistTaps="handled"
-            style={[styles.list, { maxHeight: listMaxHeight }]}
-            ListEmptyComponent={
-              <Text style={[typography.metadataCaption, { color: colors.fawn, textAlign: 'center', marginTop: spacing.lg }]}>
-                No languages match “{query}”.
-              </Text>
-            }
+            keyboardDismissMode="on-drag"
+            style={{ flex: 1, marginTop: spacing.sm }}
+            contentContainerStyle={{ paddingHorizontal: spacing.xl, paddingBottom: insets.bottom + 24 }}
             renderItem={({ item }) => {
               const active = item.code === selected;
               return (
                 <Pressable
-                  onPress={() => onSelect(item.code)}
+                  onPress={() => {
+                    Keyboard.dismiss();
+                    onSelect(item.code);
+                  }}
                   style={[
                     styles.row,
                     active && { backgroundColor: colors.pairPillBackground, borderRadius: radius.card },
                   ]}
                 >
                   <Text
-                    style={[
-                      typography.uiRowTitle,
-                      { color: active ? colors.pairPillText : colors.ink, fontSize: 15 },
-                    ]}
+                    style={[typography.uiRowTitle, { color: active ? colors.pairPillText : colors.ink, fontSize: 15 }]}
                   >
                     {item.name}
                   </Text>
                   <View style={styles.rowRight}>
                     <Text
-                      style={[
-                        typography.eyebrowLabel,
-                        { color: active ? colors.pairPillText : colors.fawn, fontSize: 11 },
-                      ]}
+                      style={[typography.eyebrowLabel, { color: active ? colors.pairPillText : colors.fawn, fontSize: 11 }]}
                     >
                       {item.short}
                     </Text>
@@ -159,7 +137,7 @@ export function LanguagePicker({ visible, selected, onSelect, onClose }: Languag
               );
             }}
           />
-        </View>
+        )}
       </View>
     </Modal>
   );
@@ -168,46 +146,36 @@ export function LanguagePicker({ visible, selected, onSelect, onClose }: Languag
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    justifyContent: 'flex-end',
   },
-  sheet: {
-    maxHeight: '78%',
-    borderTopLeftRadius: 22,
-    borderTopRightRadius: 22,
-    borderWidth: 1,
-    borderBottomWidth: 0,
-    paddingHorizontal: 20,
-    paddingTop: 10,
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
-  grabber: {
-    alignSelf: 'center',
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    marginBottom: 16,
+  close: {
+    width: 38,
+    height: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   searchRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 12,
     borderWidth: 1,
-    marginBottom: 8,
   },
   searchInput: {
     flex: 1,
     padding: 0,
-    fontSize: 14,
-  },
-  list: {
-    flexGrow: 0,
+    fontSize: 15,
   },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 13,
+    paddingVertical: 14,
     paddingHorizontal: 12,
   },
   rowRight: {

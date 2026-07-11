@@ -1,15 +1,17 @@
-// Scheduled sync (see .github/workflows/sync-books.yml): looks up each catalog
-// title via the public Gutendex API (https://gutendex.com — the de facto
-// public API for Project Gutenberg's catalog), and upserts lightweight
-// metadata (not the book text itself) into Supabase. The app fetches that
-// metadata via Supabase's REST API (src/features/content-ingestion/
-// remoteCatalog.ts) and downloads a book's actual text on-device, on demand,
-// only when the reader opens it (src/features/content-ingestion/
-// bookDownloader.ts) — this script never writes book text anywhere.
+// Seeds the 5 curated "hero" titles: looks up each via the public Gutendex API
+// (https://gutendex.com — the de facto public API for Project Gutenberg's
+// catalog) and upserts lightweight metadata (not the book text itself) into
+// Supabase. The app fetches that metadata via Supabase's REST API
+// (src/features/content-ingestion/remoteCatalog.ts) and downloads a book's
+// actual text on-device, on demand, only when the reader opens it
+// (src/features/content-ingestion/bookDownloader.ts) — this script never
+// writes book text anywhere.
 //
-// Requires SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in the environment
-// (the service-role key must never be committed or shipped in the app —
-// GitHub Actions injects it from repo secrets; see the workflow file).
+// RUN LOCALLY (`npm run sync:books`). There is no GitHub Actions cron: Gutendex
+// 403s CI/datacenter IPs, so scheduled runs never worked — run it from a real
+// machine when the hero list changes. Requires SUPABASE_URL and
+// SUPABASE_SERVICE_ROLE_KEY in the environment (the service-role key must never
+// be committed or shipped in the app).
 import { createClient } from '@supabase/supabase-js';
 
 import { parseBookText } from '../src/features/content-ingestion/textParser.ts';

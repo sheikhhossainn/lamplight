@@ -1,19 +1,17 @@
 import { useFocusEffect } from '@react-navigation/native';
+import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { isDarkSpineColor, spineColorForBook } from '@/components/BookSpine';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { BookmarkIcon, ChevronLeftIcon, ChevronRightIcon, MoreHorizontalIcon } from '@/components/icons';
-import { deleteBookCache } from '@/features/content-ingestion/bookDownloader';
-import { type BookRow, getBook } from '@/db/repositories/books';
+import { deleteBookCache, isBookCached } from '@/features/content-ingestion/bookDownloader';
+import { deleteImportedBook, getBook, isImportedBook, type BookRow } from '@/db/repositories/books';
 import { listHighlightsForBook } from '@/db/repositories/highlights';
-import {
-  deleteReadingPosition,
-  getReadingPosition,
-  type ReadingPosition,
-} from '@/db/repositories/readingPosition';
+import { getReadingPosition, type ReadingPosition } from '@/db/repositories/readingPosition';
 import { listSavedWordsForBook, type SavedWord } from '@/db/repositories/savedWords';
 import { targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
 import { useTheme } from '@/theme/ThemeProvider';
@@ -23,9 +21,12 @@ export default function BookDetailScreen() {
   const { colors, typography, spacing, radius, layout } = useTheme();
   const insets = useSafeAreaInsets();
   const [book, setBook] = useState<BookRow | null>(null);
+  const [coverFailed, setCoverFailed] = useState(false);
   const [position, setPosition] = useState<ReadingPosition | null>(null);
   const [quoteCount, setQuoteCount] = useState(0);
   const [savedWords, setSavedWords] = useState<SavedWord[]>([]);
+  const [confirmVisible, setConfirmVisible] = useState(false);
+  const [downloaded, setDownloaded] = useState(false);
   const targetLanguage = useTargetLanguage();
 
   useFocusEffect(
@@ -43,6 +44,7 @@ export default function BookDetailScreen() {
           setPosition(positionRow);
           setQuoteCount(highlights.length);
           setSavedWords(words);
+          setDownloaded(bookRow ? isBookCached(bookRow.id) : false);
         }
       })();
       return () => {
@@ -51,38 +53,28 @@ export default function BookDetailScreen() {
     }, [id]),
   );
 
+  const imported = book ? isImportedBook(book) : false;
+
   const handleMoreOptions = useCallback(() => {
     if (!book) return;
-    Alert.alert(book.title, undefined, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete book',
-        style: 'destructive',
-        onPress: () => {
-          // A second confirm on top of the action-sheet choice itself — this
-          // clears reading progress and the downloaded copy (re-downloadable
-          // any time from the shared catalog), but never touches saved
-          // vocabulary/quotes, so make that distinction explicit before
-          // committing to it.
-          Alert.alert(
-            'Delete book?',
-            'This removes it from your library and clears your reading progress. Saved vocabulary and quotes from this book are kept. You can download it again anytime.',
-            [
-              { text: 'Cancel', style: 'cancel' },
-              {
-                text: 'Delete',
-                style: 'destructive',
-                onPress: async () => {
-                  await Promise.all([deleteBookCache(book.id), deleteReadingPosition(book.id)]);
-                  router.back();
-                },
-              },
-            ],
-          );
-        },
-      },
-    ]);
+    setConfirmVisible(true);
   }, [book]);
+
+  const handleConfirm = useCallback(async () => {
+    if (!book) return;
+    setConfirmVisible(false);
+    if (imported) {
+      // The user's own imported EPUB — remove it entirely (row is guaranteed
+      // local by deleteImportedBook's WHERE clause; catalog rows can't be hit).
+      await Promise.all([deleteImportedBook(book.id), deleteBookCache(book.id)]);
+    } else {
+      // Catalog title — only free the on-device download. Never deletes the
+      // shared catalog row or the reading progress; it just re-downloads on
+      // next open.
+      await deleteBookCache(book.id);
+    }
+    router.back();
+  }, [book, imported]);
 
   // Themed placeholder instead of bare null — null falls through to the root
   // navigator's charcoal contentStyle, which reads as a black-screen flash
@@ -123,24 +115,43 @@ export default function BookDetailScreen() {
         <Pressable onPress={() => router.back()} hitSlop={12}>
           <ChevronLeftIcon color={colors.ink} />
         </Pressable>
-        <Pressable onPress={handleMoreOptions} hitSlop={12}>
-          <MoreHorizontalIcon color={colors.ink} />
-        </Pressable>
+        {/* Only show the menu when there's actually an action: an imported book
+            to delete, or a download to remove. A catalog book that's never been
+            opened has nothing to manage, so no dots. */}
+        {imported || downloaded ? (
+          <Pressable onPress={handleMoreOptions} hitSlop={12}>
+            <MoreHorizontalIcon color={colors.ink} />
+          </Pressable>
+        ) : null}
       </View>
 
       <View style={[styles.cover, { backgroundColor: coverColor }]}>
-        <View style={[styles.coverAccent, { backgroundColor: colors.flameAmber, opacity: 0.6 }]} />
-        <View>
-          <Text style={[typography.bookCoverTitle, { color: coverTextColor }]}>{book.title}</Text>
-          <Text
-            style={[
-              typography.eyebrowLabel,
-              { color: coverTextColor, opacity: 0.6, fontSize: 10, marginTop: 8 },
-            ]}
-          >
-            {book.author}
-          </Text>
-        </View>
+        {book.coverUrl && !coverFailed ? (
+          // Real Gutenberg cover art; the painted title cover below is the
+          // fallback when a book has none or the image fails to load.
+          <Image
+            source={{ uri: book.coverUrl }}
+            style={StyleSheet.absoluteFill}
+            contentFit="cover"
+            transition={180}
+            onError={() => setCoverFailed(true)}
+          />
+        ) : (
+          <>
+            <View style={[styles.coverAccent, { backgroundColor: colors.flameAmber, opacity: 0.6 }]} />
+            <View>
+              <Text style={[typography.bookCoverTitle, { color: coverTextColor }]}>{book.title}</Text>
+              <Text
+                style={[
+                  typography.eyebrowLabel,
+                  { color: coverTextColor, opacity: 0.6, fontSize: 10, marginTop: 8 },
+                ]}
+              >
+                {book.author}
+              </Text>
+            </View>
+          </>
+        )}
         <View style={[styles.coverCurl, { borderBottomColor: coverCurlTint }]} />
       </View>
 
@@ -262,6 +273,20 @@ export default function BookDetailScreen() {
           {isAvailable ? (position ? 'Continue Reading' : 'Start Reading') : 'Coming soon'}
         </Text>
       </Pressable>
+
+      <ConfirmDialog
+        visible={confirmVisible}
+        title={imported ? 'Delete this book?' : 'Remove download?'}
+        message={
+          imported
+            ? 'This permanently deletes your imported book. Saved vocabulary and quotes from it are kept.'
+            : 'Frees the on-device download. Your reading progress, vocabulary, and quotes are kept, and the book stays in the catalog — it re-downloads next time you open it.'
+        }
+        confirmLabel={imported ? 'Delete' : 'Remove'}
+        destructive={imported}
+        onConfirm={handleConfirm}
+        onCancel={() => setConfirmVisible(false)}
+      />
     </ScrollView>
   );
 }
