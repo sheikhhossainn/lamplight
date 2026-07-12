@@ -51,6 +51,20 @@ export async function deleteShelf(id: string): Promise<void> {
   await db.runAsync('DELETE FROM shelves WHERE id = ?', [id]);
 }
 
+export async function addBookToShelf(shelfId: string, bookId: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync('INSERT OR IGNORE INTO shelf_items (shelf_id, book_id, added_at) VALUES (?, ?, ?)', [
+    shelfId,
+    bookId,
+    Date.now(),
+  ]);
+}
+
+export async function removeBookFromShelf(shelfId: string, bookId: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync('DELETE FROM shelf_items WHERE shelf_id = ? AND book_id = ?', [shelfId, bookId]);
+}
+
 // Replace a shelf's membership with exactly `bookIds`.
 export async function setShelfBooks(shelfId: string, bookIds: string[]): Promise<void> {
   const db = await getDb();

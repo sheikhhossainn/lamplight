@@ -29,6 +29,7 @@ import { getBookMeta as getBibleOtBookMeta, getBookVerses as getBibleOtVerses } 
 import { getBookMeta as getBibleNtBookMeta, getBookVerses as getBibleNtVerses } from '@/features/bible-content/bibleNtData';
 import { getSurahMeta, getSurahVerses } from '@/features/quran-content/quranData';
 import { sentenceContaining } from '@/features/reader/engine/words';
+import { MIN_DECK_SIZE } from '@/features/vocabulary/reviewPrompt';
 import { useTheme } from '@/theme/ThemeProvider';
 
 type Tab = 'list' | 'flashcards' | 'quotes' | 'verses';
@@ -243,6 +244,13 @@ export default function VocabularyScreen() {
           <SkeletonRows />
         ) : words.length === 0 ? (
           <EmptyPrompt variant="flashcards" message="Save words while reading to build your flashcard deck." />
+        ) : words.length < MIN_DECK_SIZE ? (
+          <EmptyPrompt
+            variant="flashcards"
+            message={`Read ${MIN_DECK_SIZE - words.length} more word${
+              MIN_DECK_SIZE - words.length === 1 ? '' : 's'
+            } to test your memory.`}
+          />
         ) : (
           <FlashcardDeck words={words} books={books} />
         )

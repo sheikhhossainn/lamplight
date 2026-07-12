@@ -6,6 +6,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { isDarkSpineColor, spineColorForBook } from '@/components/BookSpine';
+import { AddToShelfSheet } from '@/components/AddToShelfSheet';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { BookmarkIcon, ChevronLeftIcon, ChevronRightIcon, MoreHorizontalIcon } from '@/components/icons';
 import { deleteBookCache, isBookCached } from '@/features/content-ingestion/bookDownloader';
@@ -13,6 +14,15 @@ import { deleteImportedBook, getBook, isImportedBook, type BookRow } from '@/db/
 import { listHighlightsForBook } from '@/db/repositories/highlights';
 import { getReadingPosition, type ReadingPosition } from '@/db/repositories/readingPosition';
 import { listSavedWordsForBook, type SavedWord } from '@/db/repositories/savedWords';
+import {
+  addBookToShelf,
+  createShelf,
+  listShelfItems,
+  listShelves,
+  removeBookFromShelf,
+  type Shelf,
+  type ShelfItem,
+} from '@/db/repositories/shelves';
 import { targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
 import { useTheme } from '@/theme/ThemeProvider';
 
@@ -27,17 +37,22 @@ export default function BookDetailScreen() {
   const [savedWords, setSavedWords] = useState<SavedWord[]>([]);
   const [confirmVisible, setConfirmVisible] = useState(false);
   const [downloaded, setDownloaded] = useState(false);
+  const [shelves, setShelves] = useState<Shelf[]>([]);
+  const [shelfItems, setShelfItems] = useState<ShelfItem[]>([]);
+  const [shelfSheetVisible, setShelfSheetVisible] = useState(false);
   const targetLanguage = useTargetLanguage();
 
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
       (async () => {
-        const [bookRow, positionRow, highlights, words] = await Promise.all([
+        const [bookRow, positionRow, highlights, words, shelfRows, shelfItemRows] = await Promise.all([
           getBook(id),
           getReadingPosition(id),
           listHighlightsForBook(id),
           listSavedWordsForBook(id),
+          listShelves(),
+          listShelfItems(),
         ]);
         if (!cancelled) {
           setBook(bookRow);
@@ -45,6 +60,8 @@ export default function BookDetailScreen() {
           setQuoteCount(highlights.length);
           setSavedWords(words);
           setDownloaded(bookRow ? isBookCached(bookRow.id) : false);
+          setShelves(shelfRows);
+          setShelfItems(shelfItemRows);
         }
       })();
       return () => {
@@ -52,6 +69,25 @@ export default function BookDetailScreen() {
       };
     }, [id]),
   );
+
+  const memberShelfIds = new Set(shelfItems.filter((it) => it.bookId === id).map((it) => it.shelfId));
+
+  const handleToggleShelf = async (shelf: Shelf) => {
+    const isMember = memberShelfIds.has(shelf.id);
+    setShelfItems((prev) =>
+      isMember
+        ? prev.filter((it) => !(it.shelfId === shelf.id && it.bookId === id))
+        : [...prev, { shelfId: shelf.id, bookId: id }],
+    );
+    if (isMember) await removeBookFromShelf(shelf.id, id);
+    else await addBookToShelf(shelf.id, id);
+  };
+
+  const handleCreateShelf = async (name: string) => {
+    const shelf = await createShelf(name, [id]);
+    setShelves((prev) => [...prev, shelf]);
+    setShelfItems((prev) => [...prev, { shelfId: shelf.id, bookId: id }]);
+  };
 
   const imported = book ? isImportedBook(book) : false;
 
@@ -181,6 +217,14 @@ export default function BookDetailScreen() {
         </View>
       </View>
 
+      <Pressable onPress={() => setShelfSheetVisible(true)} style={{ marginTop: spacing.md, alignSelf: 'flex-start' }}>
+        <Text style={[typography.uiRowTitle, { color: colors.progressLabel, fontSize: 12 }]}>
+          {memberShelfIds.size > 0
+            ? `On ${memberShelfIds.size} shelf${memberShelfIds.size === 1 ? '' : 'ves'} · Edit`
+            : '+ Add to shelf'}
+        </Text>
+      </Pressable>
+
       <View
         style={[
           styles.progressTrack,
@@ -286,6 +330,15 @@ export default function BookDetailScreen() {
         destructive={imported}
         onConfirm={handleConfirm}
         onCancel={() => setConfirmVisible(false)}
+      />
+
+      <AddToShelfSheet
+        visible={shelfSheetVisible}
+        shelves={shelves}
+        memberShelfIds={memberShelfIds}
+        onToggle={handleToggleShelf}
+        onCreate={handleCreateShelf}
+        onClose={() => setShelfSheetVisible(false)}
       />
     </ScrollView>
   );
