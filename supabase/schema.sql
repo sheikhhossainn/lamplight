@@ -80,7 +80,7 @@ create table if not exists public.plans (
 -- See ROADMAP.md's "Free tier philosophy" section before changing these.
 insert into public.plans (key, display_name, vocabulary_words_per_book, quotes_per_book, translations_per_day, weekly_quiz_enabled, spaced_repetition_enabled, reading_insights_enabled, cloud_sync_enabled, ambient_sound_tier, quote_card_theme_count)
 values
-  ('free', 'Lamplight Free', 30, 15, 100, true, false, false, false, 'basic', 3),
+  ('free', 'Lamplight Free', 30, 15, 300, true, false, false, false, 'basic', 3),
   ('premium', 'Lamplight Premium', null, null, null, true, true, true, true, 'full', null)
 on conflict (key) do nothing;
 
