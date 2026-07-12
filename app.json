@@ -23,7 +23,8 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": []
     },
     "web": {
       "output": "static",
@@ -53,6 +54,9 @@
         "projectId": "3ed86887-d341-4861-9854-22d3b2a233ff"
       }
     },
-    "owner": "sheikhhossainns-team"
+    "owner": "sheikhhossainns-team",
+    "updates": {
+      "url": "https://u.expo.dev/3ed86887-d341-4861-9854-22d3b2a233ff"
+    }
   }
 }

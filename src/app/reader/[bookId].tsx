@@ -40,7 +40,9 @@ import {
   glyphWidthsReady,
   setMeasuredGlyphWidths,
 } from '@/features/reader/engine/glyphWidths';
+import { sentenceAtOffset } from '@/features/reader/engine/words';
 import { getBookText } from '@/features/content-ingestion/bookDownloader';
+import { logEvent } from '@/features/analytics/analytics';
 import { BookFormatError, type IngestedBook } from '@/features/content-ingestion/textParser';
 import { getBook, updateBookTotalChapters, type BookRow } from '@/db/repositories/books';
 import { createHighlight, listHighlightsForBook, type Highlight } from '@/db/repositories/highlights';
@@ -550,19 +552,23 @@ export default function ReaderScreen() {
     async (translation: string) => {
       if (!book || !activeWord) return;
       const page = pages[currentIndex];
+      const paragraph = page.paragraphs[activeWord.paragraphIndex] ?? '';
       const created = await saveWord({
         bookId: book.id,
         sourceWord: activeWord.word,
         sourceLang: 'en',
         targetLang: targetLanguage,
         translation,
-        contextSentence: page.paragraphs[activeWord.paragraphIndex] ?? '',
+        // The sentence the word is in, not the whole paragraph — the card only
+        // shows a few lines of this.
+        contextSentence: sentenceAtOffset(paragraph, activeWord.start),
         chapterIndex: page.chapterIndex,
         pageIndex: page.pageIndexInChapter,
         paragraphIndex: activeWord.paragraphIndex,
       });
       setSavedWords((prev) => [created, ...prev]); // reflect the amber marker immediately
       setActiveWord(null);
+      logEvent('word_saved', { book_id: book.id, target_lang: targetLanguage });
     },
     [book, activeWord, pages, currentIndex, targetLanguage],
   );
@@ -720,9 +726,21 @@ export default function ReaderScreen() {
   if (bookTextState.status === 'error') {
     return (
       <View style={[styles.centered, { backgroundColor: colors.parchment, padding: 24 }]}>
-        <Text style={[typography.uiRowTitle, { color: colors.ink, textAlign: 'center', marginBottom: 16 }]}>
+        <Text style={[typography.uiRowTitle, { color: colors.ink, textAlign: 'center', marginBottom: 4 }]}>
           Couldn't download {book.title}.
         </Text>
+        {/* Temporary diagnostic — surfaces the raw error while debugging the
+            Gutenberg redirect issue; not meant to stay user-facing long-term. */}
+        {bookTextState.message ? (
+          <Text
+            style={[
+              typography.metadataCaption,
+              { color: colors.fawn, textAlign: 'center', marginBottom: 16 },
+            ]}
+          >
+            {bookTextState.message}
+          </Text>
+        ) : null}
         <Pressable
           onPress={retryDownload}
           style={[styles.selectionSave, { backgroundColor: colors.flameAmber }]}

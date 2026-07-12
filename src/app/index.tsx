@@ -1,4 +1,4 @@
-import { router } from 'expo-router';
+import { Redirect, router } from 'expo-router';
 import { Dimensions, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { Easing, FadeIn, FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -6,6 +6,7 @@ import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 
 import { FlameGlow } from '@/components/FlameGlow';
 import { ChevronRightIcon } from '@/components/icons';
+import { hasCompletedOnboarding } from '@/features/settings/onboardingStatus';
 import { useTheme } from '@/theme/ThemeProvider';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
@@ -13,6 +14,12 @@ const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 export default function SplashScreen() {
   const { colors, typography, spacing } = useTheme();
   const insets = useSafeAreaInsets();
+
+  // Root layout already resolved the has-onboarded flag before this route
+  // could mount, so this is synchronous — no flash of the splash screen.
+  if (hasCompletedOnboarding()) {
+    return <Redirect href="/library" />;
+  }
 
   // The exit is handled by the navigator's fade animation (see root layout) —
   // no manual screen fade here, which used to fade the dark splash to

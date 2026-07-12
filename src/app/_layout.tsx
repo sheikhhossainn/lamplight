@@ -8,11 +8,12 @@ import { Manrope_400Regular, Manrope_600SemiBold, Manrope_700Bold } from '@expo-
 import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 
-import { AppUpdateBanner } from '@/components/AppUpdateBanner';
+import { AppUpdatePrompt } from '@/components/AppUpdatePrompt';
 import { hydrateTargetLanguage } from '@/features/settings/languagePair';
+import { hydrateOnboardingStatus } from '@/features/settings/onboardingStatus';
 import { LamplightThemeProvider } from '@/theme/ThemeProvider';
 import { ThemeTransitionOverlay } from '@/theme/ThemeTransitionOverlay';
 
@@ -28,12 +29,19 @@ export default function RootLayout() {
     Manrope_600SemiBold,
     Manrope_700Bold,
   });
+  const [onboardingChecked, setOnboardingChecked] = useState(false);
 
-  const ready = fontsLoaded || Boolean(fontError);
+  const ready = (fontsLoaded || Boolean(fontError)) && onboardingChecked;
 
   // Load persisted settings (translation language pair) once on launch.
   useEffect(() => {
     void hydrateTargetLanguage();
+  }, []);
+
+  // Resolve the has-onboarded flag before the Stack mounts, so the "/" splash
+  // route can redirect straight past itself instead of flashing then bouncing.
+  useEffect(() => {
+    void hydrateOnboardingStatus().then(() => setOnboardingChecked(true));
   }, []);
 
   useEffect(() => {
@@ -64,7 +72,7 @@ export default function RootLayout() {
           }}
         />
         <ThemeTransitionOverlay />
-        <AppUpdateBanner />
+        <AppUpdatePrompt />
       </View>
     </LamplightThemeProvider>
   );

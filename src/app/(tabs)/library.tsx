@@ -20,9 +20,12 @@ import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
 import { BookSpine } from '@/components/BookSpine';
 import { CloseIcon, FilterIcon, SearchIcon } from '@/components/icons';
+import { logEvent } from '@/features/analytics/analytics';
 import { BOOK_CATEGORIES, categoriesForBook } from '@/features/content-ingestion/bookCategories';
 import { useLibrarySyncing } from '@/features/content-ingestion/librarySync';
 import { ShelfEditorModal, type ShelfDraft } from '@/components/ShelfEditorModal';
+import { VocabReviewPrompt } from '@/components/VocabReviewPrompt';
+import { checkVocabReviewPrompt, markVocabReviewPrompted } from '@/features/vocabulary/reviewPrompt';
 import { type BookRow, listBooks } from '@/db/repositories/books';
 import {
   hideFromContinueReading,
@@ -118,6 +121,7 @@ export default function LibraryScreen() {
   const [importing, setImporting] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  const [reviewPrompt, setReviewPrompt] = useState<{ wordCount: number } | null>(null);
   const searchRef = useRef<TextInput>(null);
 
   // When the keyboard is dismissed (e.g. swipe-back gesture) the search input
@@ -157,6 +161,10 @@ export default function LibraryScreen() {
       void (async () => {
         await load();
         if (cancelled) return;
+        // Library is the landing screen, so this is where the once-a-day review
+        // invitation surfaces. Never in the reader — nothing interrupts reading.
+        const { shouldPrompt, wordCount } = await checkVocabReviewPrompt();
+        if (!cancelled && shouldPrompt) setReviewPrompt({ wordCount });
       })();
       return () => {
         cancelled = true;
@@ -234,6 +242,7 @@ export default function LibraryScreen() {
       if (!file) return;
       setImporting(true);
       const book = await importEpubFromFile(file);
+      logEvent('book_imported', { book_id: book.id });
       await load();
       router.push({ pathname: '/book/[id]', params: { id: book.id } });
     } catch (err) {
@@ -533,6 +542,21 @@ export default function LibraryScreen() {
         onSave={handleSaveShelf}
         onDelete={editor.draft ? handleDeleteShelf : undefined}
         onClose={() => setEditor({ visible: false, draft: null })}
+      />
+
+      <VocabReviewPrompt
+        visible={reviewPrompt != null}
+        wordCount={reviewPrompt?.wordCount ?? 0}
+        onReview={() => {
+          void markVocabReviewPrompted();
+          setReviewPrompt(null);
+          router.push({ pathname: '/vocabulary', params: { tab: 'flashcards' } });
+        }}
+        onDismiss={() => {
+          // Dismissing still answers the question for today — no second ask.
+          void markVocabReviewPrompted();
+          setReviewPrompt(null);
+        }}
       />
     </ScrollView>
   );

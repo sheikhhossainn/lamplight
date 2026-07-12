@@ -1,18 +1,29 @@
+import { useFocusEffect } from '@react-navigation/native';
+import Constants from 'expo-constants';
 import { router } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Line, Path } from 'react-native-svg';
 
 import { ChevronRightIcon } from '@/components/icons';
+import {
+  useAppUpdateBanner,
+  type AppUpdateStatus,
+} from '@/features/app-update/useAppUpdateBanner';
 import { setTargetLanguage, targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
 import { useReadingTheme } from '@/features/settings/readingTheme';
 import { setPageTurnSoundEnabled, usePageTurnSoundEnabled } from '@/features/settings/soundPrefs';
 import { requestThemeChange } from '@/features/settings/themeTransition';
 import { isPremiumUser } from '@/features/subscription/subscriptionState';
-import { checkTranslationCap } from '@/features/translation';
+import { checkCachedTranslationCap, checkTranslationCap } from '@/features/translation';
+import type { CapCheck } from '@/features/translation/capPolicy';
 import { LanguagePicker } from '@/components/LanguagePicker';
 import { useTheme } from '@/theme/ThemeProvider';
+import { Layout, Spacing } from '@/theme/tokens';
+
+// Clear the tab bar so the last row isn't half-hidden behind it.
+const TAB_BAR_CLEARANCE = Layout.tabBarHeight + Spacing.xl;
 
 function SunIcon({ color }: { color: string }) {
   return (
@@ -45,28 +56,74 @@ function ToggleSwitch({ value, onChange }: { value: boolean; onChange: (v: boole
   );
 }
 
+// The passive half of the update lifecycle. It used to be a top banner on every
+// screen; nobody needs to watch a background download, but someone who wonders
+// "am I on the latest build?" comes here to ask.
+function updateStatusLabel(status: AppUpdateStatus, progress: number | undefined): string {
+  switch (status) {
+    case 'checking':
+      return 'Checking for updates…';
+    case 'downloading':
+      return `Downloading update… ${Math.round((progress ?? 0) * 100)}%`;
+    case 'ready':
+      return 'Update ready — restart to install';
+    case 'error':
+      return 'Update check failed — will retry next launch';
+    default:
+      return 'Up to date';
+  }
+}
+
 export default function SettingsScreen() {
   const { colors, typography, spacing, radius } = useTheme();
   const insets = useSafeAreaInsets();
+  const { status: updateStatus, downloadProgress, applyUpdate } = useAppUpdateBanner();
 
   const theme = useReadingTheme();
   const targetLanguage = useTargetLanguage();
   const pageTurnSound = usePageTurnSoundEnabled();
-  const [translationsLeft, setTranslationsLeft] = useState<number | null>(null);
+  // undefined = not known yet, null = unlimited (premium). Collapsing those two
+  // into null made the row flash "Unlimited translations" on every focus while
+  // the server round-trip was still in flight.
+  const [translationsLeft, setTranslationsLeft] = useState<number | null | undefined>(undefined);
   const [languagePickerVisible, setLanguagePickerVisible] = useState(false);
 
-  useEffect(() => {
-    checkTranslationCap(isPremiumUser()).then((cap) => {
-      setTranslationsLeft(cap.remaining === Infinity ? null : cap.remaining);
-    });
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      const isPremium = isPremiumUser();
+      const apply = (cap: CapCheck) => {
+        if (!cancelled) setTranslationsLeft(cap.remaining === Infinity ? null : cap.remaining);
+      };
+
+      // Local cache first (no network) so the real count paints immediately;
+      // the server read below overwrites it once it lands. Only fills a still-
+      // unknown value, so a slow cache read can't clobber a fresher server one.
+      checkCachedTranslationCap(isPremium).then((cap) => {
+        if (!cap || cancelled) return;
+        setTranslationsLeft((prev) =>
+          prev === undefined ? (cap.remaining === Infinity ? null : cap.remaining) : prev,
+        );
+      });
+      checkTranslationCap(isPremium).then(apply);
+
+      return () => {
+        cancelled = true;
+      };
+    }, []),
+  );
 
   return (
-    <View
-      style={[
-        styles.container,
-        { backgroundColor: colors.parchment, paddingHorizontal: spacing.xl, paddingTop: insets.top + 16 },
-      ]}
+    // Scrolls now that About sits below the plan card — on a short phone the
+    // last section would otherwise fall off the bottom with no way to reach it.
+    <ScrollView
+      style={[styles.container, { backgroundColor: colors.parchment }]}
+      contentContainerStyle={{
+        paddingHorizontal: spacing.xl,
+        paddingTop: insets.top + 16,
+        paddingBottom: TAB_BAR_CLEARANCE,
+      }}
+      showsVerticalScrollIndicator={false}
     >
       <Text style={[typography.screenTitle, { color: colors.ink, marginBottom: spacing.lg }]}>
         Settings
@@ -202,7 +259,11 @@ export default function SettingsScreen() {
               { color: theme === 'day' ? colors.mutedOnDark : colors.fawn, fontSize: 11, marginTop: 2 },
             ]}
           >
-            {translationsLeft == null ? 'Unlimited translations' : `${translationsLeft} translations left today`}
+            {translationsLeft === undefined
+              ? 'Checking translations left…'
+              : translationsLeft === null
+                ? 'Unlimited translations'
+                : `${translationsLeft} translations left today`}
           </Text>
         </View>
         <Pressable
@@ -211,6 +272,36 @@ export default function SettingsScreen() {
         >
           <Text style={[typography.uiRowTitle, { color: colors.primaryDark, fontSize: 12 }]}>Upgrade</Text>
         </Pressable>
+      </View>
+
+      <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginTop: spacing.xl, marginBottom: spacing.sm }]}>
+        About
+      </Text>
+      <View
+        style={[
+          styles.card,
+          styles.settingsRow,
+          { backgroundColor: colors.card, borderColor: colors.hairline, borderRadius: radius.card },
+        ]}
+      >
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
+            Lamplight {Constants.expoConfig?.version ?? ''}
+          </Text>
+          <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11, marginTop: 2 }]}>
+            {updateStatusLabel(updateStatus, downloadProgress)}
+          </Text>
+        </View>
+        {updateStatus === 'checking' || updateStatus === 'downloading' ? (
+          <ActivityIndicator size="small" color={colors.flameAmber} />
+        ) : updateStatus === 'ready' ? (
+          <Pressable
+            onPress={applyUpdate}
+            style={[styles.upgradeButton, { backgroundColor: colors.flameAmber, borderRadius: radius.pill }]}
+          >
+            <Text style={[typography.uiRowTitle, { color: colors.primaryDark, fontSize: 12 }]}>Restart</Text>
+          </Pressable>
+        ) : null}
       </View>
 
       <LanguagePicker
@@ -222,7 +313,7 @@ export default function SettingsScreen() {
         }}
         onClose={() => setLanguagePickerVisible(false)}
       />
-    </View>
+    </ScrollView>
   );
 }
 
