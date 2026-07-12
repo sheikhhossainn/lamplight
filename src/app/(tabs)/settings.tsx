@@ -1,5 +1,6 @@
+import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Line, Path } from 'react-native-svg';
@@ -55,11 +56,13 @@ export default function SettingsScreen() {
   const [translationsLeft, setTranslationsLeft] = useState<number | null>(null);
   const [languagePickerVisible, setLanguagePickerVisible] = useState(false);
 
-  useEffect(() => {
-    checkTranslationCap(isPremiumUser()).then((cap) => {
-      setTranslationsLeft(cap.remaining === Infinity ? null : cap.remaining);
-    });
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      checkTranslationCap(isPremiumUser()).then((cap) => {
+        setTranslationsLeft(cap.remaining === Infinity ? null : cap.remaining);
+      });
+    }, []),
+  );
 
   return (
     <View
