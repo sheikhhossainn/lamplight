@@ -305,6 +305,21 @@ create table if not exists public.translation_usage (
   primary key (owner_id, usage_date)
 );
 
+-- PostgREST upsert (Prefer: resolution=merge-duplicates) overwrites columns,
+-- it can't express `count_used = count_used + 1` — so a real function is
+-- needed to avoid a lost-update race between two concurrent increments for
+-- the same owner_id/usage_date. security invoker (default): runs as the
+-- calling role, so the existing RLS policy below still applies.
+create or replace function public.increment_translation_usage(p_owner_id uuid, p_date date)
+returns integer
+language sql
+as $$
+  insert into public.translation_usage (owner_id, usage_date, count_used)
+  values (p_owner_id, p_date, 1)
+  on conflict (owner_id, usage_date) do update set count_used = translation_usage.count_used + 1
+  returning count_used;
+$$;
+
 -- ============================================================================
 -- 7. Weekly learning — quiz results (Premium adds adaptive quizzes/mastery
 --    levels on top of the same attempts table via `quiz_type`).
