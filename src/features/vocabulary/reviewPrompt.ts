@@ -5,7 +5,7 @@ import { getReviewStats } from '@/db/repositories/savedWords';
 // when the app volunteers a review. Gate is deliberately quiet: a deck worth
 // reviewing (5+ words), at least one word old enough that recalling it means
 // something (saved before today), and never twice in a day.
-const MIN_DECK_SIZE = 5;
+export const MIN_DECK_SIZE = 5;
 const LAST_SHOWN_KEY = 'vocab_review_prompt_last_shown';
 
 function todayKey(): string {
