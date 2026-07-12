@@ -1,36 +1,29 @@
 import * as Updates from 'expo-updates';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback } from 'react';
 
-// Silently checks for an EAS Update on launch, downloads it in the
-// background, and only surfaces anything once it's fully ready to apply —
-// so the banner means "restart now for the update", never "downloading,
-// wait". Updates.isEnabled is false in Expo Go / a dev client (no update
-// channel configured there), so this is a no-op outside a real EAS build.
+export type AppUpdateStatus = 'idle' | 'checking' | 'downloading' | 'ready' | 'error';
+
+// Reads expo-updates' own state machine instead of re-running
+// checkForUpdateAsync/fetchUpdateAsync by hand — that used to duplicate the
+// native ON_LOAD auto-check and swallow its errors silently, leaving no way
+// to tell "no update available" apart from "update check is stuck".
 export function useAppUpdateBanner() {
-  const [updateReady, setUpdateReady] = useState(false);
+  const { isChecking, isDownloading, isUpdatePending, checkError, downloadError, downloadProgress } =
+    Updates.useUpdates();
 
-  useEffect(() => {
-    if (!Updates.isEnabled) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const check = await Updates.checkForUpdateAsync();
-        if (!check.isAvailable || cancelled) return;
-        await Updates.fetchUpdateAsync();
-        if (!cancelled) setUpdateReady(true);
-      } catch {
-        // Offline, or the check failed — silently skip; the next launch
-        // tries again on its own, no need to surface a transient error.
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const status: AppUpdateStatus = isUpdatePending
+    ? 'ready'
+    : isDownloading
+      ? 'downloading'
+      : isChecking
+        ? 'checking'
+        : checkError || downloadError
+          ? 'error'
+          : 'idle';
 
   const applyUpdate = useCallback(() => {
     Updates.reloadAsync();
   }, []);
 
-  return { updateReady, applyUpdate };
+  return { status, downloadProgress, applyUpdate };
 }
