@@ -54,6 +54,7 @@ const ROW_ROTATIONS = [-2, 1.5, -1, 2.5, -2.5, 1, -1.5, 2];
 // FlatList can compute scroll offsets without measuring every item.
 const SPINE_SLOT_WIDTH = 96 + 16;
 
+
 function getShelfSubtitle(): string {
   const now = new Date();
   const day = now.toLocaleDateString(undefined, { weekday: 'long' });
@@ -353,7 +354,22 @@ export default function LibraryScreen() {
         </View>
       ) : (
         <>
-          {continueEntries.length > 0 ? (
+          {!loaded ? (
+            <View style={{ marginTop: spacing.xl }}>
+              <View
+                style={[
+                  styles.continueCard,
+                  { backgroundColor: colors.card, borderRadius: radius.card, opacity: 0.6 },
+                ]}
+              >
+                <View style={{ width: 56, height: 80, borderRadius: radius.bookCoverOuter, backgroundColor: colors.hairline }} />
+                <View style={{ flex: 1, marginLeft: spacing.md }}>
+                  <View style={{ width: '60%', height: 13, borderRadius: 4, backgroundColor: colors.hairline, marginBottom: spacing.sm }} />
+                  <View style={{ width: '40%', height: 10, borderRadius: 4, backgroundColor: colors.hairline }} />
+                </View>
+              </View>
+            </View>
+          ) : continueEntries.length > 0 ? (
         <>
           <Text
             style={[typography.eyebrowLabel, { color: colors.fawn, marginTop: spacing.xl, marginBottom: spacing.sm }]}
@@ -491,6 +507,47 @@ export default function LibraryScreen() {
           {activeCategory ? 'No books in this category yet.' : 'No books yet.'}
         </Text>
       )}
+
+      {/* Scripture shelf — same shelf/spine visual language as "All books",
+          just fixed entries that aren't part of the books catalog. Not gated
+          on `loaded`: unlike the shelves above, this doesn't depend on any DB
+          read, so it belongs in the static frame from first paint — gating it
+          on `loaded` only made it pop in a beat late, growing the page height
+          right when the real "All books" shelf also popped in. */}
+      <View>
+        <View style={[styles.shelfHeader, { marginBottom: spacing.md }]}>
+          <Text style={[typography.eyebrowLabel, { color: colors.progressLabel }]}>Scriptures</Text>
+        </View>
+        <View style={[styles.shelfRow, { marginBottom: spacing.sm }]}>
+          <View style={{ marginRight: spacing.md }}>
+            <BookSpine
+              bookId="quran"
+              title="Quran"
+              toneIndex={0}
+              onPress={() => router.push({ pathname: '/quran' })}
+            />
+          </View>
+          <View style={{ marginRight: spacing.md }}>
+            <BookSpine
+              bookId="bible-ot"
+              title="Bible — Old Testament"
+              toneIndex={0}
+              onPress={() => router.push({ pathname: '/bible' })}
+            />
+          </View>
+          <View style={{ marginRight: spacing.md }}>
+            <BookSpine
+              bookId="bible-nt"
+              title="Bible — New Testament"
+              toneIndex={0}
+              onPress={() => router.push({ pathname: '/bible-nt' })}
+            />
+          </View>
+        </View>
+        <View style={{ marginBottom: spacing.xl }}>
+          <WoodenPlank width={screenWidth - spacing.xl * 2} />
+        </View>
+      </View>
 
       {/* User-created category shelves. */}
       {loaded

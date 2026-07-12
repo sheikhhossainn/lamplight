@@ -22,6 +22,10 @@ type WordActionMenuProps = {
   onTranslate: () => void;
   onSaveQuote: () => void;
   onClose: () => void;
+  // Defaults to "Save as quote" (prose books). The Quran verse reader passes
+  // "Highlight verse" since onSaveQuote highlights the whole verse there,
+  // not a quote-shareable selection.
+  saveLabel?: string;
 };
 
 // Thin-stroke language/translate glyph (two overlapping speech marks) — stroked,
@@ -46,7 +50,14 @@ function BookmarkIcon({ color }: { color: string }) {
   );
 }
 
-export function WordActionMenu({ word, anchor, onTranslate, onSaveQuote, onClose }: WordActionMenuProps) {
+export function WordActionMenu({
+  word,
+  anchor,
+  onTranslate,
+  onSaveQuote,
+  onClose,
+  saveLabel = 'Save as quote',
+}: WordActionMenuProps) {
   const { colors, typography, spacing, radius } = useTheme();
 
   // Show below the word by default; flip above when the hold is low enough that
@@ -99,7 +110,7 @@ export function WordActionMenu({ word, anchor, onTranslate, onSaveQuote, onClose
 
             <Pressable style={styles.row} onPress={onSaveQuote}>
               <BookmarkIcon color={colors.flameAmber} />
-              <Text style={[typography.uiRowTitle, { color: colors.lampText, fontSize: 13 }]}>Save as quote</Text>
+              <Text style={[typography.uiRowTitle, { color: colors.lampText, fontSize: 13 }]}>{saveLabel}</Text>
             </Pressable>
           </Pressable>
         </View>
