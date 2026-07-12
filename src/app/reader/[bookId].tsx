@@ -40,6 +40,7 @@ import {
   glyphWidthsReady,
   setMeasuredGlyphWidths,
 } from '@/features/reader/engine/glyphWidths';
+import { sentenceAtOffset } from '@/features/reader/engine/words';
 import { getBookText } from '@/features/content-ingestion/bookDownloader';
 import { logEvent } from '@/features/analytics/analytics';
 import { BookFormatError, type IngestedBook } from '@/features/content-ingestion/textParser';
@@ -551,13 +552,16 @@ export default function ReaderScreen() {
     async (translation: string) => {
       if (!book || !activeWord) return;
       const page = pages[currentIndex];
+      const paragraph = page.paragraphs[activeWord.paragraphIndex] ?? '';
       const created = await saveWord({
         bookId: book.id,
         sourceWord: activeWord.word,
         sourceLang: 'en',
         targetLang: targetLanguage,
         translation,
-        contextSentence: page.paragraphs[activeWord.paragraphIndex] ?? '',
+        // The sentence the word is in, not the whole paragraph — the card only
+        // shows a few lines of this.
+        contextSentence: sentenceAtOffset(paragraph, activeWord.start),
         chapterIndex: page.chapterIndex,
         pageIndex: page.pageIndexInChapter,
         paragraphIndex: activeWord.paragraphIndex,

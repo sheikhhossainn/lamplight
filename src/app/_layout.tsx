@@ -11,7 +11,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 
-import { AppUpdateBanner } from '@/components/AppUpdateBanner';
+import { AppUpdatePrompt } from '@/components/AppUpdatePrompt';
 import { hydrateTargetLanguage } from '@/features/settings/languagePair';
 import { hydrateOnboardingStatus } from '@/features/settings/onboardingStatus';
 import { LamplightThemeProvider } from '@/theme/ThemeProvider';
@@ -72,7 +72,7 @@ export default function RootLayout() {
           }}
         />
         <ThemeTransitionOverlay />
-        <AppUpdateBanner />
+        <AppUpdatePrompt />
       </View>
     </LamplightThemeProvider>
   );

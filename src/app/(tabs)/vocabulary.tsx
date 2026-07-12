@@ -1,6 +1,6 @@
 import { useFocusEffect } from '@react-navigation/native';
-import { router } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { router, useLocalSearchParams } from 'expo-router';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -14,6 +14,7 @@ import {
 import { type BookRow, listBooks } from '@/db/repositories/books';
 import { deleteHighlight, listAllHighlights, type Highlight } from '@/db/repositories/highlights';
 import { deleteSavedWord, listSavedWords, type SavedWord } from '@/db/repositories/savedWords';
+import { sentenceContaining } from '@/features/reader/engine/words';
 import { useTheme } from '@/theme/ThemeProvider';
 
 type Tab = 'list' | 'flashcards' | 'quotes';
@@ -30,7 +31,10 @@ export default function VocabularyScreen() {
   const [words, setWords] = useState<SavedWord[]>([]);
   const [books, setBooks] = useState<BookRow[]>([]);
   const [quotes, setQuotes] = useState<Highlight[]>([]);
-  const [tab, setTab] = useState<Tab>('list');
+  // The daily review prompt lands here with tab=flashcards, so it opens on the
+  // deck rather than dropping the reader on the word list to find it.
+  const params = useLocalSearchParams<{ tab?: string }>();
+  const [tab, setTab] = useState<Tab>(params.tab === 'flashcards' ? 'flashcards' : 'list');
   // One themed confirm for both remove flows (word / quote), replacing the OS
   // alert. Holds the title/message and the action to run on confirm.
   const [confirm, setConfirm] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
@@ -48,6 +52,12 @@ export default function VocabularyScreen() {
       reload();
     }, [reload]),
   );
+
+  // The tab screen stays mounted, so the initial state above only covers a cold
+  // launch — arriving here from the review prompt has to switch the tab too.
+  useEffect(() => {
+    if (params.tab === 'flashcards') setTab('flashcards');
+  }, [params.tab]);
 
   const confirmRemoveWord = useCallback(
     (word: SavedWord) => {
@@ -224,7 +234,7 @@ export default function VocabularyScreen() {
                         numberOfLines={1}
                         style={[typography.metadataCaption, { color: colors.textFaint, marginTop: 2 }]}
                       >
-                        &ldquo;{word.contextSentence}&rdquo;
+                        &ldquo;{sentenceContaining(word.contextSentence, word.sourceWord)}&rdquo;
                       </Text>
                     </View>
                     <Pressable onPress={() => confirmRemoveWord(word)} hitSlop={10} style={styles.rowTrash}>
@@ -284,24 +294,41 @@ function EmptyPrompt({ message, variant }: { message: string; variant: Tab }) {
   );
 }
 
+// Fisher-Yates. Save order is a poor review order — it lets you learn a card by
+// its position in the deck instead of by the word.
+function shuffled(words: SavedWord[]): SavedWord[] {
+  const out = [...words];
+  for (let i = out.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
 function FlashcardDeck({ words, books }: { words: SavedWord[]; books: BookRow[] }) {
   const { colors, typography, spacing, radius } = useTheme();
   const [index, setIndex] = useState(0);
   const [flipped, setFlipped] = useState(false);
 
-  const clampedIndex = index % words.length;
-  const word = words[clampedIndex];
+  // Keyed on the word ids, not the array identity: a refocus that reloads the
+  // same words must not reshuffle the deck out from under the reader.
+  const wordIds = words.map((w) => w.id).join(',');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const deck = useMemo(() => shuffled(words), [wordIds]);
+
+  const clampedIndex = index % deck.length;
+  const word = deck[clampedIndex];
   const bookTitle = books.find((b) => b.id === word.bookId)?.title ?? '';
 
   const goTo = (nextIndex: number) => {
     setFlipped(false);
-    setIndex((nextIndex + words.length) % words.length);
+    setIndex((nextIndex + deck.length) % deck.length);
   };
 
   return (
     <View style={styles.deckWrap}>
       <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginBottom: spacing.md }]}>
-        {clampedIndex + 1} / {words.length}
+        {clampedIndex + 1} / {deck.length}
       </Text>
       <Pressable
         onPress={() => setFlipped((f) => !f)}
@@ -330,7 +357,7 @@ function FlashcardDeck({ words, books }: { words: SavedWord[]; books: BookRow[] 
                 { color: colors.textFaint, marginTop: spacing.md, textAlign: 'center' },
               ]}
             >
-              &ldquo;{word.contextSentence}&rdquo;
+              &ldquo;{sentenceContaining(word.contextSentence, word.sourceWord)}&rdquo;
             </Text>
           </>
         )}

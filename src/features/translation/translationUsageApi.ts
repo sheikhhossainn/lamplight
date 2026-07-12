@@ -25,6 +25,14 @@ async function writeCache(count: number): Promise<void> {
   await setSetting(CACHE_KEY, JSON.stringify({ date: todayKey(), count }));
 }
 
+// Local-only read: today's count if the cache has one, null if it doesn't.
+// Lets the UI paint the real remaining count before the server round-trip,
+// instead of guessing while getTodayUsageCount() is still in flight.
+export async function getCachedTodayUsageCount(): Promise<number | null> {
+  const cache = await readCache();
+  return cache && cache.date === todayKey() ? cache.count : null;
+}
+
 // The real enforcement boundary is public.translation_usage (keyed on
 // auth.uid()), not this cache — the cache only makes an offline device fail
 // CLOSED instead of unlimited. Without it, a network error here would read as

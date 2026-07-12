@@ -1,4 +1,8 @@
-import { getTodayUsageCount, incrementTodayUsage } from './translationUsageApi';
+import {
+  getCachedTodayUsageCount,
+  getTodayUsageCount,
+  incrementTodayUsage,
+} from './translationUsageApi';
 
 // Free-tier daily cap. Premium bypasses this entirely — see index.ts. Must
 // match supabase/schema.sql's plans.translations_per_day for the free plan.
@@ -28,6 +32,19 @@ export async function checkTranslationCap(isPremium: boolean): Promise<CapCheck>
     return { allowed: true, remaining: Infinity };
   }
   const used = await getTodayUsageCount();
+  const remaining = Math.max(0, FREE_DAILY_TRANSLATION_LIMIT - used);
+  return { allowed: remaining > 0, remaining };
+}
+
+// Display-only: the last known cap from the local cache, with no network call.
+// Never gate a translation on this — enforcement still goes through
+// checkTranslationCap(). Returns null when today has no cached count yet.
+export async function checkCachedTranslationCap(isPremium: boolean): Promise<CapCheck | null> {
+  if (isPremium) {
+    return { allowed: true, remaining: Infinity };
+  }
+  const used = await getCachedTodayUsageCount();
+  if (used == null) return null;
   const remaining = Math.max(0, FREE_DAILY_TRANSLATION_LIMIT - used);
   return { allowed: remaining > 0, remaining };
 }

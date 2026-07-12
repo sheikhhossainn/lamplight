@@ -71,6 +71,21 @@ export async function countSavedWordsForBook(bookId: string): Promise<number> {
   return row?.count ?? 0;
 }
 
+// Cheap enough to run on every app open — one aggregate row, no word bodies.
+// `total` is the whole deck; `readyToReview` counts only words saved before
+// `startOfTodayMs`, because a word looked up minutes ago tests nothing.
+export async function getReviewStats(startOfTodayMs: number): Promise<{
+  total: number;
+  readyToReview: number;
+}> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ total: number; ready: number }>(
+    'SELECT COUNT(*) as total, SUM(CASE WHEN created_at < ? THEN 1 ELSE 0 END) as ready FROM saved_words',
+    [startOfTodayMs],
+  );
+  return { total: row?.total ?? 0, readyToReview: row?.ready ?? 0 };
+}
+
 export async function saveWord(input: Omit<SavedWord, 'id' | 'createdAt'>): Promise<SavedWord> {
   const db = await getDb();
   const id = generateId();
