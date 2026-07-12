@@ -13,6 +13,9 @@ const SPINE_COLOR_BY_BOOK: Record<string, string> = {
   'the-odyssey': '#6B3A32',
   'anna-karenina': '#8A6A3A',
   'crime-and-punishment': '#4A4038',
+  quran: '#1F4A38',
+  'bible-ot': '#5C5346',
+  'bible-nt': '#6B3A32',
 };
 
 const FALLBACK_TONES = ['#1C1B1E', '#5C5346', '#8A7F6E', '#C6B896', '#252228'];

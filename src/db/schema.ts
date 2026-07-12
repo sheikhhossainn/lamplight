@@ -111,4 +111,67 @@ export const MIGRATIONS: string[] = [
     value TEXT NOT NULL
   );
   `,
+  // v8 — Quran reading (verse-level, not chapter/page/paragraph like prose
+  // books): separate tables keyed by (surah_number, verse_number) rather than
+  // reusing books/reading_positions/highlights/saved_words, since those
+  // columns mean something different (a book id FK, a font-metric-relative
+  // page/paragraph index) that verse addressing doesn't have.
+  `
+  CREATE TABLE IF NOT EXISTS quran_reading_position (
+    surah_number INTEGER PRIMARY KEY,
+    verse_number INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS quran_highlights (
+    id TEXT PRIMARY KEY,
+    surah_number INTEGER NOT NULL,
+    verse_number INTEGER NOT NULL,
+    color_key TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS quran_saved_words (
+    id TEXT PRIMARY KEY,
+    surah_number INTEGER NOT NULL,
+    verse_number INTEGER NOT NULL,
+    source_word TEXT NOT NULL,
+    source_lang TEXT NOT NULL,
+    target_lang TEXT NOT NULL,
+    translation TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  `,
+  // v9 — Bible (Old Testament) reading. Same shape as the Quran tables (v8),
+  // keyed by (book_id, chapter, verse) instead of (surah_number,
+  // verse_number) since a Bible book spans many chapters, unlike a surah.
+  `
+  CREATE TABLE IF NOT EXISTS bible_reading_position (
+    book_id TEXT PRIMARY KEY,
+    chapter INTEGER NOT NULL,
+    verse INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS bible_highlights (
+    id TEXT PRIMARY KEY,
+    book_id TEXT NOT NULL,
+    chapter INTEGER NOT NULL,
+    verse INTEGER NOT NULL,
+    color_key TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS bible_saved_words (
+    id TEXT PRIMARY KEY,
+    book_id TEXT NOT NULL,
+    chapter INTEGER NOT NULL,
+    verse INTEGER NOT NULL,
+    source_word TEXT NOT NULL,
+    source_lang TEXT NOT NULL,
+    target_lang TEXT NOT NULL,
+    translation TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  `,
 ];

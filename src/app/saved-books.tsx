@@ -5,6 +5,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CheckIcon, ChevronLeftIcon, TrashIcon } from '@/components/icons';
+import { SkeletonRows } from '@/components/SkeletonRows';
 import { listBooks, type BookRow } from '@/db/repositories/books';
 import { deleteReadingPosition } from '@/db/repositories/readingPosition';
 import { deleteBookCache, listDownloadedBookIds } from '@/features/content-ingestion/bookDownloader';
@@ -19,12 +20,14 @@ export default function SavedBooksScreen() {
   const insets = useSafeAreaInsets();
   const [downloaded, setDownloaded] = useState<BookRow[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [loaded, setLoaded] = useState(false);
 
   const load = useCallback(async () => {
     const ids = new Set(listDownloadedBookIds());
     const all = await listBooks();
     setDownloaded(all.filter((b) => ids.has(b.id)));
     setSelected(new Set());
+    setLoaded(true);
   }, []);
 
   useFocusEffect(
@@ -93,7 +96,9 @@ export default function SavedBooksScreen() {
         {downloaded.length} {downloaded.length === 1 ? 'book' : 'books'} downloaded on this device
       </Text>
 
-      {downloaded.length === 0 ? (
+      {!loaded ? (
+        <SkeletonRows />
+      ) : downloaded.length === 0 ? (
         <Text style={[typography.metadataCaption, { color: colors.umber, marginTop: spacing.lg }]}>
           No downloads yet — a book is saved here the first time you open it.
         </Text>

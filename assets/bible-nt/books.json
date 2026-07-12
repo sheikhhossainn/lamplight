@@ -1,0 +1,137 @@
+[
+  {
+    "id": "MAT",
+    "name": "Matthew",
+    "chapterCount": 28
+  },
+  {
+    "id": "MRK",
+    "name": "Mark",
+    "chapterCount": 16
+  },
+  {
+    "id": "LUK",
+    "name": "Luke",
+    "chapterCount": 24
+  },
+  {
+    "id": "JHN",
+    "name": "John",
+    "chapterCount": 21
+  },
+  {
+    "id": "ACT",
+    "name": "Acts",
+    "chapterCount": 28
+  },
+  {
+    "id": "ROM",
+    "name": "Romans",
+    "chapterCount": 16
+  },
+  {
+    "id": "1CO",
+    "name": "1 Corinthians",
+    "chapterCount": 16
+  },
+  {
+    "id": "2CO",
+    "name": "2 Corinthians",
+    "chapterCount": 13
+  },
+  {
+    "id": "GAL",
+    "name": "Galatians",
+    "chapterCount": 6
+  },
+  {
+    "id": "EPH",
+    "name": "Ephesians",
+    "chapterCount": 6
+  },
+  {
+    "id": "PHP",
+    "name": "Philippians",
+    "chapterCount": 4
+  },
+  {
+    "id": "COL",
+    "name": "Colossians",
+    "chapterCount": 4
+  },
+  {
+    "id": "1TH",
+    "name": "1 Thessalonians",
+    "chapterCount": 5
+  },
+  {
+    "id": "2TH",
+    "name": "2 Thessalonians",
+    "chapterCount": 3
+  },
+  {
+    "id": "1TI",
+    "name": "1 Timothy",
+    "chapterCount": 6
+  },
+  {
+    "id": "2TI",
+    "name": "2 Timothy",
+    "chapterCount": 4
+  },
+  {
+    "id": "TIT",
+    "name": "Titus",
+    "chapterCount": 3
+  },
+  {
+    "id": "PHM",
+    "name": "Philemon",
+    "chapterCount": 1
+  },
+  {
+    "id": "HEB",
+    "name": "Hebrews",
+    "chapterCount": 13
+  },
+  {
+    "id": "JAS",
+    "name": "James",
+    "chapterCount": 5
+  },
+  {
+    "id": "1PE",
+    "name": "1 Peter",
+    "chapterCount": 5
+  },
+  {
+    "id": "2PE",
+    "name": "2 Peter",
+    "chapterCount": 3
+  },
+  {
+    "id": "1JN",
+    "name": "1 John",
+    "chapterCount": 5
+  },
+  {
+    "id": "2JN",
+    "name": "2 John",
+    "chapterCount": 1
+  },
+  {
+    "id": "3JN",
+    "name": "3 John",
+    "chapterCount": 1
+  },
+  {
+    "id": "JUD",
+    "name": "Jude",
+    "chapterCount": 1
+  },
+  {
+    "id": "REV",
+    "name": "Revelation",
+    "chapterCount": 22
+  }
+]

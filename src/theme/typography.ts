@@ -11,6 +11,8 @@ export const FontFamily = {
   manropeRegular: 'Manrope_400Regular',
   manropeSemiBold: 'Manrope_600SemiBold',
   manropeBold: 'Manrope_700Bold',
+  amiriRegular: 'Amiri_400Regular',
+  amiriBold: 'Amiri_700Bold',
 } as const;
 
 // Named styles — screens must consume these, never inline TextStyle with raw fontFamily.
@@ -108,6 +110,13 @@ export const LamplightTypography = {
     lineHeight: 11,
     letterSpacing: 1.2,
     textTransform: 'uppercase',
+  },
+  arabicVerse: {
+    fontFamily: FontFamily.amiriRegular,
+    fontSize: 24,
+    lineHeight: 46, // generous clearance for stacked diacritics (tashkeel)
+    letterSpacing: 0,
+    writingDirection: 'rtl',
   },
 } as const satisfies Record<string, TextStyle>;
 

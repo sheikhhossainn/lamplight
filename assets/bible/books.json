@@ -1,0 +1,197 @@
+[
+  {
+    "id": "GEN",
+    "name": "Genesis",
+    "chapterCount": 50
+  },
+  {
+    "id": "EXO",
+    "name": "Exodus",
+    "chapterCount": 40
+  },
+  {
+    "id": "LEV",
+    "name": "Leviticus",
+    "chapterCount": 27
+  },
+  {
+    "id": "NUM",
+    "name": "Numbers",
+    "chapterCount": 36
+  },
+  {
+    "id": "DEU",
+    "name": "Deuteronomy",
+    "chapterCount": 34
+  },
+  {
+    "id": "JOS",
+    "name": "Joshua",
+    "chapterCount": 24
+  },
+  {
+    "id": "JDG",
+    "name": "Judges",
+    "chapterCount": 21
+  },
+  {
+    "id": "RUT",
+    "name": "Ruth",
+    "chapterCount": 4
+  },
+  {
+    "id": "1SA",
+    "name": "1 Samuel",
+    "chapterCount": 31
+  },
+  {
+    "id": "2SA",
+    "name": "2 Samuel",
+    "chapterCount": 24
+  },
+  {
+    "id": "1KI",
+    "name": "1 Kings",
+    "chapterCount": 22
+  },
+  {
+    "id": "2KI",
+    "name": "2 Kings",
+    "chapterCount": 25
+  },
+  {
+    "id": "1CH",
+    "name": "1 Chronicles",
+    "chapterCount": 29
+  },
+  {
+    "id": "2CH",
+    "name": "2 Chronicles",
+    "chapterCount": 36
+  },
+  {
+    "id": "EZR",
+    "name": "Ezra",
+    "chapterCount": 10
+  },
+  {
+    "id": "NEH",
+    "name": "Nehemiah",
+    "chapterCount": 13
+  },
+  {
+    "id": "EST",
+    "name": "Esther",
+    "chapterCount": 10
+  },
+  {
+    "id": "JOB",
+    "name": "Job",
+    "chapterCount": 42
+  },
+  {
+    "id": "PSA",
+    "name": "Psalms",
+    "chapterCount": 150
+  },
+  {
+    "id": "PRO",
+    "name": "Proverbs",
+    "chapterCount": 31
+  },
+  {
+    "id": "ECC",
+    "name": "Ecclesiastes",
+    "chapterCount": 12
+  },
+  {
+    "id": "SNG",
+    "name": "Song of Solomon",
+    "chapterCount": 8
+  },
+  {
+    "id": "ISA",
+    "name": "Isaiah",
+    "chapterCount": 66
+  },
+  {
+    "id": "JER",
+    "name": "Jeremiah",
+    "chapterCount": 52
+  },
+  {
+    "id": "LAM",
+    "name": "Lamentations",
+    "chapterCount": 5
+  },
+  {
+    "id": "EZK",
+    "name": "Ezekiel",
+    "chapterCount": 48
+  },
+  {
+    "id": "DAN",
+    "name": "Daniel",
+    "chapterCount": 12
+  },
+  {
+    "id": "HOS",
+    "name": "Hosea",
+    "chapterCount": 14
+  },
+  {
+    "id": "JOL",
+    "name": "Joel",
+    "chapterCount": 3
+  },
+  {
+    "id": "AMO",
+    "name": "Amos",
+    "chapterCount": 9
+  },
+  {
+    "id": "OBA",
+    "name": "Obadiah",
+    "chapterCount": 1
+  },
+  {
+    "id": "JON",
+    "name": "Jonah",
+    "chapterCount": 4
+  },
+  {
+    "id": "MIC",
+    "name": "Micah",
+    "chapterCount": 7
+  },
+  {
+    "id": "NAM",
+    "name": "Nahum",
+    "chapterCount": 3
+  },
+  {
+    "id": "HAB",
+    "name": "Habakkuk",
+    "chapterCount": 3
+  },
+  {
+    "id": "ZEP",
+    "name": "Zephaniah",
+    "chapterCount": 3
+  },
+  {
+    "id": "HAG",
+    "name": "Haggai",
+    "chapterCount": 2
+  },
+  {
+    "id": "ZEC",
+    "name": "Zechariah",
+    "chapterCount": 14
+  },
+  {
+    "id": "MAL",
+    "name": "Malachi",
+    "chapterCount": 4
+  }
+]

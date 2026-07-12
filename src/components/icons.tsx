@@ -230,3 +230,20 @@ export function BookmarkIcon({ color, size = 18, filled = false }: IconProps & {
     </Svg>
   );
 }
+
+// Arrow up out of an open tray — the standard "share/export" glyph. Arrowhead
+// vertex sits at the top of the shaft; a downward-pointing vertex here would
+// read as "download" instead (that was the previous, mislabeled path).
+export function ShareIcon({ color, size = 18 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 20 20" fill="none">
+      <Path
+        d="M10 13V2M10 2l-4 4M10 2l4 4M4 15v2a1 1 0 001 1h10a1 1 0 001-1v-2"
+        stroke={color}
+        strokeWidth={1.6}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}

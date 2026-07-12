@@ -26,6 +26,11 @@ type WordTranslationPopupProps = {
   anchor: { x: number; y: number } | null;
   onClose: () => void;
   onSave: (translation: string) => void;
+  // Defaults to 'en'/'EN' — every prose-book caller has a single source
+  // language. The Quran verse reader passes 'ar'/'AR' when the tapped word
+  // came from the Arabic line, not the English translation.
+  sourceLang?: string;
+  sourceLangLabel?: string;
 };
 
 type LoadState =
@@ -51,7 +56,14 @@ function SaveIcon({ color }: { color: string }) {
   );
 }
 
-export function WordTranslationPopup({ word, anchor, onClose, onSave }: WordTranslationPopupProps) {
+export function WordTranslationPopup({
+  word,
+  anchor,
+  onClose,
+  onSave,
+  sourceLang = 'en',
+  sourceLangLabel = 'EN',
+}: WordTranslationPopupProps) {
   const { colors, typography, spacing, radius } = useTheme();
   const [state, setState] = useState<LoadState>({ status: 'loading' });
   const targetLanguage = useTargetLanguage();
@@ -88,7 +100,7 @@ export function WordTranslationPopup({ word, anchor, onClose, onSave }: WordTran
         return;
       }
       try {
-        const result = await translationProvider.translateWord(word, 'en', targetLanguage);
+        const result = await translationProvider.translateWord(word, sourceLang, targetLanguage);
         await recordTranslationUsage(premium);
         logEvent('translate_tap', { target_lang: targetLanguage });
         if (!cancelled) setState({ status: 'ready', translation: result.translatedText });
@@ -100,7 +112,7 @@ export function WordTranslationPopup({ word, anchor, onClose, onSave }: WordTran
     return () => {
       cancelled = true;
     };
-  }, [word, targetLanguage]);
+  }, [word, targetLanguage, sourceLang]);
 
   return (
     <Modal visible={word != null} transparent animationType="fade" onRequestClose={onClose}>
@@ -123,7 +135,7 @@ export function WordTranslationPopup({ word, anchor, onClose, onSave }: WordTran
                   never from the reading page. */}
               <View style={[styles.pairTag, { backgroundColor: '#2B2621' }]}>
                 <Text style={[typography.eyebrowLabel, { color: colors.flameAmber, fontSize: 9 }]}>
-                  EN → {targetLanguageLabel(targetLanguage)}
+                  {sourceLangLabel} → {targetLanguageLabel(targetLanguage)}
                 </Text>
               </View>
             </View>

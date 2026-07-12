@@ -3,6 +3,7 @@
   "main": "expo-router/entry",
   "version": "1.0.0",
   "dependencies": {
+    "@expo-google-fonts/amiri": "^0.4.1",
     "@expo-google-fonts/lora": "^0.4.2",
     "@expo-google-fonts/manrope": "^0.4.2",
     "expo": "~54.0.35",
@@ -52,6 +53,9 @@
     "lint": "expo lint",
     "sync:books": "tsx scripts/sync-books.mjs",
     "sync:bulk-catalog": "node scripts/sync-bulk-catalog.mjs",
+    "fetch:quran": "node scripts/fetch-quran.mjs",
+    "fetch:bible-ot": "node scripts/fetch-bible-ot.mjs",
+    "fetch:bible-nt": "node scripts/fetch-bible-nt.mjs",
     "upload:ambience": "node scripts/upload-ambience.mjs assets/nature-music/trimmed",
     "update": "eas update --branch preview"
   },

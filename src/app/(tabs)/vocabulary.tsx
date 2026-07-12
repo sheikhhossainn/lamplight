@@ -11,19 +11,91 @@ import {
   QuotesIllustration,
   WordsIllustration,
 } from '@/components/NotebookIllustrations';
+import { SkeletonRows } from '@/components/SkeletonRows';
 import { type BookRow, listBooks } from '@/db/repositories/books';
+import {
+  deleteBibleHighlight,
+  listAllBibleHighlights,
+  type BibleHighlight,
+} from '@/db/repositories/bible';
 import { deleteHighlight, listAllHighlights, type Highlight } from '@/db/repositories/highlights';
+import {
+  deleteQuranHighlight,
+  listAllQuranHighlights,
+  type QuranHighlight,
+} from '@/db/repositories/quran';
 import { deleteSavedWord, listSavedWords, type SavedWord } from '@/db/repositories/savedWords';
+import { getBookMeta as getBibleOtBookMeta, getBookVerses as getBibleOtVerses } from '@/features/bible-content/bibleData';
+import { getBookMeta as getBibleNtBookMeta, getBookVerses as getBibleNtVerses } from '@/features/bible-content/bibleNtData';
+import { getSurahMeta, getSurahVerses } from '@/features/quran-content/quranData';
 import { sentenceContaining } from '@/features/reader/engine/words';
 import { useTheme } from '@/theme/ThemeProvider';
 
-type Tab = 'list' | 'flashcards' | 'quotes';
+type Tab = 'list' | 'flashcards' | 'quotes' | 'verses';
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'list', label: 'Words' },
   { key: 'flashcards', label: 'Flashcards' },
   { key: 'quotes', label: 'Quotes' },
+  { key: 'verses', label: 'Verses' },
 ];
+
+// Normalized shape for a bookmarked verse regardless of which scripture it
+// came from — Quran (quran_highlights) and Bible OT/NT (bible_highlights,
+// shared table, see scriptures.md) each map into this before grouping/render.
+type SavedVerseEntry = {
+  id: string;
+  groupTitle: string;
+  reference: string;
+  snippet: string;
+  createdAt: number;
+  onOpen: () => void;
+  onRemove: () => Promise<void>;
+};
+
+function buildQuranVerseEntries(highlights: QuranHighlight[]): SavedVerseEntry[] {
+  return highlights.map((h) => {
+    const meta = getSurahMeta(h.surahNumber);
+    const verse = getSurahVerses(h.surahNumber).find((v) => v.number === h.verseNumber);
+    return {
+      id: h.id,
+      groupTitle: meta ? `${meta.nameEnglish} · Quran` : 'Quran',
+      reference: `Verse ${h.verseNumber}`,
+      snippet: verse?.textEnglish ?? '',
+      createdAt: h.createdAt,
+      onOpen: () =>
+        router.push({
+          pathname: '/quran/[surahNumber]',
+          params: { surahNumber: String(h.surahNumber), jumpVerse: String(h.verseNumber) },
+        }),
+      onRemove: () => deleteQuranHighlight(h.id),
+    };
+  });
+}
+
+function buildBibleVerseEntries(highlights: BibleHighlight[]): SavedVerseEntry[] {
+  return highlights.map((h) => {
+    const otMeta = getBibleOtBookMeta(h.bookId);
+    const isNt = !otMeta;
+    const meta = otMeta ?? getBibleNtBookMeta(h.bookId);
+    const verses = isNt ? getBibleNtVerses(h.bookId) : getBibleOtVerses(h.bookId);
+    const verse = verses.find((v) => v.chapter === h.chapter && v.verse.number === h.verse);
+    const bookName = meta?.name ?? h.bookId;
+    return {
+      id: h.id,
+      groupTitle: `${bookName} · ${isNt ? 'New Testament' : 'Old Testament'}`,
+      reference: `${bookName} ${h.chapter}:${h.verse}`,
+      snippet: verse?.verse.text ?? '',
+      createdAt: h.createdAt,
+      onOpen: () =>
+        router.push({
+          pathname: isNt ? '/bible-nt/[bookId]' : '/bible/[bookId]',
+          params: { bookId: h.bookId, jumpChapter: String(h.chapter), jumpVerse: String(h.verse) },
+        }),
+      onRemove: () => deleteBibleHighlight(h.id),
+    };
+  });
+}
 
 export default function VocabularyScreen() {
   const { colors, typography, spacing, radius } = useTheme();
@@ -31,6 +103,8 @@ export default function VocabularyScreen() {
   const [words, setWords] = useState<SavedWord[]>([]);
   const [books, setBooks] = useState<BookRow[]>([]);
   const [quotes, setQuotes] = useState<Highlight[]>([]);
+  const [quranHighlights, setQuranHighlights] = useState<QuranHighlight[]>([]);
+  const [bibleHighlights, setBibleHighlights] = useState<BibleHighlight[]>([]);
   // The daily review prompt lands here with tab=flashcards, so it opens on the
   // deck rather than dropping the reader on the word list to find it.
   const params = useLocalSearchParams<{ tab?: string }>();
@@ -38,12 +112,22 @@ export default function VocabularyScreen() {
   // One themed confirm for both remove flows (word / quote), replacing the OS
   // alert. Holds the title/message and the action to run on confirm.
   const [confirm, setConfirm] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
+  const [loaded, setLoaded] = useState(false);
 
   const reload = useCallback(() => {
-    Promise.all([listSavedWords(), listBooks(), listAllHighlights()]).then(([w, b, q]) => {
+    Promise.all([
+      listSavedWords(),
+      listBooks(),
+      listAllHighlights(),
+      listAllQuranHighlights(),
+      listAllBibleHighlights(),
+    ]).then(([w, b, q, qv, bv]) => {
       setWords(w);
       setBooks(b);
       setQuotes(q);
+      setQuranHighlights(qv);
+      setBibleHighlights(bv);
+      setLoaded(true);
     });
   }, []);
 
@@ -87,6 +171,20 @@ export default function VocabularyScreen() {
     [reload],
   );
 
+  const confirmRemoveVerse = useCallback(
+    (entry: SavedVerseEntry) => {
+      setConfirm({
+        title: 'Remove bookmark',
+        message: 'Remove this saved verse?',
+        onConfirm: async () => {
+          await entry.onRemove();
+          reload();
+        },
+      });
+    },
+    [reload],
+  );
+
   const bookTitle = (bookId: string) => books.find((b) => b.id === bookId)?.title ?? bookId;
   const groups = words.reduce<Record<string, SavedWord[]>>((acc, word) => {
     (acc[word.bookId] ??= []).push(word);
@@ -94,6 +192,17 @@ export default function VocabularyScreen() {
   }, {});
   const quoteGroups = quotes.reduce<Record<string, Highlight[]>>((acc, quote) => {
     (acc[quote.bookId] ??= []).push(quote);
+    return acc;
+  }, {});
+  const verses = useMemo(
+    () =>
+      [...buildQuranVerseEntries(quranHighlights), ...buildBibleVerseEntries(bibleHighlights)].sort(
+        (a, b) => b.createdAt - a.createdAt,
+      ),
+    [quranHighlights, bibleHighlights],
+  );
+  const verseGroups = verses.reduce<Record<string, SavedVerseEntry[]>>((acc, entry) => {
+    (acc[entry.groupTitle] ??= []).push(entry);
     return acc;
   }, {});
 
@@ -109,7 +218,9 @@ export default function VocabularyScreen() {
         <Text style={[typography.uiRowTitle, { color: colors.fawn, fontSize: 12 }]}>
           {tab === 'quotes'
             ? `${quotes.length} ${quotes.length === 1 ? 'quote' : 'quotes'}`
-            : `${words.length} ${words.length === 1 ? 'word' : 'words'}`}
+            : tab === 'verses'
+              ? `${verses.length} ${verses.length === 1 ? 'verse' : 'verses'}`
+              : `${words.length} ${words.length === 1 ? 'word' : 'words'}`}
         </Text>
       </View>
 
@@ -128,7 +239,9 @@ export default function VocabularyScreen() {
       </View>
 
       {tab === 'flashcards' ? (
-        words.length === 0 ? (
+        !loaded ? (
+          <SkeletonRows />
+        ) : words.length === 0 ? (
           <EmptyPrompt variant="flashcards" message="Save words while reading to build your flashcard deck." />
         ) : (
           <FlashcardDeck words={words} books={books} />
@@ -139,7 +252,9 @@ export default function VocabularyScreen() {
           showsVerticalScrollIndicator={false}
           overScrollMode="never"
         >
-          {quotes.length === 0 ? (
+          {!loaded ? (
+            <SkeletonRows />
+          ) : quotes.length === 0 ? (
             <EmptyPrompt variant="quotes" message="Quotes you save while reading will appear here." />
           ) : (
             Object.entries(quoteGroups).map(([bookId, groupQuotes]) => (
@@ -179,13 +294,70 @@ export default function VocabularyScreen() {
             ))
           )}
         </ScrollView>
+      ) : tab === 'verses' ? (
+        <ScrollView
+          contentContainerStyle={{ paddingBottom: 48 }}
+          showsVerticalScrollIndicator={false}
+          overScrollMode="never"
+        >
+          {!loaded ? (
+            <SkeletonRows />
+          ) : verses.length === 0 ? (
+            <EmptyPrompt variant="verses" message="Bookmark verses while reading scripture to see them here." />
+          ) : (
+            Object.entries(verseGroups).map(([groupTitle, groupVerses]) => (
+              <View key={groupTitle} style={{ marginBottom: spacing.xl }}>
+                <Text style={[typography.eyebrowLabel, { color: colors.progressLabel, marginBottom: spacing.sm }]}>
+                  {groupTitle}
+                </Text>
+                {groupVerses.map((entry, index) => (
+                  <Pressable
+                    key={entry.id}
+                    // Tap -> jump to that verse in its reader. Long-press ->
+                    // remove the bookmark (with a confirm) — same action as
+                    // the visible trash icon.
+                    onPress={entry.onOpen}
+                    onLongPress={() => confirmRemoveVerse(entry)}
+                    style={[
+                      styles.row,
+                      index < groupVerses.length - 1 && {
+                        borderBottomWidth: 1,
+                        borderBottomColor: 'rgba(43,38,33,0.08)',
+                      },
+                    ]}
+                  >
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
+                        {entry.reference}
+                      </Text>
+                      {entry.snippet ? (
+                        <Text
+                          numberOfLines={1}
+                          style={[typography.metadataCaption, { color: colors.textFaint, marginTop: 2 }]}
+                        >
+                          &ldquo;{entry.snippet}&rdquo;
+                        </Text>
+                      ) : null}
+                    </View>
+                    <Pressable onPress={() => confirmRemoveVerse(entry)} hitSlop={10} style={styles.rowTrash}>
+                      <TrashIcon color={colors.straw} size={16} />
+                    </Pressable>
+                    <ChevronRightIcon color={colors.straw} size={15} />
+                  </Pressable>
+                ))}
+              </View>
+            ))
+          )}
+        </ScrollView>
       ) : (
         <ScrollView
           contentContainerStyle={{ paddingBottom: 48 }}
           showsVerticalScrollIndicator={false}
           overScrollMode="never"
         >
-          {words.length === 0 ? (
+          {!loaded ? (
+            <SkeletonRows />
+          ) : words.length === 0 ? (
             <EmptyPrompt variant="list" message="Words you save while reading will appear here." />
           ) : (
             Object.entries(groups).map(([bookId, groupWords]) => (
@@ -265,8 +437,10 @@ export default function VocabularyScreen() {
   );
 }
 
-// One empty-state layout for all three segments so the caption and CTA sit at
-// the same position no matter which tab is active.
+// One empty-state layout for all four segments so the caption and CTA sit at
+// the same position no matter which tab is active. Verses reuses the Quotes
+// illustration (both are a "saved passage" card) rather than a new bespoke
+// animation.
 function EmptyPrompt({ message, variant }: { message: string; variant: Tab }) {
   const { colors, typography, spacing, radius } = useTheme();
   return (
