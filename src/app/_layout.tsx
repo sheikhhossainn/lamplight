@@ -14,6 +14,8 @@ import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 
 import { AppUpdatePrompt } from '@/components/AppUpdatePrompt';
+import { WhatsNewOverlay } from '@/components/WhatsNewOverlay';
+import { hydrateWhatsNewStatus } from '@/features/app-update/whatsNew';
 import { hydrateTargetLanguage } from '@/features/settings/languagePair';
 import { hydrateOnboardingStatus } from '@/features/settings/onboardingStatus';
 import { LamplightThemeProvider, useTheme } from '@/theme/ThemeProvider';
@@ -45,7 +47,9 @@ export default function RootLayout() {
   // Resolve the has-onboarded flag before the Stack mounts, so the "/" splash
   // route can redirect straight past itself instead of flashing then bouncing.
   useEffect(() => {
-    void hydrateOnboardingStatus().then(() => setOnboardingChecked(true));
+    void Promise.all([hydrateOnboardingStatus(), hydrateWhatsNewStatus()]).then(() =>
+      setOnboardingChecked(true),
+    );
   }, []);
 
   useEffect(() => {
@@ -129,6 +133,7 @@ function AppShell() {
       </Stack>
       <ThemeTransitionOverlay />
       <AppUpdatePrompt />
+      <WhatsNewOverlay />
     </View>
   );
 }
