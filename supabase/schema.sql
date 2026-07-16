@@ -569,3 +569,201 @@ create policy "manage own preferences" on public.user_preferences for all
 drop policy if exists "manage own feedback" on public.feedback;
 create policy "manage own feedback" on public.feedback for all
   using (auth.uid() = owner_id) with check (auth.uid() = owner_id);
+
+-- ============================================================================
+-- 14. Scripture verses — pgvector-backed verse store for mood flashcards and
+--     comparative Q&A. Deliberately outside the prose-book pipeline (no
+--     library_items FK, no reader screens) — its own parallel vertical per
+--     the pattern documented in scriptures.md.
+--
+-- Embedding model: Supabase/gte-small, output dim 384. Seed script embeds
+-- offline via @huggingface/transformers (self-hosted, no external API, no
+-- OpenAI); the context-verses Edge Function embeds the live user query via
+-- the Edge Runtime's native Supabase.ai.Session('gte-small') — same model,
+-- different runtime, since running transformers.js itself inside a Deno Edge
+-- Function failed to bundle/execute. Both the stored embeddings and the live
+-- query embedding MUST use the same model; mixing models breaks cosine
+-- similarity search.
+--
+-- Tradition is a lookup table (public.scripture_traditions), not a CHECK
+-- constraint — same "limits live in DATA" pattern as `plans`/`app_config`
+-- above. Adding Torah, Vedas, or any future tradition is an INSERT, not an
+-- ALTER TABLE migration. mood_tags stays a closed CHECK — the mood
+-- vocabulary is fixed UI (10 mood buttons), unlike traditions which grow.
+--
+-- IVFFlat lists=100: appropriate for the ~37k rows across Quran + full Bible.
+--   Rule of thumb is sqrt(row_count); recalibrate if the corpus grows
+--   significantly beyond that baseline.
+-- ============================================================================
+
+-- pgvector extension — enable in Supabase dashboard first if on free tier
+-- (Project Settings → Database → Extensions → vector), then this is a no-op.
+create extension if not exists vector;
+
+-- Tradition lookup — new tradition (Torah, Vedas, ...) is a row insert here,
+-- never an ALTER TABLE on scripture_verses. See header note above.
+create table if not exists public.scripture_traditions (
+  key           text primary key,   -- 'quran' | 'bible-ot' | 'bible-nt' | 'torah'
+  display_name  text not null,
+  created_at    timestamptz not null default now()
+);
+
+insert into public.scripture_traditions (key, display_name) values
+  ('quran', 'Quran'),
+  ('bible-ot', 'Bible — Old Testament'),
+  ('bible-nt', 'Bible — New Testament'),
+  ('torah', 'Torah')
+on conflict (key) do nothing;
+
+create table if not exists public.scripture_verses (
+  id              uuid primary key default gen_random_uuid(),
+
+  -- Bibliographic identity — stable cite key, matching the addressing used
+  -- by the existing reader screens (surah_number/verse_number for Quran,
+  -- book_id/chapter/verse for Bible).
+  tradition       text not null references public.scripture_traditions(key),
+  book            text not null,   -- surah English name | Bible book name
+  chapter         integer not null,
+  verse_number    integer not null,
+
+  -- Texts. original_text = Arabic (Quran) or WEB English (Bible — English IS
+  -- the source). translation = Sahih International English (Quran only); null
+  -- for Bible since it is already in English.
+  original_text   text not null,
+  translation     text,
+
+  -- Closed mood vocabulary — only these 10 values are valid.
+  -- CHECK constraint is a deliberate tradeoff — see header note above.
+  mood_tags       text[] not null default '{}'
+                    check (
+                      mood_tags <@ array[
+                        'grief','hope','patience','gratitude','fear',
+                        'peace','guidance','forgiveness','strength','doubt'
+                      ]
+                    ),
+
+  -- Embedding of coalesce(translation, original_text) — always English text,
+  -- always Supabase/gte-small (384 dims). Null until the seed script runs.
+  embedding       vector(384),
+
+  created_at      timestamptz not null default now()
+);
+
+-- Unique cite key — one row per (tradition, book, chapter, verse_number).
+-- Lets the seed script upsert safely on re-runs without duplicating rows.
+-- Also covers tradition-only lookups via leftmost-prefix matching — no
+-- separate single-column tradition index needed (that would be redundant).
+create unique index if not exists scripture_verses_cite_uidx
+  on public.scripture_verses (tradition, book, chapter, verse_number);
+
+-- Mood lookup — @> (array contains) requires GIN, same as books.categories.
+create index if not exists scripture_verses_mood_idx
+  on public.scripture_verses using gin (mood_tags);
+
+-- Vector similarity index (IVFFlat) is intentionally absent here.
+-- IVFFlat requires at least (lists * 3) rows for k-means clustering and
+-- will error against an empty table — which is this file's documented
+-- fresh-project state. The seed script creates it after bulk insert.
+
+-- ============================================================================
+-- Retrieval function 1 — Mood-based flashcard deck.
+--
+-- Returns p_per_tradition verses per tradition for the given mood, randomly
+-- sampled. ROW_NUMBER() OVER (PARTITION BY tradition ORDER BY random()) caps
+-- each tradition at exactly p_per_tradition cards regardless of how many
+-- tagged verses it has — even sampling at the SQL level, not application level.
+--
+-- Returns an explicit column list; embedding is excluded — the client never
+-- needs the 384-float payload and omitting it keeps response size proportional
+-- to the number of cards, not their vectors.
+-- ============================================================================
+create or replace function public.get_mood_verses(
+  p_mood           text,
+  p_per_tradition  integer default 2
+)
+returns table (
+  id            uuid,
+  tradition     text,
+  book          text,
+  chapter       integer,
+  verse_number  integer,
+  original_text text,
+  translation   text,
+  mood_tags     text[],
+  created_at    timestamptz
+)
+language sql
+stable
+security invoker
+as $$
+  select
+    v.id, v.tradition, v.book, v.chapter, v.verse_number,
+    v.original_text, v.translation, v.mood_tags, v.created_at
+  from (
+    select *,
+           row_number() over (
+             partition by tradition
+             order by random()
+           ) as rn
+    from public.scripture_verses
+    where mood_tags @> array[p_mood]
+      and embedding is not null
+  ) v
+  where v.rn <= p_per_tradition
+  order by random();
+$$;
+
+-- ============================================================================
+-- Retrieval function 2 — Per-tradition vector similarity search.
+--
+-- Called ONCE PER TRADITION from the app layer — never as a single merged
+-- query across all traditions. This is non-negotiable: a single ORDER BY
+-- embedding <=> p_embedding across all traditions produces a globally ranked
+-- list biased toward whichever tradition's phrasing scores highest. Separate
+-- calls with WHERE tradition = p_tradition enforce that each tradition always
+-- contributes exactly p_limit results regardless of score.
+--
+-- The caller must embed the user's question with the same gte-small model
+-- (384 dims) before calling this — query and stored embeddings must come
+-- from the same model or cosine similarity is meaningless.
+-- ============================================================================
+create or replace function public.search_verses_by_tradition(
+  p_embedding  vector(384),
+  p_tradition  text,
+  p_limit      integer default 3
+)
+returns table (
+  id            uuid,
+  tradition     text,
+  book          text,
+  chapter       integer,
+  verse_number  integer,
+  original_text text,
+  translation   text,
+  similarity    float
+)
+language sql
+stable
+security invoker
+as $$
+  select
+    id, tradition, book, chapter, verse_number,
+    original_text, translation,
+    1 - (embedding <=> p_embedding) as similarity
+  from public.scripture_verses
+  where tradition = p_tradition
+    and embedding is not null
+  order by embedding <=> p_embedding
+  limit p_limit;
+$$;
+
+-- RLS — scripture_verses/scripture_traditions are shared/catalog data,
+-- readable by anyone (anon key). Writes are service-role only (seed script),
+-- same pattern as books/app_config.
+alter table public.scripture_traditions enable row level security;
+drop policy if exists "public read" on public.scripture_traditions;
+create policy "public read" on public.scripture_traditions for select using (true);
+
+alter table public.scripture_verses enable row level security;
+drop policy if exists "public read" on public.scripture_verses;
+create policy "public read" on public.scripture_verses for select using (true);

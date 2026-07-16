@@ -1,9 +1,10 @@
 import { router } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { CheckIcon, ChevronLeftIcon, TrashIcon } from '@/components/icons';
 import { SkeletonRows } from '@/components/SkeletonRows';
 import { listBooks, type BookRow } from '@/db/repositories/books';
@@ -21,6 +22,7 @@ export default function SavedBooksScreen() {
   const [downloaded, setDownloaded] = useState<BookRow[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loaded, setLoaded] = useState(false);
+  const [confirmVisible, setConfirmVisible] = useState(false);
 
   const load = useCallback(async () => {
     const ids = new Set(listDownloadedBookIds());
@@ -52,24 +54,16 @@ export default function SavedBooksScreen() {
 
   const confirmDelete = () => {
     if (selected.size === 0) return;
-    Alert.alert(
-      'Delete downloads',
-      `Remove ${selected.size} downloaded ${selected.size === 1 ? 'book' : 'books'} from this device? Saved words and quotes stay; a book re-downloads if you open it again.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            for (const bookId of selected) {
-              await deleteBookCache(bookId);
-              await deleteReadingPosition(bookId);
-            }
-            await load();
-          },
-        },
-      ],
-    );
+    setConfirmVisible(true);
+  };
+
+  const handleConfirm = async () => {
+    setConfirmVisible(false);
+    for (const bookId of selected) {
+      await deleteBookCache(bookId);
+      await deleteReadingPosition(bookId);
+    }
+    await load();
   };
 
   return (
@@ -153,18 +147,28 @@ export default function SavedBooksScreen() {
           style={[
             styles.deleteBar,
             {
-              backgroundColor: colors.primaryDark,
+              backgroundColor: colors.flameAmber,
               borderRadius: radius.pill,
               bottom: insets.bottom + spacing.lg,
             },
           ]}
         >
-          <TrashIcon color={colors.highlight.clay} size={16} />
-          <Text style={[typography.buttonLabel, { color: colors.lampText, marginLeft: 8 }]}>
+          <TrashIcon color={colors.primaryDark} size={16} />
+          <Text style={[typography.buttonLabel, { color: colors.primaryDark, marginLeft: 8 }]}>
             Delete {selected.size} {selected.size === 1 ? 'book' : 'books'}
           </Text>
         </Pressable>
       ) : null}
+
+      <ConfirmDialog
+        visible={confirmVisible}
+        title="Delete downloads"
+        message={`Remove ${selected.size} downloaded ${selected.size === 1 ? 'book' : 'books'} from this device? Saved words and quotes stay; a book re-downloads if you open it again.`}
+        confirmLabel="Delete"
+        destructive
+        onConfirm={handleConfirm}
+        onCancel={() => setConfirmVisible(false)}
+      />
     </View>
   );
 }

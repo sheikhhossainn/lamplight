@@ -247,3 +247,23 @@ export function ShareIcon({ color, size = 18 }: IconProps) {
     </Svg>
   );
 }
+
+// Speech bubble with a small heart — "tell us how you feel" prompt (context
+// verse search entry point).
+export function FeelingPromptIcon({ color, size = 18 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M4 5.5h16v10H9l-4 3.5v-3.5H4v-10Z"
+        stroke={color}
+        strokeWidth={1.7}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path
+        d="M12 13c-2-1.3-3-2.3-3-3.6a1.7 1.7 0 013-1 1.7 1.7 0 013 1c0 1.3-1 2.3-3 3.6Z"
+        fill={color}
+      />
+    </Svg>
+  );
+}

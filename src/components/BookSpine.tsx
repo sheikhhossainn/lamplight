@@ -16,11 +16,15 @@ const SPINE_COLOR_BY_BOOK: Record<string, string> = {
   quran: '#1F4A38',
   'bible-ot': '#5C5346',
   'bible-nt': '#6B3A32',
+  vedas: '#C05C1F',
 };
 
 const FALLBACK_TONES = ['#1C1B1E', '#5C5346', '#8A7F6E', '#C6B896', '#252228'];
 
 export function spineColorForBook(bookId: string, fallbackIndex = 0): string {
+  if (bookId.startsWith('RV')) {
+    return '#C05C1F'; // Traditional saffron/terracotta for Rigveda Mandalas
+  }
   return SPINE_COLOR_BY_BOOK[bookId] ?? FALLBACK_TONES[fallbackIndex % FALLBACK_TONES.length];
 }
 

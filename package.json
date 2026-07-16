@@ -39,6 +39,7 @@
     "react-native-worklets": "0.5.1"
   },
   "devDependencies": {
+    "@huggingface/transformers": "^3.0.0",
     "@supabase/supabase-js": "^2.45.0",
     "@types/react": "~19.1.10",
     "tsx": "^4.19.0",
@@ -56,6 +57,8 @@
     "fetch:quran": "node scripts/fetch-quran.mjs",
     "fetch:bible-ot": "node scripts/fetch-bible-ot.mjs",
     "fetch:bible-nt": "node scripts/fetch-bible-nt.mjs",
+    "fetch:vedas": "node scripts/fetch-vedas.mjs",
+    "seed:scripture": "node scripts/seed-scripture-verses.mjs",
     "upload:ambience": "node scripts/upload-ambience.mjs assets/nature-music/trimmed",
     "update": "eas update --branch preview"
   },

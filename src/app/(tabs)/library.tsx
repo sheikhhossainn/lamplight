@@ -19,10 +19,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
 import { BookSpine } from '@/components/BookSpine';
-import { CloseIcon, FilterIcon, SearchIcon } from '@/components/icons';
+import { CloseIcon, FeelingPromptIcon, FilterIcon, SearchIcon } from '@/components/icons';
 import { logEvent } from '@/features/analytics/analytics';
 import { BOOK_CATEGORIES, categoriesForBook } from '@/features/content-ingestion/bookCategories';
 import { useLibrarySyncing } from '@/features/content-ingestion/librarySync';
+import { FeelingPromptModal } from '@/features/scripture-verses/FeelingPromptModal';
 import { ShelfEditorModal, type ShelfDraft } from '@/components/ShelfEditorModal';
 import { VocabReviewPrompt } from '@/components/VocabReviewPrompt';
 import { checkVocabReviewPrompt, markVocabReviewPrompted } from '@/features/vocabulary/reviewPrompt';
@@ -123,6 +124,7 @@ export default function LibraryScreen() {
   const [filterOpen, setFilterOpen] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [reviewPrompt, setReviewPrompt] = useState<{ wordCount: number } | null>(null);
+  const [feelingPromptVisible, setFeelingPromptVisible] = useState(false);
   const searchRef = useRef<TextInput>(null);
 
   // When the keyboard is dismissed (e.g. swipe-back gesture) the search input
@@ -517,8 +519,16 @@ export default function LibraryScreen() {
       <View>
         <View style={[styles.shelfHeader, { marginBottom: spacing.md }]}>
           <Text style={[typography.eyebrowLabel, { color: colors.progressLabel }]}>Scriptures</Text>
+          <Pressable onPress={() => setFeelingPromptVisible(true)} hitSlop={8}>
+            <FeelingPromptIcon color={colors.fawn} size={18} />
+          </Pressable>
         </View>
-        <View style={[styles.shelfRow, { marginBottom: spacing.sm }]}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          overScrollMode="never"
+          contentContainerStyle={[styles.shelfRow, { marginBottom: spacing.sm }]}
+        >
           <View style={{ marginRight: spacing.md }}>
             <BookSpine
               bookId="quran"
@@ -543,7 +553,23 @@ export default function LibraryScreen() {
               onPress={() => router.push({ pathname: '/bible-nt' })}
             />
           </View>
-        </View>
+          <View style={{ marginRight: spacing.md }}>
+            <BookSpine
+              bookId="torah"
+              title="Torah"
+              toneIndex={0}
+              onPress={() => router.push({ pathname: '/torah' })}
+            />
+          </View>
+          <View style={{ marginRight: spacing.md }}>
+            <BookSpine
+              bookId="vedas"
+              title="Vedas"
+              toneIndex={0}
+              onPress={() => router.push({ pathname: '/vedas' })}
+            />
+          </View>
+        </ScrollView>
         <View style={{ marginBottom: spacing.xl }}>
           <WoodenPlank width={screenWidth - spacing.xl * 2} />
         </View>
@@ -599,6 +625,15 @@ export default function LibraryScreen() {
         onSave={handleSaveShelf}
         onDelete={editor.draft ? handleDeleteShelf : undefined}
         onClose={() => setEditor({ visible: false, draft: null })}
+      />
+
+      <FeelingPromptModal
+        visible={feelingPromptVisible}
+        onClose={() => setFeelingPromptVisible(false)}
+        onSubmit={(text) => {
+          setFeelingPromptVisible(false);
+          router.push({ pathname: '/mood-verses/reflect', params: { text } });
+        }}
       />
 
       <VocabReviewPrompt

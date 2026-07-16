@@ -1,47 +1,12 @@
 # Lamplight — Reading App
 
-React Native + Expo SDK 54, Expo Router (`src/app/`), TypeScript. Deep gotchas, institutional
-memory, and architecture rationale not covered below live in `context.md` — read it only if
-graphify + source don't answer the question.
+React Native + Expo SDK 54, Expo Router (`src/app/`), TypeScript, expo-sqlite, Supabase.
 
-## Role
+## Role & communication
 
 Senior React Native (Expo) engineer. Match the design exactly — never redesign unless asked.
-Concise output: don't restate the diff, don't explain obvious code, no summary unless asked.
-
-## Context loading strategy — graphify first, always
-
-Never cold-scan the repo (no blind `grep`/`ls`/directory walk as a first move). Order:
-
-1. `graphify query "<question>"` (or `path`/`explain`) — this is how you discover architecture,
-   dependencies, and features. The graph is the map; don't rebuild it by reading files.
-2. **Staleness check**: if `graphify-out/GRAPH_REPORT.md`'s date is older than the most recent
-   commit touching the area you're working in, the graph may describe deleted/renamed code — run
-   `/graphify --update` before trusting it for that area. A stale graph is worse than no graph.
-3. From the query result, identify the **smallest relevant community**. Stay inside it — never
-   follow edges into an unrelated community "just in case," never walk the whole graph.
-4. Read only the files graphify actually named for this task. Expand to one more file only if
-   the community's result is genuinely insufficient.
-5. Stop reading the moment you have enough to implement. Reading source is the *last* step,
-   after graphify, not the first.
-
-**God-node files** — `useTheme()`, `getDb()`, `ReaderScreen()`, `useTargetLanguage()` — fan out
-into nearly every community. Query graphify for the specific edge/behavior you need from them;
-don't open the file itself unless the change is actually inside it.
-
-## Design system — pointer, not documentation
-
-Source of truth, in order: `src/theme/tokens.ts` (colors/spacing/radius/motion), `typography.ts`
-(named type styles), `ThemeProvider.tsx` (`useTheme()`, Day/Lamp). Never hardcode a hex/px/
-fontFamily that already exists as a token — extend the token file if a value is genuinely
-missing, don't ad-hoc it in the screen. For anything else about color/spacing/type/motion:
-query graphify or read tokens.ts — don't ask, don't guess, and don't duplicate it here.
-
-Two constants locked enough to state directly (cheap guardrail — wrong values here are a visible
-regression, not just a missing lookup):
-- Brand (fixed, never altered): Primary Dark `#1C1B1E`, Flame Amber `#F5A623` (the one recurring
-  accent), Parchment `#F5EDE1`.
-- Reading body floor: Lora, never below 17px, never tighten line-height below 1.85.
+Think silently. Concise output: don't restate the diff, don't explain obvious code, no summary
+unless asked. Ask questions only when genuinely blocked; otherwise implement.
 
 ## Engineering rules
 
@@ -50,66 +15,63 @@ regression, not just a missing lookup):
 - No new dependency, and no native config change (`app.json`, `ios/`, `android/`), without
   asking first.
 - Don't chase performance unless asked — it competes with "smallest diff."
-- Ask instead of guessing when a spec or interaction isn't covered by tokens/graphify/code.
+- Don't guess a spec or interaction not covered by tokens/graphify/code — ask.
 
-## React Native / Expo — hard-won, not generic advice
+## Context loading — graphify, scoped
 
-- **SDK pin**: phone's Expo Go must match SDK 54 exactly. On `Incompatible SDK version`: update
-  Expo Go, or re-pin `expo` in `package.json` then `npx expo install --fix` — never hand-edit
-  other RN/Expo versions.
-- **Expo Router**: adding/moving/deleting a route file doesn't reliably hot-reload —
-  `npx expo start -c` + force-reopen Expo Go. Always `router.push({ pathname, params })` object
-  form; typed routes reject template-string paths.
-- **expo-sqlite (Android)**: concurrent statements corrupt native state — every DB call goes
-  through the serializing queue in `db/client.ts`. Never bypass it, never call the raw db handle.
+Use `graphify query` (or `path`/`explain`) when: architecture is unknown, the implementation
+location is unknown, dependencies need tracing, or the code is unfamiliar.
 
-## Preview builds & OTA (`eas update`) — Android only for now
+Skip graphify when the file path is already known: styling tweaks, copy changes, localized bug
+fixes, small edits in already-open files — just read the file.
 
-Beta ships as an internal-distribution APK on the `preview` channel. iOS is deferred (needs the
-$99/yr Apple Developer Program for ad-hoc/TestFlight) — don't build or publish iOS updates.
+When using it:
 
-**OTA is enough for any JS/TS change.** Rebuild (`eas build`) only for: a new native dependency,
-a native config change (`app.json`, `eas.json`, `ios/`, `android/`), or a `runtimeVersion` bump.
-Nothing else. Don't rebuild "to be safe" — it's 15+ min and it isn't the fix.
+- **Staleness check**: if `graphify-out/GRAPH_REPORT.md` is older than the latest commit
+  touching the area, run `/graphify --update` first. A stale graph is worse than no graph.
+- Stay inside the smallest relevant community; read only the files graphify identifies as
+  necessary for the requested task; stop reading once you have enough to implement.
+- Never cold-scan the repo (no blind `grep`/`ls`/directory walks) unless explicitly asked.
 
-**Publish one platform at a time:**
-```
-eas update --branch preview --platform android --message "<what changed>"
-```
-Never omit `--platform`. It defaults to `all`, which bundles web, which dies on an
-`expo-sqlite`/`wa-sqlite.wasm` resolve error — the app doesn't target web, so this is pure noise.
-`Asset processing timed out` on upload is transient: retry, don't debug it.
+## Context budget
 
-**If an update never reaches the device, check the channel→branch link FIRST:**
-```
-eas channel:view preview     # "No branches are pointed to this channel" = silent total failure
-eas channel:edit preview --branch preview
-```
-A channel with no branch pointed at it accepts every `eas update` happily and serves none of them.
-Nothing in the CLI output, the build, or the app hints at this. It cost hours once. `production`
-has never been linked — verify before the first production OTA.
-
-Only after that link is confirmed, consider apply-timing: a downloaded update runs on the *next*
-launch, so a real relaunch is close → reopen → close → reopen. Don't lead with this diagnosis —
-"relaunch again" is the advice that hides a broken channel link.
-
-Settings → About shows the live `Updates.useUpdates()` state (up to date / checking / downloading %
-/ ready / failed) — read it on-device instead of guessing whether an update landed. There is no
-top banner: `AppUpdatePrompt` (root `_layout.tsx`) renders only the ready-to-restart confirmation,
-and suppresses even that inside the reader.
-
-`runtimeVersion.policy` is `appVersion`, so bumping `version` in `app.json` **orphans every
-installed APK** from all future updates until testers reinstall. Don't bump it casually.
+Prefer the smallest possible context. Use file paths already provided before reaching for
+graphify. Read only the minimum required files — never "for context." Load a doc from the
+table below only when the task actually touches its area.
 
 ## Implementation workflow
 
-Understand request → `graphify query` → smallest relevant community → read only files named
-there → implement (smallest diff) → `npx tsc --noEmit` → for a visual/interactive change, ask
-the user what they see on-device, don't assume it worked → stop. Never continue "improving"
-code outside the task's community.
+Understand request → graphify only if needed → read minimum files → implement (smallest diff)
+→ `npx tsc --noEmit` → for a visual/interactive change, ask the user what they see on-device
+→ STOP. No unrelated improvements, no extra file inspection, no unrequested proposals.
 
-## Debug workflow
+## Hard constraints
 
-Identify the entry point (the screen/function named in the report or query result) → graphify
-`query`/`path` from there → inspect only directly connected files → stop at root cause. No
-broad repository search.
+- **expo-sqlite (Android)**: every DB call goes through the serializing queue in
+  `db/client.ts`. Never bypass it, never call the raw db handle.
+- **SDK pin**: Expo Go on-device must match SDK 54 exactly (fix procedure:
+  `docs/debugging.md`).
+- **OTA covers any JS/TS change** — never run `eas build`, `eas update`, or bump `version` in
+  `app.json` without reading `docs/deployment.md` first.
+
+## Design system
+
+Source of truth, in order: `src/theme/tokens.ts`, `typography.ts`, `ThemeProvider.tsx`
+(`useTheme()`, Day/Lamp). Never hardcode a value that exists as a token. Two locked constants:
+
+- Brand (never altered): Primary Dark `#1C1B1E`, Flame Amber `#F5A623`, Parchment `#F5EDE1`.
+- Reading body floor: Lora, never below 17px, line-height never below 1.85.
+
+Everything else: `docs/design.md`.
+
+## Docs — read on demand, don't preload
+
+| File | When |
+|---|---|
+| `docs/architecture.md` | Project layout, feature boundaries, conventions |
+| `docs/design.md` | Design detail beyond the constants above |
+| `docs/deployment.md` | Any EAS build/update/release work |
+| `docs/debugging.md` | Known pitfalls (Router, SQLite, SDK, fetch scripts), debug workflow |
+| `docs/scriptures.md` | Scripture verticals (Quran/Bible/Vedas): sources, recipe |
+| `docs/context-verses.md` | Mood→verse semantic search, embeddings, Edge Function |
+| `ROADMAP.md` | Product phasing, free-tier caps, schema-to-feature map |

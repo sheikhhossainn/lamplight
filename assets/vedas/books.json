@@ -1,0 +1,62 @@
+[
+  {
+    "id": "RV01",
+    "name": "Mandala 1",
+    "chapterCount": 191,
+    "meaning": "Hymns to Agni, Indra, Varuna, and other deities by various sages"
+  },
+  {
+    "id": "RV02",
+    "name": "Mandala 2",
+    "chapterCount": 43,
+    "meaning": "Hymns chiefly by the sage Gritsamada"
+  },
+  {
+    "id": "RV03",
+    "name": "Mandala 3",
+    "chapterCount": 62,
+    "meaning": "Hymns chiefly by Visvamitra, containing the Gayatri Mantra"
+  },
+  {
+    "id": "RV04",
+    "name": "Mandala 4",
+    "chapterCount": 58,
+    "meaning": "Hymns chiefly by Vamadeva, focusing on Agni and Indra"
+  },
+  {
+    "id": "RV05",
+    "name": "Mandala 5",
+    "chapterCount": 87,
+    "meaning": "Hymns chiefly by the Atri clan"
+  },
+  {
+    "id": "RV06",
+    "name": "Mandala 6",
+    "chapterCount": 75,
+    "meaning": "Hymns chiefly by Bharadvaja"
+  },
+  {
+    "id": "RV07",
+    "name": "Mandala 7",
+    "chapterCount": 104,
+    "meaning": "Hymns chiefly by Vasistha"
+  },
+  {
+    "id": "RV08",
+    "name": "Mandala 8",
+    "chapterCount": 103,
+    "meaning": "Hymns chiefly by the Kanva clan, with Pragatha strophes"
+  },
+  {
+    "id": "RV09",
+    "name": "Mandala 9",
+    "chapterCount": 114,
+    "meaning": "Hymns entirely dedicated to Soma Pavamana (the purified drink)"
+  },
+  {
+    "id": "RV10",
+    "name": "Mandala 10",
+    "chapterCount": 191,
+    "meaning": "Later hymns containing philosophical, cosmic, and marriage verses"
+  }
+]

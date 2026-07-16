@@ -7,28 +7,11 @@ to a stable, citable verse key. Each scripture is its own parallel vertical: bun
 asset + own DB tables + own repository + own routes. Shared machinery lives in
 `src/features/reader/components/` (see "Shared UI" below).
 
-## Running a fetch script — no port involved, don't kill the wrong process
+## Running a fetch script
 
-`fetch-quran.mjs`, `fetch-bible-ot.mjs`, `fetch-bible-nt.mjs` are one-off outbound HTTP clients
-(they call out to alquran.cloud / bible-api.com / bible.helloao.org) — **not servers**, so there
-is no port listening and nothing to find in a port scan. They run as a plain `node scripts/fetch-*.mjs`
-process, typically for several minutes (bible-api.com's 15 req/30s rate limit dominates), or
-started via `npm run fetch:*` (spawns an extra `cmd.exe`/npm wrapper process as the parent).
-
-If you need to confirm one is still running or avoid killing it while cleaning up other Node
-processes (e.g. a stray `expo start` left over from route-typegen), match on command line, not
-just process name — everything here is `node.exe`:
-
-```powershell
-Get-CimInstance Win32_Process -Filter "Name='node.exe'" |
-  Where-Object { $_.CommandLine -match 'fetch-bible|fetch-quran' } |
-  Select-Object ProcessId, CommandLine
-```
-
-These scripts are resumable (checkpoint to disk after every book — see the Old Testament section
-below), so killing one mid-run isn't destructive, just wasteful — it re-fetches from scratch or
-resumes depending on what's already flushed to `assets/`. Prefer letting it finish or reading its
-output file over killing it speculatively.
+The `fetch-*.mjs` scripts are one-off outbound HTTP clients, not servers — see
+[debugging.md](debugging.md) for how to find/avoid killing a running one. They checkpoint to
+disk after every book, so a mid-run kill is wasteful, not destructive.
 
 ## Quran
 
@@ -162,3 +145,15 @@ duplicated rather than parameterized, following this doc's own "Adding another s
   existing painted-spine-plus-title treatment (same fallback every catalog book without a cover
   photo gets) — `SPINE_COLOR_BY_BOOK` in `src/components/BookSpine.tsx` pins `quran`, `bible-ot`,
   and `bible-nt` to specific brand-token colors rather than the default fallback-tone cycle.
+
+## Vedas
+
+Sibling of the Bible NT and OT, not a merge into them. Uses the Ralph T.H. Griffith English translation of the Rigveda.
+
+- **Canon**: 10 books (Mandalas), containing 1028 hymns in total.
+- **Fetch script**: `scripts/fetch-vedas.mjs`, run via `npm run fetch:vedas`. Fetches from the public `indraai/deva.veda` repository (specifically raw book JSONs from `https://raw.githubusercontent.com/indraai/deva.veda/main/data/rigveda/books/`), decodes HTML entities, and writes `assets/vedas/books.json` and `assets/vedas/verses.json`.
+- **Runtime loader**: `src/features/vedas-content/vedasData.ts`.
+- **DB & Repository**: Reuses `bible_reading_position`, `bible_highlights`, and `bible_saved_words` SQLite tables and `src/db/repositories/bible.ts` (generic over `bookId`), since unique Vedas Mandala book IDs (`RV01` to `RV10`) never collide with Bible OT/NT book IDs.
+- **Screens**: `src/app/vedas/index.tsx` and `src/app/vedas/[bookId].tsx`.
+- **Spine color**: Saffron/terracotta color (`#C05C1F`) mapped in `src/components/BookSpine.tsx`.
+

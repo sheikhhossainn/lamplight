@@ -51,6 +51,36 @@ const CATALOG = [
     displayAuthor: 'Fyodor Dostoevsky',
     authorMatch: 'dosto', // covers both "Dostoevsky" and Gutendex's "Dostoyevsky" spelling
   },
+  {
+    id: 'war-and-peace',
+    title: 'War and Peace',
+    displayAuthor: 'Leo Tolstoy',
+    authorMatch: 'tolstoy',
+  },
+  {
+    id: 'the-brothers-karamazov',
+    title: 'The Brothers Karamazov',
+    displayAuthor: 'Fyodor Dostoevsky',
+    authorMatch: 'dosto',
+  },
+  {
+    id: 'arabian-nights',
+    title: 'The Arabian Nights Entertainments',
+    displayAuthor: 'Anonymous',
+    authorMatch: 'lang', // Gutendex credits editor Andrew Lang, not an author
+  },
+  {
+    id: 'the-art-of-war',
+    title: 'The Art of War',
+    displayAuthor: 'Sun Tzu',
+    authorMatch: 'sunzi', // Gutendex spells the author "Sunzi"
+  },
+  {
+    id: 'the-analects-of-confucius',
+    title: 'The Analects of Confucius (from the Chinese Classics)',
+    displayAuthor: 'Confucius',
+    authorMatch: 'confucius',
+  },
 ];
 
 const SYNOPSES = {
@@ -64,6 +94,16 @@ const SYNOPSES = {
     'A married aristocrat’s affair unravels her standing in Russian high society, set against her brother-in-law’s parallel search for meaning.',
   'crime-and-punishment':
     'A destitute former student murders a pawnbroker, then spends the rest of the novel unraveling under the weight of his own guilt.',
+  'war-and-peace':
+    'Five aristocratic families live through Napoleon’s invasion of Russia — love, war, and the search for meaning across a shifting empire.',
+  'the-brothers-karamazov':
+    'Three brothers and their murdered father — a novel of faith, doubt, and guilt that unfolds as both family drama and murder mystery.',
+  'arabian-nights':
+    'Scheherazade spins one tale after another to stay alive one more night — the frame story behind Sindbad, Aladdin, and Ali Baba.',
+  'the-art-of-war':
+    'A concise ancient treatise on strategy, deception, and command — still read well beyond its original battlefield context.',
+  'the-analects-of-confucius':
+    'Sayings and teachings attributed to Confucius on ethics, governance, and the cultivation of character, compiled by his followers.',
 };
 
 async function findBook(entry) {

@@ -43,7 +43,7 @@ const TABS: { key: Tab; label: string }[] = [
 
 // Normalized shape for a bookmarked verse regardless of which scripture it
 // came from — Quran (quran_highlights) and Bible OT/NT (bible_highlights,
-// shared table, see scriptures.md) each map into this before grouping/render.
+// shared table, see docs/scriptures.md) each map into this before grouping/render.
 type SavedVerseEntry = {
   id: string;
   groupTitle: string;

@@ -98,7 +98,7 @@ export async function listBibleHighlightsForBook(bookId: string): Promise<BibleH
 }
 
 // Every bookmarked verse across both testaments (OT and NT books share this
-// table — see the schema note in scriptures.md), for the Notebook's "Saved
+// table — see the schema note in docs/scriptures.md), for the Notebook's "Saved
 // verses" tab.
 export async function listAllBibleHighlights(): Promise<BibleHighlight[]> {
   const db = await getDb();

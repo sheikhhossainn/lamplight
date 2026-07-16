@@ -21,5 +21,11 @@
     "scripts/**/*.mjs",
     ".expo/types/**/*.ts",
     "expo-env.d.ts"
+  ],
+  // supabase/functions/** runs on Deno (Supabase Edge Functions), not Node —
+  // `Deno` global and `npm:`/`https:` specifiers aren't resolvable here, same
+  // reasoning as scripts/**/*.mjs being a separate Node-only runtime context.
+  "exclude": [
+    "supabase/functions/**"
   ]
 }

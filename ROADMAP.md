@@ -59,6 +59,10 @@ did without having to ask them.
   tracking, bookmarks. _(Import from device already scoped separately from
   the Gutenberg pipeline — see `library_items.source_type = 'user_upload'`.)_
 - Library: bookshelf UI, custom shelves, search, filter by author/language/category.
+- **[added]** Per-book "Add to shelf" — a button on the book detail screen to
+  add/remove that one book from any shelf, creating a new shelf inline if none
+  exist yet. Complements the shelf-centric editor (pick books for a shelf)
+  with the inverse flow (pick shelves for a book).
 - Translation: tap a word → its translation, 25/day cap. **[clarified]** This
   is the *action*, ephemeral unless saved — see below for how it differs from
   Vocabulary, and Phase 1 for the context-aware upgrade.
@@ -66,6 +70,10 @@ did without having to ask them.
   30/book), view per book, jump back to the exact sentence, in-book highlight.
   Every save implies a translation happened first; not every translation gets
   saved.
+- **[added]** Flashcard review: shuffled deck of saved vocabulary with
+  flip-to-reveal, a below-threshold nudge ("read N more to test your memory")
+  instead of dropping into a too-small deck, and a daily review prompt
+  surfaced from the Library screen.
 - Quotes: save (cap 15/book), jump to location, in-book highlight, share as a
   quote card (3 free themes).
 - Weekly quiz: basic score/progress only.
@@ -86,6 +94,18 @@ did without having to ask them.
   feedback" entry point in Settings beats relying on friends to remember to
   message you. Bug vs. feature-request vs. general, freeform text is enough
   for 15 people.
+- **[added]** Scripture readers — Quran and Bible (Old Testament + New
+  Testament), full reader verticals reusing the same word-tap, vocabulary,
+  and highlight machinery as EPUB books. Not in the original spec; added
+  because scripture reading-with-translation is the same core loop as any
+  other book.
+- **[added]** Onboarding flow that gates first app open on picking a
+  source/target language pair, before any book is opened.
+- **[added]** Saved-books screen for managing on-device EPUB downloads
+  separately from the catalog browse view.
+- **[added]** In-app update banner surfacing OTA (`eas update`) check/
+  downloading/ready/error state, so a stalled update is visible instead of
+  silent.
 
 **Explicitly not built yet:** billing/subscriptions, spaced repetition,
 adaptive quizzes, reading insights/heatmap, cloud sync/backup, premium
