@@ -49,3 +49,6 @@ assets/nature-music/
 
 # raw page-turn recording — only the trimmed clip assets/sfx/page-turn.mp3 ships
 assets/page-turn-sounds/
+
+# Supabase CLI local cache
+supabase/.temp/
