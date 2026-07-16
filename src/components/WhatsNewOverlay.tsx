@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { CheckIcon } from '@/components/icons';
@@ -9,9 +10,10 @@ import { useTheme } from '@/theme/ThemeProvider';
 // version in whatsNew.ts, marked seen on dismiss so it never repeats.
 export function WhatsNewOverlay() {
   const { colors, typography, spacing, radius } = useTheme();
+  const [dismissed, setDismissed] = useState(false);
   const entry = getPendingWhatsNew();
 
-  if (!entry) return null;
+  if (!entry || dismissed) return null;
 
   return (
     <Modal visible transparent={false} animationType="fade" statusBarTranslucent>
@@ -42,7 +44,10 @@ export function WhatsNewOverlay() {
 
         <Pressable
           style={[styles.button, { backgroundColor: colors.flameAmber }]}
-          onPress={() => markWhatsNewSeen(entry.version)}
+          onPress={() => {
+            markWhatsNewSeen(entry.version);
+            setDismissed(true);
+          }}
         >
           <Text style={[typography.buttonLabel, { color: colors.primaryDark }]}>Got it</Text>
         </Pressable>
