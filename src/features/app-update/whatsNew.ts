@@ -13,11 +13,15 @@ export type ChangelogEntry = {
 // Newest first. Only the top entry is ever shown — someone who skipped two
 // updates in a row sees one card for the latest, not a backlog.
 const CHANGELOG: ChangelogEntry[] = [
-  // {
-  //   version: '1',
-  //   headline: "What's new",
-  //   changes: ['Added flashcard deck reminders', 'Fixed Bible chapter numbers going out of order'],
-  // },
+  {
+    version: '1',
+    headline: "What's new",
+    changes: [
+      'Added Torah and Vedas readers',
+      'Added mood-based verse recommendations',
+      'Added flashcard deck review nudges',
+    ],
+  },
 ];
 
 let lastSeenVersion: string | null = null;
