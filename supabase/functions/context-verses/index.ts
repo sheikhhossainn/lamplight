@@ -26,7 +26,7 @@ declare const Supabase: {
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
-const TRADITIONS = ['quran', 'bible-ot', 'bible-nt'] as const;
+const TRADITIONS = ['quran', 'bible-ot', 'bible-nt', 'torah', 'vedas'] as const;
 const MAX_TEXT_LENGTH = 500;
 
 const corsHeaders = {

@@ -20,13 +20,14 @@ export const TRADITION_LABELS: Record<string, string> = {
   'bible-ot': 'Bible — Old Testament',
   'bible-nt': 'Bible — New Testament',
   torah: 'Torah',
+  vedas: 'Vedas',
 };
 
 // Shared shape for a single scripture_verses row as rendered by VerseDeckView,
 // whether it came from the mood-tag RPC or the context-search Edge Function.
 export type ScriptureVerseCard = {
   id: string;
-  tradition: 'quran' | 'bible-ot' | 'bible-nt' | 'torah';
+  tradition: 'quran' | 'bible-ot' | 'bible-nt' | 'torah' | 'vedas';
   book: string;
   chapter: number;
   verseNumber: number;

@@ -130,6 +130,10 @@ function AppShell() {
           options={{ contentStyle: { backgroundColor: colors.libraryBackground } }}
         />
         <Stack.Screen name="quran/index" options={{ contentStyle: { backgroundColor: colors.libraryBackground } }} />
+        {/* Wood-table backdrop is fixed art, not a theme token — matches the
+            gradient's darkest stop so the fade_from_bottom transition doesn't
+            flash libraryBackground before the gradient paints. */}
+        <Stack.Screen name="mood-verses/table" options={{ contentStyle: { backgroundColor: '#4A3620' } }} />
       </Stack>
       <ThemeTransitionOverlay />
       <AppUpdatePrompt />

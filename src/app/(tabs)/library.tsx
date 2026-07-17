@@ -19,13 +19,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
 import { BookSpine } from '@/components/BookSpine';
-import { CloseIcon, FeelingPromptIcon, FilterIcon, SearchIcon } from '@/components/icons';
+import { CloseIcon, FilterIcon, SearchIcon } from '@/components/icons';
 import { logEvent } from '@/features/analytics/analytics';
 import { BOOK_CATEGORIES, categoriesForBook } from '@/features/content-ingestion/bookCategories';
 import { useLibrarySyncing } from '@/features/content-ingestion/librarySync';
-import { FeelingPromptModal } from '@/features/scripture-verses/FeelingPromptModal';
 import { ShelfEditorModal, type ShelfDraft } from '@/components/ShelfEditorModal';
 import { VocabReviewPrompt } from '@/components/VocabReviewPrompt';
+import { FeelingPromptModal } from '@/features/scripture-verses/FeelingPromptModal';
 import { checkVocabReviewPrompt, markVocabReviewPrompted } from '@/features/vocabulary/reviewPrompt';
 import { type BookRow, listBooks } from '@/db/repositories/books';
 import {
@@ -124,7 +124,7 @@ export default function LibraryScreen() {
   const [filterOpen, setFilterOpen] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [reviewPrompt, setReviewPrompt] = useState<{ wordCount: number } | null>(null);
-  const [feelingPromptVisible, setFeelingPromptVisible] = useState(false);
+  const [feelingModalVisible, setFeelingModalVisible] = useState(false);
   const searchRef = useRef<TextInput>(null);
 
   // When the keyboard is dismissed (e.g. swipe-back gesture) the search input
@@ -518,9 +518,13 @@ export default function LibraryScreen() {
           right when the real "All books" shelf also popped in. */}
       <View>
         <View style={[styles.shelfHeader, { marginBottom: spacing.md }]}>
-          <Text style={[typography.eyebrowLabel, { color: colors.progressLabel }]}>Scriptures</Text>
-          <Pressable onPress={() => setFeelingPromptVisible(true)} hitSlop={8}>
-            <FeelingPromptIcon color={colors.fawn} size={18} />
+          <Text style={[typography.eyebrowLabel, { color: colors.fawn }]}>Scriptures</Text>
+          <Pressable
+            onPress={() => setFeelingModalVisible(true)}
+            hitSlop={8}
+            style={styles.filterHeader}
+          >
+            <Text style={[typography.uiRowTitle, { color: colors.progressLabel, fontSize: 12 }]}>Feeling?</Text>
           </Pressable>
         </View>
         <ScrollView
@@ -618,6 +622,15 @@ export default function LibraryScreen() {
         </>
       )}
 
+      <FeelingPromptModal
+        visible={feelingModalVisible}
+        onClose={() => setFeelingModalVisible(false)}
+        onSubmit={(text) => {
+          setFeelingModalVisible(false);
+          router.push({ pathname: '/mood-verses/reflect', params: { text } });
+        }}
+      />
+
       <ShelfEditorModal
         visible={editor.visible}
         draft={editor.draft}
@@ -625,15 +638,6 @@ export default function LibraryScreen() {
         onSave={handleSaveShelf}
         onDelete={editor.draft ? handleDeleteShelf : undefined}
         onClose={() => setEditor({ visible: false, draft: null })}
-      />
-
-      <FeelingPromptModal
-        visible={feelingPromptVisible}
-        onClose={() => setFeelingPromptVisible(false)}
-        onSubmit={(text) => {
-          setFeelingPromptVisible(false);
-          router.push({ pathname: '/mood-verses/reflect', params: { text } });
-        }}
       />
 
       <VocabReviewPrompt

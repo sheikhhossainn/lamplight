@@ -126,20 +126,53 @@ const CURATED = {
     ['MRK', 9, 24, ['doubt']],
     ['JHN', 20, 27, ['doubt']],
   ],
+  // Torah is Genesis-Deuteronomy, reusing the same bible-ot dataset (see
+  // src/app/torah/index.tsx) — just a different `tradition` tag on the same
+  // underlying verse text. A lighter starter set than the other traditions:
+  // only moods with a genuinely strong, well-known Torah verse are covered
+  // here rather than stretching for all ten.
+  torah: [
+    ['GEN', 37, 35, ['grief']],
+    ['EXO', 14, 13, ['fear']],
+    ['NUM', 6, 26, ['peace']],
+    ['EXO', 15, 2, ['strength']],
+    ['DEU', 8, 10, ['gratitude']],
+    ['EXO', 34, 7, ['forgiveness']],
+    ['EXO', 13, 21, ['guidance']],
+  ],
 };
+
+// Rig Veda hymns (assets/vedas) — hand-picked against the actual hymn text
+// (Griffith's public-domain translation), not keyword-matched: archaic
+// English produces false positives (e.g. "sing" containing "sin") that make
+// naive keyword search unreliable for mood-tagging this corpus. A starter
+// set only — moods without a clear, verified hymn are left uncovered rather
+// than forcing a weak match.
+const CURATED_VEDAS = [
+  ['RV01', 12, 7, ['grief']],
+  ['RV01', 29, 1, ['hope']],
+  ['RV01', 1, 1, ['gratitude']],
+  ['RV10', 129, 6, ['doubt']],
+  ['RV01', 90, 1, ['guidance']],
+  ['RV01', 2, 9, ['strength']],
+  ['RV01', 11, 2, ['fear']],
+  ['RV02', 28, 6, ['forgiveness']],
+];
 
 async function loadJson(...parts) {
   return JSON.parse(await readFile(path.join(ASSETS_DIR, ...parts), 'utf8'));
 }
 
 async function loadSources() {
-  const [quranVerses, surahs, otVerses, otBooks, ntVerses, ntBooks] = await Promise.all([
+  const [quranVerses, surahs, otVerses, otBooks, ntVerses, ntBooks, vedasVerses, vedasBooks] = await Promise.all([
     loadJson('quran', 'verses.json'),
     loadJson('quran', 'surahs.json'),
     loadJson('bible', 'verses.json'),
     loadJson('bible', 'books.json'),
     loadJson('bible-nt', 'verses.json'),
     loadJson('bible-nt', 'books.json'),
+    loadJson('vedas', 'verses.json'),
+    loadJson('vedas', 'books.json'),
   ]);
   return {
     quranVerses,
@@ -148,6 +181,8 @@ async function loadSources() {
     otBookById: new Map(otBooks.map((b) => [b.id, b])),
     ntVerses,
     ntBookById: new Map(ntBooks.map((b) => [b.id, b])),
+    vedasVerses,
+    vedasBookById: new Map(vedasBooks.map((b) => [b.id, b])),
   };
 }
 
@@ -168,14 +203,32 @@ function resolveQuranCitation(sources, surahNumber, ayahNumber, moodTags) {
 }
 
 function resolveBibleCitation(sources, tradition, bookId, chapter, verseNumber, moodTags) {
-  const store = tradition === 'bible-ot' ? sources.otVerses : sources.ntVerses;
-  const booksById = tradition === 'bible-ot' ? sources.otBookById : sources.ntBookById;
+  // Torah reuses the bible-ot dataset (Genesis-Deuteronomy), just under its own
+  // tradition tag — same store/books lookup as bible-ot, not bible-nt's.
+  const store = tradition === 'bible-nt' ? sources.ntVerses : sources.otVerses;
+  const booksById = tradition === 'bible-nt' ? sources.ntBookById : sources.otBookById;
   const book = booksById.get(bookId);
   if (!book) throw new Error(`${tradition}: unknown book ${bookId}`);
   const verse = store[bookId]?.[String(chapter)]?.find((v) => v.number === verseNumber);
   if (!verse) throw new Error(`${tradition}: missing ${book.name} ${chapter}:${verseNumber}`);
   return {
     tradition,
+    book: book.name,
+    chapter,
+    verse_number: verseNumber,
+    original_text: verse.text,
+    translation: null,
+    mood_tags: moodTags,
+  };
+}
+
+function resolveVedasCitation(sources, bookId, chapter, verseNumber, moodTags) {
+  const book = sources.vedasBookById.get(bookId);
+  if (!book) throw new Error(`vedas: unknown mandala ${bookId}`);
+  const verse = sources.vedasVerses[bookId]?.[String(chapter)]?.find((v) => v.number === verseNumber);
+  if (!verse) throw new Error(`vedas: missing ${book.name} ${chapter}:${verseNumber}`);
+  return {
+    tradition: 'vedas',
     book: book.name,
     chapter,
     verse_number: verseNumber,
@@ -194,6 +247,12 @@ function resolveAllCitations(sources) {
     for (const [bookId, chapter, verse, moods] of CURATED[tradition]) {
       rows.push(resolveBibleCitation(sources, tradition, bookId, chapter, verse, moods));
     }
+  }
+  for (const [bookId, chapter, verse, moods] of CURATED.torah) {
+    rows.push(resolveBibleCitation(sources, 'torah', bookId, chapter, verse, moods));
+  }
+  for (const [bookId, chapter, verse, moods] of CURATED_VEDAS) {
+    rows.push(resolveVedasCitation(sources, bookId, chapter, verse, moods));
   }
   return rows;
 }
@@ -240,7 +299,10 @@ async function upsertRows(rows) {
 
 const sources = await loadSources();
 const rows = resolveAllCitations(sources);
-console.log(`Resolved ${rows.length} curated verses (${CURATED.quran.length} quran, ${CURATED['bible-ot'].length} bible-ot, ${CURATED['bible-nt'].length} bible-nt).`);
+console.log(
+  `Resolved ${rows.length} curated verses (${CURATED.quran.length} quran, ${CURATED['bible-ot'].length} bible-ot, ` +
+    `${CURATED['bible-nt'].length} bible-nt, ${CURATED.torah.length} torah, ${CURATED_VEDAS.length} vedas).`,
+);
 
 await embedRows(rows);
 await upsertRows(rows);

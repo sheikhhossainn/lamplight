@@ -35,8 +35,8 @@ an LLM reasoning about the user's situation.
   1. Receives `{ text, perTradition }`.
   2. Embeds `text` with `Supabase.ai.Session('gte-small')` (created once at module scope, reused
      across warm invocations).
-  3. Calls `search_verses_by_tradition` once per tradition (`quran`, `bible-ot`, `bible-nt`) using
-     the service-role key.
+  3. Calls `search_verses_by_tradition` once per tradition (`quran`, `bible-ot`, `bible-nt`,
+     `torah`, `vedas`) using the service-role key.
   4. Returns the combined rows as flat JSON.
   - Separate endpoint from the app's usual PostgREST REST API (`/rest/v1/...`) — Edge Functions
     live at `/functions/v1/<name>`. Deploy with `supabase functions deploy context-verses`;
@@ -44,15 +44,33 @@ an LLM reasoning about the user's situation.
 
 ## App
 
-- **`FeelingPromptModal`** — free-text sheet, opened from the speech-bubble icon at the right edge
-  of the Library screen's Scriptures shelf header. On submit, navigates to
-  `/mood-verses/reflect?text=...`.
 - **`contextVersesApi.ts`** — plain `fetch` to `${SUPABASE_URL}/functions/v1/context-verses` (not
   `@supabase/supabase-js` — nothing in the app bundles that client library; same convention as
   `remoteCatalog.ts`).
 - **`VerseDeckView`** — shared deck UI: blind verse text → tap reveals tradition + citation →
   like/dislike → card fades out → next verse → after the last one, a summary list of every verse
   with its reaction. Reactions logged via the existing `logEvent()` into `analytics_events`
-  (`verse_deck_reaction`), fire-and-forget.
+  (`verse_deck_reaction`), fire-and-forget. Used by `/mood-verses/reflect`, entered via
+  `FeelingPromptModal` — tapping "Feeling?" on the Library screen opens the modal, submitting
+  pushes `/mood-verses/reflect?text=...`, which calls `fetchContextVerses(text)`.
 - The old mood-tag path (`get_mood_verses`, `moodVersesApi.ts`) still exists and works, just has no
-  screen wired to it anymore — superseded by this free-text flow.
+  screen wired to it anymore — superseded by the free-text flow above.
+
+## Verse table deck (offline, blind, no citation ever)
+
+- **`VerseTableDeck`** (`src/features/scripture-verses/VerseTableDeck.tsx`) — reachable at
+  `/mood-verses/table`, but nothing currently navigates there since "Feeling?" was repointed back
+  to the free-text `FeelingPromptModal` flow above. Kept in the tree intentionally (not deleted)
+  in case it gets a new entry point later. Not network-backed and not personalized — no
+  embeddings, no text input. A wooden-table backdrop
+  shows one face-down card at a time, cycling a fixed order (Quran → Bible OT → Bible NT → Torah →
+  Vedas). Tap flips the card (`react-native-reanimated` rotateY) to reveal verse text only; unlike
+  `VerseDeckView`, the tradition/book/chapter is never shown on either face — the card auto-fades
+  after `REVEAL_HOLD_MS` and the next tradition's card slides in.
+- **`randomVerse.ts`** (`src/features/scripture-verses/`) — picks one random verse per tradition
+  straight from the same local `assets/*/verses.json` bundles the readers use (`bibleData`,
+  `bibleNtData`, `quranData`, `vedasData`); Torah reuses the Bible OT data filtered to
+  `GEN`–`DEU`, mirroring the filter in `src/app/torah/index.tsx`. Unlike `context-verses` (a
+  starter curated deck — see `scripts/seed-scripture-verses.mjs`'s `torah`/`CURATED_VEDAS`
+  entries, only the moods with a genuinely strong verse, not all ten), this deck draws from the
+  full local text, so it's never short on cards for either tradition.

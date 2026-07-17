@@ -612,7 +612,8 @@ insert into public.scripture_traditions (key, display_name) values
   ('quran', 'Quran'),
   ('bible-ot', 'Bible — Old Testament'),
   ('bible-nt', 'Bible — New Testament'),
-  ('torah', 'Torah')
+  ('torah', 'Torah'),
+  ('vedas', 'Vedas')
 on conflict (key) do nothing;
 
 create table if not exists public.scripture_verses (
