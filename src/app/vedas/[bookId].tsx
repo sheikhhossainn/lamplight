@@ -7,6 +7,7 @@ import { BookmarkIcon, ChevronLeftIcon, ChevronRightIcon, ShareIcon } from '@/co
 import {
   createBibleHighlight,
   deleteBibleHighlight,
+  getBibleReadingPosition,
   listBibleHighlightsForBook,
   saveBibleWord,
   upsertBibleReadingPosition,
@@ -56,15 +57,96 @@ export default function VedasVerseReaderScreen() {
     void listBibleHighlightsForBook(bookId).then(setHighlights);
   }, [bookId]);
 
+  const [landingVerseKey, setLandingVerseKey] = useState<string | null>(null);
+  const [isReady, setIsReady] = useState(false);
+  const initialScrollDone = useRef(false);
+  const isUserInteracting = useRef(false);
+
   useEffect(() => {
-    if (!jumpChapter || !jumpVerse) return;
-    const index = verses.findIndex(
-      (v) => v.chapter === Number(jumpChapter) && v.verse.number === Number(jumpVerse),
-    );
-    if (index <= 0) return;
-    const timer = setTimeout(() => listRef.current?.scrollToIndex({ index, animated: false }), 50);
-    return () => clearTimeout(timer);
+    const handle = requestAnimationFrame(() => setIsReady(true));
+    return () => cancelAnimationFrame(handle);
+  }, []);
+
+  const initialTargetIndex = useMemo(() => {
+    if (jumpChapter && jumpVerse) {
+      return verses.findIndex(
+        (v) => v.chapter === Number(jumpChapter) && v.verse.number === Number(jumpVerse),
+      );
+    }
+    return -1;
   }, [jumpChapter, jumpVerse, verses]);
+
+  useEffect(() => {
+    void (async () => {
+      const existing = await getBibleReadingPosition(bookId);
+      const targetChapter = jumpChapter ? Number(jumpChapter) : (existing?.chapter ?? 1);
+      const targetVerse = jumpVerse ? Number(jumpVerse) : (existing?.verse ?? 1);
+      await upsertBibleReadingPosition({ bookId, chapter: targetChapter, verse: targetVerse });
+    })();
+  }, [bookId]);
+
+  useEffect(() => {
+    if (!isReady) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let landingTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const performScroll = (targetIndex: number, targetKey: string) => {
+      if (targetIndex > 0) {
+        const schedule = typeof requestIdleCallback === 'function'
+          ? requestIdleCallback
+          : (fn: () => void) => setTimeout(fn, 60);
+        const cancel = typeof cancelIdleCallback === 'function'
+          ? cancelIdleCallback
+          : clearTimeout;
+
+        const idleId = schedule(() => {
+          timer = setTimeout(() => {
+            try {
+              listRef.current?.scrollToIndex({
+                index: targetIndex,
+                viewPosition: 0,
+                animated: true,
+              });
+            } catch {
+              // Gracefully handled by onScrollToIndexFailed
+            }
+            initialScrollDone.current = true;
+            setLandingVerseKey(targetKey);
+            landingTimer = setTimeout(() => {
+              setLandingVerseKey(null);
+            }, 1800);
+          }, 60);
+        });
+        return () => cancel(idleId as any);
+      } else {
+        initialScrollDone.current = true;
+      }
+    };
+
+    if (jumpChapter && jumpVerse) {
+      const cNum = Number(jumpChapter);
+      const vNum = Number(jumpVerse);
+      const index = verses.findIndex(
+        (v) => v.chapter === cNum && v.verse.number === vNum,
+      );
+      performScroll(index, verseKey(cNum, vNum));
+    } else {
+      void getBibleReadingPosition(bookId).then((pos) => {
+        if (pos) {
+          const index = verses.findIndex(
+            (v) => v.chapter === pos.chapter && v.verse.number === pos.verse,
+          );
+          performScroll(index, verseKey(pos.chapter, pos.verse));
+        } else {
+          initialScrollDone.current = true;
+        }
+      });
+    }
+    return () => {
+      if (timer) clearTimeout(timer);
+      if (landingTimer) clearTimeout(landingTimer);
+    };
+  }, [jumpChapter, jumpVerse, verses, bookId, isReady]);
 
   const highlightByVerse = useMemo(
     () => new Map(highlights.map((h) => [verseKey(h.chapter, h.verse), h])),
@@ -73,6 +155,7 @@ export default function VedasVerseReaderScreen() {
 
   const persistPosition = useCallback(
     (chapter: number, verse: number) => {
+      if (!isUserInteracting.current) return;
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       saveTimerRef.current = setTimeout(() => {
         void upsertBibleReadingPosition({ bookId, chapter, verse });
@@ -127,26 +210,44 @@ export default function VedasVerseReaderScreen() {
         <Text style={[typography.screenTitle, { color: colors.ink, marginLeft: spacing.md }]}>{bookMeta.name}</Text>
       </View>
 
-      <FlatList
-        ref={listRef}
+      {isReady ? (
+        <FlatList
+          ref={listRef}
         data={verses}
         keyExtractor={(item) => verseKey(item.chapter, item.verse.number)}
+        initialNumToRender={6}
+        maxToRenderPerBatch={8}
+        windowSize={5}
+        removeClippedSubviews={true}
+        updateCellsBatchingPeriod={30}
         contentContainerStyle={{
           paddingHorizontal: layout.screenMargin,
           paddingTop: spacing.lg,
           paddingBottom: insets.bottom + 32,
         }}
-        onScrollToIndexFailed={(info) => {
-          setTimeout(() => listRef.current?.scrollToIndex({ index: info.index, animated: false }), 100);
+        onScrollBeginDrag={() => {
+          isUserInteracting.current = true;
         }}
-        viewabilityConfig={{ itemVisiblePercentThreshold: 50 }}
+        onScrollToIndexFailed={(info) => {
+          listRef.current?.scrollToOffset({
+            offset: info.averageItemLength * info.index,
+            animated: false,
+          });
+          setTimeout(() => {
+            listRef.current?.scrollToIndex({ index: info.index, viewPosition: 0, animated: true });
+          }, 60);
+        }}
+        viewabilityConfig={{ itemVisiblePercentThreshold: 60, waitForInteraction: true }}
         onViewableItemsChanged={({ viewableItems }) => {
+          if (!isUserInteracting.current) return;
           const first = viewableItems[0]?.item as FlatVerse | undefined;
           if (first) persistPosition(first.chapter, first.verse.number);
         }}
         renderItem={({ item, index }) => {
           const isChapterStart = index === 0 || verses[index - 1].chapter !== item.chapter;
-          const highlighted = highlightByVerse.has(verseKey(item.chapter, item.verse.number));
+          const currentKey = verseKey(item.chapter, item.verse.number);
+          const highlighted = highlightByVerse.has(currentKey);
+          const isLanding = landingVerseKey === currentKey;
           return (
             <View>
               {isChapterStart ? (
@@ -163,10 +264,16 @@ export default function VedasVerseReaderScreen() {
                 style={[
                   styles.verseBlock,
                   {
-                    backgroundColor: highlighted ? `${colors.highlight.amber}30` : 'transparent',
+                    backgroundColor: isLanding
+                      ? `${colors.pairPillBackground}40`
+                      : highlighted
+                      ? `${colors.highlight.amber}30`
+                      : 'transparent',
                     borderRadius: radius.card,
                     marginBottom: spacing.xs,
                     padding: spacing.sm,
+                    borderWidth: 1.5,
+                    borderColor: isLanding ? colors.flameAmber : 'transparent',
                   },
                 ]}
               >
@@ -208,6 +315,7 @@ export default function VedasVerseReaderScreen() {
           );
         }}
       />
+    ) : null}
 
       <WordActionMenu
         word={heldWord?.word ?? null}

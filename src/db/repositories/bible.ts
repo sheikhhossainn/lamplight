@@ -44,6 +44,14 @@ export async function getLatestBibleReadingPosition(): Promise<BibleReadingPosit
   return row ? readingPositionFromSqlRow(row) : null;
 }
 
+export async function listBibleReadingPositions(): Promise<BibleReadingPosition[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<BibleReadingPositionSqlRow>(
+    'SELECT * FROM bible_reading_position',
+  );
+  return rows.map(readingPositionFromSqlRow);
+}
+
 export async function upsertBibleReadingPosition(
   position: Omit<BibleReadingPosition, 'updatedAt'>,
 ): Promise<void> {

@@ -1,9 +1,9 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Dimensions,
   FlatList,
-  InteractionManager,
   Pressable,
   StyleSheet,
   Text,
@@ -14,12 +14,14 @@ import Animated, {
   Easing,
   useAnimatedStyle,
   useSharedValue,
+  withRepeat,
+  withSequence,
   withTiming,
 } from 'react-native-reanimated';
 import Svg, { Circle, Defs, LinearGradient, Path, Rect, Stop } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ChevronLeftIcon, MoonIcon, SoundWaveIcon, SunIcon } from '@/components/icons';
+import { ChevronLeftIcon, CloseIcon, MoonIcon, SoundWaveIcon, SunIcon, TranslateIcon } from '@/components/icons';
 import { AmbiencePicker } from '@/features/ambience/AmbiencePicker';
 import { useAmbienceTrackId } from '@/features/ambience/ambiencePreference';
 import { useAmbiencePlayer } from '@/features/ambience/useAmbiencePlayer';
@@ -48,18 +50,22 @@ import { getBook, updateBookTotalChapters, type BookRow } from '@/db/repositorie
 import { createHighlight, listHighlightsForBook, type Highlight } from '@/db/repositories/highlights';
 import { getReadingPosition, upsertReadingPosition } from '@/db/repositories/readingPosition';
 import { listSavedWordsForBook, saveWord, type SavedWord } from '@/db/repositories/savedWords';
-import { useTargetLanguage } from '@/features/settings/languagePair';
+import { getSetting, setSetting } from '@/db/repositories/appSettings';
+import { LanguagePicker } from '@/components/LanguagePicker';
+import { ReaderGuideModal } from '@/features/reader/components/ReaderGuideModal';
+import { setTargetLanguage, targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
 import { READING_FONT_SIZE_PX, READING_LINE_HEIGHT_PX } from '@/features/settings/readingPrefs';
 import { getReadingTheme, useReadingTheme } from '@/features/settings/readingTheme';
 import { requestThemeChange } from '@/features/settings/themeTransition';
+import { isPremiumUser } from '@/features/subscription/subscriptionState';
+import { checkTranslationCap, recordTranslationUsage, translationProvider } from '@/features/translation';
 import { LamplightColor, type HighlightColorKey } from '@/theme/tokens';
 import { useTheme } from '@/theme/ThemeProvider';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
-// Shows the reader gesture hint once per app session (not once ever — no
-// persistence — and not on every single book you open, which would nag).
-let hasShownReaderHint = false;
+const READER_GUIDE_SETTING_KEY = 'reader_guide_seen_v4';
+const READER_HINT_SETTING_KEY = 'reader_gesture_hint_v4';
 
 // The reading surface is a deliberate reading experience, pinned to fixed
 // literals rather than the (theme-reactive) tokens — so the page stays legible
@@ -125,7 +131,7 @@ export default function ReaderScreen() {
     jumpChapter?: string;
     jumpPage?: string;
   }>();
-  const { colors, typography, spacing } = useTheme();
+  const { colors, typography, spacing, radius } = useTheme();
   const insets = useSafeAreaInsets();
   const listRef = useRef<FlatList<ReaderPage>>(null);
 
@@ -153,6 +159,14 @@ export default function ReaderScreen() {
   const chromeOpacity = useSharedValue(1);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [ambienceOpen, setAmbienceOpen] = useState(false);
+  // Whole-page translation, keyed to the page it belongs to (so swiping away
+  // from a translated page doesn't carry its translated text onto the next
+  // one). 'capped' surfaces the same daily-limit message the word-tap popup
+  // shows, just as a small inline card instead of another screen.
+  const [translation, setTranslation] = useState<
+    | { pageGlobalIndex: number; status: 'loading' | 'ready' | 'capped' | 'error'; paragraphs?: string[] }
+    | null
+  >(null);
 
   // Reading ambience: plays the chosen loop while this screen is mounted and
   // stops automatically when leaving the book (expo-audio releases on unmount).
@@ -201,37 +215,94 @@ export default function ReaderScreen() {
     endOffset: number;
   } | null>(null);
 
-  // First-run gesture hint — fades/slides in a couple seconds after the book
-  // opens, holds long enough to actually read, then eases back out on its own
-  // (or immediately on tap). Shows once per app session, never again after.
+  const [languagePickerVisible, setLanguagePickerVisible] = useState(false);
+  const [guideVisible, setGuideVisible] = useState(false);
+  const guideDismissedRef = useRef(false);
+  const readerHintDismissedRef = useRef(false);
+
+  // Automatically show the Reader Guide modal on first open once pages are ready
+  useEffect(() => {
+    if (guideDismissedRef.current || initialIndex == null) return;
+    void (async () => {
+      const seen = await getSetting(READER_GUIDE_SETTING_KEY);
+      if (guideDismissedRef.current) return;
+      if (seen === '1') {
+        guideDismissedRef.current = true;
+      } else {
+        setGuideVisible(true);
+      }
+    })();
+  }, [initialIndex]);
+
+  const handleCloseGuide = useCallback(() => {
+    guideDismissedRef.current = true;
+    void setSetting(READER_GUIDE_SETTING_KEY, '1');
+    setGuideVisible(false);
+  }, []);
+
+  // Smart first-run reader gesture hint (swipe left arrow + language pill)
   const [hintVisible, setHintVisible] = useState(false);
   const hintOpacity = useSharedValue(0);
-  // Slides in horizontally from the top-right corner (translateX 28 -> 0), so
-  // it reads as a quiet toast tucked under the lamp icon, not a modal.
-  const hintTranslateX = useSharedValue(28);
+  const hintTranslateY = useSharedValue(16);
+  const swipeArrowX = useSharedValue(0);
+
   const dismissHint = useCallback(() => {
-    hintOpacity.value = withTiming(0, { duration: 240, easing: Easing.in(Easing.cubic) });
-    hintTranslateX.value = withTiming(28, { duration: 240, easing: Easing.in(Easing.cubic) });
-    setTimeout(() => setHintVisible(false), 240);
-  }, [hintOpacity, hintTranslateX]);
+    readerHintDismissedRef.current = true;
+    void setSetting(READER_HINT_SETTING_KEY, '1');
+    hintOpacity.value = withTiming(0, { duration: 220, easing: Easing.in(Easing.cubic) });
+    hintTranslateY.value = withTiming(16, { duration: 220, easing: Easing.in(Easing.cubic) });
+    setTimeout(() => setHintVisible(false), 220);
+  }, [hintOpacity, hintTranslateY]);
+
   useEffect(() => {
-    if (hasShownReaderHint || !book) return;
-    hasShownReaderHint = true;
+    if (readerHintDismissedRef.current) return;
+    let cancelled = false;
+    void getSetting(READER_HINT_SETTING_KEY).then((seen) => {
+      if (cancelled) return;
+      if (seen === '1') {
+        readerHintDismissedRef.current = true;
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (readerHintDismissedRef.current || !book || pages.length === 0 || initialIndex == null) {
+      return;
+    }
+
     let hideTimer: ReturnType<typeof setTimeout> | null = null;
     const showTimer = setTimeout(() => {
+      if (readerHintDismissedRef.current || guideVisible) return;
       setHintVisible(true);
-      hintOpacity.value = withTiming(1, { duration: 420, easing: Easing.out(Easing.cubic) });
-      hintTranslateX.value = withTiming(0, { duration: 420, easing: Easing.out(Easing.cubic) });
-      hideTimer = setTimeout(dismissHint, 5600);
-    }, 2200);
+      hintOpacity.value = withTiming(1, { duration: 350, easing: Easing.out(Easing.cubic) });
+      hintTranslateY.value = withTiming(0, { duration: 350, easing: Easing.out(Easing.cubic) });
+      swipeArrowX.value = withRepeat(
+        withSequence(
+          withTiming(-7, { duration: 550, easing: Easing.out(Easing.quad) }),
+          withTiming(0, { duration: 550, easing: Easing.in(Easing.quad) }),
+        ),
+        -1,
+        true,
+      );
+      hideTimer = setTimeout(dismissHint, 6500);
+    }, 1000);
+
     return () => {
       clearTimeout(showTimer);
       if (hideTimer) clearTimeout(hideTimer);
     };
-  }, [book, hintOpacity, hintTranslateX, dismissHint]);
+  }, [book, pages.length, initialIndex, guideVisible, hintOpacity, hintTranslateY, swipeArrowX, dismissHint]);
+
   const hintAnimatedStyle = useAnimatedStyle(() => ({
     opacity: hintOpacity.value,
-    transform: [{ translateX: hintTranslateX.value }],
+    transform: [{ translateY: hintTranslateY.value }],
+  }));
+
+  const arrowAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: swipeArrowX.value }],
   }));
 
   const readingFontSizePx = READING_FONT_SIZE_PX;
@@ -356,7 +427,14 @@ export default function ReaderScreen() {
     if (bookTextState.status !== 'ready' || measuredCharsPerLine == null) return;
     const bookText = bookTextState.book;
     let cancelled = false;
-    const task = InteractionManager.runAfterInteractions(() => {
+    const schedule = typeof requestIdleCallback === 'function'
+      ? requestIdleCallback
+      : (fn: () => void) => setTimeout(fn, 50);
+    const cancel = typeof cancelIdleCallback === 'function'
+      ? cancelIdleCallback
+      : clearTimeout;
+
+    const taskId = schedule(() => {
       if (cancelled) return;
       const paginated = paginateBook(bookText, {
         contentWidthPx,
@@ -371,7 +449,7 @@ export default function ReaderScreen() {
     });
     return () => {
       cancelled = true;
-      task.cancel();
+      cancel(taskId as any);
     };
   }, [
     bookTextState,
@@ -435,6 +513,8 @@ export default function ReaderScreen() {
   bookRef.current = book;
   const pagesRef = useRef(pages);
   pagesRef.current = pages;
+  const dismissHintRef = useRef(dismissHint);
+  dismissHintRef.current = dismissHint;
 
   const onViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: ViewToken[] }) => {
@@ -445,6 +525,7 @@ export default function ReaderScreen() {
       // page settling on open, and not a re-emit of the same index.
       if (lastPageIndexRef.current != null && first.index !== lastPageIndexRef.current) {
         playPageTurnRef.current();
+        dismissHintRef.current();
       }
       lastPageIndexRef.current = first.index;
       setCurrentIndex(first.index);
@@ -482,10 +563,45 @@ export default function ReaderScreen() {
   }, [highlights]);
 
   const goToNextPage = useCallback(() => {
+    dismissHint();
     if (currentIndex < pages.length - 1) {
       listRef.current?.scrollToIndex({ index: currentIndex + 1, animated: true });
     }
-  }, [currentIndex, pages.length]);
+  }, [currentIndex, pages.length, dismissHint]);
+
+  // Each ORIGINAL paragraph is translated independently (parallel requests) —
+  // never the whole page joined into one blob — so the translated page keeps
+  // the same paragraph breaks as the original: same layout, just different
+  // words. Still counted as a single cap unit per page toggle-on regardless of
+  // how many paragraphs that took. Toggling the same page off just clears it;
+  // toggling on a different page always re-fetches (translation is per-page,
+  // not cached across the session the way word lookups are).
+  const currentPage = pages[currentIndex] ?? null;
+  const toggleTranslation = useCallback(async () => {
+    if (!currentPage) return;
+    if (translation && translation.pageGlobalIndex === currentPage.globalIndex) {
+      setTranslation(null);
+      return;
+    }
+    const pageGlobalIndex = currentPage.globalIndex;
+    setTranslation({ pageGlobalIndex, status: 'loading' });
+    const premium = isPremiumUser();
+    const cap = await checkTranslationCap(premium);
+    if (!cap.allowed) {
+      setTranslation({ pageGlobalIndex, status: 'capped' });
+      return;
+    }
+    try {
+      const results = await Promise.all(
+        currentPage.paragraphs.map((paragraph) => translationProvider.translateSelection(paragraph, 'en', targetLanguage)),
+      );
+      await recordTranslationUsage(premium);
+      logEvent('translate_page', { target_lang: targetLanguage });
+      setTranslation({ pageGlobalIndex, status: 'ready', paragraphs: results.map((r) => r.translatedText) });
+    } catch {
+      setTranslation({ pageGlobalIndex, status: 'error' });
+    }
+  }, [currentPage, translation, targetLanguage]);
 
   const retryDownload = useCallback(async () => {
     if (!book || !book.textUrl) return;
@@ -620,6 +736,10 @@ export default function ReaderScreen() {
         hl && hl.pageGlobalIndex === item.globalIndex
           ? { paragraphIndex: hl.paragraphIndex, start: hl.start, end: hl.end }
           : null;
+      const translatedParagraphsForItem =
+        translation && translation.status === 'ready' && translation.pageGlobalIndex === item.globalIndex
+          ? (translation.paragraphs ?? null)
+          : null;
       return (
         <ReaderPageFrame>
           <Pressable style={styles.pageTouchable} onPress={selection ? undefined : toggleChrome}>
@@ -642,6 +762,7 @@ export default function ReaderScreen() {
               selectionColor={colors.highlight.amber}
               onWordLongPress={handleWordLongPress}
               onRangeEdgeDrag={handleRangeEdgeDrag}
+              translatedParagraphs={translatedParagraphsForItem}
             />
           </Pressable>
         </ReaderPageFrame>
@@ -653,6 +774,7 @@ export default function ReaderScreen() {
       savedWordSet,
       savedWordColor,
       savedWordTextColor,
+      translation,
       handleWordLongPress,
       handleRangeEdgeDrag,
       toggleChrome,
@@ -756,6 +878,9 @@ export default function ReaderScreen() {
     return <View style={styles.container}>{measurement}</View>;
   }
 
+  const currentTranslation =
+    translation && currentPage && translation.pageGlobalIndex === currentPage.globalIndex ? translation : null;
+
   const pageNumber = Math.min(currentIndex, pages.length - 1) + 1;
   const totalPages = pages.length;
   const percent = Math.round((pageNumber / totalPages) * 100);
@@ -812,7 +937,7 @@ export default function ReaderScreen() {
         initialScrollIndex={initialIndex}
         getItemLayout={(_, index) => ({ length: screenWidth, offset: screenWidth * index, index })}
         renderItem={renderPage}
-        extraData={`${mode}-${readingFontSizePx}-${readingLineHeight}-${savedWordSet.size}-${selection ? `${selection.page.globalIndex}:${selection.startParagraph}:${selection.startOffset}:${selection.endParagraph}:${selection.endOffset}` : ''}-${activeWord ? `${activeWord.pageGlobalIndex}:${activeWord.start}` : ''}-${wordMenu ? `${wordMenu.page.globalIndex}:${wordMenu.start}` : ''}`}
+        extraData={`${mode}-${readingFontSizePx}-${readingLineHeight}-${savedWordSet.size}-${selection ? `${selection.page.globalIndex}:${selection.startParagraph}:${selection.startOffset}:${selection.endParagraph}:${selection.endOffset}` : ''}-${activeWord ? `${activeWord.pageGlobalIndex}:${activeWord.start}` : ''}-${wordMenu ? `${wordMenu.page.globalIndex}:${wordMenu.start}` : ''}-${translation ? `${translation.pageGlobalIndex}:${translation.status}` : ''}`}
         // Detach off-screen pages' (heavy, per-word) native view trees so only
         // the visible page and its immediate neighbors composite during a swipe.
         removeClippedSubviews
@@ -835,6 +960,7 @@ export default function ReaderScreen() {
         initialNumToRender={1}
         maxToRenderPerBatch={3}
         updateCellsBatchingPeriod={30}
+        onScrollBeginDrag={dismissHint}
       />
 
       {/* Corner hot-zone advances the page (fold motif tap-to-turn); tapping elsewhere on
@@ -867,6 +993,17 @@ export default function ReaderScreen() {
             style={[styles.topBarBack, { left: spacing.lg, top: insets.top + 10 }]}
           >
             <ChevronLeftIcon color={chromeChevron} size={18} />
+          </Pressable>
+          <Pressable
+            onPress={() => setGuideVisible(true)}
+            hitSlop={12}
+            style={[styles.topBarHelp, { left: spacing.lg + 40, top: insets.top + 10 }]}
+          >
+            <View style={[styles.helpBadge, { borderColor: chromeChevron }]}>
+              <Text style={[typography.uiRowTitle, { color: chromeChevron, fontSize: 13, fontWeight: '600' }]}>
+                ?
+              </Text>
+            </View>
           </Pressable>
           {/* Reading progress, centered at the top: which page of how many,
               plus how much reading is left, so a long book has a visible end. */}
@@ -927,31 +1064,134 @@ export default function ReaderScreen() {
         <SoundWaveIcon color={ambienceTrackId ? colors.flameAmber : chromeChevron} size={18} />
       </Pressable>
 
-      <AmbiencePicker visible={ambienceOpen} onClose={() => setAmbienceOpen(false)} />
+      {/* Page translation — same circular chrome button, left of ambience.
+          Translates the CURRENT page in place (see the crossfade inside
+          ReaderPageView) rather than opening another screen. Amber while a
+          translation is showing, spinner while fetching. */}
+      <Pressable
+        hitSlop={12}
+        style={[
+          styles.translateButton,
+          {
+            top: insets.top + 10,
+            backgroundColor: modeButtonBg,
+            borderColor: isLamp ? 'rgba(240,230,214,0.30)' : 'rgba(43,38,33,0.22)',
+          },
+        ]}
+        onPress={toggleTranslation}
+        onLongPress={() => setLanguagePickerVisible(true)}
+        delayLongPress={350}
+      >
+        {currentTranslation?.status === 'loading' ? (
+          <ActivityIndicator size="small" color={chromeChevron} />
+        ) : (
+          <TranslateIcon
+            color={currentTranslation?.status === 'ready' ? colors.flameAmber : chromeChevron}
+            size={18}
+          />
+        )}
+      </Pressable>
 
-      {/* First-run gesture hint — tap a word to translate, hold + drag to
-          quote. Fades in a few seconds after opening the book, auto-dismisses,
-          never reappears this session. Hidden while actively selecting. */}
-      {hintVisible && !selection ? (
-        <Animated.View
+      {/* Daily free-limit notice — the same message the word-tap popup shows,
+          just as a small inline card (matching the gesture-hint card below)
+          instead of another screen. Tapping the translate button again (or
+          this card) dismisses it. */}
+      {currentTranslation?.status === 'capped' ? (
+        <View
           style={[
             styles.hintCard,
             { top: insets.top + 72, backgroundColor: colors.card, borderColor: colors.hairline },
-            hintAnimatedStyle,
           ]}
         >
-          <Pressable onPress={dismissHint} hitSlop={8} style={styles.hintRow}>
-            {/* The one amber accent — reads as the lamp glow tucked into the card. */}
+          <View style={styles.hintRow}>
             <View style={[styles.hintAccent, { backgroundColor: colors.flameAmber }]} />
             <View style={styles.hintTextCol}>
               <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
-                Hold a word
+                Today's free translations are used up
               </Text>
-              <Text style={[typography.metadataCaption, { color: colors.umber, fontSize: 11.5, marginTop: 2 }]}>
-                Then Translate or Save a quote
+              <Pressable onPress={() => router.push('/paywall')} hitSlop={4}>
+                <Text style={[typography.metadataCaption, { color: colors.flameAmber, fontSize: 11.5, marginTop: 2 }]}>
+                  Keep the lamp lit
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      ) : null}
+
+      <AmbiencePicker visible={ambienceOpen} onClose={() => setAmbienceOpen(false)} />
+
+      {/* Smart first-run reader guide — teaches page turns (swipe left) and translation language */}
+      {hintVisible && !selection ? (
+        <Animated.View
+          style={[
+            styles.gestureHintCard,
+            {
+              bottom: insets.bottom + 26,
+              backgroundColor: colors.card,
+              borderColor: colors.hairline,
+            },
+            hintAnimatedStyle,
+          ]}
+        >
+          {/* Row 1: Page turn directional cue */}
+          <View style={styles.hintRow}>
+            <Animated.View style={[styles.hintIconWrap, arrowAnimatedStyle]}>
+              <Svg width={19} height={19} viewBox="0 0 24 24" fill="none">
+                <Path
+                  d="M19 12H5M5 12L11 6M5 12L11 18"
+                  stroke={colors.flameAmber}
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </Svg>
+            </Animated.View>
+            <View style={styles.hintTextCol}>
+              <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
+                Swipe left to turn page
+              </Text>
+              <Text style={[typography.metadataCaption, { color: colors.umber, fontSize: 11, marginTop: 1 }]}>
+                or tap bottom-right corner
               </Text>
             </View>
-          </Pressable>
+            <Pressable onPress={dismissHint} hitSlop={12} style={styles.hintCloseBtn}>
+              <CloseIcon color={colors.fawn} size={14} />
+            </Pressable>
+          </View>
+
+          {/* Hairline divider */}
+          <View style={[styles.hintDivider, { backgroundColor: colors.hairline }]} />
+
+          {/* Row 2: Translation & Language change */}
+          <View style={styles.hintRow}>
+            <View style={styles.hintIconWrap}>
+              <TranslateIcon color={colors.flameAmber} size={17} />
+            </View>
+            <View style={styles.hintTextCol}>
+              <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 12.5 }]}>
+                Hold word to translate
+              </Text>
+              <Text style={[typography.metadataCaption, { color: colors.umber, fontSize: 11, marginTop: 1 }]}>
+                Tap pill to change language
+              </Text>
+            </View>
+            <Pressable
+              onPress={() => {
+                dismissHint();
+                setLanguagePickerVisible(true);
+              }}
+              hitSlop={8}
+              style={[
+                styles.hintPairPill,
+                { backgroundColor: colors.pairPillBackground, borderRadius: radius.pill },
+              ]}
+            >
+              <Text style={[typography.eyebrowLabel, { color: colors.pairPillText, fontSize: 10.5, fontWeight: '600' }]}>
+                EN → {targetLanguageLabel(targetLanguage)} ▾
+              </Text>
+            </Pressable>
+          </View>
         </Animated.View>
       ) : null}
 
@@ -1020,6 +1260,29 @@ export default function ReaderScreen() {
         anchor={activeWord?.anchor ?? null}
         onClose={() => setActiveWord(null)}
         onSave={handleSaveWord}
+        onChangeLanguage={() => {
+          setActiveWord(null);
+          setLanguagePickerVisible(true);
+        }}
+      />
+
+      <LanguagePicker
+        visible={languagePickerVisible}
+        selected={targetLanguage}
+        onSelect={(code) => {
+          setTargetLanguage(code);
+          setLanguagePickerVisible(false);
+        }}
+        onClose={() => setLanguagePickerVisible(false)}
+      />
+
+      <ReaderGuideModal
+        visible={guideVisible}
+        onClose={handleCloseGuide}
+        onOpenLanguagePicker={() => {
+          handleCloseGuide();
+          setLanguagePickerVisible(true);
+        }}
       />
     </View>
   );
@@ -1083,6 +1346,19 @@ const styles = StyleSheet.create({
     zIndex: 20,
     elevation: 6,
   },
+  // One more 38px button + gap to the left of ambience.
+  translateButton: {
+    position: 'absolute',
+    right: 112,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 20,
+    elevation: 6,
+  },
   topBar: {
     position: 'absolute',
     top: 0,
@@ -1103,6 +1379,21 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: 38,
     height: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  topBarHelp: {
+    position: 'absolute',
+    width: 38,
+    height: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  helpBadge: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1.2,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1144,20 +1435,57 @@ const styles = StyleSheet.create({
     elevation: 6,
     zIndex: 25,
   },
+  gestureHintCard: {
+    position: 'absolute',
+    left: 20,
+    right: 20,
+    maxWidth: 380,
+    alignSelf: 'center',
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    shadowColor: '#000',
+    shadowOpacity: 0.22,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 8,
+    zIndex: 35,
+  },
   hintRow: {
     flexDirection: 'row',
-    alignItems: 'stretch',
-    paddingVertical: 11,
-    paddingLeft: 12,
-    paddingRight: 15,
+    alignItems: 'center',
+    paddingVertical: 4,
+    paddingHorizontal: 2,
+  },
+  hintIconWrap: {
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  hintCloseBtn: {
+    padding: 6,
+    marginLeft: 8,
+  },
+  hintDivider: {
+    height: 1,
+    marginVertical: 8,
+  },
+  hintPairPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    marginLeft: 8,
   },
   hintAccent: {
     width: 3,
+    alignSelf: 'stretch',
     borderRadius: 2,
     marginRight: 11,
   },
   hintTextCol: {
-    flexShrink: 1,
+    flex: 1,
   },
   selectionSave: {
     paddingHorizontal: 16,

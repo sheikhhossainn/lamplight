@@ -41,6 +41,14 @@ export async function getLatestQuranReadingPosition(): Promise<QuranReadingPosit
   return row ? readingPositionFromSqlRow(row) : null;
 }
 
+export async function listQuranReadingPositions(): Promise<QuranReadingPosition[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<QuranReadingPositionSqlRow>(
+    'SELECT * FROM quran_reading_position',
+  );
+  return rows.map(readingPositionFromSqlRow);
+}
+
 export async function upsertQuranReadingPosition(
   position: Omit<QuranReadingPosition, 'updatedAt'>,
 ): Promise<void> {

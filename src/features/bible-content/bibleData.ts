@@ -77,8 +77,15 @@ export function getBookMeta(bookId: string): BibleBookMeta | null {
 // Every verse in the book, in reading order, each tagged with its chapter —
 // the verse reader renders this as one continuous scroll with a chapter
 // header wherever the chapter number changes, same shape as a Quran surah's
+const bookVersesCache = new Map<string, { chapter: number; verse: BibleVerse }[]>();
+
+// Every verse in the book, in reading order, each tagged with its chapter —
+// the verse reader renders this as one continuous scroll with a chapter
+// header wherever the chapter number changes, same shape as a Quran surah's
 // flat verse list.
 export function getBookVerses(bookId: string): { chapter: number; verse: BibleVerse }[] {
+  const cached = bookVersesCache.get(bookId);
+  if (cached) return cached;
   const chapters = verses[bookId];
   if (!chapters) return [];
   const chapterNumbers = Object.keys(chapters)
@@ -90,5 +97,6 @@ export function getBookVerses(bookId: string): { chapter: number; verse: BibleVe
       flat.push({ chapter, verse });
     }
   }
+  bookVersesCache.set(bookId, flat);
   return flat;
 }

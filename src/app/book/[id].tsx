@@ -1,6 +1,5 @@
-import { useFocusEffect } from '@react-navigation/native';
 import { Image } from 'expo-image';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -36,6 +35,7 @@ export default function BookDetailScreen() {
   const [quoteCount, setQuoteCount] = useState(0);
   const [savedWords, setSavedWords] = useState<SavedWord[]>([]);
   const [confirmVisible, setConfirmVisible] = useState(false);
+  const [downloadConfirmVisible, setDownloadConfirmVisible] = useState(false);
   const [downloaded, setDownloaded] = useState(false);
   const [shelves, setShelves] = useState<Shelf[]>([]);
   const [shelfItems, setShelfItems] = useState<ShelfItem[]>([]);
@@ -122,6 +122,22 @@ export default function BookDetailScreen() {
   // the book is actually downloaded and parsed, not before. It does NOT mean
   // unavailable — a working textUrl is all that actually gates reading.
   const isAvailable = book.isAvailable && Boolean(book.textUrl);
+
+  const openReader = () => {
+    if (!book) return;
+    router.push({ pathname: '/reader/[bookId]', params: { bookId: book.id } });
+  };
+
+  const handlePressCta = () => {
+    if (!book || !isAvailable) return;
+    // Smart download ask: if not yet downloaded to device and not an imported file,
+    // prompt user with offline read & settings deletion details before downloading.
+    if (!downloaded && !imported) {
+      setDownloadConfirmVisible(true);
+    } else {
+      openReader();
+    }
+  };
   const percent = position ? position.percentComplete : 0;
   const chapterLabel = position
     ? book.totalChapters > 0
@@ -215,6 +231,26 @@ export default function BookDetailScreen() {
             {quoteCount} {quoteCount === 1 ? 'quote' : 'quotes'} saved
           </Text>
         </View>
+        <View
+          style={[
+            styles.pairPill,
+            {
+              backgroundColor: downloaded || imported ? `${colors.flameAmber}18` : colors.card,
+              borderColor: colors.hairline,
+              borderWidth: 1,
+              borderRadius: radius.pill,
+            },
+          ]}
+        >
+          <Text
+            style={[
+              typography.metadataCaption,
+              { color: downloaded || imported ? colors.flameAmber : colors.fawn, fontSize: 11 },
+            ]}
+          >
+            {downloaded || imported ? '✓ Offline ready' : 'Cloud · Download to read'}
+          </Text>
+        </View>
       </View>
 
       <Pressable onPress={() => setShelfSheetVisible(true)} style={{ marginTop: spacing.md, alignSelf: 'flex-start' }}>
@@ -302,7 +338,7 @@ export default function BookDetailScreen() {
 
       <Pressable
         disabled={!isAvailable}
-        onPress={() => router.push({ pathname: '/reader/[bookId]', params: { bookId: book.id } })}
+        onPress={handlePressCta}
         style={[
           styles.cta,
           {
@@ -314,9 +350,28 @@ export default function BookDetailScreen() {
         ]}
       >
         <Text style={[typography.buttonLabel, { color: isAvailable ? colors.primaryDark : colors.fawn }]}>
-          {isAvailable ? (position ? 'Continue Reading' : 'Start Reading') : 'Coming soon'}
+          {isAvailable
+            ? position
+              ? 'Continue Reading'
+              : downloaded || imported
+                ? 'Start Reading'
+                : 'Download & Read'
+            : 'Coming soon'}
         </Text>
       </Pressable>
+
+      <ConfirmDialog
+        visible={downloadConfirmVisible}
+        title="Download book to device?"
+        message={`"${book.title}" will be downloaded to your device so you can read it anytime, even while offline.\n\nYou can manage or delete downloaded books anytime in Settings → Saved books.`}
+        confirmLabel="Download & Read"
+        cancelLabel="Cancel"
+        onConfirm={() => {
+          setDownloadConfirmVisible(false);
+          openReader();
+        }}
+        onCancel={() => setDownloadConfirmVisible(false)}
+      />
 
       <ConfirmDialog
         visible={confirmVisible}

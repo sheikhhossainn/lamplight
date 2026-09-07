@@ -1,5 +1,4 @@
-import { useFocusEffect } from '@react-navigation/native';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -66,7 +65,7 @@ export default function VedasBookListScreen() {
               },
             })
           }
-          style={[
+          style={({ pressed }) => [
             styles.continueCard,
             {
               backgroundColor: colors.card,
@@ -74,6 +73,7 @@ export default function VedasBookListScreen() {
               marginHorizontal: layout.screenMargin,
               marginTop: spacing.lg,
             },
+            pressed && { opacity: 0.7 },
           ]}
         >
           <View style={{ flex: 1 }}>
@@ -93,22 +93,64 @@ export default function VedasBookListScreen() {
           styles.list,
           { paddingHorizontal: layout.screenMargin, paddingTop: spacing.lg, paddingBottom: insets.bottom + 32 },
         ]}
-        renderItem={({ item, index }: { item: VedasBookMeta; index: number }) => (
-          <Pressable
-            onPress={() => push({ pathname: '/vedas/[bookId]', params: { bookId: item.id } })}
-            style={[styles.row, { borderBottomColor: colors.hairline }]}
-          >
-            <View style={[styles.numberBadge, { backgroundColor: colors.card, borderRadius: radius.pill }]}>
-              <Text style={[typography.metadataCaption, { color: colors.umber }]}>{index + 1}</Text>
-            </View>
-            <View style={{ flex: 1, marginLeft: spacing.md }}>
-              <Text style={[typography.uiRowTitle, { color: colors.ink }]}>{item.name}</Text>
-              <Text style={[typography.metadataCaption, { color: colors.fawn, marginTop: 2 }]}>
-                {item.chapterCount} hymns · {item.meaning}
-              </Text>
-            </View>
-          </Pressable>
-        )}
+        renderItem={({ item, index }: { item: VedasBookMeta; index: number }) => {
+          const isLastRead = latestPosition?.bookId === item.id;
+          return (
+            <Pressable
+              onPress={() =>
+                push({
+                  pathname: '/vedas/[bookId]',
+                  params: {
+                    bookId: item.id,
+                    ...(isLastRead && latestPosition
+                      ? { jumpChapter: String(latestPosition.chapter), jumpVerse: String(latestPosition.verse) }
+                      : {}),
+                  },
+                })
+              }
+              style={({ pressed }) => [
+                styles.row,
+                { borderBottomColor: colors.hairline },
+                isLastRead && { backgroundColor: `${colors.pairPillBackground}25` },
+                pressed && { opacity: 0.7 },
+              ]}
+            >
+              <View
+                style={[
+                  styles.numberBadge,
+                  {
+                    backgroundColor: isLastRead ? colors.pairPillBackground : colors.card,
+                    borderRadius: radius.pill,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    typography.metadataCaption,
+                    {
+                      color: isLastRead ? colors.pairPillText : colors.umber,
+                      fontWeight: isLastRead ? '600' : 'normal',
+                    },
+                  ]}
+                >
+                  {index + 1}
+                </Text>
+              </View>
+              <View style={{ flex: 1, marginLeft: spacing.md }}>
+                <Text style={[typography.uiRowTitle, { color: colors.ink }]}>{item.name}</Text>
+                <Text style={[typography.metadataCaption, { color: colors.fawn, marginTop: 2 }]}>
+                  {item.chapterCount} hymns · {item.meaning}
+                  {isLastRead && latestPosition ? (
+                    <Text style={{ color: colors.progressLabel, fontWeight: '600' }}>
+                      {' · '}
+                      Hymn {latestPosition.chapter}:{latestPosition.verse}
+                    </Text>
+                  ) : null}
+                </Text>
+              </View>
+            </Pressable>
+          );
+        }}
       />
     </View>
   );

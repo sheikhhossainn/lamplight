@@ -1,5 +1,4 @@
-import { useFocusEffect } from '@react-navigation/native';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useRef } from 'react';
 
 // A fast double-tap on a list row fires onPress twice before the first
@@ -19,6 +18,8 @@ export function useGuardedPush() {
   return useCallback((...args: Parameters<typeof router.push>) => {
     if (lockedRef.current) return;
     lockedRef.current = true;
-    router.push(...args);
+    requestAnimationFrame(() => {
+      router.push(...args);
+    });
   }, []);
 }

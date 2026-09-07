@@ -31,6 +31,7 @@ type WordTranslationPopupProps = {
   // came from the Arabic line, not the English translation.
   sourceLang?: string;
   sourceLangLabel?: string;
+  onChangeLanguage?: () => void;
 };
 
 type LoadState =
@@ -63,6 +64,7 @@ export function WordTranslationPopup({
   onSave,
   sourceLang = 'en',
   sourceLangLabel = 'EN',
+  onChangeLanguage,
 }: WordTranslationPopupProps) {
   const { colors, typography, spacing, radius } = useTheme();
   const [state, setState] = useState<LoadState>({ status: 'loading' });
@@ -131,13 +133,16 @@ export function WordTranslationPopup({
           >
             <View style={styles.headerRow}>
               <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 12 }]}>{word}</Text>
-              {/* Display-only pair — the target language is chosen in Settings,
-                  never from the reading page. */}
-              <View style={[styles.pairTag, { backgroundColor: '#2B2621' }]}>
+              <Pressable
+                onPress={onChangeLanguage}
+                disabled={!onChangeLanguage}
+                hitSlop={8}
+                style={[styles.pairTag, { backgroundColor: '#2B2621' }]}
+              >
                 <Text style={[typography.eyebrowLabel, { color: colors.flameAmber, fontSize: 9 }]}>
-                  {sourceLangLabel} → {targetLanguageLabel(targetLanguage)}
+                  {sourceLangLabel} → {targetLanguageLabel(targetLanguage)}{onChangeLanguage ? ' ▾' : ''}
                 </Text>
-              </View>
+              </Pressable>
             </View>
 
             {state.status === 'loading' ? (

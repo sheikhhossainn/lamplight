@@ -42,9 +42,16 @@ function extractTranslatedText(data: unknown): string {
     throw new Error('Unexpected translation response shape');
   }
   const segments = data[0] as unknown[];
+  // Google splits multi-sentence input into one segment per sentence/clause.
+  // A single word/short selection was always exactly one segment, so joining
+  // with '' was invisible — but a whole translated page is many segments,
+  // and '' glues them into one unbroken run with no space between sentences,
+  // which Text can't wrap (renders as one line spilling past the margins).
+  // Join with a space and collapse any doubled-up whitespace that introduces.
   return segments
     .map((segment) => (Array.isArray(segment) ? String(segment[0] ?? '') : ''))
-    .join('')
+    .join(' ')
+    .replace(/\s+/g, ' ')
     .trim();
 }
 

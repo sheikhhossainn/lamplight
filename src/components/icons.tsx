@@ -170,6 +170,23 @@ export function MoonIcon({ color, size = 20 }: IconProps) {
   );
 }
 
+// Globe glyph — the common "switch language" symbol (same one iOS uses for
+// its keyboard-language key), so it reads as translate/language without
+// needing a two-letter code in the chrome.
+export function TranslateIcon({ color, size = 18 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Circle cx="12" cy="12" r="8.4" stroke={color} strokeWidth={1.6} />
+      <Line x1="3.6" y1="12" x2="20.4" y2="12" stroke={color} strokeWidth={1.6} />
+      <Path
+        d="M12 3.6C14.4 6.2 15.7 9 15.7 12C15.7 15 14.4 17.8 12 20.4C9.6 17.8 8.3 15 8.3 12C8.3 9 9.6 6.2 12 3.6Z"
+        stroke={color}
+        strokeWidth={1.6}
+      />
+    </Svg>
+  );
+}
+
 export function SearchIcon({ color, size = 18 }: IconProps) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">

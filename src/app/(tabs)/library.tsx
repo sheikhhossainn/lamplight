@@ -1,5 +1,4 @@
-import { useFocusEffect } from '@react-navigation/native';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { File } from 'expo-file-system';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -43,6 +42,10 @@ import {
   type Shelf,
   type ShelfItem,
 } from '@/db/repositories/shelves';
+import { getSetting, setSetting } from '@/db/repositories/appSettings';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { HomeGuideModal } from '@/components/HomeGuideModal';
+import { isBookCached } from '@/features/content-ingestion/bookDownloader';
 import { importEpubFromFile } from '@/features/content-ingestion/epubImporter';
 import { targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
 import { useTheme } from '@/theme/ThemeProvider';
@@ -54,6 +57,8 @@ const ROW_ROTATIONS = [-2, 1.5, -1, 2.5, -2.5, 1, -1.5, 2];
 // Fixed slot width (BookSpine default 96 + Spacing.md gap) so the shelf
 // FlatList can compute scroll offsets without measuring every item.
 const SPINE_SLOT_WIDTH = 96 + 16;
+
+const HOME_GUIDE_SETTING_KEY = 'home_guide_seen_v4';
 
 
 function getShelfSubtitle(): string {
@@ -125,7 +130,32 @@ export default function LibraryScreen() {
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [reviewPrompt, setReviewPrompt] = useState<{ wordCount: number } | null>(null);
   const [feelingModalVisible, setFeelingModalVisible] = useState(false);
+  const [guideVisible, setGuideVisible] = useState(false);
+  const [downloadConfirmBook, setDownloadConfirmBook] = useState<BookRow | null>(null);
+  const guideDismissedInSessionRef = useRef(false);
   const searchRef = useRef<TextInput>(null);
+
+  const handleOpenContinueBook = useCallback((b: BookRow) => {
+    // Smart download ask: if this book's cache was removed (e.g. from Settings),
+    // prompt before re-downloading on device.
+    if (!isBookCached(b.id)) {
+      setDownloadConfirmBook(b);
+    } else {
+      router.push({ pathname: '/reader/[bookId]', params: { bookId: b.id } });
+    }
+  }, []);
+
+  const handleCloseGuide = useCallback(() => {
+    guideDismissedInSessionRef.current = true;
+    void setSetting(HOME_GUIDE_SETTING_KEY, '1');
+    setGuideVisible(false);
+  }, []);
+
+  const handleNavigateTab = useCallback((tab: 'library' | 'vocabulary' | 'settings') => {
+    // Temporary hide for tab navigation without marking permanently seen
+    setGuideVisible(false);
+    router.push(`/(tabs)/${tab}` as any);
+  }, []);
 
   // When the keyboard is dismissed (e.g. swipe-back gesture) the search input
   // keeps focus, so its cursor keeps blinking in an empty box. Blur it on hide
@@ -160,17 +190,28 @@ export default function LibraryScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      let cancelled = false;
+      let isFocused = true;
       void (async () => {
         await load();
-        if (cancelled) return;
+        if (!isFocused) return;
+
+        // Check if the home guide should be shown or resumed after tab preview
+        if (!guideDismissedInSessionRef.current) {
+          const seen = await getSetting(HOME_GUIDE_SETTING_KEY);
+          if (isFocused && seen !== '1' && !guideDismissedInSessionRef.current) {
+            setGuideVisible(true);
+          } else if (seen === '1') {
+            guideDismissedInSessionRef.current = true;
+          }
+        }
+
         // Library is the landing screen, so this is where the once-a-day review
         // invitation surfaces. Never in the reader — nothing interrupts reading.
         const { shouldPrompt, wordCount } = await checkVocabReviewPrompt();
-        if (!cancelled && shouldPrompt) setReviewPrompt({ wordCount });
+        if (isFocused && shouldPrompt) setReviewPrompt({ wordCount });
       })();
       return () => {
-        cancelled = true;
+        isFocused = false;
       };
     }, [load]),
   );
@@ -307,16 +348,32 @@ export default function LibraryScreen() {
   );
 
   return (
-    <ScrollView
-      style={{ backgroundColor: colors.libraryBackground }}
-      contentContainerStyle={[styles.content, { paddingHorizontal: spacing.xl, paddingTop: insets.top + 16 }]}
-      showsVerticalScrollIndicator={false}
-      overScrollMode="never"
-    >
-      <Text style={[typography.screenTitle, { color: colors.ink }]}>Your shelf</Text>
-      <Text style={[typography.metadataCaption, { color: colors.fawn, marginTop: 4 }]}>
-        {getShelfSubtitle()}
-      </Text>
+    <View style={{ flex: 1, backgroundColor: colors.libraryBackground }}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={[styles.content, { paddingHorizontal: spacing.xl, paddingTop: insets.top + 16 }]}
+        showsVerticalScrollIndicator={false}
+        overScrollMode="never"
+      >
+      <View style={styles.titleRow}>
+        <View style={{ flex: 1 }}>
+          <Text style={[typography.screenTitle, { color: colors.ink }]}>Your shelf</Text>
+          <Text style={[typography.metadataCaption, { color: colors.fawn, marginTop: 4 }]}>
+            {getShelfSubtitle()}
+          </Text>
+        </View>
+        <Pressable
+          onPress={() => setGuideVisible(true)}
+          hitSlop={12}
+          style={styles.helpButton}
+        >
+          <View style={[styles.helpBadge, { borderColor: colors.hairline, backgroundColor: colors.card }]}>
+            <Text style={[typography.uiRowTitle, { color: colors.umber, fontSize: 13, fontWeight: '600' }]}>
+              ?
+            </Text>
+          </View>
+        </Pressable>
+      </View>
 
       <View
         style={[
@@ -381,7 +438,7 @@ export default function LibraryScreen() {
           {continueEntries.map(({ position, book }) => (
             <Pressable
               key={book.id}
-              onPress={() => router.push({ pathname: '/reader/[bookId]', params: { bookId: book.id } })}
+              onPress={() => handleOpenContinueBook(book)}
               style={[styles.continueCard, { backgroundColor: colors.card, borderRadius: radius.card, marginBottom: spacing.sm }]}
             >
               <BookSpine
@@ -389,7 +446,7 @@ export default function LibraryScreen() {
                 title={book.title}
                 coverUrl={book.coverUrl}
                 toneIndex={toneIndexById.get(book.id) ?? 0}
-                onPress={() => router.push({ pathname: '/reader/[bookId]', params: { bookId: book.id } })}
+                onPress={() => handleOpenContinueBook(book)}
                 width={56}
                 height={80}
               />
@@ -654,13 +711,53 @@ export default function LibraryScreen() {
           setReviewPrompt(null);
         }}
       />
-    </ScrollView>
+
+      </ScrollView>
+      <HomeGuideModal
+        visible={guideVisible}
+        onClose={handleCloseGuide}
+        onNavigateTab={handleNavigateTab}
+      />
+
+      {downloadConfirmBook ? (
+        <ConfirmDialog
+          visible={Boolean(downloadConfirmBook)}
+          title="Download book to device?"
+          message={`"${downloadConfirmBook.title}" will be downloaded to your device so you can read it anytime, even while offline.\n\nYou can manage or delete downloaded books anytime in Settings → Saved books.`}
+          confirmLabel="Download & Read"
+          cancelLabel="Cancel"
+          onConfirm={() => {
+            const b = downloadConfirmBook;
+            setDownloadConfirmBook(null);
+            router.push({ pathname: '/reader/[bookId]', params: { bookId: b.id } });
+          }}
+          onCancel={() => setDownloadConfirmBook(null)}
+        />
+      ) : null}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   content: {
     paddingBottom: 48,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+  },
+  helpButton: {
+    paddingTop: 4,
+    paddingLeft: 12,
+  },
+  helpBadge: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   continueCard: {
     flexDirection: 'row',

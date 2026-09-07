@@ -1,11 +1,14 @@
-import { useFocusEffect } from '@react-navigation/native';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ChevronLeftIcon, ChevronRightIcon } from '@/components/icons';
-import { getLatestBibleReadingPosition, type BibleReadingPosition } from '@/db/repositories/bible';
+import {
+  getLatestBibleReadingPosition,
+  listBibleReadingPositions,
+  type BibleReadingPosition,
+} from '@/db/repositories/bible';
 import { listBooks, type BibleBookMeta } from '@/features/bible-content/bibleData';
 import { ContinueReadingSkeleton } from '@/features/reader/components/ContinueReadingSkeleton';
 import { useGuardedPush } from '@/lib/navigationGuard';
@@ -15,6 +18,7 @@ export default function BibleBookListScreen() {
   const { colors, typography, spacing, radius, layout } = useTheme();
   const insets = useSafeAreaInsets();
   const [latestPosition, setLatestPosition] = useState<BibleReadingPosition | null>(null);
+  const [positionsMap, setPositionsMap] = useState<Map<string, BibleReadingPosition>>(new Map());
   const [positionLoaded, setPositionLoaded] = useState(false);
   const books = listBooks();
   const push = useGuardedPush();
@@ -22,12 +26,19 @@ export default function BibleBookListScreen() {
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
-      void getLatestBibleReadingPosition().then((position) => {
-        if (!cancelled) {
-          setLatestPosition(position);
-          setPositionLoaded(true);
-        }
-      });
+      void Promise.all([getLatestBibleReadingPosition(), listBibleReadingPositions()]).then(
+        ([latest, allPositions]) => {
+          if (!cancelled) {
+            setLatestPosition(latest);
+            const map = new Map<string, BibleReadingPosition>();
+            for (const pos of allPositions) {
+              map.set(pos.bookId, pos);
+            }
+            setPositionsMap(map);
+            setPositionLoaded(true);
+          }
+        },
+      );
       return () => {
         cancelled = true;
       };
@@ -61,7 +72,7 @@ export default function BibleBookListScreen() {
               },
             })
           }
-          style={[
+          style={({ pressed }) => [
             styles.continueCard,
             {
               backgroundColor: colors.card,
@@ -69,6 +80,7 @@ export default function BibleBookListScreen() {
               marginHorizontal: layout.screenMargin,
               marginTop: spacing.lg,
             },
+            pressed && { opacity: 0.7 },
           ]}
         >
           <View style={{ flex: 1 }}>
@@ -88,22 +100,63 @@ export default function BibleBookListScreen() {
           styles.list,
           { paddingHorizontal: layout.screenMargin, paddingTop: spacing.lg, paddingBottom: insets.bottom + 32 },
         ]}
-        renderItem={({ item, index }: { item: BibleBookMeta; index: number }) => (
-          <Pressable
-            onPress={() => push({ pathname: '/bible/[bookId]', params: { bookId: item.id } })}
-            style={[styles.row, { borderBottomColor: colors.hairline }]}
-          >
-            <View style={[styles.numberBadge, { backgroundColor: colors.card, borderRadius: radius.pill }]}>
-              <Text style={[typography.metadataCaption, { color: colors.umber }]}>{index + 1}</Text>
-            </View>
-            <View style={{ flex: 1, marginLeft: spacing.md }}>
-              <Text style={[typography.uiRowTitle, { color: colors.ink }]}>{item.name}</Text>
-              <Text style={[typography.metadataCaption, { color: colors.fawn, marginTop: 2 }]}>
-                {item.chapterCount} chapters · {item.meaning}
-              </Text>
-            </View>
-          </Pressable>
-        )}
+        renderItem={({ item, index }: { item: BibleBookMeta; index: number }) => {
+          const pos = positionsMap.get(item.id);
+          const isLastRead = latestPosition?.bookId === item.id;
+          return (
+            <Pressable
+              onPress={() =>
+                push({
+                  pathname: '/bible/[bookId]',
+                  params: {
+                    bookId: item.id,
+                    ...(pos ? { jumpChapter: String(pos.chapter), jumpVerse: String(pos.verse) } : {}),
+                  },
+                })
+              }
+              style={({ pressed }) => [
+                styles.row,
+                { borderBottomColor: colors.hairline },
+                isLastRead && { backgroundColor: `${colors.pairPillBackground}25` },
+                pressed && { opacity: 0.7 },
+              ]}
+            >
+              <View
+                style={[
+                  styles.numberBadge,
+                  {
+                    backgroundColor: isLastRead ? colors.pairPillBackground : colors.card,
+                    borderRadius: radius.pill,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    typography.metadataCaption,
+                    {
+                      color: isLastRead ? colors.pairPillText : colors.umber,
+                      fontWeight: isLastRead ? '600' : 'normal',
+                    },
+                  ]}
+                >
+                  {index + 1}
+                </Text>
+              </View>
+              <View style={{ flex: 1, marginLeft: spacing.md }}>
+                <Text style={[typography.uiRowTitle, { color: colors.ink }]}>{item.name}</Text>
+                <Text style={[typography.metadataCaption, { color: colors.fawn, marginTop: 2 }]}>
+                  {item.chapterCount} chapters · {item.meaning}
+                  {isLastRead && pos ? (
+                    <Text style={{ color: colors.progressLabel, fontWeight: '600' }}>
+                      {' · '}
+                      Chapter {pos.chapter}:{pos.verse}
+                    </Text>
+                  ) : null}
+                </Text>
+              </View>
+            </Pressable>
+          );
+        }}
       />
     </View>
   );

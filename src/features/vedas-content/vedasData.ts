@@ -42,7 +42,11 @@ export function getBookMeta(bookId: string): VedasBookMeta | null {
   return books.find((b) => b.id === bookId) ?? null;
 }
 
+const bookVersesCache = new Map<string, { chapter: number; verse: VedasVerse }[]>();
+
 export function getBookVerses(bookId: string): { chapter: number; verse: VedasVerse }[] {
+  const cached = bookVersesCache.get(bookId);
+  if (cached) return cached;
   const chapters = verses[bookId];
   if (!chapters) return [];
   const chapterNumbers = Object.keys(chapters)
@@ -54,5 +58,6 @@ export function getBookVerses(bookId: string): { chapter: number; verse: VedasVe
       flat.push({ chapter, verse });
     }
   }
+  bookVersesCache.set(bookId, flat);
   return flat;
 }

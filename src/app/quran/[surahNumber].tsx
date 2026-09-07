@@ -7,6 +7,7 @@ import { BookmarkIcon, ChevronLeftIcon, ChevronRightIcon, ShareIcon } from '@/co
 import {
   createQuranHighlight,
   deleteQuranHighlight,
+  getQuranReadingPosition,
   listQuranHighlightsForSurah,
   saveQuranWord,
   upsertQuranReadingPosition,
@@ -62,13 +63,81 @@ export default function QuranVerseReaderScreen() {
     void listQuranHighlightsForSurah(surahNumber).then(setHighlights);
   }, [surahNumber]);
 
+  const [isReady, setIsReady] = useState(false);
+  const [activeLandingVerse, setActiveLandingVerse] = useState<number | null>(null);
+  const initialScrollDone = useRef(false);
+  const isUserInteracting = useRef(false);
+
   useEffect(() => {
-    if (!jumpVerse) return;
-    const index = Number(jumpVerse) - 1;
-    if (index <= 0) return;
-    const timer = setTimeout(() => listRef.current?.scrollToIndex({ index, animated: false }), 50);
-    return () => clearTimeout(timer);
-  }, [jumpVerse]);
+    const handle = requestAnimationFrame(() => {
+      setIsReady(true);
+    });
+    return () => cancelAnimationFrame(handle);
+  }, []);
+
+  useEffect(() => {
+    void (async () => {
+      const existing = await getQuranReadingPosition(surahNumber);
+      const targetVerse = jumpVerse ? Number(jumpVerse) : (existing?.verseNumber ?? 1);
+      await upsertQuranReadingPosition({ surahNumber, verseNumber: targetVerse });
+    })();
+  }, [surahNumber]);
+
+  useEffect(() => {
+    if (!isReady) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let landingTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const performScroll = (targetIndex: number, targetVerseNumber: number) => {
+      if (targetIndex > 0) {
+        const schedule = typeof requestIdleCallback === 'function'
+          ? requestIdleCallback
+          : (fn: () => void) => setTimeout(fn, 60);
+        const cancel = typeof cancelIdleCallback === 'function'
+          ? cancelIdleCallback
+          : clearTimeout;
+
+        const idleId = schedule(() => {
+          timer = setTimeout(() => {
+            try {
+              listRef.current?.scrollToIndex({
+                index: targetIndex,
+                viewPosition: 0,
+                animated: true,
+              });
+            } catch {
+              // Gracefully handled by onScrollToIndexFailed
+            }
+            initialScrollDone.current = true;
+            setActiveLandingVerse(targetVerseNumber);
+            landingTimer = setTimeout(() => {
+              setActiveLandingVerse(null);
+            }, 1800);
+          }, 60);
+        });
+        return () => cancel(idleId as any);
+      } else {
+        initialScrollDone.current = true;
+      }
+    };
+
+    if (jumpVerse) {
+      const vNum = Number(jumpVerse);
+      performScroll(vNum - 1, vNum);
+    } else {
+      void getQuranReadingPosition(surahNumber).then((pos) => {
+        if (pos && pos.verseNumber > 1) {
+          performScroll(pos.verseNumber - 1, pos.verseNumber);
+        } else {
+          initialScrollDone.current = true;
+        }
+      });
+    }
+    return () => {
+      if (timer) clearTimeout(timer);
+      if (landingTimer) clearTimeout(landingTimer);
+    };
+  }, [jumpVerse, surahNumber, isReady]);
 
   const highlightByVerse = useMemo(
     () => new Map(highlights.map((h) => [h.verseNumber, h])),
@@ -77,6 +146,7 @@ export default function QuranVerseReaderScreen() {
 
   const persistPosition = useCallback(
     (verseNumber: number) => {
+      if (!isUserInteracting.current) return;
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       saveTimerRef.current = setTimeout(() => {
         void upsertQuranReadingPosition({ surahNumber, verseNumber });
@@ -131,35 +201,58 @@ export default function QuranVerseReaderScreen() {
         </View>
       </View>
 
-      <FlatList
-        ref={listRef}
-        data={verses}
+      {isReady ? (
+        <FlatList
+          ref={listRef}
+          data={verses}
         keyExtractor={(item) => String(item.number)}
+        initialNumToRender={6}
+        maxToRenderPerBatch={8}
+        windowSize={5}
+        removeClippedSubviews={true}
+        updateCellsBatchingPeriod={30}
         contentContainerStyle={{
           paddingHorizontal: layout.screenMargin,
           paddingTop: spacing.lg,
           paddingBottom: insets.bottom + 32,
         }}
-        onScrollToIndexFailed={(info) => {
-          setTimeout(() => listRef.current?.scrollToIndex({ index: info.index, animated: false }), 100);
+        onScrollBeginDrag={() => {
+          isUserInteracting.current = true;
         }}
-        viewabilityConfig={{ itemVisiblePercentThreshold: 50 }}
+        onScrollToIndexFailed={(info) => {
+          listRef.current?.scrollToOffset({
+            offset: info.averageItemLength * info.index,
+            animated: false,
+          });
+          setTimeout(() => {
+            listRef.current?.scrollToIndex({ index: info.index, viewPosition: 0, animated: true });
+          }, 60);
+        }}
+        viewabilityConfig={{ itemVisiblePercentThreshold: 60, waitForInteraction: true }}
         onViewableItemsChanged={({ viewableItems }) => {
+          if (!isUserInteracting.current) return;
           const first = viewableItems[0]?.item as QuranVerse | undefined;
           if (first) persistPosition(first.number);
         }}
         renderItem={({ item }) => {
           const highlighted = highlightByVerse.has(item.number);
           const tafsirOpen = expandedTafsir.has(item.number);
+          const isLanding = activeLandingVerse === item.number;
           return (
             <View
               style={[
                 styles.verseCard,
                 {
-                  backgroundColor: highlighted ? `${colors.highlight.amber}30` : colors.card,
+                  backgroundColor: isLanding
+                    ? `${colors.pairPillBackground}40`
+                    : highlighted
+                    ? `${colors.highlight.amber}30`
+                    : colors.card,
                   borderRadius: radius.card,
                   marginBottom: spacing.md,
                   padding: spacing.lg,
+                  borderWidth: isLanding ? 1.5 : 1,
+                  borderColor: isLanding ? colors.flameAmber : 'transparent',
                 },
               ]}
             >
@@ -243,6 +336,7 @@ export default function QuranVerseReaderScreen() {
           );
         }}
       />
+    ) : null}
 
       <WordActionMenu
         word={heldWord?.word ?? null}

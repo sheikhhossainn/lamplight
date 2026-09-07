@@ -35,21 +35,21 @@ export default function TabsLayout() {
         name="library"
         options={{
           title: 'Library',
-          tabBarIcon: ({ color }) => <LibraryIcon color={color} />,
+          tabBarIcon: ({ color }) => <LibraryIcon color={color as string} />,
         }}
       />
       <Tabs.Screen
         name="vocabulary"
         options={{
           title: 'Notebook',
-          tabBarIcon: ({ color }) => <VocabularyIcon color={color} />,
+          tabBarIcon: ({ color }) => <VocabularyIcon color={color as string} />,
         }}
       />
       <Tabs.Screen
         name="settings"
         options={{
           title: 'Settings',
-          tabBarIcon: ({ color }) => <SettingsIcon color={color} />,
+          tabBarIcon: ({ color }) => <SettingsIcon color={color as string} />,
         }}
       />
     </Tabs>

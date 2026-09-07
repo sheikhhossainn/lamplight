@@ -1,5 +1,12 @@
-import { memo, useMemo, useRef, useState, type ReactElement } from 'react';
+import { memo, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { PanResponder, StyleSheet, Text, View, type GestureResponderEvent } from 'react-native';
+import Animated, {
+  Easing,
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 
 import { charAdvance } from '@/features/reader/engine/glyphWidths';
 import { cleanWordForLookup, tokenizeParagraph } from '@/features/reader/engine/words';
@@ -55,6 +62,17 @@ type ReaderPageViewProps = {
   // the 'start' edge, word end for the 'end' edge). The caller re-derives the
   // range, keeping the other edge fixed.
   onRangeEdgeDrag: (edge: 'start' | 'end', pos: { paragraphIndex: number; offset: number }) => void;
+  // Whole-page translation, in place of a separate popup screen: when set, the
+  // page's own body crossfades from the original paragraphs to this text
+  // (plain, non-interactive — word-tap/highlight offsets don't survive
+  // translation, so those gestures are only meaningful on the original).
+  // Non-null only for the page currently showing a translation. One entry per
+  // ORIGINAL paragraph (translated independently, not the whole page joined
+  // into one blob) so the translated page keeps the same paragraph breaks —
+  // same layout, just different words. Loading state lives on the caller's
+  // toggle button (a spinner replacing the icon), not here — this component
+  // only ever animates between "original" and "have text".
+  translatedParagraphs: string[] | null;
 };
 
 type Token = { text: string; word: string | null };
@@ -408,10 +426,37 @@ function ReaderPageViewImpl({
   selectionColor,
   onWordLongPress,
   onRangeEdgeDrag,
+  translatedParagraphs,
 }: ReaderPageViewProps) {
   const { typography, spacing } = useTheme();
 
   const selecting = selectionRange != null;
+
+  // Retains the last non-null translation through the fade-OUT so the old
+  // text is still there to animate away, instead of vanishing the instant the
+  // caller clears it (translatedParagraphs goes null immediately on toggle-off).
+  const [renderedTranslation, setRenderedTranslation] = useState(translatedParagraphs);
+  const translateProgress = useSharedValue(translatedParagraphs != null ? 1 : 0);
+  useEffect(() => {
+    if (translatedParagraphs != null) {
+      setRenderedTranslation(translatedParagraphs);
+      translateProgress.value = withTiming(1, { duration: 340, easing: Easing.out(Easing.cubic) });
+    } else {
+      translateProgress.value = withTiming(0, { duration: 260, easing: Easing.in(Easing.cubic) }, (finished) => {
+        if (finished) runOnJS(setRenderedTranslation)(null);
+      });
+    }
+  }, [translatedParagraphs, translateProgress]);
+  const showingTranslation = renderedTranslation != null;
+
+  const originalFadeStyle = useAnimatedStyle(() => ({
+    opacity: 1 - translateProgress.value,
+    transform: [{ translateY: -6 * translateProgress.value }],
+  }));
+  const translatedFadeStyle = useAnimatedStyle(() => ({
+    opacity: translateProgress.value,
+    transform: [{ translateY: 6 * (1 - translateProgress.value) }],
+  }));
 
   const paragraphTokens = useMemo(
     () => page.paragraphs.map((paragraph) => getTokens(paragraph)),
@@ -605,6 +650,14 @@ function ReaderPageViewImpl({
         <View style={{ height: spacing.xl + typography.screenTitle.lineHeight + spacing.lg }} />
       )}
 
+      {/* Body stack: the original and its translation occupy the SAME box, so
+          the translated text inherits the original's exact left/right margins
+          and first-line Y instead of re-deriving them from hardcoded offsets. */}
+      <View>
+      <Animated.View
+        style={originalFadeStyle}
+        pointerEvents={showingTranslation ? 'none' : 'auto'}
+      >
       {page.paragraphs.map((paragraph, paragraphIndex) => {
         // Selection mode: highlight the selected char range in this paragraph,
         // plus the layout/text-layout capture that lets the handles hit-test
@@ -710,6 +763,26 @@ function ReaderPageViewImpl({
           </Text>
         );
       })}
+      </Animated.View>
+
+      {/* Whole-page translation — crossfades in over the original body in
+          place (no separate screen). One <Text> per ORIGINAL paragraph, with
+          the identical typography/margins, so paragraph breaks and rhythm
+          survive the swap. Height is left to the content (no `bottom`): a
+          translation that runs longer than its source must not be squeezed. */}
+      {showingTranslation ? (
+        <Animated.View
+          style={[styles.translatedOverlay, translatedFadeStyle]}
+          pointerEvents="auto"
+        >
+          {renderedTranslation!.map((paragraph, i) => (
+            <Text key={i} style={[typography.readingBody, { color: textColor }, baseParagraphStyle]}>
+              {paragraph}
+            </Text>
+          ))}
+        </Animated.View>
+      ) : null}
+      </View>
 
       {selecting && handlePositions ? (
         <>
@@ -770,5 +843,11 @@ const styles = StyleSheet.create({
     width: 11,
     height: 11,
     borderRadius: 5.5,
+  },
+  translatedOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
   },
 });

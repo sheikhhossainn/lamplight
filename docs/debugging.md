@@ -8,7 +8,7 @@ broad repository search.
 
 ## Expo SDK pin
 
-Phone's Expo Go must match SDK 54 exactly. On `Incompatible SDK version`: update Expo Go, or
+Phone's Expo Go must match SDK 57 exactly. On `Incompatible SDK version`: update Expo Go, or
 re-pin `expo` in `package.json` then `npx expo install --fix` — never hand-edit other RN/Expo
 versions.
 

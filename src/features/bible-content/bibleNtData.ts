@@ -63,11 +63,15 @@ export function getBookMeta(bookId: string): BibleNtBookMeta | null {
   return books.find((b) => b.id === bookId) ?? null;
 }
 
+const bookVersesCache = new Map<string, { chapter: number; verse: BibleNtVerse }[]>();
+
 // Every verse in the book, in reading order, each tagged with its chapter —
 // the verse reader renders this as one continuous scroll with a chapter
 // header wherever the chapter number changes, same shape as the Old
 // Testament and a Quran surah's flat verse list.
 export function getBookVerses(bookId: string): { chapter: number; verse: BibleNtVerse }[] {
+  const cached = bookVersesCache.get(bookId);
+  if (cached) return cached;
   const chapters = verses[bookId];
   if (!chapters) return [];
   const chapterNumbers = Object.keys(chapters)
@@ -79,5 +83,6 @@ export function getBookVerses(bookId: string): { chapter: number; verse: BibleNt
       flat.push({ chapter, verse });
     }
   }
+  bookVersesCache.set(bookId, flat);
   return flat;
 }
