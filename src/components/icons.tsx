@@ -284,3 +284,15 @@ export function FeelingPromptIcon({ color, size = 18 }: IconProps) {
     </Svg>
   );
 }
+
+// 3-line hamburger menu icon for the reader tools drawer
+export function MenuIcon({ color, size = 20 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Line x1="4" y1="7" x2="20" y2="7" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+      <Line x1="4" y1="12" x2="20" y2="12" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+      <Line x1="4" y1="17" x2="20" y2="17" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+    </Svg>
+  );
+}
+

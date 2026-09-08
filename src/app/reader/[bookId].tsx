@@ -21,9 +21,10 @@ import Animated, {
 import Svg, { Circle, Defs, LinearGradient, Path, Rect, Stop } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ChevronLeftIcon, CloseIcon, MoonIcon, SoundWaveIcon, SunIcon, TranslateIcon } from '@/components/icons';
+import { ChevronLeftIcon, CloseIcon, MenuIcon, MoonIcon, SoundWaveIcon, SunIcon, TranslateIcon } from '@/components/icons';
 import { AmbiencePicker } from '@/features/ambience/AmbiencePicker';
 import { useAmbienceTrackId } from '@/features/ambience/ambiencePreference';
+import { ambienceTrackById } from '@/features/ambience/tracks';
 import { useAmbiencePlayer } from '@/features/ambience/useAmbiencePlayer';
 import { usePageTurnSound } from '@/features/reader/usePageTurnSound';
 import { BookLoadingScreen } from '@/features/reader/components/BookLoadingScreen';
@@ -53,6 +54,7 @@ import { listSavedWordsForBook, saveWord, type SavedWord } from '@/db/repositori
 import { getSetting, setSetting } from '@/db/repositories/appSettings';
 import { LanguagePicker } from '@/components/LanguagePicker';
 import { ReaderGuideModal } from '@/features/reader/components/ReaderGuideModal';
+import { ReaderMenuModal } from '@/features/reader/components/ReaderMenuModal';
 import { setTargetLanguage, targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
 import { READING_FONT_SIZE_PX, READING_LINE_HEIGHT_PX } from '@/features/settings/readingPrefs';
 import { getReadingTheme, useReadingTheme } from '@/features/settings/readingTheme';
@@ -64,7 +66,7 @@ import { useTheme } from '@/theme/ThemeProvider';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
-const READER_GUIDE_SETTING_KEY = 'reader_guide_seen_v4';
+const READER_GUIDE_SEEN_KEY = 'reader_guide_shown_once';
 const READER_HINT_SETTING_KEY = 'reader_gesture_hint_v4';
 
 // The reading surface is a deliberate reading experience, pinned to fixed
@@ -217,14 +219,15 @@ export default function ReaderScreen() {
 
   const [languagePickerVisible, setLanguagePickerVisible] = useState(false);
   const [guideVisible, setGuideVisible] = useState(false);
+  const [menuVisible, setMenuVisible] = useState(false);
   const guideDismissedRef = useRef(false);
   const readerHintDismissedRef = useRef(false);
 
-  // Automatically show the Reader Guide modal on first open once pages are ready
+  // Automatically show the Reader Guide modal once on first open of any book
   useEffect(() => {
     if (guideDismissedRef.current || initialIndex == null) return;
     void (async () => {
-      const seen = await getSetting(READER_GUIDE_SETTING_KEY);
+      const seen = await getSetting(READER_GUIDE_SEEN_KEY);
       if (guideDismissedRef.current) return;
       if (seen === '1') {
         guideDismissedRef.current = true;
@@ -236,8 +239,8 @@ export default function ReaderScreen() {
 
   const handleCloseGuide = useCallback(() => {
     guideDismissedRef.current = true;
-    void setSetting(READER_GUIDE_SETTING_KEY, '1');
     setGuideVisible(false);
+    void setSetting(READER_GUIDE_SEEN_KEY, '1');
   }, []);
 
   // Smart first-run reader gesture hint (swipe left arrow + language pill)
@@ -994,17 +997,6 @@ export default function ReaderScreen() {
           >
             <ChevronLeftIcon color={chromeChevron} size={18} />
           </Pressable>
-          <Pressable
-            onPress={() => setGuideVisible(true)}
-            hitSlop={12}
-            style={[styles.topBarHelp, { left: spacing.lg + 40, top: insets.top + 10 }]}
-          >
-            <View style={[styles.helpBadge, { borderColor: chromeChevron }]}>
-              <Text style={[typography.uiRowTitle, { color: chromeChevron, fontSize: 13, fontWeight: '600' }]}>
-                ?
-              </Text>
-            </View>
-          </Pressable>
           {/* Reading progress, centered at the top: which page of how many,
               plus how much reading is left, so a long book has a visible end. */}
           <View style={styles.topBarProgress}>
@@ -1029,67 +1021,20 @@ export default function ReaderScreen() {
         />
       </View>
 
-      {/* Day/Lamp toggle — the single reading-mode control (no brightness).
-          Routed through the app-wide theme transition so the whole screen
-          crossfades day<->night. */}
+      {/* Reader Tools Hamburger Menu Button */}
       <Pressable
         hitSlop={12}
         style={[
-          styles.modeCycleButton,
+          styles.menuButton,
           {
             top: insets.top + 10,
             backgroundColor: modeButtonBg,
             borderColor: isLamp ? 'rgba(240,230,214,0.30)' : 'rgba(43,38,33,0.22)',
           },
         ]}
-        onPress={() => requestThemeChange(isLamp ? 'day' : 'lamp')}
+        onPress={() => setMenuVisible(true)}
       >
-        <ModeIcon mode={mode} />
-      </Pressable>
-
-      {/* Reading ambience — same circular chrome button, left of the mode
-          toggle. Amber icon while a track is playing, quiet otherwise. */}
-      <Pressable
-        hitSlop={12}
-        style={[
-          styles.ambienceButton,
-          {
-            top: insets.top + 10,
-            backgroundColor: modeButtonBg,
-            borderColor: isLamp ? 'rgba(240,230,214,0.30)' : 'rgba(43,38,33,0.22)',
-          },
-        ]}
-        onPress={() => setAmbienceOpen(true)}
-      >
-        <SoundWaveIcon color={ambienceTrackId ? colors.flameAmber : chromeChevron} size={18} />
-      </Pressable>
-
-      {/* Page translation — same circular chrome button, left of ambience.
-          Translates the CURRENT page in place (see the crossfade inside
-          ReaderPageView) rather than opening another screen. Amber while a
-          translation is showing, spinner while fetching. */}
-      <Pressable
-        hitSlop={12}
-        style={[
-          styles.translateButton,
-          {
-            top: insets.top + 10,
-            backgroundColor: modeButtonBg,
-            borderColor: isLamp ? 'rgba(240,230,214,0.30)' : 'rgba(43,38,33,0.22)',
-          },
-        ]}
-        onPress={toggleTranslation}
-        onLongPress={() => setLanguagePickerVisible(true)}
-        delayLongPress={350}
-      >
-        {currentTranslation?.status === 'loading' ? (
-          <ActivityIndicator size="small" color={chromeChevron} />
-        ) : (
-          <TranslateIcon
-            color={currentTranslation?.status === 'ready' ? colors.flameAmber : chromeChevron}
-            size={18}
-          />
-        )}
+        <MenuIcon color={chromeChevron} size={19} />
       </Pressable>
 
       {/* Daily free-limit notice — the same message the word-tap popup shows,
@@ -1276,6 +1221,21 @@ export default function ReaderScreen() {
         onClose={() => setLanguagePickerVisible(false)}
       />
 
+      <ReaderMenuModal
+        visible={menuVisible}
+        onClose={() => setMenuVisible(false)}
+        onOpenGuide={() => setGuideVisible(true)}
+        onToggleTranslation={toggleTranslation}
+        isTranslated={currentTranslation?.status === 'ready'}
+        isTranslating={currentTranslation?.status === 'loading'}
+        onOpenLanguagePicker={() => setLanguagePickerVisible(true)}
+        targetLanguage={targetLanguage}
+        onOpenAmbience={() => setAmbienceOpen(true)}
+        ambienceLabel={ambienceTrackById(ambienceTrackId)?.label ?? null}
+        mode={mode}
+        onToggleMode={() => requestThemeChange(isLamp ? 'day' : 'lamp')}
+      />
+
       <ReaderGuideModal
         visible={guideVisible}
         onClose={handleCloseGuide}
@@ -1321,35 +1281,9 @@ const styles = StyleSheet.create({
     width: 72,
     height: 72,
   },
-  modeCycleButton: {
+  menuButton: {
     position: 'absolute',
     right: 16,
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 20,
-    elevation: 6,
-  },
-  // Sits one 38px button + a 10px gap to the left of the mode toggle.
-  ambienceButton: {
-    position: 'absolute',
-    right: 64,
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 20,
-    elevation: 6,
-  },
-  // One more 38px button + gap to the left of ambience.
-  translateButton: {
-    position: 'absolute',
-    right: 112,
     width: 38,
     height: 38,
     borderRadius: 19,
@@ -1379,21 +1313,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: 38,
     height: 38,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  topBarHelp: {
-    position: 'absolute',
-    width: 38,
-    height: 38,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  helpBadge: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    borderWidth: 1.2,
     alignItems: 'center',
     justifyContent: 'center',
   },

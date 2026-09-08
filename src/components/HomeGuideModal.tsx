@@ -137,11 +137,18 @@ export function HomeGuideModal({ visible, onClose, onNavigateTab }: HomeGuideMod
                   Reading & Gestures
                 </Text>
                 <Text style={[typography.metadataCaption, { color: colors.umber, fontSize: 11.5, marginTop: 2, lineHeight: 16.5 }]}>
-                  Inside any book: <Text style={{ fontWeight: '600', color: colors.ink }}>Swipe left</Text> to turn page, tap <Text style={{ fontWeight: '600', color: colors.ink }}>🌐</Text> at the top to translate the full page, or <Text style={{ fontWeight: '600', color: colors.ink }}>hold any word</Text> to look it up or save a quote.
+                  Inside any book: <Text style={{ fontWeight: '600', color: colors.ink }}>Swipe left</Text> to turn page, tap <Text style={{ fontWeight: '600', color: colors.ink }}>☰</Text> at the top right for tools & translation, or <Text style={{ fontWeight: '600', color: colors.ink }}>hold any word</Text> to look it up or save a quote.
                 </Text>
               </View>
             </View>
           </ScrollView>
+
+          {/* Helpful reminder note */}
+          <View style={styles.tipWrap}>
+            <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 12, textAlign: 'center', lineHeight: 17 }]}>
+              To view this guide again anytime, tap the <Text style={{ color: colors.flameAmber, fontWeight: '700' }}>?</Text> button at the top of your shelf.
+            </Text>
+          </View>
 
           {/* Action button */}
           <Pressable
@@ -232,6 +239,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 13,
-    marginTop: 16,
+    marginTop: 12,
+  },
+  tipWrap: {
+    marginTop: 14,
+    marginBottom: 4,
+    paddingHorizontal: 8,
   },
 });

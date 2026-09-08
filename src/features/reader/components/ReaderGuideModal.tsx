@@ -1,21 +1,19 @@
-import { Dimensions, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Dimensions, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
-import { CloseIcon, TranslateIcon } from '@/components/icons';
-import { targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
+import { BookmarkIcon, CloseIcon, MenuIcon, TranslateIcon } from '@/components/icons';
 import { useTheme } from '@/theme/ThemeProvider';
 
-const { width: screenWidth } = Dimensions.get('window');
+const { height: screenHeight } = Dimensions.get('window');
 
 type ReaderGuideModalProps = {
   visible: boolean;
   onClose: () => void;
-  onOpenLanguagePicker: () => void;
+  onOpenLanguagePicker?: () => void;
 };
 
-export function ReaderGuideModal({ visible, onClose, onOpenLanguagePicker }: ReaderGuideModalProps) {
-  const { colors, typography, radius, spacing } = useTheme();
-  const targetLanguage = useTargetLanguage();
+export function ReaderGuideModal({ visible, onClose }: ReaderGuideModalProps) {
+  const { colors, typography, radius } = useTheme();
 
   return (
     <Modal visible={visible} transparent animationType="fade" statusBarTranslucent onRequestClose={onClose}>
@@ -28,6 +26,7 @@ export function ReaderGuideModal({ visible, onClose, onOpenLanguagePicker }: Rea
               backgroundColor: colors.card,
               borderColor: colors.hairline,
               borderRadius: 20,
+              maxHeight: Math.min(640, screenHeight * 0.88),
             },
           ]}
         >
@@ -40,7 +39,7 @@ export function ReaderGuideModal({ visible, onClose, onOpenLanguagePicker }: Rea
                 </Text>
               </View>
               <Text style={[typography.screenTitle, { color: colors.ink, fontSize: 20, marginTop: 6 }]}>
-                How to Read & Translate
+                How to Read & Explore
               </Text>
             </View>
             <Pressable onPress={onClose} hitSlop={12} style={styles.closeBtn}>
@@ -49,7 +48,11 @@ export function ReaderGuideModal({ visible, onClose, onOpenLanguagePicker }: Rea
           </View>
 
           {/* Guide items */}
-          <View style={styles.itemsList}>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            overScrollMode="never"
+            contentContainerStyle={styles.itemsList}
+          >
             {/* 1. Page Turn */}
             <View style={styles.guideItem}>
               <View style={[styles.iconCircle, { backgroundColor: `${colors.flameAmber}18` }]}>
@@ -65,25 +68,25 @@ export function ReaderGuideModal({ visible, onClose, onOpenLanguagePicker }: Rea
               </View>
               <View style={styles.itemContent}>
                 <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 14 }]}>
-                  Swipe left to turn page
+                  Turn pages effortlessly
                 </Text>
                 <Text style={[typography.metadataCaption, { color: colors.umber, fontSize: 11.5, marginTop: 2, lineHeight: 16 }]}>
-                  Swipe left anywhere on the page, or tap the bottom-right corner to advance.
+                  Swipe left anywhere on the page, or tap the bottom-right corner to advance to the next page.
                 </Text>
               </View>
             </View>
 
-            {/* 2. Full Page Translation */}
+            {/* 2. Reading Tools Menu */}
             <View style={styles.guideItem}>
               <View style={[styles.iconCircle, { backgroundColor: `${colors.flameAmber}18` }]}>
-                <TranslateIcon color={colors.flameAmber} size={20} />
+                <MenuIcon color={colors.flameAmber} size={18} />
               </View>
               <View style={styles.itemContent}>
                 <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 14 }]}>
-                  Tap 🌐 to translate entire page
+                  Reading Tools (☰ Menu)
                 </Text>
                 <Text style={[typography.metadataCaption, { color: colors.umber, fontSize: 11.5, marginTop: 2, lineHeight: 16 }]}>
-                  A single tap on the globe icon at the top translates the whole page into your language.
+                  Tap the <Text style={{ fontWeight: '600', color: colors.ink }}>☰</Text> icon in the top right to switch between Day & Lamp modes, play ambient soundscapes, translate the full page, or change language.
                 </Text>
               </View>
             </View>
@@ -91,70 +94,40 @@ export function ReaderGuideModal({ visible, onClose, onOpenLanguagePicker }: Rea
             {/* 3. Word Translation */}
             <View style={styles.guideItem}>
               <View style={[styles.iconCircle, { backgroundColor: `${colors.flameAmber}18` }]}>
-                <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
-                  <Path
-                    d="M4 6h16M4 12h10M4 18h14"
-                    stroke={colors.flameAmber}
-                    strokeWidth={2}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                  <Path
-                    d="M18 10l3 3-3 3"
-                    stroke={colors.flameAmber}
-                    strokeWidth={2}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </Svg>
+                <TranslateIcon color={colors.flameAmber} size={18} />
               </View>
               <View style={styles.itemContent}>
                 <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 14 }]}>
-                  Hold any word to translate it
+                  Hold any word to translate
                 </Text>
                 <Text style={[typography.metadataCaption, { color: colors.umber, fontSize: 11.5, marginTop: 2, lineHeight: 16 }]}>
-                  Long-press a word for an instant translation popup or to save a quote.
+                  Press and hold onto any word to reveal its definition, translation, and grammatical notes.
                 </Text>
               </View>
             </View>
 
-            {/* 4. Language Selection */}
+            {/* 4. Select & Save Quotes with Sliders */}
             <View style={styles.guideItem}>
               <View style={[styles.iconCircle, { backgroundColor: `${colors.flameAmber}18` }]}>
-                <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
-                  <Path
-                    d="M17 4v6m0 0l-3-3m3 3l3-3M7 20v-6m0 0l3 3m-3-3l-3 3"
-                    stroke={colors.flameAmber}
-                    strokeWidth={2}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </Svg>
+                <BookmarkIcon color={colors.flameAmber} size={18} />
               </View>
               <View style={styles.itemContent}>
-                <View style={styles.langRow}>
-                  <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 14 }]}>
-                    Hold 🌐 to change language
-                  </Text>
-                  <Pressable
-                    onPress={() => {
-                      onClose();
-                      onOpenLanguagePicker();
-                    }}
-                    hitSlop={8}
-                    style={[styles.pairPill, { backgroundColor: colors.pairPillBackground, borderRadius: radius.pill }]}
-                  >
-                    <Text style={[typography.eyebrowLabel, { color: colors.pairPillText, fontSize: 10, fontWeight: '700' }]}>
-                      EN → {targetLanguageLabel(targetLanguage)} ▾
-                    </Text>
-                  </Pressable>
-                </View>
+                <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 14 }]}>
+                  Select & save quotes with sliders
+                </Text>
                 <Text style={[typography.metadataCaption, { color: colors.umber, fontSize: 11.5, marginTop: 2, lineHeight: 16 }]}>
-                  Long-press the top globe (or tap the pill above) to switch translation languages anytime.
+                  After holding a word, tap <Text style={{ fontWeight: '600', color: colors.ink }}>"Save as quote"</Text>. Two slider handles will appear—drag them to highlight the exact passage and save it.
                 </Text>
               </View>
             </View>
-          </View>
+
+            {/* Helpful reminder note */}
+            <View style={styles.tipWrap}>
+              <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 12, textAlign: 'center', lineHeight: 17 }]}>
+                To view this guide again anytime, tap the <Text style={{ color: colors.flameAmber, fontWeight: '700' }}>☰ Menu</Text> icon and select <Text style={{ color: colors.flameAmber, fontWeight: '700' }}>Reader Guide</Text>.
+              </Text>
+            </View>
+          </ScrollView>
 
           {/* Action button */}
           <Pressable
@@ -201,7 +174,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
-    marginBottom: 18,
+    marginBottom: 16,
   },
   badge: {
     alignSelf: 'flex-start',
@@ -213,7 +186,7 @@ const styles = StyleSheet.create({
   },
   itemsList: {
     gap: 16,
-    marginBottom: 22,
+    paddingBottom: 8,
   },
   guideItem: {
     flexDirection: 'row',
@@ -231,19 +204,15 @@ const styles = StyleSheet.create({
   itemContent: {
     flex: 1,
   },
-  langRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  pairPill: {
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-    marginLeft: 6,
-  },
   startButton: {
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 13,
+    marginTop: 14,
+  },
+  tipWrap: {
+    marginTop: 8,
+    marginBottom: 4,
+    paddingHorizontal: 8,
   },
 });

@@ -58,7 +58,7 @@ const ROW_ROTATIONS = [-2, 1.5, -1, 2.5, -2.5, 1, -1.5, 2];
 // FlatList can compute scroll offsets without measuring every item.
 const SPINE_SLOT_WIDTH = 96 + 16;
 
-const HOME_GUIDE_SETTING_KEY = 'home_guide_seen_v4';
+const HOME_GUIDE_SEEN_KEY = 'home_guide_shown_once';
 
 
 function getShelfSubtitle(): string {
@@ -147,8 +147,8 @@ export default function LibraryScreen() {
 
   const handleCloseGuide = useCallback(() => {
     guideDismissedInSessionRef.current = true;
-    void setSetting(HOME_GUIDE_SETTING_KEY, '1');
     setGuideVisible(false);
+    void setSetting(HOME_GUIDE_SEEN_KEY, '1');
   }, []);
 
   const handleNavigateTab = useCallback((tab: 'library' | 'vocabulary' | 'settings') => {
@@ -192,18 +192,18 @@ export default function LibraryScreen() {
     useCallback(() => {
       let isFocused = true;
       void (async () => {
-        await load();
-        if (!isFocused) return;
-
-        // Check if the home guide should be shown or resumed after tab preview
+        // Automatically show home guide once on first visit
         if (!guideDismissedInSessionRef.current) {
-          const seen = await getSetting(HOME_GUIDE_SETTING_KEY);
+          const seen = await getSetting(HOME_GUIDE_SEEN_KEY);
           if (isFocused && seen !== '1' && !guideDismissedInSessionRef.current) {
             setGuideVisible(true);
           } else if (seen === '1') {
             guideDismissedInSessionRef.current = true;
           }
         }
+
+        await load();
+        if (!isFocused) return;
 
         // Library is the landing screen, so this is where the once-a-day review
         // invitation surfaces. Never in the reader — nothing interrupts reading.
@@ -752,9 +752,9 @@ const styles = StyleSheet.create({
     paddingLeft: 12,
   },
   helpBadge: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
