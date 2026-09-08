@@ -5,6 +5,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { BookmarkIcon, ChevronLeftIcon, CloseIcon } from '@/components/icons';
+import { createBibleHighlight } from '@/db/repositories/bible';
+import { createQuranHighlight } from '@/db/repositories/quran';
 import { logEvent } from '@/features/analytics/analytics';
 import { useTheme } from '@/theme/ThemeProvider';
 
@@ -14,15 +16,10 @@ type Reaction = 'like' | 'dislike';
 
 type VerseDeckViewProps = {
   title: string;
-  // Distinguishes the mood-tag deck from the free-text context deck in the
-  // logged analytics event — not shown in the UI.
   source: 'mood' | 'context';
   fetchVerses: () => Promise<ScriptureVerseCard[]>;
 };
 
-// Tap-reveal, one card at a time: blind verse text first, tap reveals the
-// source citation + like/dislike, reacting fades the card out and advances;
-// after the last card, a summary lists every verse with its reaction.
 export function VerseDeckView({ title, source, fetchVerses }: VerseDeckViewProps) {
   const { colors, typography, spacing, radius, layout } = useTheme();
   const insets = useSafeAreaInsets();
@@ -61,13 +58,61 @@ export function VerseDeckView({ title, source, fetchVerses }: VerseDeckViewProps
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const react = (verse: ScriptureVerseCard, reaction: Reaction) => {
+  const react = async (verse: ScriptureVerseCard, reaction: Reaction) => {
     setReactions((prev) => ({ ...prev, [verse.id]: reaction }));
     logEvent('verse_deck_reaction', { verseId: verse.id, tradition: verse.tradition, source, reaction });
+
+    if (reaction === 'like') {
+      try {
+        if (verse.tradition === 'quran') {
+          await createQuranHighlight({
+            surahNumber: verse.chapter,
+            verseNumber: verse.verseNumber,
+            colorKey: 'amber',
+          });
+        } else if (verse.tradition === 'bible-ot' || verse.tradition === 'bible-nt' || verse.tradition === 'torah') {
+          if (verse.bookId) {
+            await createBibleHighlight({
+              bookId: verse.bookId,
+              chapter: verse.chapter,
+              verse: verse.verseNumber,
+              colorKey: 'amber',
+            });
+          }
+        }
+      } catch {
+        // Silently tolerate if highlight already exists
+      }
+    }
+
     cardOpacity.value = withTiming(0, { duration: 220, easing: Easing.in(Easing.cubic) });
     cardTranslateY.value = withTiming(-16, { duration: 220, easing: Easing.in(Easing.cubic) }, (finished) => {
       if (finished) runOnJS(advance)();
     });
+  };
+
+  const navigateToVerse = (v: ScriptureVerseCard) => {
+    if (v.tradition === 'quran') {
+      router.push({
+        pathname: '/quran/[surahNumber]',
+        params: { surahNumber: String(v.chapter), jumpVerse: String(v.verseNumber) },
+      });
+    } else if (v.tradition === 'bible-ot' || v.tradition === 'torah') {
+      router.push({
+        pathname: '/bible/[bookId]',
+        params: { bookId: v.bookId ?? 'PSA', jumpChapter: String(v.chapter), jumpVerse: String(v.verseNumber) },
+      });
+    } else if (v.tradition === 'bible-nt') {
+      router.push({
+        pathname: '/bible-nt/[bookId]',
+        params: { bookId: v.bookId ?? 'MAT', jumpChapter: String(v.chapter), jumpVerse: String(v.verseNumber) },
+      });
+    } else if (v.tradition === 'vedas') {
+      router.push({
+        pathname: '/vedas/[bookId]',
+        params: { bookId: v.bookId ?? 'RV01', jumpChapter: String(v.chapter), jumpVerse: String(v.verseNumber) },
+      });
+    }
   };
 
   const cardAnimatedStyle = useAnimatedStyle(() => ({
@@ -80,9 +125,14 @@ export function VerseDeckView({ title, source, fetchVerses }: VerseDeckViewProps
       <Pressable onPress={() => router.back()} hitSlop={12}>
         <ChevronLeftIcon color={colors.ink} />
       </Pressable>
-      <Text style={[typography.screenTitle, { color: colors.ink, marginLeft: spacing.md }]} numberOfLines={1}>
+      <Text style={[typography.screenTitle, { color: colors.ink, marginLeft: spacing.md, flex: 1 }]} numberOfLines={1}>
         {title}
       </Text>
+      {verses && index < verses.length ? (
+        <Text style={[typography.metadataCaption, { color: colors.fawn }]}>
+          {index + 1} of {verses.length}
+        </Text>
+      ) : null}
     </View>
   );
 
@@ -122,10 +172,22 @@ export function VerseDeckView({ title, source, fetchVerses }: VerseDeckViewProps
   const done = index >= verses.length;
 
   if (done) {
+    const savedCount = Object.values(reactions).filter((r) => r === 'like').length;
     return (
       <View style={{ flex: 1, backgroundColor: colors.libraryBackground }}>
         {header}
         <ScrollView contentContainerStyle={{ paddingHorizontal: layout.screenMargin, paddingBottom: spacing.xxl }}>
+          <View style={[styles.summaryBanner, { backgroundColor: colors.card, borderColor: colors.hairline, borderRadius: radius.card, marginTop: spacing.md, padding: layout.cardPadding }]}>
+            <Text style={[typography.uiRowTitle, { color: colors.flameAmber, fontSize: 15 }]}>
+              Words to carry with you
+            </Text>
+            <Text style={[typography.metadataCaption, { color: colors.fawn, marginTop: spacing.xs }]}>
+              {savedCount > 0
+                ? `${savedCount} verse${savedCount === 1 ? '' : 's'} saved to your Notebook under Saved Verses.`
+                : 'May these words bring quiet comfort and peace to your day.'}
+            </Text>
+          </View>
+
           {verses.map((verse) => {
             const reaction = reactions[verse.id];
             return (
@@ -133,21 +195,39 @@ export function VerseDeckView({ title, source, fetchVerses }: VerseDeckViewProps
                 key={verse.id}
                 style={[
                   styles.summaryRow,
-                  { backgroundColor: colors.card, borderRadius: radius.card, marginTop: spacing.md, padding: layout.cardPadding },
+                  { backgroundColor: colors.card, borderColor: colors.hairline, borderRadius: radius.card, marginTop: spacing.md, padding: layout.cardPadding },
                 ]}
               >
                 <View style={{ flex: 1 }}>
                   <Text style={[typography.eyebrowLabel, { color: colors.progressLabel, marginBottom: spacing.xs }]}>
                     {TRADITION_LABELS[verse.tradition] ?? verse.tradition} · {verse.book} {verse.chapter}:{verse.verseNumber}
                   </Text>
-                  <Text style={[typography.readingBody, { color: colors.ink, fontSize: 17 }]} numberOfLines={4}>
+                  <Text style={[typography.readingBody, { color: colors.ink, fontSize: 16, lineHeight: 26 }]} numberOfLines={4}>
                     {verse.translation ?? verse.originalText}
                   </Text>
+                  {verse.reflectionHint ? (
+                    <Text style={[typography.metadataCaption, { color: colors.fawn, fontStyle: 'italic', marginTop: spacing.xs }]}>
+                      {verse.reflectionHint}
+                    </Text>
+                  ) : null}
+                  <Pressable
+                    onPress={() => navigateToVerse(verse)}
+                    hitSlop={8}
+                    style={{ alignSelf: 'flex-start', marginTop: spacing.sm }}
+                  >
+                    <Text style={[typography.metadataCaption, { color: colors.flameAmber, fontSize: 12 }]}>
+                      Read chapter ➔
+                    </Text>
+                  </Pressable>
                 </View>
                 {reaction === 'like' ? (
-                  <BookmarkIcon color={colors.flameAmber} filled size={20} />
+                  <View style={{ marginLeft: spacing.sm }}>
+                    <BookmarkIcon color={colors.flameAmber} filled size={20} />
+                  </View>
                 ) : reaction === 'dislike' ? (
-                  <CloseIcon color={colors.straw} size={16} />
+                  <View style={{ marginLeft: spacing.sm }}>
+                    <CloseIcon color={colors.straw} size={16} />
+                  </View>
                 ) : null}
               </View>
             );
@@ -163,41 +243,82 @@ export function VerseDeckView({ title, source, fetchVerses }: VerseDeckViewProps
     <View style={{ flex: 1, backgroundColor: colors.libraryBackground }}>
       {header}
       <View style={styles.deckWrap}>
-        <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginBottom: spacing.md }]}>
-          {index + 1} / {verses.length}
-        </Text>
         <Animated.View
           style={[
             styles.card,
             cardAnimatedStyle,
-            { backgroundColor: colors.card, borderRadius: radius.card, marginHorizontal: layout.screenMargin },
+            {
+              backgroundColor: colors.card,
+              borderColor: colors.hairline,
+              borderRadius: radius.card,
+              marginHorizontal: layout.screenMargin,
+            },
           ]}
         >
           <Pressable onPress={() => setRevealed(true)} disabled={revealed} style={styles.cardPressable}>
-            <Text style={[typography.readingBody, { color: colors.ink, fontSize: 18, textAlign: 'center' }]}>
+            <Text style={[typography.eyebrowLabel, { color: colors.flameAmber, fontSize: 28, lineHeight: 32, marginBottom: spacing.xs }]}>
+              “
+            </Text>
+            <Text
+              style={[
+                typography.readingBody,
+                {
+                  color: colors.ink,
+                  fontSize: 18,
+                  lineHeight: 32,
+                  textAlign: 'center',
+                },
+              ]}
+            >
               {verse.translation ?? verse.originalText}
             </Text>
+
             {revealed ? (
-              <Text style={[typography.eyebrowLabel, { color: colors.progressLabel, marginTop: spacing.lg, textAlign: 'center' }]}>
-                {TRADITION_LABELS[verse.tradition] ?? verse.tradition} · {verse.book} {verse.chapter}:{verse.verseNumber}
-              </Text>
+              <View style={styles.revealedWrap}>
+                <View style={[styles.traditionPill, { backgroundColor: colors.segmentedTrack, borderRadius: radius.pill, marginTop: spacing.md }]}>
+                  <Text style={[typography.eyebrowLabel, { color: colors.flameAmber, fontSize: 11 }]}>
+                    {TRADITION_LABELS[verse.tradition] ?? verse.tradition}
+                  </Text>
+                </View>
+                <Text style={[typography.uiRowTitle, { color: colors.ink, marginTop: spacing.xs, fontSize: 14, textAlign: 'center' }]}>
+                  {verse.book} {verse.chapter}:{verse.verseNumber}
+                </Text>
+                {verse.reflectionHint ? (
+                  <Text style={[typography.metadataCaption, { color: colors.fawn, marginTop: spacing.xs, textAlign: 'center', fontStyle: 'italic', paddingHorizontal: spacing.sm }]}>
+                    {verse.reflectionHint}
+                  </Text>
+                ) : null}
+
+                <Pressable
+                  onPress={() => navigateToVerse(verse)}
+                  hitSlop={8}
+                  style={[styles.readChapterPill, { borderColor: colors.hairline, borderRadius: radius.pill, marginTop: spacing.md }]}
+                >
+                  <Text style={[typography.metadataCaption, { color: colors.progressLabel, fontSize: 12 }]}>
+                    Read chapter ➔
+                  </Text>
+                </Pressable>
+              </View>
             ) : (
-              <Text style={[typography.eyebrowLabel, { color: colors.straw, marginTop: spacing.lg, textAlign: 'center' }]}>
-                Tap to reveal
+              <Text style={[typography.eyebrowLabel, { color: colors.straw, marginTop: spacing.xl, textAlign: 'center' }]}>
+                Tap card to reveal source
               </Text>
             )}
           </Pressable>
+
           {revealed ? (
             <View style={[styles.reactionRow, { marginTop: spacing.xl }]}>
               <Pressable
                 onPress={() => react(verse, 'dislike')}
                 style={[styles.reactionButton, { backgroundColor: colors.segmentedTrack, borderRadius: radius.pill }]}
+                accessibilityLabel="Pass"
               >
                 <CloseIcon color={colors.ink} size={18} />
               </Pressable>
               <Pressable
                 onPress={() => react(verse, 'like')}
                 style={[styles.reactionButton, { backgroundColor: colors.flameAmber, borderRadius: radius.pill }]}
+                accessibilityLabel="Keep in Notebook"
               >
                 <BookmarkIcon color={colors.primaryDark} size={18} />
               </Pressable>
@@ -227,18 +348,33 @@ const styles = StyleSheet.create({
   },
   card: {
     width: '100%',
-    minHeight: 260,
+    minHeight: 280,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 24,
+    paddingHorizontal: 26,
     paddingVertical: 32,
   },
   cardPressable: {
     alignItems: 'center',
+    width: '100%',
+  },
+  revealedWrap: {
+    alignItems: 'center',
+    width: '100%',
+  },
+  traditionPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+  },
+  readChapterPill: {
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
   },
   reactionRow: {
     flexDirection: 'row',
-    gap: 16,
+    gap: 20,
   },
   reactionButton: {
     width: 52,
@@ -246,8 +382,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  summaryBanner: {
+    borderWidth: 1,
+  },
   summaryRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
+    borderWidth: 1,
   },
 });

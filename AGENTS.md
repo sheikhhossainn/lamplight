@@ -47,6 +47,8 @@ Understand request → graphify only if needed → read minimum files → implem
 
 ## Hard constraints
 
+- **Git author & push identity**: all commits and pushes must use the identity
+  `sheikhhossainn` (`skhossain799@gmail.com`). Never commit or push under any other account.
 - **expo-sqlite (Android)**: every DB call goes through the serializing queue in
   `db/client.ts`. Never bypass it, never call the raw db handle.
 - **SDK pin**: Expo Go on-device must match SDK 57 exactly (fix procedure:
@@ -74,4 +76,5 @@ Everything else: `docs/design.md`.
 | `docs/debugging.md` | Known pitfalls (Router, SQLite, SDK, fetch scripts), debug workflow |
 | `docs/scriptures.md` | Scripture verticals (Quran/Bible/Vedas): sources, recipe |
 | `docs/context-verses.md` | Mood→verse semantic search, embeddings, Edge Function |
+| `docs/feeling-feature.md` | Feeling sanctuary: voice STT, emotion matcher, wild card deck |
 | `ROADMAP.md` | Product phasing, free-tier caps, schema-to-feature map |

@@ -1,13 +1,16 @@
 import { useLocalSearchParams } from 'expo-router';
 import { useCallback } from 'react';
 
-import { fetchContextVerses } from '@/features/scripture-verses/contextVersesApi';
+import { drawEmpatheticDeck } from '@/features/scripture-verses/empatheticMatcher';
 import { VerseDeckView } from '@/features/scripture-verses/VerseDeckView';
 
 export default function ReflectScreen() {
   const { text } = useLocalSearchParams<{ text: string }>();
 
-  const fetchVerses = useCallback(() => fetchContextVerses(text), [text]);
+  const fetchVerses = useCallback(async () => {
+    return drawEmpatheticDeck(text ?? '');
+  }, [text]);
 
-  return <VerseDeckView title="For you" source="context" fetchVerses={fetchVerses} />;
+  return <VerseDeckView title="Words for you" source="context" fetchVerses={fetchVerses} />;
 }
+

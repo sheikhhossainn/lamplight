@@ -29,10 +29,12 @@ export type ScriptureVerseCard = {
   id: string;
   tradition: 'quran' | 'bible-ot' | 'bible-nt' | 'torah' | 'vedas';
   book: string;
+  bookId?: string;
   chapter: number;
   verseNumber: number;
   originalText: string;
   translation: string | null;
   moodTags?: string[];
   similarity?: number;
+  reflectionHint?: string;
 };

@@ -47,6 +47,8 @@ Understand request → graphify only if needed → read minimum files → implem
 
 ## Hard constraints
 
+- **Git author & push identity**: all commits and pushes must use the identity
+  `sheikhhossainn` (`skhossain799@gmail.com`). Never commit or push under any other account.
 - **expo-sqlite (Android)**: every DB call goes through the serializing queue in
   `db/client.ts`. Never bypass it, never call the raw db handle.
 - **SDK pin**: Expo Go on-device must match SDK 57 exactly (fix procedure:
