@@ -106,21 +106,38 @@ function ReaderPageFrame({ children }: ReaderPageFrameProps) {
   return <View style={styles.pageFrame}>{children}</View>;
 }
 
-// The exact selected substring across a word-aligned range, joining paragraphs
-// in reading order — used both for the saved quote text and the live word count.
+// The exact selected substring across a word-aligned range spanning one or more
+// pages, joining paragraphs in reading order — used both for the saved quote
+// text and the live word count.
 function selectedText(
-  page: ReaderPage,
-  startParagraph: number,
-  startOffset: number,
-  endParagraph: number,
-  endOffset: number,
+  pages: ReaderPage[],
+  selection: {
+    startPageGlobalIndex: number;
+    startParagraph: number;
+    startOffset: number;
+    endPageGlobalIndex: number;
+    endParagraph: number;
+    endOffset: number;
+  },
 ): string {
   const parts: string[] = [];
-  for (let p = startParagraph; p <= endParagraph; p += 1) {
-    const paragraph = page.paragraphs[p] ?? '';
-    const s = p === startParagraph ? startOffset : 0;
-    const e = p === endParagraph ? endOffset : paragraph.length;
-    parts.push(paragraph.slice(s, e).trim());
+  const startPage = Math.min(selection.startPageGlobalIndex, selection.endPageGlobalIndex);
+  const endPage = Math.max(selection.startPageGlobalIndex, selection.endPageGlobalIndex);
+  for (let pageIdx = startPage; pageIdx <= endPage; pageIdx += 1) {
+    const page = pages[pageIdx];
+    if (!page) continue;
+    const isStartPage = pageIdx === startPage;
+    const isEndPage = pageIdx === endPage;
+    const startPara = isStartPage ? selection.startParagraph : 0;
+    const endPara = isEndPage ? selection.endParagraph : Math.max(0, page.paragraphs.length - 1);
+
+    for (let p = startPara; p <= endPara; p += 1) {
+      const paragraph = page.paragraphs[p] ?? '';
+      const s = isStartPage && p === startPara ? selection.startOffset : 0;
+      const e = isEndPage && p === endPara ? selection.endOffset : paragraph.length;
+      const text = paragraph.slice(s, e).trim();
+      if (text) parts.push(text);
+    }
   }
   return parts.filter(Boolean).join(' ');
 }
@@ -206,13 +223,14 @@ export default function ReaderScreen() {
     end: number;
     anchor: { x: number; y: number };
   } | null>(null);
-  // Selection is a word-aligned char range across the page's paragraphs, always
-  // normalized so start <= end. It begins as the single held word and is
+  // Selection is a word-aligned char range across one or more pages' paragraphs,
+  // always normalized so start <= end. It begins as the single held word and is
   // adjusted at word granularity from either end via the two drag handles.
   const [selection, setSelection] = useState<{
-    page: ReaderPage;
+    startPageGlobalIndex: number;
     startParagraph: number;
     startOffset: number;
+    endPageGlobalIndex: number;
     endParagraph: number;
     endOffset: number;
   } | null>(null);
@@ -646,26 +664,199 @@ export default function ReaderScreen() {
     [],
   );
 
+  const [isDraggingHandle, setIsDraggingHandle] = useState(false);
+  const turningPageRef = useRef(false);
+  const selectionRef = useRef(selection);
+  selectionRef.current = selection;
+
+  const edgeTurnTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingDirectionRef = useRef<'prev-page' | 'next-page' | null>(null);
+  const lastTurnTimeRef = useRef<number>(0);
+  const currentIndexRef = useRef(currentIndex);
+  currentIndexRef.current = currentIndex;
+
+  const clearEdgeTurnTimer = useCallback(() => {
+    if (edgeTurnTimerRef.current) {
+      clearTimeout(edgeTurnTimerRef.current);
+      edgeTurnTimerRef.current = null;
+    }
+    pendingDirectionRef.current = null;
+  }, []);
+
+  const handleRangeEdgeDragStart = useCallback(() => {
+    setIsDraggingHandle(true);
+  }, []);
+
+  const handleRangeEdgeDragEnd = useCallback(() => {
+    clearEdgeTurnTimer();
+    setIsDraggingHandle(false);
+  }, [clearEdgeTurnTimer]);
+
+  useEffect(() => {
+    return () => {
+      clearEdgeTurnTimer();
+    };
+  }, [clearEdgeTurnTimer]);
+
   // Moves one edge of the selection to the word-boundary the handle reports,
   // keeping the OTHER edge fixed. Clamps so the dragged edge can't cross past
-  // the fixed one (the range never inverts) — native-style.
-  const handleRangeEdgeDrag = useCallback((edge: 'start' | 'end', pos: { paragraphIndex: number; offset: number }) => {
-    // true when (p1,o1) is at or before (p2,o2) in reading order.
-    const atOrBefore = (p1: number, o1: number, p2: number, o2: number) => p1 < p2 || (p1 === p2 && o1 <= o2);
-    setSelection((prev) => {
-      if (!prev) return prev;
-      if (edge === 'start') {
-        // Clamp new start to not pass the fixed end.
-        return atOrBefore(pos.paragraphIndex, pos.offset, prev.endParagraph, prev.endOffset)
-          ? { ...prev, startParagraph: pos.paragraphIndex, startOffset: pos.offset }
-          : { ...prev, startParagraph: prev.endParagraph, startOffset: prev.endOffset };
+  // the fixed one across pages (the range never inverts) — native-style.
+  const handleRangeEdgeDrag = useCallback(
+    (
+      pageGlobalIndex: number,
+      edge: 'start' | 'end',
+      pos: { paragraphIndex: number; offset: number },
+      direction?: 'prev-page' | 'next-page' | null,
+    ) => {
+      if (turningPageRef.current) return;
+      const currentSel = selectionRef.current;
+      if (!currentSel) return;
+      // Strict page ownership check: only the page currently holding that edge can move it!
+      if (edge === 'start' && pageGlobalIndex !== currentSel.startPageGlobalIndex) return;
+      if (edge === 'end' && pageGlobalIndex !== currentSel.endPageGlobalIndex) return;
+
+      const atOrBefore = (
+        pg1: number,
+        p1: number,
+        o1: number,
+        pg2: number,
+        p2: number,
+        o2: number,
+      ) => {
+        if (pg1 < pg2) return true;
+        if (pg1 > pg2) return false;
+        if (p1 < p2) return true;
+        if (p1 > p2) return false;
+        return o1 <= o2;
+      };
+
+      setSelection((prev) => {
+        if (!prev) return prev;
+        if (edge === 'start') {
+          return atOrBefore(pageGlobalIndex, pos.paragraphIndex, pos.offset, prev.endPageGlobalIndex, prev.endParagraph, prev.endOffset)
+            ? { ...prev, startPageGlobalIndex: pageGlobalIndex, startParagraph: pos.paragraphIndex, startOffset: pos.offset }
+            : { ...prev, startPageGlobalIndex: prev.endPageGlobalIndex, startParagraph: prev.endParagraph, startOffset: prev.endOffset };
+        }
+        return atOrBefore(prev.startPageGlobalIndex, prev.startParagraph, prev.startOffset, pageGlobalIndex, pos.paragraphIndex, pos.offset)
+          ? { ...prev, endPageGlobalIndex: pageGlobalIndex, endParagraph: pos.paragraphIndex, endOffset: pos.offset }
+          : { ...prev, endPageGlobalIndex: prev.startPageGlobalIndex, endParagraph: prev.startParagraph, endOffset: prev.startOffset };
+      });
+
+      if (!direction) {
+        clearEdgeTurnTimer();
+        return;
       }
-      // Clamp new end to not pass the fixed start.
-      return atOrBefore(prev.startParagraph, prev.startOffset, pos.paragraphIndex, pos.offset)
-        ? { ...prev, endParagraph: pos.paragraphIndex, endOffset: pos.offset }
-        : { ...prev, endParagraph: prev.startParagraph, endOffset: prev.startOffset };
-    });
-  }, []);
+
+      // If we are already timing a turn in this direction, keep the timer running
+      if (edgeTurnTimerRef.current && pendingDirectionRef.current === direction) {
+        return;
+      }
+
+      const now = Date.now();
+      if (now - lastTurnTimeRef.current < 500) return;
+
+      clearEdgeTurnTimer();
+      pendingDirectionRef.current = direction;
+
+      edgeTurnTimerRef.current = setTimeout(() => {
+        edgeTurnTimerRef.current = null;
+        pendingDirectionRef.current = null;
+        lastTurnTimeRef.current = Date.now();
+        turningPageRef.current = true;
+        setTimeout(() => {
+          turningPageRef.current = false;
+        }, 500);
+
+        const curIdx = currentIndexRef.current;
+        const currentPages = pagesRef.current;
+        const activeSel = selectionRef.current;
+        if (!activeSel) return;
+
+        if (direction === 'next-page' && edge === 'end') {
+          if (curIdx < currentPages.length - 1) {
+            const nextIdx = curIdx + 1;
+            lastPageIndexRef.current = nextIdx;
+            listRef.current?.scrollToOffset({ offset: nextIdx * screenWidth, animated: true });
+            setCurrentIndex(nextIdx);
+            playPageTurnRef.current();
+            const nextPg = currentPages[nextIdx];
+            const firstPara = nextPg?.paragraphs[0] ?? '';
+            const match = firstPara.match(/^\s*\S+/);
+            const initialEndOffset = match ? match[0].length : 0;
+            setSelection((prev) => {
+              if (!prev) return prev;
+              return {
+                ...prev,
+                endPageGlobalIndex: nextIdx,
+                endParagraph: 0,
+                endOffset: initialEndOffset,
+              };
+            });
+          }
+        } else if (direction === 'prev-page' && edge === 'start') {
+          if (curIdx > 0) {
+            const prevIdx = curIdx - 1;
+            lastPageIndexRef.current = prevIdx;
+            listRef.current?.scrollToOffset({ offset: prevIdx * screenWidth, animated: true });
+            setCurrentIndex(prevIdx);
+            playPageTurnRef.current();
+            const prevPg = currentPages[prevIdx];
+            const lastParaIdx = Math.max(0, (prevPg?.paragraphs.length ?? 1) - 1);
+            const lastPara = prevPg?.paragraphs[lastParaIdx] ?? '';
+            const match = lastPara.match(/\S+\s*$/);
+            const initialStartOffset = match ? lastPara.length - match[0].length : 0;
+            setSelection((prev) => {
+              if (!prev) return prev;
+              return {
+                ...prev,
+                startPageGlobalIndex: prevIdx,
+                startParagraph: lastParaIdx,
+                startOffset: initialStartOffset,
+              };
+            });
+          }
+        } else if (direction === 'prev-page' && edge === 'end') {
+          if (curIdx > activeSel.startPageGlobalIndex && curIdx > 0) {
+            const prevIdx = curIdx - 1;
+            lastPageIndexRef.current = prevIdx;
+            listRef.current?.scrollToOffset({ offset: prevIdx * screenWidth, animated: true });
+            setCurrentIndex(prevIdx);
+            playPageTurnRef.current();
+            const prevPg = currentPages[prevIdx];
+            const lastParaIdx = Math.max(0, (prevPg?.paragraphs.length ?? 1) - 1);
+            const lastPara = prevPg?.paragraphs[lastParaIdx] ?? '';
+            setSelection((prev) => {
+              if (!prev) return prev;
+              return {
+                ...prev,
+                endPageGlobalIndex: prevIdx,
+                endParagraph: lastParaIdx,
+                endOffset: lastPara.length,
+              };
+            });
+          }
+        } else if (direction === 'next-page' && edge === 'start') {
+          if (curIdx < activeSel.endPageGlobalIndex && curIdx < currentPages.length - 1) {
+            const nextIdx = curIdx + 1;
+            lastPageIndexRef.current = nextIdx;
+            listRef.current?.scrollToOffset({ offset: nextIdx * screenWidth, animated: true });
+            setCurrentIndex(nextIdx);
+            playPageTurnRef.current();
+            setSelection((prev) => {
+              if (!prev) return prev;
+              return {
+                ...prev,
+                startPageGlobalIndex: nextIdx,
+                startParagraph: 0,
+                startOffset: 0,
+              };
+            });
+          }
+        }
+      }, 240);
+    },
+    [clearEdgeTurnTimer],
+  );
 
   const handleSaveWord = useCallback(
     async (translation: string) => {
@@ -692,42 +883,81 @@ export default function ReaderScreen() {
     [book, activeWord, pages, currentIndex, targetLanguage],
   );
 
-  // Save the current selection as a quote. Highlights are always the app's
-  // single amber accent — no color picker (its swatches read as confusing
-  // +/- controls and duplicated this Save action), keeping the flow one tap:
-  // adjust the handles, then Save quote.
+  // Save the current selection as a quote across all spanned pages.
+  // Highlights are always the app's single amber accent — no color picker.
   const handleSaveQuote = useCallback(async () => {
     if (!book || !selection) return;
-    const { page, startParagraph, startOffset, endParagraph, endOffset } = selection;
-    // Rebuild the quote text as the exact selected substring across the range's
-    // paragraphs, in reading order; store the paragraph span for re-rendering
-    // the in-book highlight (which marks whole paragraphs).
-    const quoteText = selectedText(page, startParagraph, startOffset, endParagraph, endOffset);
-    const created = await createHighlight({
-      bookId: book.id,
-      chapterIndex: page.chapterIndex,
-      pageIndex: page.pageIndexInChapter,
-      startOffset: startParagraph,
-      endOffset: endParagraph,
-      colorKey: 'amber',
-      quoteText,
-    });
-    setHighlights((prev) => [created, ...prev]);
+    setIsDraggingHandle(false);
+    clearEdgeTurnTimer();
+    const fullQuoteText = selectedText(pages, selection);
+    const startPageIdx = Math.min(selection.startPageGlobalIndex, selection.endPageGlobalIndex);
+    const endPageIdx = Math.max(selection.startPageGlobalIndex, selection.endPageGlobalIndex);
+    const newHighlights: Highlight[] = [];
+    let primaryHighlight: Highlight | null = null;
+
+    for (let pageIdx = startPageIdx; pageIdx <= endPageIdx; pageIdx += 1) {
+      const page = pages[pageIdx];
+      if (!page) continue;
+      const isStart = pageIdx === startPageIdx;
+      const isEnd = pageIdx === endPageIdx;
+      const startPara = isStart ? selection.startParagraph : 0;
+      const endPara = isEnd ? selection.endParagraph : Math.max(0, page.paragraphs.length - 1);
+      const pageQuoteText = isStart && isEnd ? fullQuoteText : (pageIdx === startPageIdx ? fullQuoteText : '');
+
+      const created = await createHighlight({
+        bookId: book.id,
+        chapterIndex: page.chapterIndex,
+        pageIndex: page.pageIndexInChapter,
+        startOffset: startPara,
+        endOffset: endPara,
+        colorKey: 'amber',
+        quoteText: pageQuoteText,
+      });
+
+      if (!primaryHighlight) {
+        primaryHighlight = created;
+      }
+      newHighlights.push(created);
+    }
+
+    if (newHighlights.length > 0) {
+      setHighlights((prev) => [...newHighlights, ...prev]);
+    }
     setSelection(null);
-    router.push({ pathname: '/quote-share/[highlightId]', params: { highlightId: created.id } });
-  }, [book, selection]);
+    if (primaryHighlight) {
+      router.push({ pathname: '/quote-share/[highlightId]', params: { highlightId: primaryHighlight.id } });
+    }
+  }, [book, selection, pages, clearEdgeTurnTimer]);
 
   const renderPage = useCallback(
     ({ item }: { item: ReaderPage; index: number }) => {
-      const selectionForItem =
-        selection && selection.page.globalIndex === item.globalIndex
-          ? {
-              startParagraph: selection.startParagraph,
-              startOffset: selection.startOffset,
-              endParagraph: selection.endParagraph,
-              endOffset: selection.endOffset,
-            }
-          : null;
+      let selectionForItem: {
+        startParagraph: number;
+        startOffset: number;
+        endParagraph: number;
+        endOffset: number;
+        showStartHandle?: boolean;
+        showEndHandle?: boolean;
+      } | null = null;
+
+      if (selection) {
+        const itemIdx = item.globalIndex;
+        const startPg = selection.startPageGlobalIndex;
+        const endPg = selection.endPageGlobalIndex;
+        if (itemIdx >= startPg && itemIdx <= endPg) {
+          const isStartPage = itemIdx === startPg;
+          const isEndPage = itemIdx === endPg;
+          const lastPara = Math.max(0, item.paragraphs.length - 1);
+          selectionForItem = {
+            startParagraph: isStartPage ? selection.startParagraph : 0,
+            startOffset: isStartPage ? selection.startOffset : 0,
+            endParagraph: isEndPage ? selection.endParagraph : lastPara,
+            endOffset: isEndPage ? selection.endOffset : (item.paragraphs[lastPara]?.length ?? 0),
+            showStartHandle: isStartPage,
+            showEndHandle: isEndPage,
+          };
+        }
+      }
       // The word to highlight on this page: the held word (menu open) or the one
       // currently being translated.
       const hl = wordMenu
@@ -764,7 +994,11 @@ export default function ReaderScreen() {
               selectionRange={selectionForItem}
               selectionColor={colors.highlight.amber}
               onWordLongPress={handleWordLongPress}
-              onRangeEdgeDrag={handleRangeEdgeDrag}
+              onRangeEdgeDragStart={handleRangeEdgeDragStart}
+              onRangeEdgeDrag={(edge, pos, direction) =>
+                handleRangeEdgeDrag(item.globalIndex, edge, pos, direction)
+              }
+              onRangeEdgeDragEnd={handleRangeEdgeDragEnd}
               translatedParagraphs={translatedParagraphsForItem}
             />
           </Pressable>
@@ -779,7 +1013,9 @@ export default function ReaderScreen() {
       savedWordTextColor,
       translation,
       handleWordLongPress,
+      handleRangeEdgeDragStart,
       handleRangeEdgeDrag,
+      handleRangeEdgeDragEnd,
       toggleChrome,
       textColor,
       readingFontSizePx,
@@ -940,7 +1176,7 @@ export default function ReaderScreen() {
         initialScrollIndex={initialIndex}
         getItemLayout={(_, index) => ({ length: screenWidth, offset: screenWidth * index, index })}
         renderItem={renderPage}
-        extraData={`${mode}-${readingFontSizePx}-${readingLineHeight}-${savedWordSet.size}-${selection ? `${selection.page.globalIndex}:${selection.startParagraph}:${selection.startOffset}:${selection.endParagraph}:${selection.endOffset}` : ''}-${activeWord ? `${activeWord.pageGlobalIndex}:${activeWord.start}` : ''}-${wordMenu ? `${wordMenu.page.globalIndex}:${wordMenu.start}` : ''}-${translation ? `${translation.pageGlobalIndex}:${translation.status}` : ''}`}
+        extraData={`${mode}-${readingFontSizePx}-${readingLineHeight}-${savedWordSet.size}-${selection ? `${selection.startPageGlobalIndex}:${selection.startParagraph}:${selection.startOffset}:${selection.endPageGlobalIndex}:${selection.endParagraph}:${selection.endOffset}` : ''}-${isDraggingHandle ? 'drag' : 'idle'}-${activeWord ? `${activeWord.pageGlobalIndex}:${activeWord.start}` : ''}-${wordMenu ? `${wordMenu.page.globalIndex}:${wordMenu.start}` : ''}-${translation ? `${translation.pageGlobalIndex}:${translation.status}` : ''}`}
         // Detach off-screen pages' (heavy, per-word) native view trees so only
         // the visible page and its immediate neighbors composite during a swipe.
         removeClippedSubviews
@@ -949,9 +1185,9 @@ export default function ReaderScreen() {
         // Kill Android's overscroll edge glow (defaults to the accent color and
         // shows as a stray tinted line at the scroll boundaries in dark mode).
         overScrollMode="never"
-        // Lock paging while selecting lines for a quote — swiping away from the
-        // page you're selecting on would lose the selection context.
-        scrollEnabled={!selection}
+        // Lock paging while actively dragging a handle — lets the reader freely
+        // swipe between pages to review/adjust a multi-page quote whenever not dragging.
+        scrollEnabled={!isDraggingHandle}
         decelerationRate="fast"
         // Keep the very first open of a book fast (1 page rendered up front),
         // but render a couple pages ahead in each direction during idle time
@@ -1143,18 +1379,19 @@ export default function ReaderScreen() {
       {/* Quote-selection bottom bar — only while picking lines. */}
       {selection ? (
         <View style={[styles.selectionBar, { paddingBottom: insets.bottom + 12 }]}>
-          <Pressable onPress={() => setSelection(null)} hitSlop={8}>
+          <Pressable
+            onPress={() => {
+              setSelection(null);
+              setIsDraggingHandle(false);
+              clearEdgeTurnTimer();
+            }}
+            hitSlop={8}
+          >
             <Text style={[typography.uiRowTitle, { color: colors.mutedOnDark, fontSize: 13 }]}>Cancel</Text>
           </Pressable>
           <Text style={[typography.metadataCaption, { color: colors.lampText, fontSize: 12 }]}>
             {(() => {
-              const n = selectedText(
-                selection.page,
-                selection.startParagraph,
-                selection.startOffset,
-                selection.endParagraph,
-                selection.endOffset,
-              )
+              const n = selectedText(pages, selection)
                 .split(/\s+/)
                 .filter(Boolean).length;
               return `${n} word${n === 1 ? '' : 's'} selected`;
@@ -1189,9 +1426,10 @@ export default function ReaderScreen() {
         onSaveQuote={() => {
           if (!wordMenu) return;
           setSelection({
-            page: wordMenu.page,
+            startPageGlobalIndex: wordMenu.page.globalIndex,
             startParagraph: wordMenu.paragraphIndex,
             startOffset: wordMenu.start,
+            endPageGlobalIndex: wordMenu.page.globalIndex,
             endParagraph: wordMenu.paragraphIndex,
             endOffset: wordMenu.end,
           });

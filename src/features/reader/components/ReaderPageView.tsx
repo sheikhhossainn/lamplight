@@ -1,5 +1,13 @@
 import { memo, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
-import { PanResponder, StyleSheet, Text, View, type GestureResponderEvent } from 'react-native';
+import {
+  Dimensions,
+  PanResponder,
+  StyleSheet,
+  Text,
+  View,
+  type GestureResponderEvent,
+  type PanResponderGestureState,
+} from 'react-native';
 import Animated, {
   Easing,
   runOnJS,
@@ -13,6 +21,8 @@ import { cleanWordForLookup, tokenizeParagraph } from '@/features/reader/engine/
 import type { ReaderPage } from '@/features/reader/engine/paginate';
 import type { HighlightColorKey } from '@/theme/tokens';
 import { useTheme } from '@/theme/ThemeProvider';
+
+const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
 type ReaderPageViewProps = {
   page: ReaderPage;
@@ -42,7 +52,14 @@ type ReaderPageViewProps = {
   // selected char range (word-aligned) across the page's paragraphs. When set,
   // the page renders the range highlighted and shows the two drag handles at its
   // start/end, adjustable at WORD granularity like native text selection.
-  selectionRange: { startParagraph: number; startOffset: number; endParagraph: number; endOffset: number } | null;
+  selectionRange: {
+    startParagraph: number;
+    startOffset: number;
+    endParagraph: number;
+    endOffset: number;
+    showStartHandle?: boolean;
+    showEndHandle?: boolean;
+  } | null;
   selectionColor: string;
   // Holding (long-press) a word opens the action menu. The payload carries
   // everything the caller needs for either choice: the word + its char range
@@ -59,9 +76,15 @@ type ReaderPageViewProps = {
   }) => void;
   // Fired continuously while a handle is dragged. `edge` says which end is
   // moving; `pos` is the word-boundary offset under the finger (word start for
-  // the 'start' edge, word end for the 'end' edge). The caller re-derives the
-  // range, keeping the other edge fixed.
-  onRangeEdgeDrag: (edge: 'start' | 'end', pos: { paragraphIndex: number; offset: number }) => void;
+  // the 'start' edge, word end for the 'end' edge); `direction` indicates if
+  // the finger has reached a page boundary to trigger auto-paging.
+  onRangeEdgeDragStart?: (edge: 'start' | 'end') => void;
+  onRangeEdgeDrag: (
+    edge: 'start' | 'end',
+    pos: { paragraphIndex: number; offset: number },
+    direction?: 'prev-page' | 'next-page' | null,
+  ) => void;
+  onRangeEdgeDragEnd?: (edge: 'start' | 'end') => void;
   // Whole-page translation, in place of a separate popup screen: when set, the
   // page's own body crossfades from the original paragraphs to this text
   // (plain, non-interactive — word-tap/highlight offsets don't survive
@@ -120,10 +143,11 @@ function getTokenOffsets(paragraph: string): number[] {
 // glyphWidths). NORMALIZED to the line's own width by charInLine, so the only
 // residual error is kerning — sub-character.
 function charIndexAtFraction(text: string, frac: number): number {
-  if (text.length === 0) return 0;
+  const clean = text.replace(/[\r\n]+$/, '');
+  if (clean.length === 0) return 0;
   const widths: number[] = [];
   let total = 0;
-  for (const ch of text) {
+  for (const ch of clean) {
     const w = charAdvance(ch);
     widths.push(w);
     total += w;
@@ -136,17 +160,18 @@ function charIndexAtFraction(text: string, frac: number): number {
     if (target < next) return target - acc < widths[i] / 2 ? i : i + 1;
     acc = next;
   }
-  return text.length;
+  return clean.length;
 }
 
 // The inverse: a character index within a line's text -> its fraction across the
 // line (so a handle's pixel position matches where charIndexAtFraction would map
 // a touch back — forward and inverse must use the same width model).
 function fractionAtCharIndex(text: string, index: number): number {
-  if (text.length === 0) return 0;
+  const clean = text.replace(/[\r\n]+$/, '');
+  if (clean.length === 0) return 0;
   let total = 0;
   const widths: number[] = [];
-  for (const ch of text) {
+  for (const ch of clean) {
     const w = charAdvance(ch);
     widths.push(w);
     total += w;
@@ -195,13 +220,17 @@ function lineStartOffsets(paragraph: string, lines: TextLine[]): number[] {
   const starts: number[] = [];
   let pos = 0;
   for (const line of lines) {
-    const idx = line.text.length > 0 ? paragraph.indexOf(line.text, pos) : -1;
+    const cleanText = line.text.replace(/[\r\n]+$/, '');
+    let idx = cleanText.length > 0 ? paragraph.indexOf(cleanText, pos) : -1;
+    if (idx === -1 && cleanText.trimEnd().length > 0) {
+      idx = paragraph.indexOf(cleanText.trimEnd(), pos);
+    }
     if (idx >= 0) {
       starts.push(idx);
-      pos = idx + line.text.length;
+      pos = idx + cleanText.length;
     } else {
       starts.push(pos);
-      pos += line.text.length;
+      pos += cleanText.length;
     }
   }
   return starts;
@@ -391,12 +420,13 @@ function locateOffsetPixel(
   const starts = lineStartOffsets(paragraph, lines);
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i];
+    const cleanText = line.text.replace(/[\r\n]+$/, '');
     const lineStart = starts[i];
-    const lineEnd = lineStart + line.text.length;
+    const lineEnd = lineStart + cleanText.length;
     const isLast = i === lines.length - 1;
     if (charOffset <= lineEnd || isLast) {
-      const within = Math.max(0, Math.min(line.text.length, charOffset - lineStart));
-      const fraction = fractionAtCharIndex(line.text, within);
+      const within = Math.max(0, Math.min(cleanText.length, charOffset - lineStart));
+      const fraction = fractionAtCharIndex(cleanText, within);
       return {
         x: line.x + fraction * line.width,
         top: layout.y + line.y,
@@ -425,7 +455,9 @@ function ReaderPageViewImpl({
   selectionRange,
   selectionColor,
   onWordLongPress,
+  onRangeEdgeDragStart,
   onRangeEdgeDrag,
+  onRangeEdgeDragEnd,
   translatedParagraphs,
 }: ReaderPageViewProps) {
   const { typography, spacing } = useTheme();
@@ -469,28 +501,17 @@ function ReaderPageViewImpl({
   // (not state) because the geometry itself shouldn't trigger a re-render —
   // only `layoutVersion` does, once per layout/text-layout event, so the
   // handles' pixel positions (computed below) recompute against fresh data.
-  const containerRef = useRef<View>(null);
-  const containerOriginRef = useRef({ x: 0, y: 0 });
   const paragraphLayoutsRef = useRef<Map<number, ParagraphLayout>>(new Map());
   const paragraphLinesRef = useRef<Map<number, TextLine[]>>(new Map());
   const [layoutVersion, setLayoutVersion] = useState(0);
+  const onRangeEdgeDragStartRef = useRef(onRangeEdgeDragStart);
+  onRangeEdgeDragStartRef.current = onRangeEdgeDragStart;
   const onRangeEdgeDragRef = useRef(onRangeEdgeDrag);
   onRangeEdgeDragRef.current = onRangeEdgeDrag;
+  const onRangeEdgeDragEndRef = useRef(onRangeEdgeDragEnd);
+  onRangeEdgeDragEndRef.current = onRangeEdgeDragEnd;
   const paragraphsRef = useRef(page.paragraphs);
   paragraphsRef.current = page.paragraphs;
-  // Children's onLayout is relative to the container's content box (i.e.
-  // already past its own padding) — this mirrors that same padding so a
-  // window-space touch point converts into the same coordinate space.
-  const contentOffsetRef = useRef({ top: 0, left: 0 });
-  contentOffsetRef.current = { top: topInset + spacing.xl, left: spacing.xl };
-
-  const toLocalPoint = (evt: GestureResponderEvent) => {
-    const { pageX, pageY } = evt.nativeEvent;
-    return {
-      x: pageX - containerOriginRef.current.x - contentOffsetRef.current.left,
-      y: pageY - containerOriginRef.current.y - contentOffsetRef.current.top,
-    };
-  };
 
   // Hold on a paragraph -> the exact word under the finger (a stationary hold is
   // precise). Uses the press's OWN locationX/locationY (relative to the pressed
@@ -532,26 +553,30 @@ function ReaderPageViewImpl({
     const paragraph = paragraphsRef.current[pi];
     const layout = paragraphLayoutsRef.current.get(pi);
     const lines = paragraphLinesRef.current.get(pi);
-    if (paragraph == null || !layout || !lines) return null;
+    if (paragraph == null || !layout || !lines || lines.length === 0) return null;
     const px = locateOffsetPixel(paragraph, layout, lines, off);
     return px ? { x: px.x, y: px.top + px.height / 2 } : null;
   };
 
-  // Native handle behaviour: dragging maps a point OFFSET from the finger to the
-  // character, not the fingertip itself — so the edge stays put on grab (no
-  // jump) and then tracks the finger, sitting a little away from the fingertip
-  // (above/beside it) so it stays visible. On touch-down we capture the offset
-  // between the finger and the actual edge; every move re-applies it.
-  const grabOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
-  const beginHandleDrag = (edge: 'start' | 'end', evt: GestureResponderEvent) => {
-    const finger = toLocalPoint(evt);
-    const edgePx = edgePixelFor(edge);
-    grabOffsetRef.current = edgePx ? { x: edgePx.x - finger.x, y: edgePx.y - finger.y } : { x: 0, y: 0 };
+  // Delta-based handle dragging: captures the edge pixel at drag-start, then applies
+  // gestureState.dx / gestureState.dy directly. Pure, 1:1, immune to layout coordinate bugs.
+  const dragStartEdgePxRef = useRef<{ x: number; y: number } | null>(null);
+
+  const beginHandleDrag = (edge: 'start' | 'end') => {
+    dragStartEdgePxRef.current = edgePixelFor(edge);
+    onRangeEdgeDragStartRef.current?.(edge);
   };
-  const moveHandleDrag = (edge: 'start' | 'end', evt: GestureResponderEvent) => {
-    const finger = toLocalPoint(evt);
-    const targetX = finger.x + grabOffsetRef.current.x;
-    const targetY = finger.y + grabOffsetRef.current.y;
+
+  const moveHandleDrag = (
+    edge: 'start' | 'end',
+    evt: GestureResponderEvent,
+    gestureState: PanResponderGestureState,
+  ) => {
+    const startPx = dragStartEdgePxRef.current ?? edgePixelFor(edge);
+    if (!startPx) return;
+    const targetX = startPx.x + gestureState.dx;
+    const targetY = startPx.y + gestureState.dy;
+
     const loc = locateParagraphOffset(
       paragraphsRef.current,
       paragraphLayoutsRef.current,
@@ -559,37 +584,93 @@ function ReaderPageViewImpl({
       targetX,
       targetY,
     );
-    if (loc) onRangeEdgeDragRef.current(edge, { paragraphIndex: loc.paragraphIndex, offset: loc.charOffset });
+
+    let direction: 'prev-page' | 'next-page' | null = null;
+    const lastParaIdx = paragraphsRef.current.length - 1;
+    const lastLayout = paragraphLayoutsRef.current.get(lastParaIdx);
+    const firstLayout = paragraphLayoutsRef.current.get(0);
+    const { pageX, pageY } = evt.nativeEvent;
+
+    if (edge === 'end') {
+      const isPastBottomY = lastLayout ? targetY >= lastLayout.y + lastLayout.height - 8 : false;
+      const isNearScreenBottom = pageY >= screenHeight - bottomInset - 70;
+      const isNearScreenRight = pageX >= screenWidth - 36;
+      const isAtLastParagraphEnd =
+        loc &&
+        loc.paragraphIndex === lastParaIdx &&
+        loc.charOffset >= (paragraphsRef.current[lastParaIdx]?.length ?? 0) - 2;
+
+      if (isPastBottomY || isNearScreenBottom || isNearScreenRight || isAtLastParagraphEnd) {
+        direction = 'next-page';
+      } else if (
+        targetY <= (firstLayout ? firstLayout.y + 8 : 8) ||
+        pageY <= topInset + 80 ||
+        pageX <= 36 ||
+        (loc && loc.paragraphIndex === 0 && loc.charOffset <= 2 && (gestureState.dx < -5 || gestureState.dy < 0))
+      ) {
+        direction = 'prev-page';
+      }
+    } else if (edge === 'start') {
+      const isPastTopY = firstLayout ? targetY <= firstLayout.y + 8 : targetY <= 8;
+      const isNearScreenTop = pageY <= topInset + 80;
+      const isNearScreenLeft = pageX <= 36;
+      const isAtFirstParagraphStart = loc && loc.paragraphIndex === 0 && loc.charOffset <= 2;
+
+      if (isPastTopY || isNearScreenTop || isNearScreenLeft || isAtFirstParagraphStart) {
+        direction = 'prev-page';
+      } else if (targetY >= (lastLayout ? lastLayout.y + lastLayout.height : screenHeight) || pageY >= screenHeight - bottomInset - 60) {
+        direction = 'next-page';
+      }
+    }
+
+    if (loc) {
+      onRangeEdgeDragRef.current(edge, { paragraphIndex: loc.paragraphIndex, offset: loc.charOffset }, direction);
+    } else if (direction) {
+      const fallbackPos =
+        edge === 'end'
+          ? { paragraphIndex: lastParaIdx, offset: paragraphsRef.current[lastParaIdx]?.length ?? 0 }
+          : { paragraphIndex: 0, offset: 0 };
+      onRangeEdgeDragRef.current(edge, fallbackPos, direction);
+    }
   };
-  // The once-created PanResponders read these refs so they always call the
-  // current closures (fresh refs), never a stale first-render copy.
+
+  const endHandleDrag = (edge: 'start' | 'end') => {
+    dragStartEdgePxRef.current = null;
+    onRangeEdgeDragEndRef.current?.(edge);
+  };
+
   const beginHandleDragRef = useRef(beginHandleDrag);
   beginHandleDragRef.current = beginHandleDrag;
   const moveHandleDragRef = useRef(moveHandleDrag);
   moveHandleDragRef.current = moveHandleDrag;
+  const endHandleDragRef = useRef(endHandleDrag);
+  endHandleDragRef.current = endHandleDrag;
 
-  // The two draggable handles adjust the range character by character. Each
-  // claims the touch immediately (a small dedicated knob) and moves only its own
-  // edge; dragging the page body does nothing (native-style — the handles are
-  // the only way to extend, so it never fights a stray touch).
   const startHandlePanResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onStartShouldSetPanResponderCapture: () => true,
       onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: (evt) => beginHandleDragRef.current('start', evt),
-      onPanResponderMove: (evt) => moveHandleDragRef.current('start', evt),
-      onPanResponderTerminationRequest: () => true,
+      onMoveShouldSetPanResponderCapture: () => true,
+      onPanResponderGrant: () => beginHandleDragRef.current('start'),
+      onPanResponderMove: (evt, gs) => moveHandleDragRef.current('start', evt, gs),
+      onPanResponderRelease: () => endHandleDragRef.current('start'),
+      onPanResponderTerminate: () => endHandleDragRef.current('start'),
+      onPanResponderTerminationRequest: () => false,
     }),
   ).current;
+
   const endHandlePanResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onStartShouldSetPanResponderCapture: () => true,
       onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: (evt) => beginHandleDragRef.current('end', evt),
-      onPanResponderMove: (evt) => moveHandleDragRef.current('end', evt),
-      onPanResponderTerminationRequest: () => true,
+      onMoveShouldSetPanResponderCapture: () => true,
+      onPanResponderGrant: () => beginHandleDragRef.current('end'),
+      onPanResponderMove: (evt, gs) => moveHandleDragRef.current('end', evt, gs),
+      onPanResponderRelease: () => endHandleDragRef.current('end'),
+      onPanResponderTerminate: () => endHandleDragRef.current('end'),
+      onPanResponderTerminationRequest: () => false,
     }),
   ).current;
 
@@ -602,19 +683,34 @@ function ReaderPageViewImpl({
       const paragraph = paragraphsRef.current[paragraphIndex];
       const layout = paragraphLayoutsRef.current.get(paragraphIndex);
       const lines = paragraphLinesRef.current.get(paragraphIndex);
-      if (paragraph == null || !layout || !lines) return null;
+      if (paragraph == null || !layout || !lines || lines.length === 0) return null;
       return locateOffsetPixel(paragraph, layout, lines, offset);
     };
     const start = pixelAt(selectionRange.startParagraph, selectionRange.startOffset);
     const end = pixelAt(selectionRange.endParagraph, selectionRange.endOffset);
-    if (!start || !end) return null;
-    return { start, end };
+
+    // Guaranteed visible handle fallback: if layout hasn't arrived yet on an offscreen/newly-mounted page,
+    // synthesize a valid position so the handle is immediately visible and interactive.
+    const fallbackTop = selectionRange.endParagraph * lineHeight;
+    const fallbackEnd = end ?? {
+      x: Math.max(20, Math.min(screenWidth - 40, (selectionRange.endOffset || 5) * (fontSize * 0.55))),
+      top: fallbackTop,
+      height: lineHeight,
+    };
+    const fallbackStart = start ?? {
+      x: 0,
+      top: 0,
+      height: lineHeight,
+    };
+    return {
+      start: fallbackStart,
+      end: fallbackEnd,
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- layoutVersion is a manual invalidation signal for the refs above, not a value read directly.
-  }, [selectionRange, page.paragraphs, layoutVersion]);
+  }, [selectionRange, page.paragraphs, layoutVersion, lineHeight, fontSize]);
 
   return (
     <View
-      ref={containerRef}
       style={[
         styles.container,
         {
@@ -627,11 +723,6 @@ function ReaderPageViewImpl({
           paddingBottom: bottomInset + 20,
         },
       ]}
-      onLayout={() => {
-        containerRef.current?.measureInWindow((x, y) => {
-          containerOriginRef.current = { x, y };
-        });
-      }}
     >
       {page.isChapterStart ? (
         <Text
@@ -737,12 +828,14 @@ function ReaderPageViewImpl({
                 y: e.nativeEvent.layout.y,
                 height: e.nativeEvent.layout.height,
               });
+              setLayoutVersion((v) => v + 1);
             }}
             onTextLayout={(e) => {
               paragraphLinesRef.current.set(
                 paragraphIndex,
                 e.nativeEvent.lines.map((l) => ({ x: l.x, y: l.y, width: l.width, height: l.height, text: l.text })),
               );
+              setLayoutVersion((v) => v + 1);
             }}
           >
             {highlightWash && highlightRun
@@ -763,6 +856,42 @@ function ReaderPageViewImpl({
           </Text>
         );
       })}
+
+      {selecting && handlePositions ? (
+        <>
+          {/* Start handle: knob ABOVE the line. End handle: knob BELOW. The
+              vertical offset (native-style) keeps the two handles grabbable even
+              when the selection is a single word and their x's nearly coincide.
+              Positioned inside Animated.View so top/left match the paragraph
+              geometry directly (no missing container paddingTop or title spacer). */}
+          {selectionRange.showStartHandle !== false ? (
+            <View
+              {...startHandlePanResponder.panHandlers}
+              hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+              style={[
+                styles.handleHitArea,
+                { left: handlePositions.start.x - 22, top: handlePositions.start.top - 12 },
+              ]}
+            >
+              <View style={[styles.handleKnob, { backgroundColor: selectionColor }]} />
+              <View style={[styles.handleBar, { height: handlePositions.start.height, backgroundColor: selectionColor }]} />
+            </View>
+          ) : null}
+          {selectionRange.showEndHandle !== false ? (
+            <View
+              {...endHandlePanResponder.panHandlers}
+              hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+              style={[
+                styles.handleHitArea,
+                { left: handlePositions.end.x - 22, top: handlePositions.end.top },
+              ]}
+            >
+              <View style={[styles.handleBar, { height: handlePositions.end.height, backgroundColor: selectionColor }]} />
+              <View style={[styles.handleKnob, { backgroundColor: selectionColor }]} />
+            </View>
+          ) : null}
+        </>
+      ) : null}
       </Animated.View>
 
       {/* Whole-page translation — crossfades in over the original body in
@@ -783,38 +912,6 @@ function ReaderPageViewImpl({
         </Animated.View>
       ) : null}
       </View>
-
-      {selecting && handlePositions ? (
-        <>
-          {/* Start handle: knob ABOVE the line. End handle: knob BELOW. The
-              vertical offset (native-style) keeps the two handles grabbable even
-              when the selection is a single word and their x's nearly coincide.
-              `spacing.xl` re-adds the container's left padding: the offset pixels
-              are content-relative (0 = text left) but the handle is positioned in
-              the container's border box, so without it the handles sit a padding
-              width too far left (the start handle fell off the screen edge). */}
-          <View
-            {...startHandlePanResponder.panHandlers}
-            style={[
-              styles.handleHitArea,
-              { left: spacing.xl + handlePositions.start.x - 14, top: handlePositions.start.top - 11 },
-            ]}
-          >
-            <View style={[styles.handleKnob, { backgroundColor: selectionColor }]} />
-            <View style={[styles.handleBar, { height: handlePositions.start.height, backgroundColor: selectionColor }]} />
-          </View>
-          <View
-            {...endHandlePanResponder.panHandlers}
-            style={[
-              styles.handleHitArea,
-              { left: spacing.xl + handlePositions.end.x - 14, top: handlePositions.end.top },
-            ]}
-          >
-            <View style={[styles.handleBar, { height: handlePositions.end.height, backgroundColor: selectionColor }]} />
-            <View style={[styles.handleKnob, { backgroundColor: selectionColor }]} />
-          </View>
-        </>
-      ) : null}
     </View>
   );
 }
@@ -833,16 +930,18 @@ const styles = StyleSheet.create({
   // needs a wider invisible catch area (native handles do the same).
   handleHitArea: {
     position: 'absolute',
-    width: 28,
+    width: 44,
     alignItems: 'center',
+    justifyContent: 'flex-start',
+    zIndex: 20,
   },
   handleBar: {
-    width: 2,
+    width: 2.5,
   },
   handleKnob: {
-    width: 11,
-    height: 11,
-    borderRadius: 5.5,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
   },
   translatedOverlay: {
     position: 'absolute',
