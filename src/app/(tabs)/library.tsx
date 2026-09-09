@@ -22,6 +22,11 @@ import { CloseIcon, FilterIcon, SearchIcon } from '@/components/icons';
 import { logEvent } from '@/features/analytics/analytics';
 import { BOOK_CATEGORIES, categoriesForBook } from '@/features/content-ingestion/bookCategories';
 import { useLibrarySyncing } from '@/features/content-ingestion/librarySync';
+import {
+  fetchBanglaBooks,
+  FALLBACK_BANGLA_BOOKS,
+  type BanglaBookSummary,
+} from '@/features/content-ingestion/banglaApi';
 import { ShelfEditorModal, type ShelfDraft } from '@/components/ShelfEditorModal';
 import { VocabReviewPrompt } from '@/components/VocabReviewPrompt';
 import { FeelingPromptModal } from '@/features/scripture-verses/FeelingPromptModal';
@@ -132,6 +137,7 @@ export default function LibraryScreen() {
   const [feelingModalVisible, setFeelingModalVisible] = useState(false);
   const [guideVisible, setGuideVisible] = useState(false);
   const [downloadConfirmBook, setDownloadConfirmBook] = useState<BookRow | null>(null);
+  const [banglaBooks, setBanglaBooks] = useState<BanglaBookSummary[]>(FALLBACK_BANGLA_BOOKS);
   const guideDismissedInSessionRef = useRef(false);
   const searchRef = useRef<TextInput>(null);
 
@@ -166,16 +172,20 @@ export default function LibraryScreen() {
   }, []);
 
   const load = useCallback(async () => {
-    const [bookRows, positionRows, shelfRows, shelfItemRows] = await Promise.all([
+    const [bookRows, positionRows, shelfRows, shelfItemRows, banglaData] = await Promise.all([
       listBooks(),
       listActiveReadingPositions(),
       listShelves(),
       listShelfItems(),
+      fetchBanglaBooks({ limit: 20 }).catch(() => ({ books: FALLBACK_BANGLA_BOOKS, total: FALLBACK_BANGLA_BOOKS.length })),
     ]);
     setBooks(bookRows);
     setPositions(positionRows);
     setShelves(shelfRows);
     setShelfItems(shelfItemRows);
+    if (banglaData.books && banglaData.books.length > 0) {
+      setBanglaBooks(banglaData.books);
+    }
     setLoaded(true);
   }, []);
 
@@ -226,11 +236,46 @@ export default function LibraryScreen() {
 
   const trimmedQuery = query.trim().toLowerCase();
   const isSearching = trimmedQuery.length > 0;
-  const searchResults = isSearching
-    ? books.filter(
-        (b) => b.title.toLowerCase().includes(trimmedQuery) || b.author.toLowerCase().includes(trimmedQuery),
+  const searchResults = useMemo(() => {
+    if (!isSearching) return [];
+    const englishMatches = books.filter(
+      (b) =>
+        b.title.toLowerCase().includes(trimmedQuery) ||
+        b.author.toLowerCase().includes(trimmedQuery),
+    );
+    const banglaMatches: BookRow[] = banglaBooks
+      .filter(
+        (b) =>
+          b.title.toLowerCase().includes(trimmedQuery) ||
+          b.author.toLowerCase().includes(trimmedQuery) ||
+          (b.synopsis && b.synopsis.toLowerCase().includes(trimmedQuery)),
       )
-    : [];
+      .map((b) => ({
+        id: b.id,
+        title: b.title,
+        author: b.author,
+        sourceLanguage: 'bn',
+        synopsis: b.synopsis,
+        totalChapters: b.totalChapters,
+        isAvailable: true,
+        textUrl: '',
+        coverUrl: b.coverUrl,
+        gutenbergId: null,
+        chapter1Anchor: null,
+        categories: [b.genre],
+        source: 'bangla_api',
+      }));
+
+    const seenIds = new Set<string>();
+    const combined: BookRow[] = [];
+    for (const b of [...banglaMatches, ...englishMatches]) {
+      if (!seenIds.has(b.id)) {
+        seenIds.add(b.id);
+        combined.push(b);
+      }
+    }
+    return combined;
+  }, [books, banglaBooks, isSearching, trimmedQuery]);
 
   // Stable per-book tone slot without an O(n) indexOf per rendered spine —
   // matters once the remote catalog puts hundreds of rows on the shelf.
@@ -328,18 +373,29 @@ export default function LibraryScreen() {
         // the data array swaps (e.g. applying a category filter), leaving a
         // blank shelf. Windowing above already keeps mounting cheap.
         getItemLayout={(_, index) => ({ length: SPINE_SLOT_WIDTH, offset: SPINE_SLOT_WIDTH * index, index })}
-        renderItem={({ item: book, index: i }) => (
-          <View style={{ marginRight: spacing.md }}>
-            <BookSpine
-              bookId={book.id}
-              title={book.title}
-              coverUrl={book.coverUrl}
-              toneIndex={toneIndexById.get(book.id) ?? 0}
-              rotateDeg={ROW_ROTATIONS[i % ROW_ROTATIONS.length]}
-              onPress={() => router.push({ pathname: '/book/[id]', params: { id: book.id } })}
-            />
-          </View>
-        )}
+        renderItem={({ item: book, index: i }) => {
+          const isBangla = book.source === 'bangla_api' || book.sourceLanguage === 'bn';
+          const handlePress = () => {
+            if (isBangla) {
+              const slug = book.id.startsWith('bn-') ? book.id.slice(3) : book.id;
+              router.push({ pathname: '/bangla/[slug]', params: { slug } } as any);
+            } else {
+              router.push({ pathname: '/book/[id]', params: { id: book.id } });
+            }
+          };
+          return (
+            <View style={{ marginRight: spacing.md }}>
+              <BookSpine
+                bookId={book.id}
+                title={book.title}
+                coverUrl={book.coverUrl}
+                toneIndex={toneIndexById.get(book.id) ?? i}
+                rotateDeg={ROW_ROTATIONS[i % ROW_ROTATIONS.length]}
+                onPress={handlePress}
+              />
+            </View>
+          );
+        }}
       />
       <View style={{ marginTop: spacing.sm, marginBottom: spacing.xl }}>
         <WoodenPlank width={screenWidth - spacing.xl * 2} />
@@ -566,6 +622,42 @@ export default function LibraryScreen() {
           {activeCategory ? 'No books in this category yet.' : 'No books yet.'}
         </Text>
       )}
+
+      {/* Bangla Literature shelf — dedicated shelf for Bengali classics */}
+      <View>
+        <View style={[styles.shelfHeader, { marginBottom: spacing.md }]}>
+          <Text style={[typography.banglaEyebrowLabel, { color: colors.fawn }]}>বাংলা সাহিত্য</Text>
+          <Pressable
+            onPress={() => router.push({ pathname: '/bangla' } as any)}
+            hitSlop={8}
+            style={styles.filterHeader}
+          >
+            <Text style={[typography.banglaButtonLabel, { color: colors.progressLabel, fontSize: 13 }]}>সবগুলো দেখুন →</Text>
+          </Pressable>
+        </View>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          overScrollMode="never"
+          contentContainerStyle={[styles.shelfRow, { marginBottom: spacing.sm }]}
+        >
+          {banglaBooks.map((b, i) => (
+            <View key={b.id} style={{ marginRight: spacing.md }}>
+              <BookSpine
+                bookId={b.id}
+                title={b.title}
+                coverUrl={b.coverUrl}
+                toneIndex={i}
+                rotateDeg={ROW_ROTATIONS[i % ROW_ROTATIONS.length]}
+                onPress={() => router.push({ pathname: '/bangla/[slug]', params: { slug: b.slug } } as any)}
+              />
+            </View>
+          ))}
+        </ScrollView>
+        <View style={{ marginBottom: spacing.xl }}>
+          <WoodenPlank width={screenWidth - spacing.xl * 2} />
+        </View>
+      </View>
 
       {/* Scripture shelf — same shelf/spine visual language as "All books",
           just fixed entries that aren't part of the books catalog. Not gated

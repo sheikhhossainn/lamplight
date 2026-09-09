@@ -2,6 +2,7 @@ import { Image } from 'expo-image';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { isBengaliText } from '@/theme/typography';
 import { useTheme } from '@/theme/ThemeProvider';
 
 // Exact per-book cover colors from the shipped mockup (Lamplight Mobile App.dc.html).
@@ -94,7 +95,13 @@ export function BookSpine({
             onError={() => setCoverFailed(true)}
           />
         ) : (
-          <Text numberOfLines={3} style={[typography.bookSpineTitle, { color: titleColor }]}>
+          <Text
+            numberOfLines={3}
+            style={[
+              isBengaliText(title) ? typography.banglaBookSpineTitle : typography.bookSpineTitle,
+              { color: titleColor },
+            ]}
+          >
             {title}
           </Text>
         )}

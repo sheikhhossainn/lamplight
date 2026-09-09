@@ -55,6 +55,54 @@ export const LamplightTypography = {
     lineHeight: 31, // 17 * 1.85 — never go below 17px or shrink this ratio
     letterSpacing: 0,
   },
+  banglaReadingBody: {
+    fontFamily: FontFamily.loraRegular,
+    fontSize: 19,
+    lineHeight: 39, // generous clearance for Bengali conjuncts and Matra
+    letterSpacing: 0,
+  },
+  banglaScreenTitle: {
+    fontFamily: FontFamily.loraRegular,
+    fontSize: 26,
+    lineHeight: 36,
+    letterSpacing: 0,
+  },
+  banglaBookCoverTitle: {
+    fontFamily: FontFamily.loraSemiBold,
+    fontSize: 22,
+    lineHeight: 28,
+    letterSpacing: 0,
+  },
+  banglaBookSpineTitle: {
+    fontFamily: FontFamily.loraSemiBold,
+    fontSize: 12,
+    lineHeight: 16,
+    letterSpacing: 0,
+  },
+  banglaUiRowTitle: {
+    fontFamily: FontFamily.manropeSemiBold,
+    fontSize: 17,
+    lineHeight: 24,
+    letterSpacing: 0,
+  },
+  banglaButtonLabel: {
+    fontFamily: FontFamily.manropeBold,
+    fontSize: 16,
+    lineHeight: 22,
+    letterSpacing: 0,
+  },
+  banglaMetadataCaption: {
+    fontFamily: FontFamily.manropeRegular,
+    fontSize: 14,
+    lineHeight: 21,
+    letterSpacing: 0,
+  },
+  banglaEyebrowLabel: {
+    fontFamily: FontFamily.manropeBold,
+    fontSize: 13,
+    lineHeight: 18,
+    letterSpacing: 0.2,
+  },
   quoteShareCard: {
     fontFamily: FontFamily.loraItalicMedium,
     fontSize: 22,
@@ -121,3 +169,19 @@ export const LamplightTypography = {
 } as const satisfies Record<string, TextStyle>;
 
 export type LamplightTypographyKey = keyof typeof LamplightTypography;
+
+export function getReadingTextStyle(language?: string): TextStyle {
+  return language === 'bn' ? LamplightTypography.banglaReadingBody : LamplightTypography.readingBody;
+}
+
+// Bengali script detection (\u0980-\u09FF)
+export function isBengaliText(str?: string | null): boolean {
+  if (!str) return false;
+  return /[\u0980-\u09FF]/.test(str);
+}
+
+// Converts Latin numbers (0-9) to Bengali digits (০-৯)
+export function toBengaliNumerals(num: number | string): string {
+  const bengaliDigits = ['০', '১', '২', '৩', '৪', '৫', '৬', '৭', '৮', '৯'];
+  return String(num).replace(/[0-9]/g, (digit) => bengaliDigits[Number(digit)] ?? digit);
+}

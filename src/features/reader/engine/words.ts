@@ -5,15 +5,16 @@ export function tokenizeParagraph(paragraph: string): string[] {
 }
 
 export function cleanWordForLookup(token: string): string {
-  return token.replace(/^[^A-Za-z']+|[^A-Za-z']+$/g, '');
+  return token.replace(/^[^A-Za-z\u0980-\u09FF']+|[^A-Za-z\u0980-\u09FF']+$/g, '');
 }
 
 // Splits a paragraph into sentence chunks (each keeping its trailing
 // punctuation and space), so quote selection can operate at sentence
-// granularity instead of grabbing a whole paragraph. Falls back to the whole
+// granularity instead of grabbing a whole paragraph. Recognizes Latin (.!?)
+// and Bengali Dari (। \u0964, ॥ \u0965) terminators. Falls back to the whole
 // paragraph as one chunk when there's no sentence-ending punctuation.
 export function splitIntoSentences(paragraph: string): string[] {
-  const matches = paragraph.match(/[^.!?]+[.!?]+["'’”)\]]*\s*|[^.!?]+$/g);
+  const matches = paragraph.match(/[^.!?\u0964\u0965]+[.!?\u0964\u0965]+["'’”)\]]*\s*|[^.!?\u0964\u0965]+$/g);
   return matches && matches.length > 0 ? matches : [paragraph];
 }
 

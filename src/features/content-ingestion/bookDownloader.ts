@@ -26,7 +26,7 @@ function resolveDirectUrl(textUrl: string): string {
 export async function getBookText(
   bookId: string,
   title: string,
-  textUrl: string,
+  textUrl?: string | null,
   chapter1Anchor?: string,
 ): Promise<IngestedBook> {
   const cached = bookCache.get(bookId);
@@ -37,6 +37,21 @@ export async function getBookText(
     const book = JSON.parse(await cacheFile.text()) as IngestedBook;
     bookCache.set(bookId, book);
     return book;
+  }
+
+  // Auto-download Bangla book if opening directly
+  if (bookId.startsWith('bn-')) {
+    const { fetchBanglaBookDetail } = await import('@/features/content-ingestion/banglaApi');
+    const { downloadBanglaBook } = await import('@/features/content-ingestion/banglaDownloader');
+    const slug = bookId.replace(/^bn-/, '');
+    const detail = await fetchBanglaBookDetail(slug);
+    const ingested = await downloadBanglaBook(detail);
+    bookCache.set(bookId, ingested);
+    return ingested;
+  }
+
+  if (!textUrl) {
+    throw new Error(`No text source available for "${title}"`);
   }
 
   // Guard the known bad-data case (see toBulkRow): a text/plain URL that's

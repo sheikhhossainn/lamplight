@@ -18,7 +18,7 @@ export default function SplashScreen() {
   // Root layout already resolved the has-onboarded flag before this route
   // could mount, so this is synchronous — no flash of the splash screen.
   if (hasCompletedOnboarding()) {
-    return <Redirect href="/library" />;
+    return <Redirect href={'/homescreen' as any} />;
   }
 
   // The exit is handled by the navigator's fade animation (see root layout) —

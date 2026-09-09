@@ -15,6 +15,7 @@ export type BookRow = {
   // Raw Gutendex subjects/bookshelves for this book; mapped to canonical
   // filter buckets by features/content-ingestion/bookCategories.ts.
   categories: string[];
+  source?: string;
 };
 
 type BookSqlRow = {
@@ -30,6 +31,7 @@ type BookSqlRow = {
   gutenberg_id: number | null;
   chapter1_anchor: string | null;
   categories: string | null;
+  source?: string | null;
 };
 
 // Categories are stored as a JSON string array; tolerate empty/legacy rows.
@@ -57,6 +59,7 @@ function fromSqlRow(row: BookSqlRow): BookRow {
     gutenbergId: row.gutenberg_id,
     chapter1Anchor: row.chapter1_anchor,
     categories: parseCategories(row.categories),
+    source: row.source ?? 'catalog',
   };
 }
 
@@ -136,3 +139,125 @@ export async function updateBookTotalChapters(bookId: string, totalChapters: num
   const db = await getDb();
   await db.runAsync('UPDATE books SET total_chapters = ? WHERE id = ?', [totalChapters, bookId]);
 }
+
+export type BanglaChapterRow = {
+  bookId: string;
+  chapterIndex: number;
+  title: string;
+  slug: string;
+  isDownloaded: boolean;
+};
+
+type BanglaChapterSqlRow = {
+  book_id: string;
+  chapter_index: number;
+  title: string;
+  slug: string;
+  is_downloaded: number;
+};
+
+export async function upsertBanglaBook(input: {
+  id: string;
+  title: string;
+  author: string;
+  synopsis?: string;
+  totalChapters: number;
+  coverUrl?: string | null;
+  categories?: string[];
+  isAvailable?: boolean;
+}): Promise<BookRow> {
+  const db = await getDb();
+  await db.runAsync(
+    `INSERT INTO books (id, title, author, source_language, synopsis, total_chapters, is_available, text_url, cover_url, gutenberg_id, chapter1_anchor, categories, source)
+     VALUES (?, ?, ?, 'bn', ?, ?, ?, '', ?, NULL, NULL, ?, 'bangla_api')
+     ON CONFLICT(id) DO UPDATE SET
+       title = excluded.title,
+       author = excluded.author,
+       synopsis = excluded.synopsis,
+       total_chapters = excluded.total_chapters,
+       is_available = excluded.is_available,
+       cover_url = COALESCE(excluded.cover_url, books.cover_url),
+       categories = excluded.categories,
+       source = 'bangla_api'`,
+    [
+      input.id,
+      input.title,
+      input.author,
+      input.synopsis ?? '',
+      input.totalChapters,
+      input.isAvailable ? 1 : 0,
+      input.coverUrl ?? null,
+      JSON.stringify(input.categories ?? []),
+    ],
+  );
+  return {
+    id: input.id,
+    title: input.title,
+    author: input.author,
+    sourceLanguage: 'bn',
+    synopsis: input.synopsis ?? '',
+    totalChapters: input.totalChapters,
+    isAvailable: Boolean(input.isAvailable),
+    textUrl: '',
+    coverUrl: input.coverUrl ?? null,
+    gutenbergId: null,
+    chapter1Anchor: null,
+    categories: input.categories ?? [],
+    source: 'bangla_api',
+  };
+}
+
+export async function listBanglaBooks(): Promise<BookRow[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<BookSqlRow>(
+    "SELECT * FROM books WHERE source = 'bangla_api' OR source_language = 'bn' ORDER BY rowid ASC",
+  );
+  return rows.map(fromSqlRow);
+}
+
+export async function saveBanglaChapters(
+  bookId: string,
+  chapters: Array<{ index: number; title: string; slug: string }>,
+): Promise<void> {
+  const db = await getDb();
+  for (const ch of chapters) {
+    await db.runAsync(
+      `INSERT INTO bangla_chapters (book_id, chapter_index, title, slug, is_downloaded)
+       VALUES (?, ?, ?, ?, 0)
+       ON CONFLICT(book_id, chapter_index) DO UPDATE SET
+         title = excluded.title,
+         slug = excluded.slug`,
+      [bookId, ch.index, ch.title, ch.slug],
+    );
+  }
+}
+
+export async function listBanglaChapters(bookId: string): Promise<BanglaChapterRow[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<BanglaChapterSqlRow>(
+    'SELECT * FROM bangla_chapters WHERE book_id = ? ORDER BY chapter_index ASC',
+    [bookId],
+  );
+  return rows.map((r) => ({
+    bookId: r.book_id,
+    chapterIndex: r.chapter_index,
+    title: r.title,
+    slug: r.slug,
+    isDownloaded: r.is_downloaded === 1,
+  }));
+}
+
+export async function markBanglaChapterDownloaded(bookId: string, chapterIndex: number): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    'UPDATE bangla_chapters SET is_downloaded = 1 WHERE book_id = ? AND chapter_index = ?',
+    [bookId, chapterIndex],
+  );
+}
+
+export async function markBanglaBookDownloaded(bookId: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync('UPDATE books SET is_available = 1 WHERE id = ?', [bookId]);
+  await db.runAsync('UPDATE bangla_chapters SET is_downloaded = 1 WHERE book_id = ?', [bookId]);
+}
+

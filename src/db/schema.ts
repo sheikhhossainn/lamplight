@@ -174,4 +174,17 @@ export const MIGRATIONS: string[] = [
     created_at INTEGER NOT NULL
   );
   `,
+  // v10 — Bangla books library support: origin source tracking and local chapter TOC storage.
+  `
+  ALTER TABLE books ADD COLUMN source TEXT NOT NULL DEFAULT 'catalog';
+
+  CREATE TABLE IF NOT EXISTS bangla_chapters (
+    book_id TEXT NOT NULL,
+    chapter_index INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    slug TEXT NOT NULL,
+    is_downloaded INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (book_id, chapter_index)
+  );
+  `,
 ];

@@ -48,7 +48,7 @@ const SLIDES: Slide[] = [
 function finishOnboarding() {
   markOnboardingComplete();
   logEvent('onboarding_complete');
-  router.replace('/library');
+  router.replace('/homescreen' as any);
 }
 
 function ReadIllustration() {

@@ -44,7 +44,7 @@ import {
   setMeasuredGlyphWidths,
 } from '@/features/reader/engine/glyphWidths';
 import { sentenceAtOffset } from '@/features/reader/engine/words';
-import { getBookText } from '@/features/content-ingestion/bookDownloader';
+import { getBookText, isBookCached } from '@/features/content-ingestion/bookDownloader';
 import { logEvent } from '@/features/analytics/analytics';
 import { BookFormatError, type IngestedBook } from '@/features/content-ingestion/textParser';
 import { getBook, updateBookTotalChapters, type BookRow } from '@/db/repositories/books';
@@ -56,7 +56,7 @@ import { LanguagePicker } from '@/components/LanguagePicker';
 import { ReaderGuideModal } from '@/features/reader/components/ReaderGuideModal';
 import { ReaderMenuModal } from '@/features/reader/components/ReaderMenuModal';
 import { setTargetLanguage, targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
-import { READING_FONT_SIZE_PX, READING_LINE_HEIGHT_PX } from '@/features/settings/readingPrefs';
+import { getReadingFontSize, getReadingLineHeight, READING_FONT_SIZE_PX, READING_LINE_HEIGHT_PX } from '@/features/settings/readingPrefs';
 import { getReadingTheme, useReadingTheme } from '@/features/settings/readingTheme';
 import { requestThemeChange } from '@/features/settings/themeTransition';
 import { isPremiumUser } from '@/features/subscription/subscriptionState';
@@ -326,8 +326,8 @@ export default function ReaderScreen() {
     transform: [{ translateX: swipeArrowX.value }],
   }));
 
-  const readingFontSizePx = READING_FONT_SIZE_PX;
-  const readingLineHeight = READING_LINE_HEIGHT_PX;
+  const readingFontSizePx = getReadingFontSize(book?.sourceLanguage);
+  const readingLineHeight = getReadingLineHeight(book?.sourceLanguage);
   const targetLanguage = useTargetLanguage();
 
   const sharedTheme = useReadingTheme();
@@ -386,22 +386,37 @@ export default function ReaderScreen() {
         setStartPosition({ chapterIndex: 0, pageIndex: 0 });
       }
 
-      if (!bookRow || !bookRow.textUrl) {
+      const isBangla =
+        bookRow?.source === 'bangla_api' ||
+        bookRow?.id.startsWith('bn-') ||
+        (typeof bookId === 'string' && bookId.startsWith('bn-'));
+
+      if (!bookRow && !isBangla) {
         setBookTextState({ status: 'unavailable' });
         return;
       }
+
+      if (bookRow && !bookRow.textUrl && !isBookCached(bookRow.id) && !isBangla) {
+        setBookTextState({ status: 'unavailable' });
+        return;
+      }
+
       try {
         const ingested = await getBookText(
-          bookRow.id,
-          bookRow.title,
-          bookRow.textUrl,
-          bookRow.chapter1Anchor ?? undefined,
+          bookRow?.id ?? bookId,
+          bookRow?.title ?? 'বাংলা গ্রন্থ',
+          bookRow?.textUrl,
+          bookRow?.chapter1Anchor ?? undefined,
         );
         if (cancelled) return;
         setBookTextState({ status: 'ready', book: ingested });
+        if (!bookRow && isBangla) {
+          const freshRow = await getBook(bookId);
+          if (freshRow && !cancelled) setBook(freshRow);
+        }
         // Bulk-imported books sync with an unknown (0) chapter count — now
         // that it's actually been parsed, fill in the real number locally.
-        if (bookRow.totalChapters === 0 && ingested.chapters.length > 0) {
+        if (bookRow && bookRow.totalChapters === 0 && ingested.chapters.length > 0) {
           updateBookTotalChapters(bookRow.id, ingested.chapters.length);
         }
       } catch (err) {
