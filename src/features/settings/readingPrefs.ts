@@ -15,10 +15,10 @@ export const READING_FONT_SIZE_PX = 18;
 export const READING_LINE_HEIGHT_PX = Math.round(READING_FONT_SIZE_PX * 1.85); // 33
 
 // Bengali script features prominent top hanging lines (Matra), ascenders,
-// descenders, and complex conjuncts (যুক্তাক্ষর). An optical body size of 20px
-// and line-height ratio of 2.1 prevents diacritics and ligatures from colliding on-device.
-export const BANGLA_READING_FONT_SIZE_PX = 20;
-export const BANGLA_READING_LINE_HEIGHT_PX = Math.round(BANGLA_READING_FONT_SIZE_PX * 2.05); // 41
+// descenders, and complex conjuncts (যুক্তাক্ষর). Matching the 18px body size with
+// a balanced 35px line-height (1.95 ratio) ensures comfortable reading without feeling oversized.
+export const BANGLA_READING_FONT_SIZE_PX = 18;
+export const BANGLA_READING_LINE_HEIGHT_PX = Math.round(BANGLA_READING_FONT_SIZE_PX * 1.95); // 35
 
 export function getReadingFontSize(language?: string): number {
   return language === 'bn' ? BANGLA_READING_FONT_SIZE_PX : READING_FONT_SIZE_PX;

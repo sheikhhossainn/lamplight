@@ -234,6 +234,38 @@ export default function LibraryScreen() {
     if (!syncing) void load();
   }, [syncing, load]);
 
+  // Sync Bangla shelf with the active category filter (e.g. History -> ইতিহাস)
+  useEffect(() => {
+    let active = true;
+    const categoryGenreMap: Record<string, string> = {
+      history: 'ইতিহাস',
+      fiction: 'উপন্যাস',
+      mystery: 'গোয়েন্দা',
+      'scifi-fantasy': 'সায়েন্স ফিকশন',
+      horror: 'ভৌতিক',
+      philosophy: 'প্রবন্ধ ও গবেষণা',
+      religion: 'ধর্ম ও দর্শন',
+      'poetry-drama': 'কবিতা',
+      children: 'কিশোর সাহিত্য',
+    };
+
+    const targetGenre = activeCategory ? categoryGenreMap[activeCategory] : undefined;
+
+    fetchBanglaBooks({ limit: 20, genre: targetGenre })
+      .then((res) => {
+        if (active) {
+          setBanglaBooks(res.books.length > 0 ? res.books : FALLBACK_BANGLA_BOOKS);
+        }
+      })
+      .catch(() => {
+        if (active) setBanglaBooks(FALLBACK_BANGLA_BOOKS);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [activeCategory]);
+
   const trimmedQuery = query.trim().toLowerCase();
   const isSearching = trimmedQuery.length > 0;
   const searchResults = useMemo(() => {
@@ -626,13 +658,40 @@ export default function LibraryScreen() {
       {/* Bangla Literature shelf — dedicated shelf for Bengali classics */}
       <View>
         <View style={[styles.shelfHeader, { marginBottom: spacing.md }]}>
-          <Text style={[typography.banglaEyebrowLabel, { color: colors.fawn }]}>বাংলা সাহিত্য</Text>
+          <Text style={[typography.banglaEyebrowLabel, { color: colors.fawn }]}>
+            {activeCategory === 'history'
+              ? 'বাংলা ইতিহাস'
+              : activeCategory === 'fiction'
+                ? 'বাংলা উপন্যাস'
+                : activeCategory === 'mystery'
+                  ? 'বাংলা গোয়েন্দা ও রহস্য'
+                  : activeCategory === 'poetry-drama'
+                    ? 'বাংলা কবিতা ও নাটক'
+                    : 'বাংলা সাহিত্য'}
+          </Text>
           <Pressable
-            onPress={() => router.push({ pathname: '/bangla' } as any)}
+            onPress={() => {
+              const categoryGenreMap: Record<string, string> = {
+                history: 'ইতিহাস',
+                fiction: 'উপন্যাস',
+                mystery: 'গোয়েন্দা',
+                'scifi-fantasy': 'সায়েন্স ফিকশন',
+                horror: 'ভৌতিক',
+                philosophy: 'প্রবন্ধ ও গবেষণা',
+                religion: 'ধর্ম ও দর্শন',
+                'poetry-drama': 'কবিতা',
+                children: 'কিশোর সাহিত্য',
+              };
+              const targetGenre = activeCategory ? categoryGenreMap[activeCategory] : undefined;
+              router.push({
+                pathname: '/bangla',
+                params: targetGenre ? { genre: targetGenre } : undefined,
+              } as any);
+            }}
             hitSlop={8}
             style={styles.filterHeader}
           >
-            <Text style={[typography.banglaButtonLabel, { color: colors.progressLabel, fontSize: 13 }]}>সবগুলো দেখুন →</Text>
+            <Text style={[typography.banglaButtonLabel, { color: colors.progressLabel }]}>সবগুলো দেখুন →</Text>
           </Pressable>
         </View>
         <ScrollView

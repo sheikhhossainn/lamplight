@@ -1,4 +1,4 @@
-import { router, useFocusEffect } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -30,6 +30,7 @@ const { width: screenWidth } = Dimensions.get('window');
 export default function BanglaLibraryScreen() {
   const { colors, typography, spacing, radius, layout } = useTheme();
   const insets = useSafeAreaInsets();
+  const params = useLocalSearchParams<{ genre?: string }>();
 
   const [books, setBooks] = useState<BanglaBookSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -37,7 +38,7 @@ export default function BanglaLibraryScreen() {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [query, setQuery] = useState('');
-  const [activeGenre, setActiveGenre] = useState<string | null>(null);
+  const [activeGenre, setActiveGenre] = useState<string | null>(params.genre || null);
   const [genres, setGenres] = useState<string[]>([]);
   const [downloadedSet, setDownloadedSet] = useState<Set<string>>(new Set());
 
@@ -97,8 +98,12 @@ export default function BanglaLibraryScreen() {
   useFocusEffect(
     useCallback(() => {
       void loadTaxonomies();
-      void loadBooks(1, false, query, activeGenre);
-    }, [loadTaxonomies, loadBooks]),
+      const targetGenre = params.genre !== undefined ? (params.genre || null) : activeGenre;
+      if (params.genre !== undefined && params.genre !== activeGenre) {
+        setActiveGenre(params.genre || null);
+      }
+      void loadBooks(1, false, query, targetGenre);
+    }, [loadTaxonomies, loadBooks, params.genre, activeGenre, query]),
   );
 
   const handleQueryChange = (text: string) => {
@@ -111,6 +116,7 @@ export default function BanglaLibraryScreen() {
 
   const handleGenreSelect = (genre: string | null) => {
     setActiveGenre(genre);
+    setPage(1);
     void loadBooks(1, false, query, genre);
   };
 
@@ -227,9 +233,9 @@ export default function BanglaLibraryScreen() {
                 >
                   <Text
                     style={[
-                      typography.banglaButtonLabel,
+                      typography.banglaUiRowTitle,
                       {
-                        fontSize: 13,
+                        fontSize: 12,
                         color: on ? colors.primaryDark : colors.umber,
                       },
                     ]}
@@ -247,7 +253,7 @@ export default function BanglaLibraryScreen() {
       {loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.flameAmber} />
-          <Text style={[typography.banglaMetadataCaption, { color: colors.fawn, marginTop: spacing.md, fontSize: 14 }]}>
+          <Text style={[typography.banglaMetadataCaption, { color: colors.fawn, marginTop: spacing.md }]}>
             গ্রন্থতালিকা লোড হচ্ছে…
           </Text>
         </View>
@@ -300,7 +306,7 @@ export default function BanglaLibraryScreen() {
                     <Text
                       style={[
                         typography.banglaEyebrowLabel,
-                        { color: colors.flameAmber, fontSize: 11 },
+                        { color: colors.flameAmber },
                       ]}
                     >
                       {item.genre}
@@ -319,19 +325,19 @@ export default function BanglaLibraryScreen() {
                   </View>
 
                   <Text
-                    style={[typography.banglaUiRowTitle, { color: colors.ink, fontSize: 17, marginTop: 4 }]}
+                    style={[typography.banglaUiRowTitle, { color: colors.ink, marginTop: 4 }]}
                     numberOfLines={1}
                   >
                     {item.title}
                   </Text>
                   <Text
-                    style={[typography.banglaMetadataCaption, { color: colors.umber, marginTop: 2, fontSize: 14 }]}
+                    style={[typography.banglaMetadataCaption, { color: colors.umber, marginTop: 2 }]}
                     numberOfLines={1}
                   >
                     {item.author}
                   </Text>
                   <Text
-                    style={[typography.banglaMetadataCaption, { color: colors.fawn, fontSize: 13, marginTop: 6, lineHeight: 19 }]}
+                    style={[typography.banglaMetadataCaption, { color: colors.fawn, marginTop: 6, lineHeight: 18 }]}
                     numberOfLines={2}
                   >
                     {item.synopsis || 'কোনো বিবরণ নেই'}
@@ -339,7 +345,7 @@ export default function BanglaLibraryScreen() {
                   <Text
                     style={[
                       typography.banglaEyebrowLabel,
-                      { color: colors.fawn, fontSize: 11, marginTop: 8 },
+                      { color: colors.fawn, marginTop: 8 },
                     ]}
                   >
                     {item.totalChapters > 0 ? `${toBengaliNumerals(item.totalChapters)}টি অধ্যায়` : 'অধ্যায় তালিকা দেখুন'}
@@ -350,10 +356,10 @@ export default function BanglaLibraryScreen() {
           }}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <Text style={[typography.banglaUiRowTitle, { color: colors.umber, fontSize: 17 }]}>
+              <Text style={[typography.banglaUiRowTitle, { color: colors.umber }]}>
                 কোনো বই পাওয়া যায়নি
               </Text>
-              <Text style={[typography.banglaMetadataCaption, { color: colors.fawn, marginTop: 4, fontSize: 14 }]}>
+              <Text style={[typography.banglaMetadataCaption, { color: colors.fawn, marginTop: 4 }]}>
                 ভিন্ন শব্দ অথবা লেখকের নাম দিয়ে আবার চেষ্টা করুন
               </Text>
             </View>

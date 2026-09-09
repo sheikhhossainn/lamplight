@@ -178,7 +178,7 @@ export default function BanglaBookDetailScreen() {
         <Text
           style={[
             typography.banglaMetadataCaption,
-            { color: colors.umber, textAlign: 'center', marginTop: 6, fontSize: 16 },
+            { color: colors.umber, textAlign: 'center', marginTop: 4 },
           ]}
         >
           {detail.author} · {detail.genre}
@@ -188,7 +188,7 @@ export default function BanglaBookDetailScreen() {
           <Text
             style={[
               typography.banglaMetadataCaption,
-              { color: colors.flameAmber, textAlign: 'center', marginTop: 8, fontSize: 14, fontWeight: '500' },
+              { color: colors.flameAmber, textAlign: 'center', marginTop: 8, fontWeight: '500' },
             ]}
           >
             পঠিত: {toBengaliNumerals(Math.round(readingPos.percentComplete * 100))}% · অধ্যায় {toBengaliNumerals(readingPos.chapterIndex + 1)}
@@ -214,12 +214,12 @@ export default function BanglaBookDetailScreen() {
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
               <ActivityIndicator size="small" color={colors.flameAmber} style={{ marginRight: 10 }} />
               <View style={{ flex: 1 }}>
-                <Text style={[typography.banglaUiRowTitle, { color: colors.ink, fontSize: 15 }]}>
+                <Text style={[typography.banglaUiRowTitle, { color: colors.ink }]}>
                   {downloadProgress && downloadProgress.total > 0
                     ? `অধ্যায় ${toBengaliNumerals(downloadProgress.current)} / ${toBengaliNumerals(downloadProgress.total)} সংরক্ষিত হচ্ছে…`
                     : 'বইটি প্রস্তুত ও ডাউনলোড হচ্ছে…'}
                 </Text>
-                <Text style={[typography.banglaMetadataCaption, { color: colors.fawn, fontSize: 13, marginTop: 2 }]}>
+                <Text style={[typography.banglaMetadataCaption, { color: colors.fawn, marginTop: 2 }]}>
                   {downloadProgress && downloadProgress.total > 0
                     ? `${toBengaliNumerals(Math.round((downloadProgress.current / downloadProgress.total) * 100))}% সম্পন্ন`
                     : 'দয়া করে অপেক্ষা করুন'}
@@ -253,7 +253,7 @@ export default function BanglaBookDetailScreen() {
               },
             ]}
           >
-            <Text style={[typography.banglaButtonLabel, { color: colors.primaryDark, fontSize: 16 }]}>
+            <Text style={[typography.banglaButtonLabel, { color: colors.primaryDark }]}>
               {isDownloaded
                 ? readingPos
                   ? 'পড়া চালিয়ে যান'
@@ -271,7 +271,7 @@ export default function BanglaBookDetailScreen() {
               <Text
                 style={[
                   typography.banglaMetadataCaption,
-                  { color: '#2E7D32', fontSize: 13, marginLeft: 6, fontWeight: '500' },
+                  { color: '#2E7D32', marginLeft: 6, fontWeight: '500' },
                 ]}
               >
                 বইটি সম্পূর্ণ ডাউনলোড করা হয়েছে (অফলাইনে প্রস্তুত)
@@ -281,7 +281,7 @@ export default function BanglaBookDetailScreen() {
             <Text
               style={[
                 typography.banglaMetadataCaption,
-                { color: colors.fawn, fontSize: 13, textAlign: 'center' },
+                { color: colors.fawn, textAlign: 'center' },
               ]}
             >
               একবার ডাউনলোড করলেই ইন্টারনেট ছাড়াই যেকোনো সময় পড়তে পারবেন
@@ -299,7 +299,7 @@ export default function BanglaBookDetailScreen() {
           <Text
             style={[
               typography.banglaReadingBody,
-              { color: colors.ink, fontSize: 17, lineHeight: 30, opacity: 0.95 },
+              { color: colors.ink, opacity: 0.95 },
             ]}
           >
             {detail.synopsis}
@@ -321,13 +321,13 @@ export default function BanglaBookDetailScreen() {
                 { borderBottomColor: colors.hairline, borderBottomWidth: i < detail.chapters.length - 1 ? 1 : 0 },
               ]}
             >
-              <Text style={[typography.banglaMetadataCaption, { color: colors.fawn, width: 34, fontSize: 15 }]}>
+              <Text style={[typography.banglaMetadataCaption, { color: colors.fawn, width: 34 }]}>
                 {toBengaliNumerals(i + 1)}.
               </Text>
               <Text
                 style={[
                   typography.banglaUiRowTitle,
-                  { color: colors.ink, flex: 1, fontSize: 16 },
+                  { color: colors.ink, flex: 1 },
                 ]}
                 numberOfLines={1}
               >

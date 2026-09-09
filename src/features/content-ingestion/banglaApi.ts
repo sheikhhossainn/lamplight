@@ -460,10 +460,23 @@ export async function fetchBanglaBooks(params?: {
     }
 
     if (params?.genre && params.genre !== 'All' && params.genre !== 'সব') {
-      whereClauses.push(
-        'b.id IN (SELECT bg.book_id FROM book_genres bg JOIN genres g ON g.id = bg.genre_id WHERE g.name = ? OR g.slug = ?)',
-      );
-      sqlArgs.push(params.genre, params.genre);
+      const g = params.genre.trim();
+      const isHistory =
+        g.toLowerCase() === 'history' ||
+        g === 'ইতিহাস' ||
+        g.includes('ইতিহাস') ||
+        g.includes('মুক্তিযুদ্ধ');
+
+      if (isHistory) {
+        whereClauses.push(
+          "b.id IN (SELECT bg.book_id FROM book_genres bg JOIN genres g ON g.id = bg.genre_id WHERE g.name LIKE '%ইতিহাস%' OR g.name LIKE '%মুক্তিযুদ্ধ%' OR g.slug LIKE '%history%')",
+        );
+      } else {
+        whereClauses.push(
+          'b.id IN (SELECT bg.book_id FROM book_genres bg JOIN genres g ON g.id = bg.genre_id WHERE g.name = ? OR g.slug = ? OR g.name LIKE ?)',
+        );
+        sqlArgs.push(g, g, `%${g}%`);
+      }
     }
 
     if (params?.author) {
@@ -525,7 +538,22 @@ export async function fetchBanglaBooks(params?: {
       list = list.filter((b) => b.title.toLowerCase().includes(q) || b.author.toLowerCase().includes(q));
     }
     if (params?.genre && params.genre !== 'All' && params.genre !== 'সব') {
-      list = list.filter((b) => b.genre === params.genre);
+      const g = params.genre.trim();
+      const isHistory =
+        g.toLowerCase() === 'history' ||
+        g === 'ইতিহাস' ||
+        g.includes('ইতিহাস') ||
+        g.includes('মুক্তিযুদ্ধ');
+      if (isHistory) {
+        list = list.filter(
+          (b) =>
+            b.genre.includes('ইতিহাস') ||
+            b.genre.includes('ঐতিহাসিক') ||
+            b.genre.includes('মুক্তিযুদ্ধ'),
+        );
+      } else {
+        list = list.filter((b) => b.genre === g || b.genre.includes(g));
+      }
     }
     return { books: list, total: list.length };
   }
@@ -664,6 +692,14 @@ export async function fetchBanglaChapterText(chapterSlug: string): Promise<strin
 }
 
 export async function fetchBanglaTaxonomies(): Promise<{ authors: string[]; genres: string[] }> {
+  const EXCLUDED_GENRES = new Set([
+    'English Books',
+    'প্রাপ্তবয়স্কদের বই ১৮+',
+    'অসম্পূর্ণ বই',
+    'পত্রিকা',
+    "Editor's Choice",
+  ]);
+
   try {
     const [genreRows, authorRows] = await Promise.all([
       executeTurso<{ name: string }>(`
@@ -682,17 +718,50 @@ export async function fetchBanglaTaxonomies(): Promise<{ authors: string[]; genr
       `),
     ]);
 
-    const genres = genreRows.map((r) => r.name).filter(Boolean);
+    const rawGenres = genreRows
+      .map((r) => r.name)
+      .filter((name) => Boolean(name) && !EXCLUDED_GENRES.has(name));
+
+    const cleanGenreMap: Record<string, string> = {
+      'ইতিহাস ও সংস্কৃতি': 'ইতিহাস',
+      'বাংলাদেশ ও মুক্তিযুদ্ধ বিষয়ক': 'মুক্তিযুদ্ধ',
+      'থ্রিলার রহস্য রোমাঞ্চ অ্যাডভেঞ্চার': 'থ্রিলার ও রহস্য',
+      'গোয়েন্দা (ডিটেকটিভ)': 'গোয়েন্দা',
+      'কাব্যগ্রন্থ / কবিতা': 'কবিতা',
+      'গল্পগ্রন্থ / গল্পের বই': 'গল্পগ্রন্থ',
+      'ভৌতিক, হরর, ভূতের বই': 'ভৌতিক',
+      'সায়েন্স ফিকশন / বৈজ্ঞানিক কল্পকাহিনী': 'সায়েন্স ফিকশন',
+      'গান / গানের বই': 'গান ও সংগীত',
+      'গণিত, বিজ্ঞান ও প্রযুক্তি': 'বিজ্ঞান ও প্রযুক্তি',
+    };
+
+    const mapped = new Set<string>();
+    // Priority literary categories first
+    mapped.add('উপন্যাস');
+    mapped.add('ইতিহাস');
+    mapped.add('গোয়েন্দা');
+    mapped.add('গল্পগ্রন্থ');
+    mapped.add('কবিতা');
+    mapped.add('কিশোর সাহিত্য');
+    mapped.add('মুক্তিযুদ্ধ');
+    mapped.add('প্রবন্ধ ও গবেষণা');
+
+    for (const g of rawGenres) {
+      const clean = cleanGenreMap[g] || g;
+      mapped.add(clean);
+    }
+
+    const genres = Array.from(mapped);
     const authors = authorRows.map((r) => r.name).filter(Boolean);
 
     return {
-      genres: genres.length > 0 ? genres : Array.from(new Set(FALLBACK_BANGLA_BOOKS.map((b) => b.genre))),
+      genres: genres.length > 0 ? genres : ['উপন্যাস', 'ইতিহাস', 'গল্পগ্রন্থ', 'কবিতা', 'গোয়েন্দা'],
       authors: authors.length > 0 ? authors : Array.from(new Set(FALLBACK_BANGLA_BOOKS.map((b) => b.author))),
     };
   } catch (err) {
     console.warn('[banglaApi] Turso taxonomy fetch failed, falling back:', err);
     return {
-      genres: Array.from(new Set(FALLBACK_BANGLA_BOOKS.map((b) => b.genre))),
+      genres: ['উপন্যাস', 'ইতিহাস', 'গল্পগ্রন্থ', 'কবিতা', 'গোয়েন্দা'],
       authors: Array.from(new Set(FALLBACK_BANGLA_BOOKS.map((b) => b.author))),
     };
   }
