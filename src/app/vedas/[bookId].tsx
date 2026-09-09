@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, Text, View, type ViewToken } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BookmarkIcon, ChevronLeftIcon, ChevronRightIcon, ShareIcon } from '@/components/icons';
@@ -13,7 +13,7 @@ import {
   upsertBibleReadingPosition,
   type BibleHighlight,
 } from '@/db/repositories/bible';
-import { getBookMeta, getBookVerses } from '@/features/vedas-content/vedasData';
+import { getBookMeta, getChapterVerses } from '@/features/vedas-content/vedasData';
 import { TappableWords } from '@/features/reader/components/TappableWords';
 import { WordActionMenu } from '@/features/reader/components/WordActionMenu';
 import { WordTranslationPopup } from '@/features/reader/components/WordTranslationPopup';
@@ -34,6 +34,16 @@ function verseKey(chapter: number, verse: number): string {
   return `${chapter}:${verse}`;
 }
 
+function estimateVedasVerseOffset(verses: FlatVerse[], targetIndex: number): number {
+  let offset = 0;
+  for (let i = 0; i < targetIndex && i < verses.length; i++) {
+    const v = verses[i];
+    const lines = Math.max(1, Math.ceil((v.verse.text?.length ?? 0) / 42));
+    offset += lines * 34 + 56;
+  }
+  return offset;
+}
+
 export default function VedasVerseReaderScreen() {
   const { bookId, jumpChapter, jumpVerse } = useLocalSearchParams<{
     bookId: string;
@@ -46,8 +56,39 @@ export default function VedasVerseReaderScreen() {
   const listRef = useRef<FlatList<FlatVerse>>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const [currentChapter, setCurrentChapter] = useState<number>(() => {
+    return jumpChapter ? Number(jumpChapter) : 1;
+  });
+
+  useEffect(() => {
+    if (jumpChapter) {
+      setCurrentChapter(Number(jumpChapter));
+    }
+  }, [jumpChapter]);
+
+  useEffect(() => {
+    if (!jumpChapter) {
+      void getBibleReadingPosition(bookId).then((pos) => {
+        if (pos?.chapter) {
+          setCurrentChapter(pos.chapter);
+        }
+      });
+    }
+  }, [bookId, jumpChapter]);
+
   const bookMeta = getBookMeta(bookId);
-  const verses = useMemo(() => getBookVerses(bookId), [bookId]);
+  const verses = useMemo(() => getChapterVerses(bookId, currentChapter), [bookId, currentChapter]);
+
+  const changeChapter = useCallback(
+    (newChapter: number) => {
+      if (newChapter < 1 || (bookMeta && newChapter > bookMeta.chapterCount)) return;
+      setCurrentChapter(newChapter);
+      setLandingVerseKey(null);
+      listRef.current?.scrollToOffset({ offset: 0, animated: false });
+      void upsertBibleReadingPosition({ bookId, chapter: newChapter, verse: 1 });
+    },
+    [bookId, bookMeta],
+  );
 
   const [highlights, setHighlights] = useState<BibleHighlight[]>([]);
   const [heldWord, setHeldWord] = useState<HeldWord | null>(null);
@@ -57,7 +98,9 @@ export default function VedasVerseReaderScreen() {
     void listBibleHighlightsForBook(bookId).then(setHighlights);
   }, [bookId]);
 
-  const [landingVerseKey, setLandingVerseKey] = useState<string | null>(null);
+  const [landingVerseKey, setLandingVerseKey] = useState<string | null>(() => {
+    return jumpChapter && jumpVerse ? verseKey(Number(jumpChapter), Number(jumpVerse)) : null;
+  });
   const [isReady, setIsReady] = useState(false);
   const initialScrollDone = useRef(false);
   const isUserInteracting = useRef(false);
@@ -67,15 +110,6 @@ export default function VedasVerseReaderScreen() {
     return () => cancelAnimationFrame(handle);
   }, []);
 
-  const initialTargetIndex = useMemo(() => {
-    if (jumpChapter && jumpVerse) {
-      return verses.findIndex(
-        (v) => v.chapter === Number(jumpChapter) && v.verse.number === Number(jumpVerse),
-      );
-    }
-    return -1;
-  }, [jumpChapter, jumpVerse, verses]);
-
   useEffect(() => {
     void (async () => {
       const existing = await getBibleReadingPosition(bookId);
@@ -83,70 +117,106 @@ export default function VedasVerseReaderScreen() {
       const targetVerse = jumpVerse ? Number(jumpVerse) : (existing?.verse ?? 1);
       await upsertBibleReadingPosition({ bookId, chapter: targetChapter, verse: targetVerse });
     })();
-  }, [bookId]);
+  }, [bookId, jumpChapter, jumpVerse]);
+
+  const visibleIndicesRef = useRef<Set<number>>(new Set());
+  const pendingTargetRef = useRef<{ index: number; key: string } | null>(null);
+  const landingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scrollRetries = useRef(0);
+  const scrollRetryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const performScrollToTarget = useCallback((targetIndex: number) => {
+    if (!listRef.current || targetIndex < 0) return;
+    try {
+      listRef.current.scrollToIndex({
+        index: targetIndex,
+        viewPosition: 0.2,
+        animated: false,
+      });
+    } catch {
+      // Handled by onScrollToIndexFailed
+    }
+  }, []);
+
+  const onScrollToIndexFailed = useCallback(
+    (info: { index: number; highestMeasuredFrameIndex: number; averageItemLength: number }) => {
+      scrollRetries.current += 1;
+      const estimatedOffset = estimateVedasVerseOffset(verses, info.index);
+      listRef.current?.scrollToOffset({
+        offset: Math.max(0, estimatedOffset - 40),
+        animated: false,
+      });
+
+      if (scrollRetryTimer.current) clearTimeout(scrollRetryTimer.current);
+      if (scrollRetries.current <= 5) {
+        const delay = Math.min(60 * scrollRetries.current, 240);
+        scrollRetryTimer.current = setTimeout(() => {
+          performScrollToTarget(info.index);
+        }, delay);
+      }
+    },
+    [verses, performScrollToTarget],
+  );
+
+  const handleTarget = useCallback(
+    (targetIndex: number, targetKey: string) => {
+      setLandingVerseKey(targetKey);
+
+      if (targetIndex < 0) return;
+
+      // If the verse is already fully visible on screen, DO NOT scroll!
+      if (visibleIndicesRef.current.has(targetIndex)) {
+        pendingTargetRef.current = null;
+        if (landingTimerRef.current) clearTimeout(landingTimerRef.current);
+        landingTimerRef.current = setTimeout(() => {
+          setLandingVerseKey(null);
+        }, 3500);
+        return;
+      }
+
+      pendingTargetRef.current = { index: targetIndex, key: targetKey };
+      performScrollToTarget(targetIndex);
+    },
+    [performScrollToTarget],
+  );
 
   useEffect(() => {
     if (!isReady) return;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    let landingTimer: ReturnType<typeof setTimeout> | null = null;
 
-    const performScroll = (targetIndex: number, targetKey: string) => {
-      if (targetIndex > 0) {
-        const schedule = typeof requestIdleCallback === 'function'
-          ? requestIdleCallback
-          : (fn: () => void) => setTimeout(fn, 60);
-        const cancel = typeof cancelIdleCallback === 'function'
-          ? cancelIdleCallback
-          : clearTimeout;
-
-        const idleId = schedule(() => {
-          timer = setTimeout(() => {
-            try {
-              listRef.current?.scrollToIndex({
-                index: targetIndex,
-                viewPosition: 0,
-                animated: true,
-              });
-            } catch {
-              // Gracefully handled by onScrollToIndexFailed
-            }
-            initialScrollDone.current = true;
-            setLandingVerseKey(targetKey);
-            landingTimer = setTimeout(() => {
-              setLandingVerseKey(null);
-            }, 1800);
-          }, 60);
-        });
-        return () => cancel(idleId as any);
-      } else {
-        initialScrollDone.current = true;
-      }
-    };
-
-    if (jumpChapter && jumpVerse) {
-      const cNum = Number(jumpChapter);
+    if (jumpVerse && (jumpChapter === undefined || Number(jumpChapter) === currentChapter)) {
       const vNum = Number(jumpVerse);
       const index = verses.findIndex(
-        (v) => v.chapter === cNum && v.verse.number === vNum,
+        (v) => v.chapter === currentChapter && v.verse.number === vNum,
       );
-      performScroll(index, verseKey(cNum, vNum));
-    } else {
+      handleTarget(index, verseKey(currentChapter, vNum));
+    } else if (!jumpChapter) {
       void getBibleReadingPosition(bookId).then((pos) => {
-        if (pos) {
+        if (pos && pos.chapter === currentChapter) {
           const index = verses.findIndex(
-            (v) => v.chapter === pos.chapter && v.verse.number === pos.verse,
+            (v) => v.chapter === currentChapter && v.verse.number === pos.verse,
           );
-          performScroll(index, verseKey(pos.chapter, pos.verse));
+          handleTarget(index, verseKey(currentChapter, pos.verse));
         } else {
           initialScrollDone.current = true;
         }
       });
     }
+
+    const fallbackTimer = setTimeout(() => {
+      const pending = pendingTargetRef.current;
+      if (pending) {
+        if (!visibleIndicesRef.current.has(pending.index)) {
+          performScrollToTarget(pending.index);
+        }
+      }
+    }, 250);
+
     return () => {
-      if (timer) clearTimeout(timer);
-      if (landingTimer) clearTimeout(landingTimer);
+      if (landingTimerRef.current) clearTimeout(landingTimerRef.current);
+      if (scrollRetryTimer.current) clearTimeout(scrollRetryTimer.current);
+      clearTimeout(fallbackTimer);
     };
-  }, [jumpChapter, jumpVerse, verses, bookId, isReady]);
+  }, [jumpChapter, jumpVerse, verses, bookId, currentChapter, isReady, handleTarget, performScrollToTarget]);
 
   const highlightByVerse = useMemo(
     () => new Map(highlights.map((h) => [verseKey(h.chapter, h.verse), h])),
@@ -199,6 +269,44 @@ export default function VedasVerseReaderScreen() {
     [activeWord, bookId, targetLanguage],
   );
 
+  const persistPositionRef = useRef<(chapter: number, verse: number) => void>(persistPosition);
+  persistPositionRef.current = persistPosition;
+
+  const viewabilityConfig = useRef({
+    itemVisiblePercentThreshold: 40,
+    waitForInteraction: false,
+  }).current;
+
+  const onViewableItemsChanged = useRef(
+    ({ viewableItems }: { viewableItems: ViewToken[] }) => {
+      const visible = new Set<number>();
+      for (const v of viewableItems) {
+        if (v.index !== null) visible.add(v.index);
+      }
+      visibleIndicesRef.current = visible;
+
+      const pending = pendingTargetRef.current;
+      if (pending) {
+        if (visible.has(pending.index)) {
+          pendingTargetRef.current = null;
+          scrollRetries.current = 0;
+          if (scrollRetryTimer.current) clearTimeout(scrollRetryTimer.current);
+
+          if (landingTimerRef.current) clearTimeout(landingTimerRef.current);
+          landingTimerRef.current = setTimeout(() => {
+            setLandingVerseKey(null);
+          }, 3500);
+        } else {
+          performScrollToTarget(pending.index);
+        }
+      }
+
+      if (!isUserInteracting.current) return;
+      const first = viewableItems[0]?.item as FlatVerse | undefined;
+      if (first) persistPositionRef.current(first.chapter, first.verse.number);
+    },
+  ).current;
+
   if (!bookMeta) return <View style={{ flex: 1, backgroundColor: colors.parchment }} />;
 
   return (
@@ -207,76 +315,136 @@ export default function VedasVerseReaderScreen() {
         <Pressable onPress={() => router.back()} hitSlop={12}>
           <ChevronLeftIcon color={colors.ink} />
         </Pressable>
-        <Text style={[typography.screenTitle, { color: colors.ink, marginLeft: spacing.md }]}>{bookMeta.name}</Text>
+        <View style={{ marginLeft: spacing.md, flex: 1 }}>
+          <Text style={[typography.screenTitle, { color: colors.ink }]}>{bookMeta.name}</Text>
+          <Text style={[typography.metadataCaption, { color: colors.fawn }]}>
+            Hymn {currentChapter} of {bookMeta.chapterCount}
+          </Text>
+        </View>
+        {bookMeta.chapterCount > 1 ? (
+          <View style={styles.chapterNavGroup}>
+            <Pressable
+              disabled={currentChapter <= 1}
+              onPress={() => changeChapter(currentChapter - 1)}
+              style={({ pressed }) => [
+                styles.chapterNavBtn,
+                { opacity: currentChapter <= 1 ? 0.3 : pressed ? 0.6 : 1 },
+              ]}
+              hitSlop={8}
+            >
+              <ChevronLeftIcon color={colors.ink} size={18} />
+            </Pressable>
+            <Pressable
+              disabled={currentChapter >= bookMeta.chapterCount}
+              onPress={() => changeChapter(currentChapter + 1)}
+              style={({ pressed }) => [
+                styles.chapterNavBtn,
+                { opacity: currentChapter >= bookMeta.chapterCount ? 0.3 : pressed ? 0.6 : 1 },
+              ]}
+              hitSlop={8}
+            >
+              <ChevronRightIcon color={colors.ink} size={18} />
+            </Pressable>
+          </View>
+        ) : null}
       </View>
 
       {isReady ? (
         <FlatList
           ref={listRef}
-        data={verses}
-        keyExtractor={(item) => verseKey(item.chapter, item.verse.number)}
-        initialNumToRender={6}
-        maxToRenderPerBatch={8}
-        windowSize={5}
-        removeClippedSubviews={true}
-        updateCellsBatchingPeriod={30}
-        contentContainerStyle={{
-          paddingHorizontal: layout.screenMargin,
-          paddingTop: spacing.lg,
-          paddingBottom: insets.bottom + 32,
-        }}
-        onScrollBeginDrag={() => {
-          isUserInteracting.current = true;
-        }}
-        onScrollToIndexFailed={(info) => {
-          listRef.current?.scrollToOffset({
-            offset: info.averageItemLength * info.index,
-            animated: false,
-          });
-          setTimeout(() => {
-            listRef.current?.scrollToIndex({ index: info.index, viewPosition: 0, animated: true });
-          }, 60);
-        }}
-        viewabilityConfig={{ itemVisiblePercentThreshold: 60, waitForInteraction: true }}
-        onViewableItemsChanged={({ viewableItems }) => {
-          if (!isUserInteracting.current) return;
-          const first = viewableItems[0]?.item as FlatVerse | undefined;
-          if (first) persistPosition(first.chapter, first.verse.number);
-        }}
-        renderItem={({ item, index }) => {
-          const isChapterStart = index === 0 || verses[index - 1].chapter !== item.chapter;
-          const currentKey = verseKey(item.chapter, item.verse.number);
-          const highlighted = highlightByVerse.has(currentKey);
-          const isLanding = landingVerseKey === currentKey;
-          return (
-            <View>
-              {isChapterStart ? (
-                <Text
+          data={verses}
+          keyExtractor={(item) => verseKey(item.chapter, item.verse.number)}
+          extraData={`${landingVerseKey}-${highlightByVerse.size}`}
+          initialNumToRender={20}
+          maxToRenderPerBatch={20}
+          windowSize={7}
+          removeClippedSubviews={true}
+          updateCellsBatchingPeriod={30}
+          contentContainerStyle={{
+            paddingHorizontal: layout.screenMargin,
+            paddingTop: spacing.lg,
+            paddingBottom: insets.bottom + 32,
+          }}
+          onScrollBeginDrag={() => {
+            isUserInteracting.current = true;
+          }}
+          onScrollToIndexFailed={onScrollToIndexFailed}
+          viewabilityConfig={viewabilityConfig}
+          onViewableItemsChanged={onViewableItemsChanged}
+          ListFooterComponent={
+            bookMeta.chapterCount > 1 ? (
+              <View style={[styles.footerNav, { marginTop: spacing.xl }]}>
+                {currentChapter > 1 ? (
+                  <Pressable
+                    onPress={() => changeChapter(currentChapter - 1)}
+                    style={({ pressed }) => [
+                      styles.footerNavBtn,
+                      { borderColor: colors.hairline, backgroundColor: colors.card },
+                      pressed && { opacity: 0.7 },
+                    ]}
+                  >
+                    <ChevronLeftIcon color={colors.progressLabel} size={14} />
+                    <Text style={[typography.metadataCaption, { color: colors.ink, marginLeft: 4, fontWeight: '600' }]}>
+                      Hymn {currentChapter - 1}
+                    </Text>
+                  </Pressable>
+                ) : (
+                  <View style={{ flex: 1 }} />
+                )}
+                {currentChapter < bookMeta.chapterCount ? (
+                  <Pressable
+                    onPress={() => changeChapter(currentChapter + 1)}
+                    style={({ pressed }) => [
+                      styles.footerNavBtn,
+                      { borderColor: colors.hairline, backgroundColor: colors.card },
+                      pressed && { opacity: 0.7 },
+                    ]}
+                  >
+                    <Text style={[typography.metadataCaption, { color: colors.ink, marginRight: 4, fontWeight: '600' }]}>
+                      Hymn {currentChapter + 1}
+                    </Text>
+                    <ChevronRightIcon color={colors.progressLabel} size={14} />
+                  </Pressable>
+                ) : (
+                  <View style={{ flex: 1 }} />
+                )}
+              </View>
+            ) : null
+          }
+          renderItem={({ item, index }) => {
+            const isChapterStart = index === 0 || verses[index - 1].chapter !== item.chapter;
+            const currentKey = verseKey(item.chapter, item.verse.number);
+            const highlighted = highlightByVerse.has(currentKey);
+            const isLanding = landingVerseKey === currentKey;
+            return (
+              <View>
+                {isChapterStart ? (
+                  <Text
+                    style={[
+                      typography.eyebrowLabel,
+                      { color: colors.progressLabel, marginTop: index === 0 ? 0 : spacing.lg, marginBottom: spacing.sm },
+                    ]}
+                  >
+                    Hymn {item.chapter}
+                  </Text>
+                ) : null}
+                <View
                   style={[
-                    typography.eyebrowLabel,
-                    { color: colors.progressLabel, marginTop: index === 0 ? 0 : spacing.lg, marginBottom: spacing.sm },
+                    styles.verseBlock,
+                    {
+                      backgroundColor: isLanding
+                        ? `${colors.highlight.amber}35`
+                        : highlighted
+                        ? `${colors.highlight.amber}30`
+                        : 'transparent',
+                      borderRadius: radius.card,
+                      marginBottom: spacing.xs,
+                      padding: spacing.sm,
+                      borderWidth: 1.5,
+                      borderColor: isLanding ? colors.flameAmber : 'transparent',
+                    },
                   ]}
                 >
-                  Hymn {item.chapter}
-                </Text>
-              ) : null}
-              <View
-                style={[
-                  styles.verseBlock,
-                  {
-                    backgroundColor: isLanding
-                      ? `${colors.pairPillBackground}40`
-                      : highlighted
-                      ? `${colors.highlight.amber}30`
-                      : 'transparent',
-                    borderRadius: radius.card,
-                    marginBottom: spacing.xs,
-                    padding: spacing.sm,
-                    borderWidth: 1.5,
-                    borderColor: isLanding ? colors.flameAmber : 'transparent',
-                  },
-                ]}
-              >
                 <View style={styles.verseRow}>
                   <Text style={[typography.metadataCaption, { color: colors.fawn, width: 22 }]}>
                     {item.verse.number}
@@ -350,6 +518,31 @@ const styles = StyleSheet.create({
   topRow: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  chapterNavGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  chapterNavBtn: {
+    padding: 6,
+    borderRadius: 8,
+  },
+  footerNav: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+  },
+  footerNavBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    borderWidth: 1,
   },
   verseBlock: {},
   verseRow: {

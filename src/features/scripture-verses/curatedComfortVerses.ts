@@ -3,7 +3,7 @@
 import type { ScriptureVerseCard } from './moods';
 
 export type CuratedComfortVerse = ScriptureVerseCard & {
-  comfortDimension: 'peace' | 'strength' | 'rest' | 'reassurance' | 'light' | 'forgiveness' | 'patience' | 'gratitude' | 'guidance' | 'courage' | 'hope';
+  comfortDimension: 'peace' | 'strength' | 'rest' | 'reassurance' | 'light' | 'forgiveness' | 'patience' | 'gratitude' | 'guidance' | 'courage' | 'hope' | 'joy';
   situations: string[];
   reflectionHint: string;
 };
@@ -1105,5 +1105,395 @@ export const CURATED_COMFORT_VERSES: CuratedComfortVerse[] = [
       "reverence"
     ],
     "reflectionHint": "Greeting the dawn of inner illumination and sacred renewal."
+  },
+  {
+    "id": "comfort-quran-10-58",
+    "tradition": "quran",
+    "book": "Yunus",
+    "chapter": 10,
+    "verseNumber": 58,
+    "originalText": "قُلْ بِفَضْلِ ٱللَّهِ وَبِرَحْمَتِهِۦ فَبِذَٰلِكَ فَلْيَفْرَحُوا۟ هُوَ خَيْرٌۭ مِّمَّا يَجْمَعُونَ",
+    "translation": "Say, 'In the bounty of Allah and in His mercy - in that let them rejoice; it is better than what they accumulate.'",
+    "comfortDimension": "joy",
+    "situations": [
+      "happy",
+      "happiness",
+      "joy",
+      "joyful",
+      "celebration",
+      "rejoice",
+      "blessed",
+      "mercy",
+      "content",
+      "good news"
+    ],
+    "reflectionHint": "True joy is rejoicing in divine grace and gentle mercy, far richer than anything worldly."
+  },
+  {
+    "id": "comfort-quran-53-43",
+    "tradition": "quran",
+    "book": "An-Najm",
+    "chapter": 53,
+    "verseNumber": 43,
+    "originalText": "وَأَنَّهُۥ هُوَ أَضْحَكَ وَأَبْكَىٰ",
+    "translation": "And that it is He who makes [one] laugh and weep.",
+    "comfortDimension": "joy",
+    "situations": [
+      "happy",
+      "laughter",
+      "smile",
+      "joy",
+      "cheerful",
+      "delight",
+      "relief",
+      "lighthearted"
+    ],
+    "reflectionHint": "Laughter and tears are both holy gifts from the Creator who understands every season of your soul."
+  },
+  {
+    "id": "comfort-quran-14-7",
+    "tradition": "quran",
+    "book": "Ibrahim",
+    "chapter": 14,
+    "verseNumber": 7,
+    "originalText": "وَإِذْ تَأَذَّنَ رَبُّكُمْ لَئِن شَكَرْتُمْ لَأَزِيدَنَّكُمْ",
+    "translation": "And [remember] when your Lord proclaimed, 'If you are grateful, I will surely increase you [in favor].'",
+    "comfortDimension": "gratitude",
+    "situations": [
+      "grateful",
+      "gratitude",
+      "thankful",
+      "blessed",
+      "happy",
+      "abundance",
+      "celebration"
+    ],
+    "reflectionHint": "Gratitude unlocks an ever-widening river of sacred blessings."
+  },
+  {
+    "id": "comfort-torah-DEU-16-15",
+    "tradition": "torah",
+    "book": "Deuteronomy",
+    "bookId": "DEU",
+    "chapter": 16,
+    "verseNumber": 15,
+    "originalText": "Seven days you shall keep a feast to the LORD your God in the place which the LORD chooses; because the LORD your God will bless you in all your increase, and in all the work of your hands, and you shall be altogether joyful.",
+    "translation": null,
+    "comfortDimension": "joy",
+    "situations": [
+      "happy",
+      "happiness",
+      "joy",
+      "joyful",
+      "celebration",
+      "feast",
+      "blessing",
+      "success",
+      "accomplishment"
+    ],
+    "reflectionHint": "A sacred invitation to be completely and wholeheartedly joyful."
+  },
+  {
+    "id": "comfort-torah-GEN-21-6",
+    "tradition": "torah",
+    "book": "Genesis",
+    "bookId": "GEN",
+    "chapter": 21,
+    "verseNumber": 6,
+    "originalText": "Sarah said, 'God has made laughter for me. Everyone who hears will laugh with me.'",
+    "translation": null,
+    "comfortDimension": "joy",
+    "situations": [
+      "happy",
+      "laughter",
+      "smile",
+      "joy",
+      "miracle",
+      "wonder",
+      "good news",
+      "delight"
+    ],
+    "reflectionHint": "When unexpected joy arrives, it fills the heart with pure sacred laughter."
+  },
+  {
+    "id": "comfort-torah-NUM-6-24",
+    "tradition": "torah",
+    "book": "Numbers",
+    "bookId": "NUM",
+    "chapter": 6,
+    "verseNumber": 24,
+    "originalText": "The LORD bless you, and keep you. The LORD make His face shine on you, and be gracious to you. The LORD lift up His countenance on you, and give you peace.",
+    "translation": null,
+    "comfortDimension": "peace",
+    "situations": [
+      "peace",
+      "blessing",
+      "protection",
+      "serenity",
+      "calm",
+      "safe",
+      "happy",
+      "grace"
+    ],
+    "reflectionHint": "The ancient threefold blessing of perpetual peace and gentle light."
+  },
+  {
+    "id": "comfort-torah-DEU-6-5",
+    "tradition": "torah",
+    "book": "Deuteronomy",
+    "bookId": "DEU",
+    "chapter": 6,
+    "verseNumber": 5,
+    "originalText": "You shall love the LORD your God with all your heart, and with all your soul, and with all your might.",
+    "translation": null,
+    "comfortDimension": "strength",
+    "situations": [
+      "love",
+      "heart",
+      "devotion",
+      "strength",
+      "purpose",
+      "dedication"
+    ],
+    "reflectionHint": "Living with wholehearted love and devotion in every breath."
+  },
+  {
+    "id": "comfort-bible-ot-PSA-126-2",
+    "tradition": "bible-ot",
+    "book": "Psalms",
+    "bookId": "PSA",
+    "chapter": 126,
+    "verseNumber": 2,
+    "originalText": "Then our mouth was filled with laughter, and our tongue with singing. Then they said among the nations, 'The LORD has done great things for them.'",
+    "translation": null,
+    "comfortDimension": "joy",
+    "situations": [
+      "happy",
+      "happiness",
+      "laughter",
+      "singing",
+      "joy",
+      "celebration",
+      "triumph",
+      "miracle",
+      "relieved"
+    ],
+    "reflectionHint": "Tears give way to overflowing laughter and song."
+  },
+  {
+    "id": "comfort-bible-ot-PSA-118-24",
+    "tradition": "bible-ot",
+    "book": "Psalms",
+    "bookId": "PSA",
+    "chapter": 118,
+    "verseNumber": 24,
+    "originalText": "This is the day that the LORD has made. We will rejoice and be glad in it.",
+    "translation": null,
+    "comfortDimension": "joy",
+    "situations": [
+      "happy",
+      "today",
+      "morning",
+      "rejoice",
+      "glad",
+      "celebrate",
+      "gratitude",
+      "wonderful"
+    ],
+    "reflectionHint": "Today is a fresh creation—greet it with rejoicing and gladness."
+  },
+  {
+    "id": "comfort-bible-ot-PRO-17-22",
+    "tradition": "bible-ot",
+    "book": "Proverbs",
+    "bookId": "PRO",
+    "chapter": 17,
+    "verseNumber": 22,
+    "originalText": "A cheerful heart is good medicine, but a crushed spirit dries up the bones.",
+    "translation": null,
+    "comfortDimension": "joy",
+    "situations": [
+      "happy",
+      "cheerful",
+      "healing",
+      "laughter",
+      "good mood",
+      "medicine",
+      "lighthearted"
+    ],
+    "reflectionHint": "A cheerful spirit brings physical healing and warmth to your bones."
+  },
+  {
+    "id": "comfort-bible-ot-PSA-100-1",
+    "tradition": "bible-ot",
+    "book": "Psalms",
+    "bookId": "PSA",
+    "chapter": 100,
+    "verseNumber": 1,
+    "originalText": "Shout for joy to the LORD, all you lands! Serve the LORD with gladness. Come before His presence with singing.",
+    "translation": null,
+    "comfortDimension": "joy",
+    "situations": [
+      "joy",
+      "gladness",
+      "singing",
+      "praise",
+      "happy",
+      "gratitude",
+      "celebration"
+    ],
+    "reflectionHint": "Enter the sanctuary of the present moment with gladness and song."
+  },
+  {
+    "id": "comfort-bible-nt-PHP-4-4",
+    "tradition": "bible-nt",
+    "book": "Philippians",
+    "bookId": "PHP",
+    "chapter": 4,
+    "verseNumber": 4,
+    "originalText": "Rejoice in the Lord always! Again I will say, Rejoice!",
+    "translation": null,
+    "comfortDimension": "joy",
+    "situations": [
+      "happy",
+      "happiness",
+      "joy",
+      "rejoice",
+      "always",
+      "celebration",
+      "uplifted",
+      "excited"
+    ],
+    "reflectionHint": "A resilient joy that remains steady through all winds of life."
+  },
+  {
+    "id": "comfort-bible-nt-JHN-15-11",
+    "tradition": "bible-nt",
+    "book": "John",
+    "bookId": "JHN",
+    "chapter": 15,
+    "verseNumber": 11,
+    "originalText": "I have said these things to you, that my joy may be in you, and that your joy may be full.",
+    "translation": null,
+    "comfortDimension": "joy",
+    "situations": [
+      "joy",
+      "fullness",
+      "happy",
+      "complete",
+      "peace",
+      "overflowing",
+      "content"
+    ],
+    "reflectionHint": "An invitation to receive a joy so complete that it overflows."
+  },
+  {
+    "id": "comfort-bible-nt-GAL-5-22",
+    "tradition": "bible-nt",
+    "book": "Galatians",
+    "bookId": "GAL",
+    "chapter": 5,
+    "verseNumber": 22,
+    "originalText": "But the fruit of the Spirit is love, joy, peace, patience, kindness, goodness, faithfulness, gentleness, and self-control.",
+    "translation": null,
+    "comfortDimension": "peace",
+    "situations": [
+      "love",
+      "joy",
+      "peace",
+      "kindness",
+      "gentleness",
+      "happy",
+      "character",
+      "blessing"
+    ],
+    "reflectionHint": "Love and joy blooming naturally as the quiet fruit of a grounded soul."
+  },
+  {
+    "id": "comfort-bible-nt-1TH-5-16",
+    "tradition": "bible-nt",
+    "book": "1 Thessalonians",
+    "bookId": "1TH",
+    "chapter": 5,
+    "verseNumber": 16,
+    "originalText": "Rejoice always. Pray without ceasing. In everything give thanks.",
+    "translation": null,
+    "comfortDimension": "gratitude",
+    "situations": [
+      "rejoice",
+      "thankful",
+      "gratitude",
+      "happy",
+      "prayer",
+      "always"
+    ],
+    "reflectionHint": "The sacred rhythm of constant rejoicing and continuous gratitude."
+  },
+  {
+    "id": "comfort-vedas-RV10-85-42",
+    "tradition": "vedas",
+    "book": "Mandala 10",
+    "bookId": "RV10",
+    "chapter": 85,
+    "verseNumber": 42,
+    "originalText": "Be not divided; stay here together; enjoy the full span of your life, playing with sons and grandsons, rejoicing in your home.",
+    "translation": null,
+    "comfortDimension": "joy",
+    "situations": [
+      "happy",
+      "happiness",
+      "joy",
+      "family",
+      "home",
+      "together",
+      "celebration",
+      "rejoicing",
+      "life"
+    ],
+    "reflectionHint": "A warm ancient blessing for a home filled with laughter, togetherness, and lifelong joy."
+  },
+  {
+    "id": "comfort-vedas-RV08-48-3",
+    "tradition": "vedas",
+    "book": "Mandala 8",
+    "bookId": "RV08",
+    "chapter": 48,
+    "verseNumber": 3,
+    "originalText": "We have drunk the nectar, we have become immortal; we have gone to the light, we have found the Gods. What can an adversary do to harm us now?",
+    "translation": null,
+    "comfortDimension": "light",
+    "situations": [
+      "happy",
+      "elated",
+      "ecstatic",
+      "light",
+      "victorious",
+      "invincible",
+      "bliss",
+      "triumph"
+    ],
+    "reflectionHint": "Touching the radiant eternal light within, where no shadow or fear can reach."
+  },
+  {
+    "id": "comfort-vedas-RV10-191-2",
+    "tradition": "vedas",
+    "book": "Mandala 10",
+    "bookId": "RV10",
+    "chapter": 191,
+    "verseNumber": 2,
+    "originalText": "Meet together, speak together, let your minds be of one accord, common be your counsel, united be your hearts, that it may be well with you.",
+    "translation": null,
+    "comfortDimension": "peace",
+    "situations": [
+      "peace",
+      "unity",
+      "harmony",
+      "friendship",
+      "love",
+      "community",
+      "together",
+      "understanding"
+    ],
+    "reflectionHint": "May your hearts be united and your thoughts in harmony, so peace blossoms around you."
   }
 ];

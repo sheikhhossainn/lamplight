@@ -40,8 +40,29 @@ const EMOTIONAL_SIGNALS: Record<string, string[]> = {
   ],
   gratitude: [
     'grateful', 'gratitude', 'thankful', 'thanks', 'blessed', 'blessing',
-    'joy', 'peace', 'happy', 'happiness', 'content', 'appreciation',
-    'sweet', 'wonderful', 'alive', 'morning',
+    'appreciation', 'sweet', 'alive', 'morning',
+  ],
+  happiness: [
+    'happy', 'happiness', 'joy', 'joyful', 'excited', 'excitement', 'thrilled',
+    'ecstatic', 'celebrate', 'celebration', 'celebrating', 'delighted', 'delight',
+    'glad', 'cheerful', 'rejoice', 'rejoicing', 'smile', 'smiling', 'laughter',
+    'laugh', 'good news', 'great day', 'feeling great', 'wonderful', 'bliss',
+  ],
+  peace: [
+    'peace', 'peaceful', 'calm', 'serene', 'serenity', 'tranquil', 'tranquility',
+    'stillness', 'quiet', 'relaxed', 'soothing', 'relief', 'relieved', 'content',
+  ],
+  love: [
+    'love', 'loved', 'loving', 'cherished', 'romance', 'in love', 'adoration',
+    'devotion', 'affection', 'caring', 'family', 'togetherness', 'friendship',
+  ],
+  hope: [
+    'hope', 'hopeful', 'optimistic', 'optimism', 'looking forward', 'promise',
+    'new beginning', 'dawn', 'renewal', 'believe', 'brighter',
+  ],
+  anger: [
+    'angry', 'anger', 'mad', 'furious', 'frustrated', 'frustration', 'irritated',
+    'resentful', 'resentment', 'bitter', 'rage', 'betrayed',
   ],
 };
 
@@ -54,7 +75,12 @@ const SIGNAL_DIMENSIONS: Record<string, string[]> = {
   loneliness: ['reassurance', 'peace'],
   guilt: ['forgiveness', 'reassurance'],
   confusion: ['guidance', 'light', 'peace'],
-  gratitude: ['gratitude', 'peace', 'light'],
+  gratitude: ['gratitude', 'peace', 'light', 'joy'],
+  happiness: ['joy', 'gratitude', 'light', 'peace'],
+  peace: ['peace', 'light', 'gratitude'],
+  love: ['peace', 'strength', 'joy'],
+  hope: ['hope', 'light', 'strength'],
+  anger: ['peace', 'patience', 'forgiveness'],
 };
 
 /**
@@ -191,3 +217,63 @@ export function drawEmpatheticDeck(userText: string, deckSize = 6): ScriptureVer
     reflectionHint: v.reflectionHint,
   }));
 }
+
+export const TABLE_TRADITIONS = ['quran', 'torah', 'bible-ot', 'bible-nt', 'vedas'] as const;
+export type TableTraditionKey = (typeof TABLE_TRADITIONS)[number];
+
+/**
+ * Draws exactly 5 cards for the Sacred Table—one from each tradition:
+ * [Quran, Torah, Old Testament, New Testament, Vedas], each matched precisely
+ * to the user's emotional state.
+ */
+export function drawTableDeck(userText: string): ScriptureVerseCard[] {
+  const normalized = (userText || '').toLowerCase().trim();
+
+  // Detect active emotional signals
+  const detectedSignals = new Set<string>();
+  for (const [signalKey, keywords] of Object.entries(EMOTIONAL_SIGNALS)) {
+    for (const kw of keywords) {
+      if (normalized.includes(kw)) {
+        detectedSignals.add(signalKey);
+        break;
+      }
+    }
+  }
+
+  // If no signals were explicitly detected, default to peace/hope
+  if (detectedSignals.size === 0) {
+    detectedSignals.add('peace');
+  }
+
+  // Score all curated comfort verses
+  const scored = CURATED_COMFORT_VERSES.map((verse) => ({
+    verse,
+    score: scoreVerse(verse, normalized, detectedSignals),
+  }));
+
+  // For each tradition in TABLE_TRADITIONS, select the single highest-scoring verse
+  const tableCards: ScriptureVerseCard[] = [];
+
+  for (const tradition of TABLE_TRADITIONS) {
+    const candidates = scored.filter((s) => s.verse.tradition === tradition);
+    candidates.sort((a, b) => b.score - a.score);
+
+    const best = candidates[0]?.verse;
+    if (best) {
+      tableCards.push({
+        id: best.id,
+        tradition: best.tradition,
+        book: best.book,
+        bookId: best.bookId,
+        chapter: best.chapter,
+        verseNumber: best.verseNumber,
+        originalText: best.originalText,
+        translation: best.translation,
+        reflectionHint: best.reflectionHint,
+      });
+    }
+  }
+
+  return tableCards;
+}
+

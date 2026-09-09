@@ -61,3 +61,10 @@ export function getBookVerses(bookId: string): { chapter: number; verse: VedasVe
   bookVersesCache.set(bookId, flat);
   return flat;
 }
+
+export function getChapterVerses(bookId: string, chapter: number): { chapter: number; verse: VedasVerse }[] {
+  const chapters = verses[bookId];
+  if (!chapters) return [];
+  const list = chapters[String(chapter)] ?? [];
+  return list.map((verse) => ({ chapter, verse }));
+}

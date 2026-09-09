@@ -91,30 +91,6 @@ export function VerseDeckView({ title, source, fetchVerses }: VerseDeckViewProps
     });
   };
 
-  const navigateToVerse = (v: ScriptureVerseCard) => {
-    if (v.tradition === 'quran') {
-      router.push({
-        pathname: '/quran/[surahNumber]',
-        params: { surahNumber: String(v.chapter), jumpVerse: String(v.verseNumber) },
-      });
-    } else if (v.tradition === 'bible-ot' || v.tradition === 'torah') {
-      router.push({
-        pathname: '/bible/[bookId]',
-        params: { bookId: v.bookId ?? 'PSA', jumpChapter: String(v.chapter), jumpVerse: String(v.verseNumber) },
-      });
-    } else if (v.tradition === 'bible-nt') {
-      router.push({
-        pathname: '/bible-nt/[bookId]',
-        params: { bookId: v.bookId ?? 'MAT', jumpChapter: String(v.chapter), jumpVerse: String(v.verseNumber) },
-      });
-    } else if (v.tradition === 'vedas') {
-      router.push({
-        pathname: '/vedas/[bookId]',
-        params: { bookId: v.bookId ?? 'RV01', jumpChapter: String(v.chapter), jumpVerse: String(v.verseNumber) },
-      });
-    }
-  };
-
   const cardAnimatedStyle = useAnimatedStyle(() => ({
     opacity: cardOpacity.value,
     transform: [{ translateY: cardTranslateY.value }],
@@ -210,15 +186,6 @@ export function VerseDeckView({ title, source, fetchVerses }: VerseDeckViewProps
                       {verse.reflectionHint}
                     </Text>
                   ) : null}
-                  <Pressable
-                    onPress={() => navigateToVerse(verse)}
-                    hitSlop={8}
-                    style={{ alignSelf: 'flex-start', marginTop: spacing.sm }}
-                  >
-                    <Text style={[typography.metadataCaption, { color: colors.flameAmber, fontSize: 12 }]}>
-                      Read chapter ➔
-                    </Text>
-                  </Pressable>
                 </View>
                 {reaction === 'like' ? (
                   <View style={{ marginLeft: spacing.sm }}>
@@ -289,15 +256,6 @@ export function VerseDeckView({ title, source, fetchVerses }: VerseDeckViewProps
                   </Text>
                 ) : null}
 
-                <Pressable
-                  onPress={() => navigateToVerse(verse)}
-                  hitSlop={8}
-                  style={[styles.readChapterPill, { borderColor: colors.hairline, borderRadius: radius.pill, marginTop: spacing.md }]}
-                >
-                  <Text style={[typography.metadataCaption, { color: colors.progressLabel, fontSize: 12 }]}>
-                    Read chapter ➔
-                  </Text>
-                </Pressable>
               </View>
             ) : (
               <Text style={[typography.eyebrowLabel, { color: colors.straw, marginTop: spacing.xl, textAlign: 'center' }]}>
@@ -366,11 +324,6 @@ const styles = StyleSheet.create({
   traditionPill: {
     paddingHorizontal: 12,
     paddingVertical: 4,
-  },
-  readChapterPill: {
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
   },
   reactionRow: {
     flexDirection: 'row',
