@@ -57,8 +57,7 @@ import { ReaderGuideModal } from '@/features/reader/components/ReaderGuideModal'
 import { ReaderMenuModal } from '@/features/reader/components/ReaderMenuModal';
 import { setTargetLanguage, targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
 import { getReadingFontSize, getReadingLineHeight, READING_FONT_SIZE_PX, READING_LINE_HEIGHT_PX } from '@/features/settings/readingPrefs';
-import { getReadingTheme, useReadingTheme } from '@/features/settings/readingTheme';
-import { requestThemeChange } from '@/features/settings/themeTransition';
+import { getReadingTheme, setReadingTheme, useReadingTheme } from '@/features/settings/readingTheme';
 import { isPremiumUser } from '@/features/subscription/subscriptionState';
 import { checkTranslationCap, recordTranslationUsage, translationProvider } from '@/features/translation';
 import { LamplightColor, type HighlightColorKey } from '@/theme/tokens';
@@ -1486,7 +1485,7 @@ export default function ReaderScreen() {
         onOpenAmbience={() => setAmbienceOpen(true)}
         ambienceLabel={ambienceTrackById(ambienceTrackId)?.label ?? null}
         mode={mode}
-        onToggleMode={() => requestThemeChange(isLamp ? 'day' : 'lamp')}
+        onToggleMode={() => setReadingTheme(isLamp ? 'day' : 'lamp')}
       />
 
       <ReaderGuideModal

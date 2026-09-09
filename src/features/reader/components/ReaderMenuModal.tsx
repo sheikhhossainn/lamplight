@@ -1,4 +1,13 @@
+import { useEffect, useRef } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import Animated, {
+  Extrapolation,
+  interpolate,
+  ReduceMotion,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
@@ -42,6 +51,31 @@ export function ReaderMenuModal({
 }: ReaderMenuModalProps) {
   const { colors, typography, radius } = useTheme();
   const insets = useSafeAreaInsets();
+
+  const modeProgress = useSharedValue(mode === 'lamp' ? 1 : 0);
+  const prevModeRef = useRef(mode);
+
+  useEffect(() => {
+    if (prevModeRef.current !== mode) {
+      prevModeRef.current = mode;
+      modeProgress.set(
+        withSpring(mode === 'lamp' ? 1 : 0, {
+          duration: 300,
+          dampingRatio: 0.82,
+          reduceMotion: ReduceMotion.System,
+        })
+      );
+    }
+  }, [mode, modeProgress]);
+
+  const modeIconAnimatedStyle = useAnimatedStyle(() => {
+    const p = modeProgress.get();
+    const rotate = interpolate(p, [0, 1], [0, 360], Extrapolation.CLAMP);
+    const scale = interpolate(p, [0, 0.5, 1], [1, 0.85, 1], Extrapolation.CLAMP);
+    return {
+      transform: [{ rotate: `${rotate}deg` }, { scale }],
+    };
+  });
 
   return (
     <Modal visible={visible} transparent animationType="slide" statusBarTranslucent onRequestClose={onClose}>
@@ -207,22 +241,31 @@ export function ReaderMenuModal({
 
             {/* 5. Day / Lamp Mode */}
             <Pressable
+              hitSlop={6}
               onPress={() => {
+                const nextVal = mode === 'lamp' ? 0 : 1;
+                modeProgress.set(
+                  withSpring(nextVal, {
+                    duration: 260,
+                    dampingRatio: 0.82,
+                    reduceMotion: ReduceMotion.System,
+                  })
+                );
                 onToggleMode();
               }}
               style={({ pressed }) => [
                 styles.itemRow,
                 { borderRadius: radius.card },
-                pressed && { backgroundColor: `${colors.flameAmber}10` },
+                pressed && { backgroundColor: `${colors.flameAmber}10`, transform: [{ scale: 0.98 }] },
               ]}
             >
-              <View style={[styles.iconBox, { backgroundColor: `${colors.flameAmber}18` }]}>
+              <Animated.View style={[styles.iconBox, { backgroundColor: `${colors.flameAmber}18` }, modeIconAnimatedStyle]}>
                 {mode === 'lamp' ? (
                   <MoonIcon color={colors.flameAmber} size={18} />
                 ) : (
                   <SunIcon color={colors.flameAmber} size={18} />
                 )}
-              </View>
+              </Animated.View>
               <View style={styles.itemBody}>
                 <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 14 }]}>
                   Reading Mode

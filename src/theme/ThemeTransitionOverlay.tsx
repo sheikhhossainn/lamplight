@@ -1,8 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { StyleSheet } from 'react-native';
 import Animated, {
   Easing,
-  runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
@@ -19,35 +18,32 @@ import { registerThemeTransitionRunner } from '@/features/settings/themeTransiti
 // continuous fade.
 const LIGHT_BG = '#F5EDE1';
 const DARK_BG = '#1C1B1E';
+const EASE_OUT = Easing.bezier(0.23, 1, 0.32, 1);
 
 export function ThemeTransitionOverlay() {
   const opacity = useSharedValue(0);
   const coverColor = useSharedValue(LIGHT_BG);
-  const [active, setActive] = useState(false);
 
   useEffect(() => {
     registerThemeTransitionRunner((next) => {
       // The color we're leaving (switching TO lamp means leaving day = light).
       // Both shared values update on the UI thread instantly and in the same
       // frame, so there's no stale-color flash.
-      coverColor.value = next === 'lamp' ? LIGHT_BG : DARK_BG;
-      opacity.value = 1;
-      setActive(true);
+      coverColor.set(next === 'lamp' ? LIGHT_BG : DARK_BG);
+      opacity.set(1);
       // Swap on the next frame, once the cover is guaranteed painted.
       requestAnimationFrame(() => {
         setReadingTheme(next);
-        opacity.value = withTiming(0, { duration: 520, easing: Easing.inOut(Easing.ease) }, (done) => {
-          if (done) runOnJS(setActive)(false);
-        });
+        opacity.set(withTiming(0, { duration: 280, easing: EASE_OUT }));
       });
     });
     return () => registerThemeTransitionRunner(null);
   }, [opacity, coverColor]);
 
   const style = useAnimatedStyle(() => ({
-    opacity: opacity.value,
-    backgroundColor: coverColor.value,
+    opacity: opacity.get(),
+    backgroundColor: coverColor.get(),
   }));
 
-  return <Animated.View pointerEvents={active ? 'auto' : 'none'} style={[StyleSheet.absoluteFill, style]} />;
+  return <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, style]} />;
 }
