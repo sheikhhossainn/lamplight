@@ -33,6 +33,13 @@ import { FeelingPromptModal } from '@/features/scripture-verses/FeelingPromptMod
 import { targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
 import { isBengaliText, isJapaneseText, isKoreanText } from '@/theme/typography';
 import { useTheme } from '@/theme/ThemeProvider';
+import {
+  getStoredCalibrationData,
+  getCalibratedStartingBook,
+  type CalibratedStartingBook,
+} from '@/features/vocabulary/calibration';
+import { getTargetReadingLanguage } from '@/features/settings/targetReadingLanguage';
+import { getLiteraryTheme } from '@/features/settings/literaryTheme';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -194,6 +201,7 @@ export default function Homescreen() {
   const [latestBook, setLatestBook] = useState<BookRow | null>(null);
   const [latestPosition, setLatestPosition] = useState<ReadingPosition | null>(null);
   const [readyBook, setReadyBook] = useState<BookRow | null>(null);
+  const [calibratedBook, setCalibratedBook] = useState<CalibratedStartingBook | null>(null);
   const [sparkIndex, setSparkIndex] = useState(0);
   const [feelingModalVisible, setFeelingModalVisible] = useState(false);
   const [spotlight, setSpotlight] = useState<{
@@ -323,6 +331,17 @@ export default function Homescreen() {
         setReadyBook(null);
         setLatestBook(null);
         setLatestPosition(null);
+
+        // Load calibrated starting book for new users
+        const calib = await getStoredCalibrationData();
+        const targetLang = getTargetReadingLanguage();
+        const theme = getLiteraryTheme();
+        const startingRec = getCalibratedStartingBook(
+          targetLang,
+          theme,
+          calib?.estimatedWords ?? 3500,
+        );
+        setCalibratedBook(startingRec);
       }
     } catch (err) {
       console.warn('[Homescreen] loadProgress failed:', err);
@@ -340,9 +359,20 @@ export default function Homescreen() {
   const greeting = getGreeting();
 
   const handleOpenBook = (bookId: string) => {
+    if (latestBook?.id === bookId) {
+      router.push({
+        pathname: '/reader/[bookId]',
+        params: { bookId },
+      });
+      return;
+    }
+    if (bookId.startsWith('bn-') || bookId.startsWith('aozora-') || bookId.startsWith('ko-')) {
+      router.push('/(tabs)/library' as any);
+      return;
+    }
     router.push({
-      pathname: '/reader/[bookId]',
-      params: { bookId },
+      pathname: '/book/[id]',
+      params: { id: bookId },
     });
   };
 
@@ -598,6 +628,159 @@ export default function Homescreen() {
                 >
                   <Text style={[typography.buttonLabel, { color: colors.primaryDark, fontSize: 14 }]}>
                     Start Reading Now
+                  </Text>
+                  <View style={{ marginLeft: 6 }}>
+                    <ChevronRightIcon color={colors.primaryDark} size={15} />
+                  </View>
+                </Pressable>
+              </View>
+            </Pressable>
+          </View>
+        ) : calibratedBook ? (
+          /* Calibrated Starting Book Hero for New User */
+          <View style={{ marginTop: spacing.md }}>
+            <Pressable
+              onPress={() => handleOpenBook(calibratedBook.id)}
+              style={({ pressed }) => [
+                styles.featuredCard,
+                {
+                  backgroundColor: colors.card,
+                  borderRadius: radius.card,
+                  borderColor: 'rgba(245, 166, 35, 0.45)',
+                  borderWidth: 1.5,
+                  marginTop: spacing.sm,
+                  padding: spacing.lg,
+                  opacity: pressed ? 0.95 : 1,
+                },
+              ]}
+            >
+              {/* Top Calibrated Badge Row */}
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: spacing.md,
+                }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={{ color: colors.flameAmber, fontSize: 13 }}>✦</Text>
+                  <Text
+                    style={[
+                      typography.eyebrowLabel,
+                      { color: colors.flameAmber, fontSize: 11, letterSpacing: 0.8 },
+                    ]}
+                  >
+                    CALIBRATED FOR YOU
+                  </Text>
+                </View>
+
+                <View
+                  style={{
+                    backgroundColor: colors.flameAmber,
+                    paddingHorizontal: 8,
+                    paddingVertical: 3,
+                    borderRadius: radius.pill,
+                  }}
+                >
+                  <Text
+                    style={[
+                      typography.eyebrowLabel,
+                      { color: colors.primaryDark, fontSize: 10, letterSpacing: 0.5 },
+                    ]}
+                  >
+                    {calibratedBook.coverageBadge}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.featuredTop}>
+                <BookSpine
+                  bookId={calibratedBook.id}
+                  title={calibratedBook.title}
+                  toneIndex={0}
+                  onPress={() => handleOpenBook(calibratedBook.id)}
+                  width={68}
+                  height={100}
+                />
+                <View style={styles.featuredInfo}>
+                  <Text
+                    style={[typography.uiRowTitle, { color: colors.ink, fontSize: 18 }]}
+                    numberOfLines={2}
+                  >
+                    {calibratedBook.title}
+                  </Text>
+                  <Text
+                    style={[typography.metadataCaption, { color: colors.umber, marginTop: 4 }]}
+                    numberOfLines={1}
+                  >
+                    {calibratedBook.author}
+                  </Text>
+
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      marginTop: spacing.sm,
+                      backgroundColor: 'rgba(245, 166, 35, 0.12)',
+                      alignSelf: 'flex-start',
+                      paddingHorizontal: 8,
+                      paddingVertical: 4,
+                      borderRadius: radius.pill,
+                    }}
+                  >
+                    <Text
+                      style={[
+                        typography.metadataCaption,
+                        { color: colors.flameAmber, fontSize: 11, fontWeight: '600' },
+                      ]}
+                    >
+                      ✓ {calibratedBook.coveragePercent}% Comprehension · Zero Fatigue
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              <View
+                style={[
+                  styles.quoteBox,
+                  {
+                    backgroundColor: colors.libraryBackground,
+                    borderRadius: radius.card,
+                    marginTop: spacing.md,
+                    padding: spacing.md,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    typography.readingBody,
+                    { color: colors.ink, fontSize: 13, lineHeight: 20, fontStyle: 'italic' },
+                  ]}
+                  numberOfLines={2}
+                >
+                  “{calibratedBook.synopsis}”
+                </Text>
+
+                <Text
+                  style={[
+                    typography.metadataCaption,
+                    { color: colors.fawn, fontSize: 11, marginTop: 6 },
+                  ]}
+                  numberOfLines={1}
+                >
+                  {calibratedBook.reason}
+                </Text>
+
+                <Pressable
+                  onPress={() => handleOpenBook(calibratedBook.id)}
+                  style={[
+                    styles.continueButton,
+                    { backgroundColor: colors.flameAmber, borderRadius: radius.pill, marginTop: spacing.md },
+                  ]}
+                >
+                  <Text style={[typography.buttonLabel, { color: colors.primaryDark, fontSize: 14 }]}>
+                    Start Reading Chapter 1
                   </Text>
                   <View style={{ marginLeft: 6 }}>
                     <ChevronRightIcon color={colors.primaryDark} size={15} />

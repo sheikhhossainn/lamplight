@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import Animated, {
   Easing,
+  interpolateColor,
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
@@ -26,6 +27,7 @@ const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
 type ReaderPageViewProps = {
   page: ReaderPage;
+  mode?: 'day' | 'lamp';
   textColor: string;
   topInset: number;
   bottomInset: number;
@@ -439,6 +441,7 @@ function locateOffsetPixel(
 
 function ReaderPageViewImpl({
   page,
+  mode = 'day',
   textColor,
   topInset,
   bottomInset,
@@ -461,6 +464,23 @@ function ReaderPageViewImpl({
   translatedParagraphs,
 }: ReaderPageViewProps) {
   const { typography, spacing } = useTheme();
+
+  const isLamp = mode === 'lamp';
+  const textThemeAnim = useSharedValue(isLamp ? 1 : 0);
+  useEffect(() => {
+    textThemeAnim.value = withTiming(isLamp ? 1 : 0, {
+      duration: 380,
+      easing: Easing.bezier(0.25, 1, 0.5, 1),
+    });
+  }, [isLamp, textThemeAnim]);
+
+  const animatedBodyColorStyle = useAnimatedStyle(() => ({
+    color: interpolateColor(
+      textThemeAnim.value,
+      [0, 1],
+      ['#241D17', '#F0E6D6'],
+    ),
+  }));
 
   const selecting = selectionRange != null;
 
@@ -725,14 +745,15 @@ function ReaderPageViewImpl({
       ]}
     >
       {page.isChapterStart ? (
-        <Text
+        <Animated.Text
           style={[
             typography.screenTitle,
-            { color: textColor, marginTop: spacing.xl, marginBottom: spacing.lg },
+            animatedBodyColorStyle,
+            { marginTop: spacing.xl, marginBottom: spacing.lg },
           ]}
         >
           {page.chapterTitle}
-        </Text>
+        </Animated.Text>
       ) : (
         // Continuation page: an empty band the exact height of the chapter-title
         // footprint (marginTop + lineHeight + marginBottom), so the body's first
@@ -767,9 +788,9 @@ function ReaderPageViewImpl({
               ? selectionRange.endOffset
               : paragraph.length;
           return (
-            <Text
+            <Animated.Text
               key={paragraphIndex}
-              style={[typography.readingBody, { color: textColor }, baseParagraphStyle]}
+              style={[typography.readingBody, animatedBodyColorStyle, baseParagraphStyle]}
               onLayout={(e) => {
                 paragraphLayoutsRef.current.set(paragraphIndex, {
                   y: e.nativeEvent.layout.y,
@@ -786,7 +807,7 @@ function ReaderPageViewImpl({
               }}
             >
               {renderSelectionRuns(paragraph, selStart, selEnd, selectionColor, '#2B2621')}
-            </Text>
+            </Animated.Text>
           );
         }
 
@@ -812,12 +833,12 @@ function ReaderPageViewImpl({
           if (runStart !== -1) highlightRun = { start: runStart, end: runStart + highlightEntry.quoteText.length };
         }
         return (
-          <Text
+          <Animated.Text
             key={paragraphIndex}
             style={[
               typography.readingBody,
+              animatedBodyColorStyle,
               {
-                color: textColor,
                 backgroundColor: highlightWash && !highlightRun ? highlightWash : undefined,
                 ...baseParagraphStyle,
               },
@@ -853,7 +874,7 @@ function ReaderPageViewImpl({
                     activeWordColor,
                     activeWordTextColor,
                   )}
-          </Text>
+          </Animated.Text>
         );
       })}
 

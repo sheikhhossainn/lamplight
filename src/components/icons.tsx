@@ -360,5 +360,21 @@ export function StopIcon({ color, size = 18 }: IconProps) {
   );
 }
 
+// Question mark icon for reader guide and help triggers
+export function QuestionIcon({ color, size = 18 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"
+        stroke={color}
+        strokeWidth={1.9}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Circle cx="12" cy="17.2" r="1.15" fill={color} />
+    </Svg>
+  );
+}
+
 
 

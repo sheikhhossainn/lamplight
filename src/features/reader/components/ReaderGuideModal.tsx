@@ -1,7 +1,7 @@
 import { Dimensions, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
-import { BookmarkIcon, CloseIcon, MenuIcon, TranslateIcon } from '@/components/icons';
+import { BookmarkIcon, CloseIcon, SoundWaveIcon, TranslateIcon } from '@/components/icons';
 import { useTheme } from '@/theme/ThemeProvider';
 
 const { height: screenHeight } = Dimensions.get('window');
@@ -76,17 +76,17 @@ export function ReaderGuideModal({ visible, onClose }: ReaderGuideModalProps) {
               </View>
             </View>
 
-            {/* 2. Reading Tools Menu */}
+            {/* 2. Reading Controls */}
             <View style={styles.guideItem}>
               <View style={[styles.iconCircle, { backgroundColor: `${colors.flameAmber}18` }]}>
-                <MenuIcon color={colors.flameAmber} size={18} />
+                <SoundWaveIcon color={colors.flameAmber} size={18} />
               </View>
               <View style={styles.itemContent}>
                 <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 14 }]}>
-                  Reading Tools (☰ Menu)
+                  Reading Controls
                 </Text>
                 <Text style={[typography.metadataCaption, { color: colors.umber, fontSize: 11.5, marginTop: 2, lineHeight: 16 }]}>
-                  Tap the <Text style={{ fontWeight: '600', color: colors.ink }}>☰</Text> icon in the top right to switch between Day & Lamp modes, play ambient soundscapes, translate the full page, or change language.
+                  Use the top-right buttons to switch between Day & Lamp modes, play ambient soundscapes, or tap the globe button to translate the entire page. <Text style={{ fontWeight: '600', color: colors.ink }}>Hold the globe button</Text> to open the language dropdown.
                 </Text>
               </View>
             </View>
@@ -124,7 +124,7 @@ export function ReaderGuideModal({ visible, onClose }: ReaderGuideModalProps) {
             {/* Helpful reminder note */}
             <View style={styles.tipWrap}>
               <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 12, textAlign: 'center', lineHeight: 17 }]}>
-                To view this guide again anytime, tap the <Text style={{ color: colors.flameAmber, fontWeight: '700' }}>☰ Menu</Text> icon and select <Text style={{ color: colors.flameAmber, fontWeight: '700' }}>Reader Guide</Text>.
+                To view this guide again anytime, tap the <Text style={{ color: colors.flameAmber, fontWeight: '700' }}>?</Text> button in the top left corner.
               </Text>
             </View>
           </ScrollView>

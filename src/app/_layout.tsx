@@ -7,7 +7,7 @@ import {
 } from '@expo-google-fonts/lora';
 import { Manrope_400Regular, Manrope_600SemiBold, Manrope_700Bold } from '@expo-google-fonts/manrope';
 import { useFonts } from 'expo-font';
-import { Stack } from 'expo-router';
+import { Stack, usePathname } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import * as SystemUI from 'expo-system-ui';
 import { useEffect, useState } from 'react';
@@ -83,9 +83,17 @@ export default function RootLayout() {
 
 function AppShell() {
   const { colors } = useTheme();
-  // Fallback for any route not listed below — matches the shared default so
-  // an unmatched screen still blends rather than flashing an unrelated tone.
-  const contentBackground = colors.libraryBackground;
+  const pathname = usePathname();
+
+  // Dark-surface routes that must never reveal a light native window or container gap during transitions
+  const isDarkRoute =
+    pathname === '/' ||
+    pathname === '/index' ||
+    pathname === '/onboarding' ||
+    pathname === '/paywall' ||
+    (typeof pathname === 'string' && pathname.startsWith('/quote-share'));
+
+  const contentBackground = isDarkRoute ? colors.primaryDark : colors.libraryBackground;
 
   // app.json pins the native Android root window background to charcoal
   // (baked in at build time, for the dark Splash/Onboarding hand-off) — that
@@ -114,14 +122,21 @@ function AppShell() {
         {/* Each screen's own root View sets one of colors.primaryDark /
             colors.parchment / colors.libraryBackground — contentStyle here is
             pinned to match exactly, per route, so the animated gap between
-            two screens never reveals a third, mismatched color (that
-            mismatch was the flash on back-navigation: contentStyle defaulted
-            to libraryBackground everywhere, so parchment reader screens
-            popping back to a libraryBackground list screen flashed the
-            correct color momentarily against the reader's own still-visible
-            parchment). */}
-        <Stack.Screen name="index" options={{ contentStyle: { backgroundColor: colors.primaryDark } }} />
-        <Stack.Screen name="onboarding" options={{ contentStyle: { backgroundColor: colors.primaryDark } }} />
+            two screens never reveals a third, mismatched color. */}
+        <Stack.Screen
+          name="index"
+          options={{
+            contentStyle: { backgroundColor: colors.primaryDark },
+            animation: 'fade',
+          }}
+        />
+        <Stack.Screen
+          name="onboarding"
+          options={{
+            contentStyle: { backgroundColor: colors.primaryDark },
+            animation: 'fade',
+          }}
+        />
         <Stack.Screen name="paywall" options={{ contentStyle: { backgroundColor: colors.primaryDark } }} />
         <Stack.Screen
           name="quote-share/[highlightId]"
