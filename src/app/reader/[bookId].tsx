@@ -13,6 +13,9 @@ import {
 } from 'react-native';
 import Animated, {
   Easing,
+  interpolateColor,
+  type SharedValue,
+  useAnimatedScrollHandler,
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
@@ -22,13 +25,14 @@ import Animated, {
 import Svg, { Circle, Defs, LinearGradient, Path, Rect, Stop } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ChevronLeftIcon, CloseIcon, MenuIcon, MoonIcon, SoundWaveIcon, SunIcon, TranslateIcon } from '@/components/icons';
+import { ChevronLeftIcon, CloseIcon, MoonIcon, QuestionIcon, SoundWaveIcon, SunIcon, TranslateIcon } from '@/components/icons';
 import { AmbiencePicker } from '@/features/ambience/AmbiencePicker';
 import { useAmbienceTrackId } from '@/features/ambience/ambiencePreference';
 import { ambienceTrackById } from '@/features/ambience/tracks';
 import { useAmbiencePlayer } from '@/features/ambience/useAmbiencePlayer';
 import { usePageTurnSound } from '@/features/reader/usePageTurnSound';
 import { BookLoadingScreen } from '@/features/reader/components/BookLoadingScreen';
+import { BookPageFrame } from '@/features/reader/components/BookPageFrame';
 import { ReaderPageView } from '@/features/reader/components/ReaderPageView';
 import { WordActionMenu } from '@/features/reader/components/WordActionMenu';
 import { WordTranslationPopup } from '@/features/reader/components/WordTranslationPopup';
@@ -56,7 +60,6 @@ import { listSavedWordsForBook, saveWord, type SavedWord } from '@/db/repositori
 import { getSetting, setSetting } from '@/db/repositories/appSettings';
 import { LanguagePicker } from '@/components/LanguagePicker';
 import { ReaderGuideModal } from '@/features/reader/components/ReaderGuideModal';
-import { ReaderMenuModal } from '@/features/reader/components/ReaderMenuModal';
 import { setTargetLanguage, targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
 import { getReadingFontSize, getReadingLineHeight, READING_FONT_SIZE_PX, READING_LINE_HEIGHT_PX } from '@/features/settings/readingPrefs';
 import { getReadingTheme, setReadingTheme, useReadingTheme } from '@/features/settings/readingTheme';
@@ -67,6 +70,8 @@ import { useTheme } from '@/theme/ThemeProvider';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
 const READER_GUIDE_SEEN_KEY = 'reader_guide_shown_once';
 const READER_HINT_SETTING_KEY = 'reader_gesture_hint_v4';
 
@@ -75,36 +80,93 @@ const READER_HINT_SETTING_KEY = 'reader_gesture_hint_v4';
 // regardless of the app-wide theme. Dark is a flat linear gradient (no amber
 // glow wash, no brightness control — just the page going dark), identical to
 // the Splash/Onboarding background.
-const READING_BG_LIGHT = '#F5EDE1';
-const READING_TEXT_LIGHT = '#2B2621';
+const READING_BG_LIGHT = '#F4EBD9';
+const READING_TEXT_LIGHT = '#241D17';
 const READING_TEXT_DARK = '#F0E6D6';
 const READING_DARK_STOPS = ['#1C1B1E', '#201E22', '#26221F'] as const;
 
 type ReaderMode = 'day' | 'lamp';
 
 // The reading-mode toggle shows the CURRENT mode: sun while reading in Day,
-// moon while reading by lamplight. Thin-line glyphs per the icon spec — the
-// old mini flame-glow rendered muddy at 20px inside the chrome circle.
-function ModeIcon({ mode }: { mode: ReaderMode }) {
-  return mode === 'lamp' ? (
-    <MoonIcon color={READING_TEXT_DARK} size={19} />
-  ) : (
-    <SunIcon color={READING_TEXT_LIGHT} size={19} />
+// moon while reading by lamplight. Micro-interaction: rotating & scaling crossfade
+// between sun and moon glyphs.
+function ModeIcon({ progress }: { progress: SharedValue<number> }) {
+  const sunStyle = useAnimatedStyle(() => ({
+    opacity: 1 - progress.value,
+    transform: [
+      { rotate: `${progress.value * 90}deg` },
+      { scale: 1 - progress.value * 0.25 },
+    ],
+  }));
+  const moonStyle = useAnimatedStyle(() => ({
+    opacity: progress.value,
+    transform: [
+      { rotate: `${(1 - progress.value) * -90}deg` },
+      { scale: 0.75 + progress.value * 0.25 },
+    ],
+  }));
+
+  return (
+    <View style={styles.modeIconContainer}>
+      <Animated.View style={[StyleSheet.absoluteFill, styles.centered, sunStyle]}>
+        <SunIcon color={READING_TEXT_LIGHT} size={19} />
+      </Animated.View>
+      <Animated.View style={[StyleSheet.absoluteFill, styles.centered, moonStyle]}>
+        <MoonIcon color={READING_TEXT_DARK} size={19} />
+      </Animated.View>
+    </View>
   );
 }
 
 type ReaderPageFrameProps = {
   children: React.ReactNode;
+  pageIndex: number;
+  scrollX: SharedValue<number>;
+  mode?: ReaderMode;
 };
 
-// A page is hundreds of per-word <Text> nodes. Applying a per-frame scale/
-// opacity to that subtree forced the GPU to rasterize the whole page into an
-// offscreen layer every frame of a swipe — the actual cause of the page-turn
-// lag. Dropping it lets pages ride the native horizontal paging directly,
-// which is the smoothest path there is (and the old recession effect was
-// nearly invisible anyway).
-function ReaderPageFrame({ children }: ReaderPageFrameProps) {
-  return <View style={styles.pageFrame}>{children}</View>;
+// 1890s antique open-book page frame with paper folding dynamics:
+// As the reader swipes, the turning page flexes with dynamic shading and a
+// trailing edge drop shadow, completely preventing any overlapping text.
+function ReaderPageFrame({ children, pageIndex, scrollX, mode = 'day' }: ReaderPageFrameProps) {
+  const isLamp = mode === 'lamp';
+
+  const pageFlexStyle = useAnimatedStyle(() => {
+    'worklet';
+    const x = scrollX.value;
+    const pageStart = pageIndex * screenWidth;
+    const offset = x - pageStart;
+
+    // This page is currently being turned to the left (0 <= offset <= screenWidth):
+    if (offset > 0 && offset < screenWidth) {
+      const progress = offset / screenWidth;
+      const archIntensity = Math.sin(progress * Math.PI);
+      return {
+        opacity: archIntensity * (isLamp ? 0.20 : 0.16),
+      };
+    }
+
+    return {
+      opacity: 0,
+    };
+  });
+
+  return (
+    <View style={styles.pageFrame}>
+      <BookPageFrame mode={mode}>
+        {children}
+        {/* Dynamic paper flex shading while folding/turning */}
+        <Animated.View
+          style={[
+            StyleSheet.absoluteFill,
+            { backgroundColor: isLamp ? '#000000' : '#2A1D12' },
+            pageFlexStyle,
+          ]}
+          pointerEvents="none"
+        />
+      </BookPageFrame>
+    </View>
+  );
 }
 
 // The exact selected substring across a word-aligned range spanning one or more
@@ -186,6 +248,14 @@ export default function ReaderScreen() {
   const [chromeVisible, setChromeVisible] = useState(true);
   const chromeOpacity = useSharedValue(1);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Real-time horizontal scroll tracking for velocity-sensitive page turn physics.
+  const scrollX = useSharedValue(0);
+  const scrollHandler = useAnimatedScrollHandler({
+    onScroll: (event) => {
+      scrollX.value = event.contentOffset.x;
+    },
+  });
   const [ambienceOpen, setAmbienceOpen] = useState(false);
   // Whole-page translation, keyed to the page it belongs to (so swiping away
   // from a translated page doesn't carry its translated text onto the next
@@ -246,7 +316,6 @@ export default function ReaderScreen() {
 
   const [languagePickerVisible, setLanguagePickerVisible] = useState(false);
   const [guideVisible, setGuideVisible] = useState(false);
-  const [menuVisible, setMenuVisible] = useState(false);
   const guideDismissedRef = useRef(false);
   const readerHintDismissedRef = useRef(false);
 
@@ -379,19 +448,44 @@ export default function ReaderScreen() {
   const savedWordColor = isLamp ? 'rgba(245,166,35,0.14)' : 'rgba(245,166,35,0.35)';
   const savedWordTextColor = isLamp ? '#F5A623' : '#2B2621';
 
-  // Background lives in its own animated absolute-fill layer, driven purely by
-  // the top-level render — so switching Day<->Lamp crossfades the whole screen
-  // the instant `mode` changes, independent of the FlatList's cell recycling.
-  // The dark state is the exact linear gradient used on Splash/Onboarding,
-  // crossfaded in via opacity — never an amber glow or an approximation.
+  // Background and chrome transition shared value: 0 = day, 1 = lamp.
+  // 380ms smooth GPU-accelerated bezier transition between paper & obsidian.
   const bgProgress = useSharedValue(isLamp ? 1 : 0);
   useEffect(() => {
-    // Swap instantly — the app-wide ThemeTransitionOverlay already plays the
-    // smooth day<->night crossfade over the whole screen, so animating the
-    // reader's own background too would double the effect (read as two flashes).
-    bgProgress.value = isLamp ? 1 : 0;
+    bgProgress.value = withTiming(isLamp ? 1 : 0, {
+      duration: 380,
+      easing: Easing.bezier(0.25, 1, 0.5, 1),
+    });
   }, [isLamp, bgProgress]);
   const darkBgStyle = useAnimatedStyle(() => ({ opacity: bgProgress.value }));
+
+  const dayChromeFadeStyle = useAnimatedStyle(() => ({
+    opacity: 1 - bgProgress.value,
+  }));
+  const nightChromeFadeStyle = useAnimatedStyle(() => ({
+    opacity: bgProgress.value,
+  }));
+
+  const animatedButtonStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(
+      bgProgress.value,
+      [0, 1],
+      ['#E7DBC7', '#2A2723'],
+    ),
+    borderColor: interpolateColor(
+      bgProgress.value,
+      [0, 1],
+      ['rgba(43,38,33,0.22)', 'rgba(240,230,214,0.30)'],
+    ),
+  }));
+
+  const animatedTopBarTextStyle = useAnimatedStyle(() => ({
+    color: interpolateColor(
+      bgProgress.value,
+      [0, 1],
+      [READING_TEXT_LIGHT, READING_TEXT_DARK],
+    ),
+  }));
 
   useEffect(() => {
     let cancelled = false;
@@ -622,7 +716,8 @@ export default function ReaderScreen() {
     const idx = findGlobalIndex(pages, startPosition.chapterIndex, startPosition.pageIndex);
     setInitialIndex(idx);
     setCurrentIndex(idx);
-  }, [pages, startPosition, initialIndex]);
+    scrollX.value = idx * screenWidth;
+  }, [pages, startPosition, initialIndex, scrollX]);
 
   // Lowercased set of saved words for this book — matched in the reader text so
   // already-looked-up words get an amber marker. Reference-stable via useMemo
@@ -1070,7 +1165,7 @@ export default function ReaderScreen() {
   }, [book, selection, pages, clearEdgeTurnTimer]);
 
   const renderPage = useCallback(
-    ({ item }: { item: ReaderPage; index: number }) => {
+    ({ item, index }: { item: ReaderPage; index: number }) => {
       let selectionForItem: {
         startParagraph: number;
         startOffset: number;
@@ -1114,10 +1209,11 @@ export default function ReaderScreen() {
           ? (translation.paragraphs ?? null)
           : null;
       return (
-        <ReaderPageFrame>
+        <ReaderPageFrame pageIndex={index} scrollX={scrollX} mode={mode}>
           <Pressable style={styles.pageTouchable} onPress={selection ? undefined : toggleChrome}>
             <ReaderPageView
               page={item}
+              mode={mode}
               textColor={textColor}
               topInset={insets.top}
               bottomInset={insets.bottom}
@@ -1165,6 +1261,7 @@ export default function ReaderScreen() {
       selection,
       activeWord,
       wordMenu,
+      mode,
     ],
   );
 
@@ -1288,14 +1385,7 @@ export default function ReaderScreen() {
   const timeLeftLabel =
     pagesLeft <= 0 ? 'Last page' : minutesLeft < 1 ? 'Almost done' : `${minutesLeft} min left`;
 
-  // Chrome (top bar) colors, pinned to the reading surface rather than the
-  // app-wide theme tokens, so the bar reads correctly in both reader modes.
-  const chromeFade = isLamp ? READING_DARK_STOPS[0] : READING_BG_LIGHT;
-  const chromeChevron = isLamp ? READING_TEXT_DARK : READING_TEXT_LIGHT;
   const chromePercent = LamplightColor.flameAmber;
-  // Solid (opaque) button fill — the moon crescent is carved with this exact
-  // color, so it must not be translucent or the carve would show through.
-  const modeButtonBg = isLamp ? '#2A2723' : '#E7DBC7';
 
   return (
     <View style={styles.container}>
@@ -1360,6 +1450,8 @@ export default function ReaderScreen() {
         maxToRenderPerBatch={3}
         updateCellsBatchingPeriod={30}
         onScrollBeginDrag={dismissHint}
+        onScroll={scrollHandler}
+        scrollEventThrottle={16}
       />
 
       {/* Corner hot-zone advances the page (fold motif tap-to-turn); tapping elsewhere on
@@ -1372,36 +1464,47 @@ export default function ReaderScreen() {
         pointerEvents={chromeVisible ? 'auto' : 'none'}
         style={[styles.topBar, chromeStyle, { height: insets.top + 64 }]}
       >
-        <Svg width={screenWidth} height={insets.top + 64} style={StyleSheet.absoluteFill}>
-          <Defs>
-            <LinearGradient id="chromeFade" x1="0" y1="0" x2="0" y2="1">
-              <Stop offset="0%" stopColor={chromeFade} stopOpacity={0.96} />
-              <Stop offset="70%" stopColor={chromeFade} stopOpacity={0.78} />
-              <Stop offset="100%" stopColor={chromeFade} stopOpacity={0} />
-            </LinearGradient>
-          </Defs>
-          <Rect x={0} y={0} width={screenWidth} height={insets.top + 64} fill="url(#chromeFade)" />
-        </Svg>
-        {/* Back, percent, and the mode toggle (rendered outside this bar) all
-            center on the same line: the mode button's 38px circle sits at
-            insets.top + 10, so its centerline is insets.top + 29. */}
+        <Animated.View style={[StyleSheet.absoluteFill, dayChromeFadeStyle]} pointerEvents="none">
+          <Svg width={screenWidth} height={insets.top + 64} style={StyleSheet.absoluteFill}>
+            <Defs>
+              <LinearGradient id="chromeFadeDay" x1="0" y1="0" x2="0" y2="1">
+                <Stop offset="0%" stopColor={READING_BG_LIGHT} stopOpacity={0.96} />
+                <Stop offset="70%" stopColor={READING_BG_LIGHT} stopOpacity={0.78} />
+                <Stop offset="100%" stopColor={READING_BG_LIGHT} stopOpacity={0} />
+              </LinearGradient>
+            </Defs>
+            <Rect x={0} y={0} width={screenWidth} height={insets.top + 64} fill="url(#chromeFadeDay)" />
+          </Svg>
+        </Animated.View>
+        <Animated.View style={[StyleSheet.absoluteFill, nightChromeFadeStyle]} pointerEvents="none">
+          <Svg width={screenWidth} height={insets.top + 64} style={StyleSheet.absoluteFill}>
+            <Defs>
+              <LinearGradient id="chromeFadeLamp" x1="0" y1="0" x2="0" y2="1">
+                <Stop offset="0%" stopColor={READING_DARK_STOPS[0]} stopOpacity={0.96} />
+                <Stop offset="70%" stopColor={READING_DARK_STOPS[0]} stopOpacity={0.78} />
+                <Stop offset="100%" stopColor={READING_DARK_STOPS[0]} stopOpacity={0} />
+              </LinearGradient>
+            </Defs>
+            <Rect x={0} y={0} width={screenWidth} height={insets.top + 64} fill="url(#chromeFadeLamp)" />
+          </Svg>
+        </Animated.View>
+        {/* Percent readout and top-bar centerline */}
         <View style={[styles.topBarRow, { paddingTop: insets.top + 19 }]}>
-          <Pressable
-            onPress={() => router.back()}
-            hitSlop={12}
-            style={[styles.topBarBack, { left: spacing.lg, top: insets.top + 10 }]}
-          >
-            <ChevronLeftIcon color={chromeChevron} size={18} />
-          </Pressable>
           {/* Reading progress, centered at the top: which page of how many,
               plus how much reading is left, so a long book has a visible end. */}
           <View style={styles.topBarProgress}>
             <Text style={[typography.uiRowTitle, { color: chromePercent, fontSize: 13 }]}>
               Page {pageNumber} of {totalPages}
             </Text>
-            <Text style={[typography.metadataCaption, { color: chromeChevron, fontSize: 11, opacity: 0.6 }]}>
+            <Animated.Text
+              style={[
+                typography.metadataCaption,
+                { fontSize: 11, opacity: 0.6 },
+                animatedTopBarTextStyle,
+              ]}
+            >
               {percent}% · {timeLeftLabel}
-            </Text>
+            </Animated.Text>
           </View>
         </View>
       </Animated.View>
@@ -1417,21 +1520,92 @@ export default function ReaderScreen() {
         />
       </View>
 
-      {/* Reader Tools Hamburger Menu Button */}
-      <Pressable
+      {/* Reader Guide Button (?) — perfectly aligned with the top-right buttons */}
+      <AnimatedPressable
         hitSlop={12}
         style={[
-          styles.menuButton,
-          {
-            top: insets.top + 10,
-            backgroundColor: modeButtonBg,
-            borderColor: isLamp ? 'rgba(240,230,214,0.30)' : 'rgba(43,38,33,0.22)',
-          },
+          styles.guideButton,
+          { top: insets.top + 10 },
+          animatedButtonStyle,
         ]}
-        onPress={() => setMenuVisible(true)}
+        onPress={() => setGuideVisible(true)}
+        onLongPress={() => router.back()}
+        delayLongPress={500}
       >
-        <MenuIcon color={chromeChevron} size={19} />
-      </Pressable>
+        <View style={styles.buttonIconContainer}>
+          <Animated.View style={[StyleSheet.absoluteFill, styles.centered, dayChromeFadeStyle]}>
+            <QuestionIcon color={READING_TEXT_LIGHT} size={18} />
+          </Animated.View>
+          <Animated.View style={[StyleSheet.absoluteFill, styles.centered, nightChromeFadeStyle]}>
+            <QuestionIcon color={READING_TEXT_DARK} size={18} />
+          </Animated.View>
+        </View>
+      </AnimatedPressable>
+
+      {/* Reading mode toggle */}
+      <AnimatedPressable
+        hitSlop={12}
+        style={[
+          styles.modeCycleButton,
+          { top: insets.top + 10 },
+          animatedButtonStyle,
+        ]}
+        onPress={() => setReadingTheme(isLamp ? 'day' : 'lamp')}
+      >
+        <ModeIcon progress={bgProgress} />
+      </AnimatedPressable>
+
+      {/* Reading ambience sound button */}
+      <AnimatedPressable
+        hitSlop={12}
+        style={[
+          styles.ambienceButton,
+          { top: insets.top + 10 },
+          animatedButtonStyle,
+        ]}
+        onPress={() => setAmbienceOpen(true)}
+      >
+        <View style={styles.buttonIconContainer}>
+          <Animated.View style={[StyleSheet.absoluteFill, styles.centered, dayChromeFadeStyle]}>
+            <SoundWaveIcon color={ambienceTrackId ? colors.flameAmber : READING_TEXT_LIGHT} size={18} />
+          </Animated.View>
+          <Animated.View style={[StyleSheet.absoluteFill, styles.centered, nightChromeFadeStyle]}>
+            <SoundWaveIcon color={ambienceTrackId ? colors.flameAmber : READING_TEXT_DARK} size={18} />
+          </Animated.View>
+        </View>
+      </AnimatedPressable>
+
+      {/* Page translation button */}
+      <AnimatedPressable
+        hitSlop={12}
+        style={[
+          styles.translateButton,
+          { top: insets.top + 10 },
+          animatedButtonStyle,
+        ]}
+        onPress={toggleTranslation}
+        onLongPress={() => setLanguagePickerVisible(true)}
+        delayLongPress={350}
+      >
+        {currentTranslation?.status === 'loading' ? (
+          <ActivityIndicator size="small" color={isLamp ? READING_TEXT_DARK : READING_TEXT_LIGHT} />
+        ) : (
+          <View style={styles.buttonIconContainer}>
+            <Animated.View style={[StyleSheet.absoluteFill, styles.centered, dayChromeFadeStyle]}>
+              <TranslateIcon
+                color={currentTranslation?.status === 'ready' ? colors.flameAmber : READING_TEXT_LIGHT}
+                size={18}
+              />
+            </Animated.View>
+            <Animated.View style={[StyleSheet.absoluteFill, styles.centered, nightChromeFadeStyle]}>
+              <TranslateIcon
+                color={currentTranslation?.status === 'ready' ? colors.flameAmber : READING_TEXT_DARK}
+                size={18}
+              />
+            </Animated.View>
+          </View>
+        )}
+      </AnimatedPressable>
 
       {/* Daily free-limit notice — the same message the word-tap popup shows,
           just as a small inline card (matching the gesture-hint card below)
@@ -1619,20 +1793,6 @@ export default function ReaderScreen() {
         onClose={() => setLanguagePickerVisible(false)}
       />
 
-      <ReaderMenuModal
-        visible={menuVisible}
-        onClose={() => setMenuVisible(false)}
-        onOpenGuide={() => setGuideVisible(true)}
-        onToggleTranslation={toggleTranslation}
-        isTranslated={currentTranslation?.status === 'ready'}
-        isTranslating={currentTranslation?.status === 'loading'}
-        onOpenLanguagePicker={() => setLanguagePickerVisible(true)}
-        targetLanguage={targetLanguage}
-        onOpenAmbience={() => setAmbienceOpen(true)}
-        ambienceLabel={ambienceTrackById(ambienceTrackId)?.label ?? null}
-        mode={mode}
-        onToggleMode={() => setReadingTheme(isLamp ? 'day' : 'lamp')}
-      />
 
       <ReaderGuideModal
         visible={guideVisible}
@@ -1656,6 +1816,7 @@ const styles = StyleSheet.create({
   pageFrame: {
     width: screenWidth,
     height: screenHeight,
+    overflow: 'visible',
   },
   pageTouchable: {
     flex: 1,
@@ -1679,9 +1840,33 @@ const styles = StyleSheet.create({
     width: 72,
     height: 72,
   },
-  menuButton: {
+  modeCycleButton: {
     position: 'absolute',
     right: 16,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 20,
+    elevation: 6,
+  },
+  ambienceButton: {
+    position: 'absolute',
+    right: 64,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 20,
+    elevation: 6,
+  },
+  translateButton: {
+    position: 'absolute',
+    right: 112,
     width: 38,
     height: 38,
     borderRadius: 19,
@@ -1706,11 +1891,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 1,
   },
-  // Same 38px box as modeCycleButton so the chevron centers on the same line.
-  topBarBack: {
+  guideButton: {
     position: 'absolute',
+    left: 16,
     width: 38,
     height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 20,
+    elevation: 6,
+  },
+  modeIconContainer: {
+    width: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  buttonIconContainer: {
+    width: 20,
+    height: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },

@@ -49,52 +49,73 @@ export default function SplashScreen() {
       </Svg>
 
       <View style={styles.content}>
-        <Animated.View entering={FadeIn.duration(620).easing(Easing.out(Easing.cubic))}>
-          <FlameGlow size={84} variant="flicker" />
+        <Animated.View entering={FadeIn.duration(600).easing(Easing.out(Easing.cubic))}>
+          <FlameGlow size={92} variant="flicker" showTile={false} />
         </Animated.View>
-        <Animated.Text
-          entering={FadeInDown.delay(320).duration(480).easing(Easing.out(Easing.cubic))}
-          style={[typography.wordmark, { color: colors.lampText, marginTop: spacing.lg }]}
+
+        <Animated.View
+          entering={FadeIn.delay(180).duration(500).easing(Easing.out(Easing.cubic))}
+          style={{ alignItems: 'center' }}
         >
-          Lamplight
-        </Animated.Text>
-        <Animated.Text
-          entering={FadeInDown.delay(560).duration(420).easing(Easing.out(Easing.cubic))}
-          style={[
-            typography.poeticTagline,
-            { color: colors.fawn, marginTop: spacing.sm, textAlign: 'center' },
-          ]}
-        >
-          The night is a page, and the lamp its only light
-        </Animated.Text>
+          <Text
+            style={[
+              typography.wordmark,
+              { color: colors.parchment, fontSize: 36, letterSpacing: 0.8, marginTop: spacing.xl },
+            ]}
+          >
+            Lamplight
+          </Text>
+
+          <Text
+            style={[
+              typography.metadataCaption,
+              {
+                color: colors.mutedOnDark,
+                marginTop: spacing.md,
+                textAlign: 'center',
+                maxWidth: 270,
+                lineHeight: 22,
+                letterSpacing: 0.2,
+              },
+            ]}
+          >
+            A quiet sanctuary to read in original script and learn as you turn each page.
+          </Text>
+        </Animated.View>
       </View>
 
       <Animated.View
-        entering={FadeInUp.delay(820).duration(420).easing(Easing.out(Easing.cubic))}
-        style={[styles.footer, { bottom: Math.max(insets.bottom + 24, 36) }]}
+        entering={FadeIn.delay(350).duration(450).easing(Easing.out(Easing.cubic))}
+        style={[styles.footer, { bottom: Math.max(insets.bottom + 28, 40) }]}
       >
         <Pressable
           onPress={handleBegin}
-          hitSlop={8}
+          hitSlop={12}
           style={({ pressed }) => [
             styles.beginButton,
             {
               backgroundColor: colors.flameAmber,
-              opacity: pressed ? 0.88 : 1,
-              transform: [{ scale: pressed ? 0.98 : 1 }],
+              opacity: pressed ? 0.85 : 1,
+              transform: [{ scale: pressed ? 0.96 : 1 }],
             },
           ]}
         >
           <Text
             style={[
               typography.buttonLabel,
-              { color: colors.primaryDark, includeFontPadding: false, textAlignVertical: 'center' },
+              {
+                color: colors.primaryDark,
+                includeFontPadding: false,
+                textAlignVertical: 'center',
+                letterSpacing: 0.6,
+                fontSize: 15,
+              },
             ]}
           >
             Begin
           </Text>
-          <View style={{ marginLeft: 6 }}>
-            <ChevronRightIcon color={colors.primaryDark} size={18} />
+          <View style={styles.iconCircle}>
+            <ChevronRightIcon color={colors.primaryDark} size={13} />
           </View>
         </Pressable>
       </Animated.View>
@@ -113,17 +134,25 @@ const styles = StyleSheet.create({
   },
   footer: {
     position: 'absolute',
-    left: 32,
-    right: 32,
+    left: 0,
+    right: 0,
     alignItems: 'center',
   },
   beginButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 52,
-    paddingVertical: 15,
-    paddingHorizontal: 40,
-    borderRadius: 100,
+    height: 46,
+    paddingHorizontal: 26,
+    borderRadius: 23,
+  },
+  iconCircle: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(28, 27, 30, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
   },
 });
