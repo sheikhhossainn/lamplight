@@ -20,7 +20,7 @@ import { translationProvider } from '@/features/translation';
 import { useTheme } from '@/theme/ThemeProvider';
 import { WordChip } from './WordChip';
 
-const FREE_DAILY_DECIPHER_LIMIT = 3;
+const FREE_DAILY_DECIPHER_LIMIT = 20;
 
 function getTodayKey(): string {
   return new Date().toISOString().slice(0, 10);
@@ -258,7 +258,7 @@ export function DecipherPageSheet({
                   { color: colors.umber, fontSize: 14, lineHeight: 22, textAlign: 'center', marginTop: 8 },
                 ]}
               >
-                Free tier provides 3 Illuminated Page Decryptions per day. Upgrade to Lamplight
+                Free tier provides 20 Illuminated Page Decryptions per day. Upgrade to Lamplight
                 Fellowship for unlimited sentence-by-sentence phonetic breakdowns.
               </Text>
               <Pressable
