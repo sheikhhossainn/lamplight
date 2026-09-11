@@ -144,13 +144,22 @@ export async function getAllBookLexicons(): Promise<Map<string, BookLexiconProfi
           const profile = prof as BookLexiconProfile;
           result.set(id, profile);
           lexiconCache.set(id, profile);
-          upsertBookLexicon(
-            profile.bookId,
-            profile.totalRunningTokens,
-            profile.uniqueWordCount,
-            profile.tokenFrequencies,
-          ).catch(() => {});
         }
+        // Asynchronously seed into SQLite sequentially to prevent lock contention
+        (async () => {
+          try {
+            for (const profile of result.values()) {
+              await upsertBookLexicon(
+                profile.bookId,
+                profile.totalRunningTokens,
+                profile.uniqueWordCount,
+                profile.tokenFrequencies,
+              );
+            }
+          } catch {
+            // Non-fatal background cache seed
+          }
+        })();
       }
     } catch {
       // Bundled file not available yet

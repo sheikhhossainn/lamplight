@@ -196,6 +196,8 @@ export async function getDb(): Promise<SQLiteDatabase> {
   if (!dbPromise) {
     dbPromise = (async () => {
       const db = await openDatabaseAsync('lamplight.db');
+      await db.execAsync('PRAGMA journal_mode = WAL;');
+      await db.execAsync('PRAGMA busy_timeout = 5000;');
       await migrate(db);
       const enqueue = createQueue();
       await enqueue(() => seedBootstrapIfEmpty(db));
