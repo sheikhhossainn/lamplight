@@ -44,10 +44,6 @@ type BookSpineProps = {
   width?: number;
   height?: number;
   rotateDeg?: number;
-  coverage?: {
-    coveragePercent: number;
-    tier: 'ready' | 'challenging' | 'not_yet';
-  } | null;
 };
 
 export function BookSpine({
@@ -59,7 +55,6 @@ export function BookSpine({
   width = 96,
   height = 140,
   rotateDeg = 0,
-  coverage,
 }: BookSpineProps) {
   const { colors, typography, radius, scheme } = useTheme();
   const [coverFailed, setCoverFailed] = useState(false);
@@ -120,34 +115,6 @@ export function BookSpine({
             {title}
           </Text>
         )}
-        {coverage && (
-          <View
-            style={[
-              styles.badgeContainer,
-              coverage.tier === 'ready'
-                ? { backgroundColor: '#F5A623', borderColor: '#F5A623' }
-                : coverage.tier === 'challenging'
-                ? { backgroundColor: 'rgba(140, 122, 107, 0.9)', borderColor: '#8C7A6B' }
-                : { backgroundColor: 'rgba(28, 27, 30, 0.8)', borderColor: 'rgba(245, 237, 225, 0.35)' },
-            ]}
-          >
-            <Text
-              numberOfLines={1}
-              style={[
-                styles.badgeText,
-                {
-                  color: coverage.tier === 'ready' ? '#1C1B1E' : '#F5EDE1',
-                },
-              ]}
-            >
-              {coverage.tier === 'ready'
-                ? `${Math.round(coverage.coveragePercent)}% Ready`
-                : coverage.tier === 'challenging'
-                ? `${Math.round(coverage.coveragePercent)}% Mod`
-                : `${Math.round(coverage.coveragePercent)}% Adv`}
-            </Text>
-          </View>
-        )}
         <View style={[styles.curl, { borderBottomColor: curlTint }]} />
       </View>
     </Pressable>
@@ -174,20 +141,5 @@ const styles = StyleSheet.create({
     borderBottomWidth: 14,
     borderLeftWidth: 14,
     borderLeftColor: 'transparent',
-  },
-  badgeContainer: {
-    position: 'absolute',
-    top: 6,
-    right: 6,
-    paddingHorizontal: 5,
-    paddingVertical: 2,
-    borderRadius: 999,
-    borderWidth: 1,
-    zIndex: 10,
-  },
-  badgeText: {
-    fontFamily: 'Manrope_600SemiBold',
-    fontSize: 8.5,
-    letterSpacing: 0.2,
   },
 });
