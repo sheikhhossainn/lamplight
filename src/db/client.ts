@@ -89,7 +89,27 @@ async function migrate(db: SQLiteDatabase) {
   )) ?? { user_version: 0 };
 
   for (let version = currentVersion; version < MIGRATIONS.length; version += 1) {
-    await db.execAsync(MIGRATIONS[version]);
+    const rawSql = MIGRATIONS[version];
+    const statements = rawSql
+      .split(';')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+
+    for (const statement of statements) {
+      try {
+        await db.execAsync(statement);
+      } catch (err: unknown) {
+        const msg = String(err).toLowerCase();
+        if (
+          msg.includes('duplicate column') ||
+          msg.includes('already exists')
+        ) {
+          // Column or table was already created in an interrupted run; safe to skip
+          continue;
+        }
+        throw err;
+      }
+    }
     await db.execAsync(`PRAGMA user_version = ${version + 1}`);
   }
 }
@@ -195,15 +215,20 @@ function refreshFromRemoteInBackground(db: SQLiteDatabase, enqueue: Enqueue) {
 export async function getDb(): Promise<SQLiteDatabase> {
   if (!dbPromise) {
     dbPromise = (async () => {
-      const db = await openDatabaseAsync('lamplight.db');
-      await db.execAsync('PRAGMA journal_mode = WAL;');
-      await db.execAsync('PRAGMA busy_timeout = 5000;');
-      await migrate(db);
-      const enqueue = createQueue();
-      await enqueue(() => seedBootstrapIfEmpty(db));
-      await enqueue(() => backfillBootstrapCategories(db));
-      refreshFromRemoteInBackground(db, enqueue);
-      return serializeDb(db, enqueue);
+      try {
+        const db = await openDatabaseAsync('lamplight.db');
+        await db.execAsync('PRAGMA journal_mode = WAL;');
+        await db.execAsync('PRAGMA busy_timeout = 5000;');
+        await migrate(db);
+        const enqueue = createQueue();
+        await enqueue(() => seedBootstrapIfEmpty(db));
+        await enqueue(() => backfillBootstrapCategories(db));
+        refreshFromRemoteInBackground(db, enqueue);
+        return serializeDb(db, enqueue);
+      } catch (error) {
+        dbPromise = null;
+        throw error;
+      }
     })();
   }
   return dbPromise;
