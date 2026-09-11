@@ -1834,6 +1834,7 @@ export default function ReaderScreen() {
         chapterIndex={currentPage?.chapterIndex ?? 0}
         sourceLanguage={book?.sourceLanguage || 'en'}
         targetLanguage={targetLanguage}
+        onTargetLanguageChange={setTargetLanguage}
         isPremium={isPremiumUser()}
       />
     </View>

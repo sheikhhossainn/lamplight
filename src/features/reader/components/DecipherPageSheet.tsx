@@ -10,10 +10,12 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { CloseIcon, TranslateIcon } from '@/components/icons';
+import { ChevronDownIcon, CloseIcon, TranslateIcon } from '@/components/icons';
+import { LanguagePicker } from '@/components/LanguagePicker';
 import { getSetting, setSetting } from '@/db/repositories/appSettings';
 import { listSavedWordsForBook, saveWord } from '@/db/repositories/savedWords';
 import { transliterateSentence } from '@/features/reader/engine/transliterate';
+import { targetLanguageLabel, type TargetLanguage } from '@/features/settings/languagePair';
 import { translationProvider } from '@/features/translation';
 import { useTheme } from '@/theme/ThemeProvider';
 import { WordChip } from './WordChip';
@@ -41,6 +43,7 @@ type DecipherPageSheetProps = {
   sourceLanguage?: string;
   targetLanguage?: string;
   isPremium?: boolean;
+  onTargetLanguageChange?: (code: TargetLanguage) => void;
 };
 
 export function DecipherPageSheet({
@@ -53,26 +56,33 @@ export function DecipherPageSheet({
   sourceLanguage = 'en',
   targetLanguage = 'es',
   isPremium = false,
+  onTargetLanguageChange,
 }: DecipherPageSheetProps) {
   const { colors, typography, spacing, radius } = useTheme();
   const insets = useSafeAreaInsets();
 
+  const [activeTargetLang, setActiveTargetLang] = useState<string>(targetLanguage);
+  const [langPickerVisible, setLangPickerVisible] = useState(false);
   const [loading, setLoading] = useState(true);
   const [limitReached, setLimitReached] = useState(false);
   const [remainingUsage, setRemainingUsage] = useState(FREE_DAILY_DECIPHER_LIMIT);
   const [sentences, setSentences] = useState<DecipherSentence[]>([]);
   const [savedWordSet, setSavedWordSet] = useState<Set<string>>(new Set());
 
+  useEffect(() => {
+    setActiveTargetLang(targetLanguage);
+  }, [targetLanguage]);
+
   const initDecipher = useCallback(async () => {
     if (!visible) return;
     setLoading(true);
 
-    // 1. Check daily limit
+    // 1. Check daily limit (bypassed in __DEV__ or premium)
     const key = `decipher_usage_${getTodayKey()}`;
     const rawCount = await getSetting(key);
     const countUsed = rawCount ? parseInt(rawCount, 10) || 0 : 0;
 
-    if (!isPremium && countUsed >= FREE_DAILY_DECIPHER_LIMIT) {
+    if (!isPremium && !__DEV__ && countUsed >= FREE_DAILY_DECIPHER_LIMIT) {
       setLimitReached(true);
       setRemainingUsage(0);
       setLoading(false);
@@ -81,9 +91,9 @@ export function DecipherPageSheet({
 
     setLimitReached(false);
     const newRemaining = Math.max(0, FREE_DAILY_DECIPHER_LIMIT - (countUsed + 1));
-    setRemainingUsage(isPremium ? Infinity : newRemaining);
+    setRemainingUsage(isPremium || __DEV__ ? Infinity : newRemaining);
 
-    if (!isPremium) {
+    if (!isPremium && !__DEV__) {
       await setSetting(key, (countUsed + 1).toString());
     }
 
@@ -112,7 +122,7 @@ export function DecipherPageSheet({
         const res = await translationProvider.translateSelection(
           raw,
           sourceLanguage as any,
-          targetLanguage as any,
+          activeTargetLang as any,
         );
         translation = res.translatedText;
       } catch {
@@ -131,7 +141,7 @@ export function DecipherPageSheet({
           const wRes = await translationProvider.translateWord(
             w,
             sourceLanguage as any,
-            targetLanguage as any,
+            activeTargetLang as any,
           );
           words.push({ word: w, definition: wRes.translatedText });
         } catch {
@@ -149,7 +159,7 @@ export function DecipherPageSheet({
 
     setSentences(parsed);
     setLoading(false);
-  }, [visible, bookId, pageText, sourceLanguage, targetLanguage, isPremium]);
+  }, [visible, bookId, pageText, sourceLanguage, activeTargetLang, isPremium]);
 
   useEffect(() => {
     if (visible) {
@@ -157,13 +167,19 @@ export function DecipherPageSheet({
     }
   }, [visible, initDecipher]);
 
+  const handleSelectLanguage = (code: TargetLanguage) => {
+    setActiveTargetLang(code);
+    setLangPickerVisible(false);
+    onTargetLanguageChange?.(code);
+  };
+
   const handleSaveWord = async (word: string, def: string, sentence: string) => {
     try {
       await saveWord({
         bookId,
         sourceWord: word,
         sourceLang: sourceLanguage,
-        targetLang: targetLanguage,
+        targetLang: activeTargetLang,
         translation: def || 'Key vocabulary',
         contextSentence: sentence,
         chapterIndex,
@@ -206,9 +222,24 @@ export function DecipherPageSheet({
                   Illuminated Decryption Sheet
                 </Text>
               </View>
-              <Text style={[typography.metadataCaption, { color: colors.fawn, marginTop: 2 }]}>
-                Page {pageIndex + 1} · {isPremium ? 'Unlimited Decryptions' : `${remainingUsage} free decryptions left today`}
-              </Text>
+              <View style={styles.subHeaderRow}>
+                <Text style={[typography.metadataCaption, { color: colors.fawn }]}>
+                  Page {pageIndex + 1} · {isPremium || __DEV__ ? 'Unlimited Decryptions' : `${remainingUsage} free left today`}
+                </Text>
+                <Pressable
+                  onPress={() => setLangPickerVisible(true)}
+                  hitSlop={8}
+                  style={[
+                    styles.langPill,
+                    { backgroundColor: colors.hairline, borderColor: colors.fawn, borderRadius: radius.pill },
+                  ]}
+                >
+                  <Text style={[typography.buttonLabel, { color: colors.ink, fontSize: 11, marginRight: 4 }]}>
+                    → {targetLanguageLabel(activeTargetLang as TargetLanguage)}
+                  </Text>
+                  <ChevronDownIcon color={colors.fawn} size={12} />
+                </Pressable>
+              </View>
             </View>
             <Pressable onPress={onClose} hitSlop={12} style={styles.closeBtn}>
               <CloseIcon color={colors.fawn} size={18} />
@@ -350,6 +381,13 @@ export function DecipherPageSheet({
           )}
         </View>
       </View>
+
+      <LanguagePicker
+        visible={langPickerVisible}
+        selected={activeTargetLang as TargetLanguage}
+        onSelect={handleSelectLanguage}
+        onClose={() => setLangPickerVisible(false)}
+      />
     </Modal>
   );
 }
@@ -380,6 +418,20 @@ const styles = StyleSheet.create({
   titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  subHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 4,
+    paddingRight: 8,
+  },
+  langPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderWidth: 1,
   },
   closeBtn: {
     padding: 6,
