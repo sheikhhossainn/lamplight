@@ -187,4 +187,28 @@ export const MIGRATIONS: string[] = [
     PRIMARY KEY (book_id, chapter_index)
   );
   `,
+  // v11 — Japanese literature (Aozora Bunko) library support: chapter TOC and full content storage.
+  `
+  CREATE TABLE IF NOT EXISTS japanese_chapters (
+    book_id TEXT NOT NULL,
+    chapter_index INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    slug TEXT NOT NULL,
+    content TEXT NOT NULL,
+    is_downloaded INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (book_id, chapter_index)
+  );
+  `,
+  // v12 — Korean literature (Gongu Madang) library support: chapter TOC and full content storage.
+  `
+  CREATE TABLE IF NOT EXISTS korean_chapters (
+    book_id TEXT NOT NULL,
+    chapter_index INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    slug TEXT NOT NULL,
+    content TEXT NOT NULL,
+    is_downloaded INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (book_id, chapter_index)
+  );
+  `,
 ];

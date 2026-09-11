@@ -16,8 +16,19 @@ export async function hydrateOnboardingStatus(): Promise<void> {
   hydrated = true;
 }
 
+// Set to true to always show Splash -> Onboarding on every start in development / testing.
+const ALWAYS_SHOW_ONBOARDING_IN_DEV = true;
+
 export function hasCompletedOnboarding(): boolean {
+  if (__DEV__ && ALWAYS_SHOW_ONBOARDING_IN_DEV) {
+    return false;
+  }
   return completed;
+}
+
+export function resetOnboardingForTesting(): void {
+  completed = false;
+  void setSetting(STORAGE_KEY, '0');
 }
 
 export function markOnboardingComplete(): void {

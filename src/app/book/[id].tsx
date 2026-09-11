@@ -1,9 +1,10 @@
 import { Image } from 'expo-image';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { isBengaliText, isJapaneseText, isKoreanText } from '@/theme/typography';
 import { isDarkSpineColor, spineColorForBook } from '@/components/BookSpine';
 import { AddToShelfSheet } from '@/components/AddToShelfSheet';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -31,6 +32,10 @@ export default function BookDetailScreen() {
   const insets = useSafeAreaInsets();
   const [book, setBook] = useState<BookRow | null>(null);
   const [coverFailed, setCoverFailed] = useState(false);
+
+  useEffect(() => {
+    setCoverFailed(false);
+  }, [id, book?.coverUrl]);
   const [position, setPosition] = useState<ReadingPosition | null>(null);
   const [quoteCount, setQuoteCount] = useState(0);
   const [savedWords, setSavedWords] = useState<SavedWord[]>([]);
@@ -54,12 +59,133 @@ export default function BookDetailScreen() {
           listShelves(),
           listShelfItems(),
         ]);
+        let resolvedBook = bookRow;
+        if (!resolvedBook && (id.startsWith('ja-') || id.includes('kokoro') || id.includes('botchan') || id.includes('rashomon') || id.includes('merosu') || id.includes('ginga') || id.includes('gon'))) {
+          try {
+            const { fetchJapaneseBookDetail } = await import('@/features/content-ingestion/japaneseApi');
+            const detail = await fetchJapaneseBookDetail(id);
+            if (detail) {
+              const { upsertJapaneseBook } = await import('@/db/repositories/books');
+              resolvedBook = await upsertJapaneseBook({
+                id: detail.id,
+                title: detail.title,
+                author: detail.author,
+                synopsis: detail.synopsis,
+                totalChapters: detail.totalChapters,
+                coverUrl: detail.coverUrl,
+                categories: [detail.genre],
+                isAvailable: true,
+              });
+            }
+          } catch {
+            // Ignore fallback failure
+          }
+        }
+
+        if (!resolvedBook && id.startsWith('aozora-')) {
+          try {
+            const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+            const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+            if (supabaseUrl && supabaseKey) {
+              const res = await fetch(
+                `${supabaseUrl}/rest/v1/books?id=eq.${encodeURIComponent(id)}&select=*`,
+                {
+                  headers: {
+                    apikey: supabaseKey,
+                    Authorization: `Bearer ${supabaseKey}`,
+                  },
+                },
+              );
+              if (res.ok) {
+                const rows = await res.json();
+                if (Array.isArray(rows) && rows.length > 0) {
+                  const row = rows[0];
+                  const { upsertJapaneseBook } = await import('@/db/repositories/books');
+                  resolvedBook = await upsertJapaneseBook({
+                    id: row.id,
+                    title: row.title,
+                    author: row.author,
+                    synopsis: row.synopsis,
+                    totalChapters: row.total_chapters || 0,
+                    coverUrl: row.cover_url,
+                    categories: row.categories || [],
+                    isAvailable: false,
+                    textUrl: row.text_url,
+                  });
+                }
+              }
+            }
+          } catch {
+            // Ignore fallback failure
+          }
+        }
+
+        if (!resolvedBook && (id.startsWith('ko-') || id.startsWith('gongu-'))) {
+          try {
+            const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+            const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+            if (supabaseUrl && supabaseKey) {
+              const res = await fetch(
+                `${supabaseUrl}/rest/v1/books?id=eq.${encodeURIComponent(id)}&select=*`,
+                {
+                  headers: {
+                    apikey: supabaseKey,
+                    Authorization: `Bearer ${supabaseKey}`,
+                  },
+                },
+              );
+              if (res.ok) {
+                const rows = await res.json();
+                if (Array.isArray(rows) && rows.length > 0) {
+                  const row = rows[0];
+                  const { upsertKoreanBook } = await import('@/db/repositories/books');
+                  resolvedBook = await upsertKoreanBook({
+                    id: row.id,
+                    title: row.title,
+                    author: row.author,
+                    synopsis: row.synopsis,
+                    totalChapters: row.total_chapters || 0,
+                    coverUrl: row.cover_url,
+                    categories: row.categories || [],
+                    isAvailable: true,
+                    textUrl: row.text_url,
+                  });
+                }
+              }
+            }
+          } catch {
+            // Ignore fallback failure
+          }
+
+          if (!resolvedBook) {
+            try {
+              const { GONGU_KOREAN_BOOKS } = await import('@/features/content-ingestion/koreanApi');
+              const hero = GONGU_KOREAN_BOOKS.find((b) => b.id === id || b.slug === id.replace(/^ko-/, ''));
+              if (hero) {
+                const { upsertKoreanBook } = await import('@/db/repositories/books');
+                resolvedBook = await upsertKoreanBook({
+                  id: hero.id,
+                  title: hero.title,
+                  author: hero.author,
+                  synopsis: hero.synopsis,
+                  totalChapters: hero.totalChapters,
+                  coverUrl: hero.coverUrl,
+                  categories: [hero.genre],
+                  isAvailable: true,
+                });
+              }
+            } catch {
+              // Ignore fallback failure
+            }
+          }
+        }
+
         if (!cancelled) {
-          setBook(bookRow);
+          setBook(resolvedBook);
           setPosition(positionRow);
           setQuoteCount(highlights.length);
           setSavedWords(words);
-          setDownloaded(bookRow ? isBookCached(bookRow.id) : false);
+          setDownloaded(resolvedBook ? isBookCached(resolvedBook.id) : false);
           setShelves(shelfRows);
           setShelfItems(shelfItemRows);
         }
@@ -121,7 +247,7 @@ export default function BookDetailScreen() {
   // scripts/sync-bulk-catalog.mjs) — it's filled in locally the first time
   // the book is actually downloaded and parsed, not before. It does NOT mean
   // unavailable — a working textUrl is all that actually gates reading.
-  const isAvailable = book.isAvailable && Boolean(book.textUrl);
+  const isAvailable = (book.isAvailable && Boolean(book.textUrl)) || book.source === 'aozora_bunko' || book.source === 'gongu_korea' || book.id.startsWith('ja-') || book.id.startsWith('ko-');
 
   const openReader = () => {
     if (!book) return;
@@ -186,13 +312,29 @@ export default function BookDetailScreen() {
             style={StyleSheet.absoluteFill}
             contentFit="cover"
             transition={180}
+            onLoad={(e) => {
+              if (e.source && (e.source.width <= 2 || e.source.height <= 2)) {
+                setCoverFailed(true);
+              }
+            }}
             onError={() => setCoverFailed(true)}
           />
         ) : (
           <>
             <View style={[styles.coverAccent, { backgroundColor: colors.flameAmber, opacity: 0.6 }]} />
             <View>
-              <Text style={[typography.bookCoverTitle, { color: coverTextColor }]}>{book.title}</Text>
+              <Text
+                style={[
+                  isBengaliText(book.title)
+                    ? typography.banglaBookCoverTitle
+                    : isJapaneseText(book.title) || isKoreanText(book.title)
+                    ? typography.cjkBookCoverTitle
+                    : typography.bookCoverTitle,
+                  { color: coverTextColor },
+                ]}
+              >
+                {book.title}
+              </Text>
               <Text
                 style={[
                   typography.eyebrowLabel,

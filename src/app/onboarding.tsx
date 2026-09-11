@@ -9,10 +9,17 @@ import {
   View,
   type ViewToken,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
-import { ChevronRightIcon } from '@/components/icons';
+import { CheckIcon, ChevronRightIcon } from '@/components/icons';
 import { logEvent } from '@/features/analytics/analytics';
+import {
+  MOTHER_TONGUES,
+  getMotherTongue,
+  setMotherTongue,
+  type MotherTongueCode,
+} from '@/features/settings/motherTongue';
 import { markOnboardingComplete } from '@/features/settings/onboardingStatus';
 import { useTheme } from '@/theme/ThemeProvider';
 
@@ -43,13 +50,13 @@ const SLIDES: Slide[] = [
     subtext:
       "Import any EPUB, or start with a library of classics in the language you're learning.",
   },
+  {
+    key: 'mother_tongue',
+    headline: 'What is your mother tongue?',
+    subtext:
+      'We curate timeless classics in your native language alongside world literature in English.',
+  },
 ];
-
-function finishOnboarding() {
-  markOnboardingComplete();
-  logEvent('onboarding_complete');
-  router.replace('/homescreen' as any);
-}
 
 function ReadIllustration() {
   const { colors } = useTheme();
@@ -59,7 +66,13 @@ function ReadIllustration() {
       <View style={[illustrationStyles.foldCard, { backgroundColor: colors.parchment }]}>
         <View style={illustrationStyles.ruledLines}>
           {ruledLines.map((i) => (
-            <View key={i} style={[illustrationStyles.ruledLine, { backgroundColor: '#3A352C' }]} />
+            <View
+              key={i}
+              style={[
+                illustrationStyles.ruledLine,
+                { backgroundColor: colors.ink, opacity: 0.15 },
+              ]}
+            />
           ))}
         </View>
         <View style={illustrationStyles.foldTriangle} />
@@ -114,7 +127,7 @@ function ShelfIllustration() {
   const spines = [
     { color: colors.flameAmber, rotate: '-6deg', height: 78 },
     { color: colors.parchment, rotate: '0deg', height: 86 },
-    { color: '#8A6A3A', rotate: '6deg', height: 78 },
+    { color: colors.fawn, rotate: '6deg', height: 78 },
   ] as const;
   return (
     <View style={illustrationStyles.fanWrap}>
@@ -141,16 +154,12 @@ function ShelfIllustration() {
   );
 }
 
-const ILLUSTRATIONS: Record<string, () => React.JSX.Element> = {
-  read: ReadIllustration,
-  translate: TranslateIllustration,
-  shelf: ShelfIllustration,
-};
-
 export default function OnboardingScreen() {
-  const { colors, typography, spacing } = useTheme();
+  const { colors, typography, spacing, radius } = useTheme();
+  const insets = useSafeAreaInsets();
   const listRef = useRef<FlatList<Slide>>(null);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [selectedLanguage, setSelectedLanguage] = useState<MotherTongueCode>(() => getMotherTongue());
   const isLastSlide = activeIndex === SLIDES.length - 1;
 
   const onViewableItemsChanged = useRef(
@@ -166,38 +175,186 @@ export default function OnboardingScreen() {
     listRef.current?.scrollToIndex({ index: activeIndex + 1, animated: true });
   }, [activeIndex]);
 
+  const handleSkip = useCallback(() => {
+    // Jump straight to the Mother Tongue question so they can customize their shelf
+    listRef.current?.scrollToIndex({ index: SLIDES.length - 1, animated: true });
+  }, []);
+
+  const handleFinish = useCallback(() => {
+    setMotherTongue(selectedLanguage);
+    markOnboardingComplete();
+    logEvent('onboarding_complete', { mother_tongue: selectedLanguage });
+    router.replace('/homescreen' as any);
+  }, [selectedLanguage]);
+
   const renderSlide = useCallback(
     ({ item, index }: { item: Slide; index: number }) => {
-      const Illustration = ILLUSTRATIONS[item.key];
       const isLast = index === SLIDES.length - 1;
+      const isMotherTongueQuestion = item.key === 'mother_tongue';
+
       return (
-        <View style={[styles.slide, { width: screenWidth }]}>
+        <View
+          style={[
+            styles.slide,
+            {
+              width: screenWidth,
+              paddingTop: Math.max(insets.top + 8, 20),
+            },
+          ]}
+        >
+          {/* Top Skip Bar */}
           <Pressable
             style={styles.skip}
-            onPress={finishOnboarding}
-            hitSlop={12}
+            onPress={handleSkip}
+            hitSlop={14}
             pointerEvents={isLast ? 'none' : 'auto'}
           >
-            <Text style={[typography.uiRowTitle, { color: colors.mutedOnDark, opacity: isLast ? 0 : 1 }]}>
+            <Text
+              style={[
+                typography.uiRowTitle,
+                { color: colors.mutedOnDark, opacity: isLast ? 0 : 1, fontSize: 14 },
+              ]}
+            >
               Skip
             </Text>
           </Pressable>
 
-          <View style={styles.middleSection}>
-            <Illustration />
-            <View style={[styles.copy, { gap: spacing.sm, marginTop: 26 }]}>
-              <Text style={[typography.onboardingHeadline, { color: colors.lampText, textAlign: 'center' }]}>
-                {item.headline}
-              </Text>
-              <Text style={[typography.metadataCaption, { color: colors.mutedOnDark, textAlign: 'center' }]}>
-                {item.subtext}
-              </Text>
+          {isMotherTongueQuestion ? (
+            /* Mother Tongue Question Section */
+            <View style={styles.questionSection}>
+              <View style={[styles.copy, { marginBottom: spacing.md }]}>
+                <Text
+                  style={[
+                    typography.onboardingHeadline,
+                    { color: colors.lampText, textAlign: 'center', fontSize: 24 },
+                  ]}
+                >
+                  {item.headline}
+                </Text>
+                <Text
+                  style={[
+                    typography.metadataCaption,
+                    { color: colors.mutedOnDark, textAlign: 'center', marginTop: 6, fontSize: 13 },
+                  ]}
+                >
+                  {item.subtext}
+                </Text>
+              </View>
+
+              {/* Language Options List */}
+              <View style={styles.optionsList}>
+                {MOTHER_TONGUES.map((opt) => {
+                  const isSelected = selectedLanguage === opt.code;
+                  return (
+                    <Pressable
+                      key={opt.code}
+                      onPress={() => setSelectedLanguage(opt.code)}
+                      style={({ pressed }) => [
+                        styles.languageCard,
+                        {
+                          backgroundColor: isSelected ? 'rgba(245, 166, 35, 0.08)' : colors.ember,
+                          borderColor: isSelected ? colors.flameAmber : colors.dotInactive,
+                          borderWidth: isSelected ? 1.5 : 1,
+                          borderRadius: radius.card,
+                          opacity: pressed ? 0.9 : 1,
+                        },
+                      ]}
+                    >
+                      <Text style={styles.flagEmoji}>{opt.flag}</Text>
+                      <View style={styles.languageInfo}>
+                        <View style={styles.languageTitleRow}>
+                          <Text
+                            style={[
+                              typography.uiRowTitle,
+                              { color: colors.lampText, fontSize: 16 },
+                            ]}
+                          >
+                            {opt.nativeName}{' '}
+                            <Text style={{ color: colors.fawn, fontSize: 13, fontWeight: '400' }}>
+                              ({opt.name})
+                            </Text>
+                          </Text>
+                        </View>
+                        <Text
+                          style={[
+                            typography.metadataCaption,
+                            { color: colors.flameAmber, fontSize: 12, marginTop: 1 },
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {opt.sourceName}
+                        </Text>
+                        <Text
+                          style={[
+                            typography.metadataCaption,
+                            { color: colors.mutedOnDark, fontSize: 11, marginTop: 1 },
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {opt.sampleAuthors}
+                        </Text>
+                      </View>
+
+                      {/* Selection Radio / Check Indicator */}
+                      <View
+                        style={[
+                          styles.radioIndicator,
+                          {
+                            borderColor: isSelected ? colors.flameAmber : colors.dotInactive,
+                            backgroundColor: isSelected ? colors.flameAmber : 'transparent',
+                          },
+                        ]}
+                      >
+                        {isSelected ? <CheckIcon color={colors.primaryDark} size={11} /> : null}
+                      </View>
+                    </Pressable>
+                  );
+                })}
+              </View>
             </View>
-          </View>
+          ) : (
+            /* Intro Promo Slide */
+            <View style={styles.middleSection}>
+              {item.key === 'read' ? (
+                <ReadIllustration />
+              ) : item.key === 'translate' ? (
+                <TranslateIllustration />
+              ) : (
+                <ShelfIllustration />
+              )}
+              <View style={[styles.copy, { gap: spacing.sm, marginTop: 26 }]}>
+                <Text
+                  style={[
+                    typography.onboardingHeadline,
+                    { color: colors.lampText, textAlign: 'center' },
+                  ]}
+                >
+                  {item.headline}
+                </Text>
+                <Text
+                  style={[
+                    typography.metadataCaption,
+                    { color: colors.mutedOnDark, textAlign: 'center' },
+                  ]}
+                >
+                  {item.subtext}
+                </Text>
+              </View>
+            </View>
+          )}
         </View>
       );
     },
-    [colors, spacing, typography],
+    [
+      colors,
+      handleSkip,
+      insets.top,
+      radius.card,
+      selectedLanguage,
+      spacing.md,
+      spacing.sm,
+      typography,
+    ],
   );
 
   return (
@@ -229,7 +386,10 @@ export default function OnboardingScreen() {
       <View
         style={[
           isLastSlide ? styles.footerColumn : styles.footerRow,
-          { paddingHorizontal: spacing.xl },
+          {
+            paddingHorizontal: spacing.xl,
+            paddingBottom: Math.max(insets.bottom + 16, 28),
+          },
         ]}
       >
         <View style={styles.dots}>
@@ -249,16 +409,33 @@ export default function OnboardingScreen() {
 
         {isLastSlide ? (
           <Pressable
-            style={[styles.getStartedButton, { backgroundColor: colors.flameAmber }]}
-            onPress={finishOnboarding}
+            style={({ pressed }) => [
+              styles.getStartedButton,
+              {
+                backgroundColor: colors.flameAmber,
+                opacity: pressed ? 0.88 : 1,
+                transform: [{ scale: pressed ? 0.98 : 1 }],
+              },
+            ]}
+            onPress={handleFinish}
           >
-            <Text style={[typography.buttonLabel, { color: colors.primaryDark }]}>
-              Get started
+            <Text style={[typography.buttonLabel, { color: colors.primaryDark, fontSize: 15 }]}>
+              Begin Reading
             </Text>
+            <View style={{ marginLeft: 6 }}>
+              <ChevronRightIcon color={colors.primaryDark} size={17} />
+            </View>
           </Pressable>
         ) : (
           <Pressable
-            style={[styles.nextButton, { backgroundColor: colors.flameAmber }]}
+            style={({ pressed }) => [
+              styles.nextButton,
+              {
+                backgroundColor: colors.flameAmber,
+                opacity: pressed ? 0.85 : 1,
+                transform: [{ scale: pressed ? 0.94 : 1 }],
+              },
+            ]}
             onPress={goToNext}
           >
             <ChevronRightIcon color={colors.primaryDark} size={20} />
@@ -275,34 +452,69 @@ const styles = StyleSheet.create({
   },
   slide: {
     flex: 1,
-    paddingHorizontal: 28,
-    paddingTop: 41,
+    paddingHorizontal: 24,
   },
   skip: {
     alignSelf: 'flex-end',
+    paddingVertical: 8,
+    paddingHorizontal: 4,
   },
   middleSection: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  questionSection: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingBottom: 8,
+  },
   copy: {
-    maxWidth: 280,
+    maxWidth: 300,
+    alignSelf: 'center',
     alignItems: 'center',
   },
+  optionsList: {
+    gap: 10,
+    marginTop: 4,
+  },
+  languageCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  flagEmoji: {
+    fontSize: 26,
+    marginRight: 14,
+  },
+  languageInfo: {
+    flex: 1,
+  },
+  languageTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  radioIndicator: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 10,
+  },
   footerRow: {
-    paddingBottom: 48,
     paddingTop: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
   footerColumn: {
-    paddingBottom: 48,
     paddingTop: 12,
     flexDirection: 'column',
     alignItems: 'center',
-    gap: 18,
+    gap: 16,
   },
   dots: {
     flexDirection: 'row',
@@ -324,6 +536,7 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 52,
     borderRadius: 100,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -358,7 +571,6 @@ const illustrationStyles = StyleSheet.create({
   },
   ruledLine: {
     height: 2,
-    opacity: 0.5,
     borderRadius: 1,
   },
   foldTriangle: {

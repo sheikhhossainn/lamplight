@@ -27,6 +27,9 @@ import {
   FALLBACK_BANGLA_BOOKS,
   type BanglaBookSummary,
 } from '@/features/content-ingestion/banglaApi';
+import { AOZORA_JAPANESE_BOOKS } from '@/features/content-ingestion/japaneseApi';
+import { GONGU_KOREAN_BOOKS } from '@/features/content-ingestion/koreanApi';
+import { getMotherTongueOption, useMotherTongue } from '@/features/settings/motherTongue';
 import { ShelfEditorModal, type ShelfDraft } from '@/components/ShelfEditorModal';
 import { VocabReviewPrompt } from '@/components/VocabReviewPrompt';
 import { FeelingPromptModal } from '@/features/scripture-verses/FeelingPromptModal';
@@ -123,6 +126,8 @@ export default function LibraryScreen() {
   const { colors, typography, spacing, radius } = useTheme();
   const insets = useSafeAreaInsets();
   const targetLanguage = useTargetLanguage();
+  const motherTongue = useMotherTongue();
+  const motherTongueOption = getMotherTongueOption(motherTongue);
   const [books, setBooks] = useState<BookRow[]>([]);
   const [positions, setPositions] = useState<ReadingPosition[]>([]);
   const [shelves, setShelves] = useState<Shelf[]>([]);
@@ -288,39 +293,88 @@ export default function LibraryScreen() {
         b.title.toLowerCase().includes(trimmedQuery) ||
         b.author.toLowerCase().includes(trimmedQuery),
     );
-    const banglaMatches: BookRow[] = banglaBooks
-      .filter(
-        (b) =>
-          b.title.toLowerCase().includes(trimmedQuery) ||
-          b.author.toLowerCase().includes(trimmedQuery) ||
-          (b.synopsis && b.synopsis.toLowerCase().includes(trimmedQuery)),
-      )
-      .map((b) => ({
-        id: b.id,
-        title: b.title,
-        author: b.author,
-        sourceLanguage: 'bn',
-        synopsis: b.synopsis,
-        totalChapters: b.totalChapters,
-        isAvailable: true,
-        textUrl: '',
-        coverUrl: b.coverUrl,
-        gutenbergId: null,
-        chapter1Anchor: null,
-        categories: [b.genre],
-        source: 'bangla_api',
-      }));
+    let nativeMatches: BookRow[] = [];
+    if (motherTongue === 'bn') {
+      nativeMatches = banglaBooks
+        .filter(
+          (b) =>
+            b.title.toLowerCase().includes(trimmedQuery) ||
+            b.author.toLowerCase().includes(trimmedQuery) ||
+            (b.synopsis && b.synopsis.toLowerCase().includes(trimmedQuery)),
+        )
+        .map((b) => ({
+          id: b.id,
+          title: b.title,
+          author: b.author,
+          sourceLanguage: 'bn',
+          synopsis: b.synopsis,
+          totalChapters: b.totalChapters,
+          isAvailable: true,
+          textUrl: '',
+          coverUrl: b.coverUrl,
+          gutenbergId: null,
+          chapter1Anchor: null,
+          categories: [b.genre],
+          source: 'bangla_api',
+        }));
+    } else if (motherTongue === 'ja') {
+      nativeMatches = AOZORA_JAPANESE_BOOKS
+        .filter(
+          (b) =>
+            b.title.toLowerCase().includes(trimmedQuery) ||
+            b.author.toLowerCase().includes(trimmedQuery) ||
+            (b.synopsis && b.synopsis.toLowerCase().includes(trimmedQuery)),
+        )
+        .map((b) => ({
+          id: b.id,
+          title: b.title,
+          author: b.author,
+          sourceLanguage: 'ja',
+          synopsis: b.synopsis,
+          totalChapters: b.totalChapters,
+          isAvailable: true,
+          textUrl: '',
+          coverUrl: b.coverUrl,
+          gutenbergId: null,
+          chapter1Anchor: null,
+          categories: [b.genre],
+          source: 'aozora_bunko',
+        }));
+    } else if (motherTongue === 'ko') {
+      nativeMatches = GONGU_KOREAN_BOOKS
+        .filter(
+          (b) =>
+            b.title.toLowerCase().includes(trimmedQuery) ||
+            b.author.toLowerCase().includes(trimmedQuery) ||
+            (b.synopsis && b.synopsis.toLowerCase().includes(trimmedQuery)),
+        )
+        .map((b) => ({
+          id: b.id,
+          title: b.title,
+          author: b.author,
+          sourceLanguage: 'ko',
+          synopsis: b.synopsis,
+          totalChapters: b.totalChapters,
+          isAvailable: true,
+          textUrl: '',
+          coverUrl: b.coverUrl,
+          gutenbergId: null,
+          chapter1Anchor: null,
+          categories: [b.genre],
+          source: 'gongu_korea',
+        }));
+    }
 
     const seenIds = new Set<string>();
     const combined: BookRow[] = [];
-    for (const b of [...banglaMatches, ...englishMatches]) {
+    for (const b of [...nativeMatches, ...englishMatches]) {
       if (!seenIds.has(b.id)) {
         seenIds.add(b.id);
         combined.push(b);
       }
     }
     return combined;
-  }, [books, banglaBooks, isSearching, trimmedQuery]);
+  }, [books, banglaBooks, isSearching, trimmedQuery, motherTongue]);
 
   // Stable per-book tone slot without an O(n) indexOf per rendered spine —
   // matters once the remote catalog puts hundreds of rows on the shelf.
@@ -668,68 +722,126 @@ export default function LibraryScreen() {
         </Text>
       )}
 
-      {/* Bangla Literature shelf — dedicated shelf for Bengali classics */}
-      <View>
-        <View style={[styles.shelfHeader, { marginBottom: spacing.md }]}>
-          <Text style={[typography.eyebrowLabel, { color: colors.fawn }]}>
-            {activeCategory === 'history'
-              ? 'বাংলা ইতিহাস'
-              : activeCategory === 'fiction'
-                ? 'বাংলা উপন্যাস'
-                : activeCategory === 'mystery'
-                  ? 'বাংলা গোয়েন্দা ও রহস্য'
-                  : activeCategory === 'poetry-drama'
-                    ? 'বাংলা কবিতা ও নাটক'
-                    : 'বাংলা সাহিত্য'}
-          </Text>
-          <Pressable
-            onPress={() => {
-              const categoryGenreMap: Record<string, string> = {
-                history: 'ইতিহাস',
-                fiction: 'উপন্যাস',
-                mystery: 'গোয়েন্দা',
-                'scifi-fantasy': 'সায়েন্স ফিকশন',
-                horror: 'ভৌতিক',
-                philosophy: 'প্রবন্ধ ও গবেষণা',
-                religion: 'ধর্ম ও দর্শন',
-                'poetry-drama': 'কবিতা',
-                children: 'কিশোর সাহিত্য',
-              };
-              const targetGenre = activeCategory ? categoryGenreMap[activeCategory] : undefined;
-              router.push({
-                pathname: '/bangla',
-                params: targetGenre ? { genre: targetGenre } : undefined,
-              } as any);
-            }}
-            hitSlop={8}
-            style={styles.filterHeader}
+      {/* Native Literature shelf — dedicated shelf for the user's selected mother tongue */}
+      {motherTongue !== 'en' ? (
+        <View>
+          <View style={[styles.shelfHeader, { marginBottom: spacing.md }]}>
+            <Text style={[typography.eyebrowLabel, { color: colors.fawn }]}>
+              {motherTongue === 'bn'
+                ? activeCategory === 'history'
+                  ? 'বাংলা ইতিহাস'
+                  : activeCategory === 'fiction'
+                    ? 'বাংলা উপন্যাস'
+                    : activeCategory === 'mystery'
+                      ? 'বাংলা গোয়েন্দা ও রহস্য'
+                      : activeCategory === 'poetry-drama'
+                        ? 'বাংলা কবিতা ও নাটক'
+                        : 'বাংলা সাহিত্য'
+                : motherTongueOption.shelfTitle}
+            </Text>
+            {motherTongue === 'bn' ? (
+              <Pressable
+                onPress={() => {
+                  const categoryGenreMap: Record<string, string> = {
+                    history: 'ইতিহাস',
+                    fiction: 'উপন্যাস',
+                    mystery: 'গোয়েন্দা',
+                    'scifi-fantasy': 'সায়েন্স ফিকশন',
+                    horror: 'ভৌতিক',
+                    philosophy: 'প্রবন্ধ ও গবেষণা',
+                    religion: 'ধর্ম ও দর্শন',
+                    'poetry-drama': 'কবিতা',
+                    children: 'কিশোর সাহিত্য',
+                  };
+                  const targetGenre = activeCategory ? categoryGenreMap[activeCategory] : undefined;
+                  router.push({
+                    pathname: '/bangla',
+                    params: targetGenre ? { genre: targetGenre } : undefined,
+                  } as any);
+                }}
+                hitSlop={8}
+                style={styles.filterHeader}
+              >
+                <Text style={[typography.uiRowTitle, { color: colors.progressLabel, fontSize: 12 }]}>
+                  {motherTongueOption.allBooksLabel}
+                </Text>
+              </Pressable>
+            ) : motherTongue === 'ja' ? (
+              <Pressable
+                onPress={() => {
+                  router.push('/japanese' as any);
+                }}
+                hitSlop={8}
+                style={styles.filterHeader}
+              >
+                <Text style={[typography.uiRowTitle, { color: colors.progressLabel, fontSize: 12 }]}>
+                  {motherTongueOption.allBooksLabel}
+                </Text>
+              </Pressable>
+            ) : motherTongue === 'ko' ? (
+              <Pressable
+                onPress={() => {
+                  router.push('/korean' as any);
+                }}
+                hitSlop={8}
+                style={styles.filterHeader}
+              >
+                <Text style={[typography.uiRowTitle, { color: colors.progressLabel, fontSize: 12 }]}>
+                  {motherTongueOption.allBooksLabel}
+                </Text>
+              </Pressable>
+            ) : null}
+          </View>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            overScrollMode="never"
+            contentContainerStyle={[styles.shelfRow, { marginBottom: spacing.sm }]}
           >
-            <Text style={[typography.uiRowTitle, { color: colors.progressLabel, fontSize: 12 }]}>সবগুলো দেখুন →</Text>
-          </Pressable>
+            {motherTongue === 'bn'
+              ? banglaBooks.map((b, i) => (
+                  <View key={b.id} style={{ marginRight: spacing.md }}>
+                    <BookSpine
+                      bookId={b.id}
+                      title={b.title}
+                      coverUrl={b.coverUrl}
+                      toneIndex={i}
+                      rotateDeg={ROW_ROTATIONS[i % ROW_ROTATIONS.length]}
+                      onPress={() => router.push({ pathname: '/bangla/[slug]', params: { slug: b.slug } } as any)}
+                    />
+                  </View>
+                ))
+              : motherTongue === 'ja'
+                ? AOZORA_JAPANESE_BOOKS.map((b, i) => (
+                    <View key={b.id} style={{ marginRight: spacing.md }}>
+                      <BookSpine
+                        bookId={b.id}
+                        title={b.title}
+                        coverUrl={b.coverUrl}
+                        toneIndex={i}
+                        rotateDeg={ROW_ROTATIONS[i % ROW_ROTATIONS.length]}
+                        onPress={() => router.push({ pathname: '/book/[id]', params: { id: b.id } })}
+                      />
+                    </View>
+                  ))
+                : GONGU_KOREAN_BOOKS.map((b, i) => (
+                    <View key={b.id} style={{ marginRight: spacing.md }}>
+                      <BookSpine
+                        bookId={b.id}
+                        title={b.title}
+                        coverUrl={b.coverUrl}
+                        toneIndex={i}
+                        rotateDeg={ROW_ROTATIONS[i % ROW_ROTATIONS.length]}
+                        onPress={() => router.push({ pathname: '/book/[id]', params: { id: b.id } })}
+                      />
+                    </View>
+                  ))}
+          </ScrollView>
+          <View style={{ marginBottom: spacing.xl }}>
+            <WoodenPlank width={screenWidth - spacing.xl * 2} />
+          </View>
         </View>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          overScrollMode="never"
-          contentContainerStyle={[styles.shelfRow, { marginBottom: spacing.sm }]}
-        >
-          {banglaBooks.map((b, i) => (
-            <View key={b.id} style={{ marginRight: spacing.md }}>
-              <BookSpine
-                bookId={b.id}
-                title={b.title}
-                coverUrl={b.coverUrl}
-                toneIndex={i}
-                rotateDeg={ROW_ROTATIONS[i % ROW_ROTATIONS.length]}
-                onPress={() => router.push({ pathname: '/bangla/[slug]', params: { slug: b.slug } } as any)}
-              />
-            </View>
-          ))}
-        </ScrollView>
-        <View style={{ marginBottom: spacing.xl }}>
-          <WoodenPlank width={screenWidth - spacing.xl * 2} />
-        </View>
-      </View>
+      ) : null}
 
       {/* Scripture shelf — same shelf/spine visual language as "All books",
           just fixed entries that aren't part of the books catalog. Not gated

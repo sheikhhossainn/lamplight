@@ -1,8 +1,8 @@
 import { Image } from 'expo-image';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { isBengaliText } from '@/theme/typography';
+import { isBengaliText, isJapaneseText, isKoreanText } from '@/theme/typography';
 import { useTheme } from '@/theme/ThemeProvider';
 
 // Exact per-book cover colors from the shipped mockup (Lamplight Mobile App.dc.html).
@@ -58,6 +58,11 @@ export function BookSpine({
 }: BookSpineProps) {
   const { colors, typography, radius, scheme } = useTheme();
   const [coverFailed, setCoverFailed] = useState(false);
+
+  useEffect(() => {
+    setCoverFailed(false);
+  }, [coverUrl]);
+
   const showCover = !!coverUrl && !coverFailed;
   const backgroundColor = spineColorForBook(bookId, toneIndex);
   const isDark = isDarkSpineColor(backgroundColor);
@@ -67,6 +72,12 @@ export function BookSpine({
   // A subtle edge so a cover whose color matches the page background (e.g. the
   // charcoal Pride and Prejudice spine on the dark shelf) still reads as a card.
   const edgeColor = scheme === 'lamp' ? 'rgba(240,230,214,0.16)' : 'rgba(43,38,33,0.10)';
+
+  const spineTitleStyle = isBengaliText(title)
+    ? typography.banglaBookSpineTitle
+    : isJapaneseText(title) || isKoreanText(title)
+    ? typography.cjkBookSpineTitle
+    : typography.bookSpineTitle;
 
   return (
     <Pressable onPress={onPress} style={{ transform: [{ rotate: `${rotateDeg}deg` }] }}>
@@ -92,16 +103,15 @@ export function BookSpine({
             style={StyleSheet.absoluteFill}
             contentFit="cover"
             transition={180}
+            onLoad={(e) => {
+              if (e.source && (e.source.width <= 2 || e.source.height <= 2)) {
+                setCoverFailed(true);
+              }
+            }}
             onError={() => setCoverFailed(true)}
           />
         ) : (
-          <Text
-            numberOfLines={3}
-            style={[
-              isBengaliText(title) ? typography.banglaBookSpineTitle : typography.bookSpineTitle,
-              { color: titleColor },
-            ]}
-          >
+          <Text numberOfLines={3} style={[spineTitleStyle, { color: titleColor }]}>
             {title}
           </Text>
         )}

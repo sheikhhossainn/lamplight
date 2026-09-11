@@ -261,3 +261,254 @@ export async function markBanglaBookDownloaded(bookId: string): Promise<void> {
   await db.runAsync('UPDATE bangla_chapters SET is_downloaded = 1 WHERE book_id = ?', [bookId]);
 }
 
+export type JapaneseChapterRow = {
+  bookId: string;
+  chapterIndex: number;
+  title: string;
+  slug: string;
+  content: string;
+  isDownloaded: boolean;
+};
+
+type JapaneseChapterSqlRow = {
+  book_id: string;
+  chapter_index: number;
+  title: string;
+  slug: string;
+  content: string;
+  is_downloaded: number;
+};
+
+export async function upsertJapaneseBook(input: {
+  id: string;
+  title: string;
+  author: string;
+  synopsis?: string;
+  totalChapters: number;
+  coverUrl?: string | null;
+  categories?: string[];
+  isAvailable?: boolean;
+  textUrl?: string | null;
+}): Promise<BookRow> {
+  const db = await getDb();
+  const resolvedTextUrl = input.textUrl || `internal://aozora/${input.id}`;
+  await db.runAsync(
+    `INSERT INTO books (id, title, author, source_language, synopsis, total_chapters, is_available, text_url, cover_url, gutenberg_id, chapter1_anchor, categories, source)
+     VALUES (?, ?, ?, 'ja', ?, ?, ?, ?, ?, NULL, NULL, ?, 'aozora_bunko')
+     ON CONFLICT(id) DO UPDATE SET
+       title = excluded.title,
+       author = excluded.author,
+       synopsis = excluded.synopsis,
+       total_chapters = excluded.total_chapters,
+       is_available = excluded.is_available,
+       text_url = excluded.text_url,
+       cover_url = COALESCE(excluded.cover_url, books.cover_url),
+       categories = excluded.categories,
+       source = 'aozora_bunko'`,
+    [
+      input.id,
+      input.title,
+      input.author,
+      input.synopsis ?? '',
+      input.totalChapters,
+      input.isAvailable ? 1 : 0,
+      resolvedTextUrl,
+      input.coverUrl ?? null,
+      JSON.stringify(input.categories ?? []),
+    ],
+  );
+  return {
+    id: input.id,
+    title: input.title,
+    author: input.author,
+    sourceLanguage: 'ja',
+    synopsis: input.synopsis ?? '',
+    totalChapters: input.totalChapters,
+    isAvailable: !!input.isAvailable,
+    textUrl: resolvedTextUrl,
+    coverUrl: input.coverUrl ?? null,
+    gutenbergId: null,
+    chapter1Anchor: null,
+    categories: input.categories ?? [],
+    source: 'aozora_bunko',
+  };
+}
+
+export async function listJapaneseBooks(): Promise<BookRow[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<BookSqlRow>(
+    "SELECT * FROM books WHERE source = 'aozora_bunko' OR source_language = 'ja' ORDER BY rowid ASC",
+  );
+  return rows.map(fromSqlRow);
+}
+
+export async function saveJapaneseChapters(
+  bookId: string,
+  chapters: Array<{ index: number; title: string; slug: string; content: string }>,
+): Promise<void> {
+  const db = await getDb();
+  for (const ch of chapters) {
+    await db.runAsync(
+      `INSERT INTO japanese_chapters (book_id, chapter_index, title, slug, content, is_downloaded)
+       VALUES (?, ?, ?, ?, ?, 0)
+       ON CONFLICT(book_id, chapter_index) DO UPDATE SET
+         title = excluded.title,
+         slug = excluded.slug,
+         content = excluded.content`,
+      [bookId, ch.index, ch.title, ch.slug, ch.content],
+    );
+  }
+}
+
+export async function listJapaneseChapters(bookId: string): Promise<JapaneseChapterRow[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<JapaneseChapterSqlRow>(
+    'SELECT * FROM japanese_chapters WHERE book_id = ? ORDER BY chapter_index ASC',
+    [bookId],
+  );
+  return rows.map((r) => ({
+    bookId: r.book_id,
+    chapterIndex: r.chapter_index,
+    title: r.title,
+    slug: r.slug,
+    content: r.content,
+    isDownloaded: r.is_downloaded === 1,
+  }));
+}
+
+export async function markJapaneseBookDownloaded(bookId: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync('UPDATE japanese_chapters SET is_downloaded = 1 WHERE book_id = ?', [bookId]);
+}
+
+export async function markJapaneseBookRemoved(bookId: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync('UPDATE japanese_chapters SET is_downloaded = 0 WHERE book_id = ?', [bookId]);
+}
+
+export type KoreanChapterRow = {
+  bookId: string;
+  chapterIndex: number;
+  title: string;
+  slug: string;
+  content: string;
+  isDownloaded: boolean;
+};
+
+type KoreanChapterSqlRow = {
+  book_id: string;
+  chapter_index: number;
+  title: string;
+  slug: string;
+  content: string;
+  is_downloaded: number;
+};
+
+export async function upsertKoreanBook(input: {
+  id: string;
+  title: string;
+  author: string;
+  synopsis?: string;
+  totalChapters: number;
+  coverUrl?: string | null;
+  categories?: string[];
+  isAvailable?: boolean;
+  textUrl?: string | null;
+}): Promise<BookRow> {
+  const db = await getDb();
+  const resolvedTextUrl = input.textUrl || `internal://korean/${input.id}`;
+  await db.runAsync(
+    `INSERT INTO books (id, title, author, source_language, synopsis, total_chapters, is_available, text_url, cover_url, gutenberg_id, chapter1_anchor, categories, source)
+     VALUES (?, ?, ?, 'ko', ?, ?, ?, ?, ?, NULL, NULL, ?, 'gongu_korea')
+     ON CONFLICT(id) DO UPDATE SET
+       title = excluded.title,
+       author = excluded.author,
+       synopsis = excluded.synopsis,
+       total_chapters = excluded.total_chapters,
+       is_available = excluded.is_available,
+       text_url = excluded.text_url,
+       cover_url = COALESCE(excluded.cover_url, books.cover_url),
+       categories = excluded.categories,
+       source = 'gongu_korea'`,
+    [
+      input.id,
+      input.title,
+      input.author,
+      input.synopsis ?? '',
+      input.totalChapters,
+      input.isAvailable ? 1 : 0,
+      resolvedTextUrl,
+      input.coverUrl ?? null,
+      JSON.stringify(input.categories ?? []),
+    ],
+  );
+  return {
+    id: input.id,
+    title: input.title,
+    author: input.author,
+    sourceLanguage: 'ko',
+    synopsis: input.synopsis ?? '',
+    totalChapters: input.totalChapters,
+    isAvailable: !!input.isAvailable,
+    textUrl: resolvedTextUrl,
+    coverUrl: input.coverUrl ?? null,
+    gutenbergId: null,
+    chapter1Anchor: null,
+    categories: input.categories ?? [],
+    source: 'gongu_korea',
+  };
+}
+
+export async function listKoreanBooks(): Promise<BookRow[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<BookSqlRow>(
+    "SELECT * FROM books WHERE source = 'gongu_korea' OR source_language = 'ko' ORDER BY rowid ASC",
+  );
+  return rows.map(fromSqlRow);
+}
+
+export async function saveKoreanChapters(
+  bookId: string,
+  chapters: Array<{ index: number; title: string; slug: string; content: string }>,
+): Promise<void> {
+  const db = await getDb();
+  for (const ch of chapters) {
+    await db.runAsync(
+      `INSERT INTO korean_chapters (book_id, chapter_index, title, slug, content, is_downloaded)
+       VALUES (?, ?, ?, ?, ?, 0)
+       ON CONFLICT(book_id, chapter_index) DO UPDATE SET
+         title = excluded.title,
+         slug = excluded.slug,
+         content = excluded.content`,
+      [bookId, ch.index, ch.title, ch.slug, ch.content],
+    );
+  }
+}
+
+export async function listKoreanChapters(bookId: string): Promise<KoreanChapterRow[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<KoreanChapterSqlRow>(
+    'SELECT * FROM korean_chapters WHERE book_id = ? ORDER BY chapter_index ASC',
+    [bookId],
+  );
+  return rows.map((r) => ({
+    bookId: r.book_id,
+    chapterIndex: r.chapter_index,
+    title: r.title,
+    slug: r.slug,
+    content: r.content,
+    isDownloaded: r.is_downloaded === 1,
+  }));
+}
+
+export async function markKoreanBookDownloaded(bookId: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync('UPDATE korean_chapters SET is_downloaded = 1 WHERE book_id = ?', [bookId]);
+}
+
+export async function markKoreanBookRemoved(bookId: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync('UPDATE korean_chapters SET is_downloaded = 0 WHERE book_id = ?', [bookId]);
+}
+
+

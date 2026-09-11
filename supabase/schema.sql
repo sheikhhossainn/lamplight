@@ -133,7 +133,7 @@ create table if not exists public.books (
   source_language    text not null default 'en',
   synopsis           text not null,
   total_chapters     integer not null,
-  gutenberg_id       integer not null,
+  gutenberg_id       integer,
   source_format      text not null default 'gutenberg-text',
   text_url           text not null,
   cover_url          text,
@@ -141,6 +141,7 @@ create table if not exists public.books (
   -- "Filter by author, language and category" — categories is an array so a
   -- book can sit in more than one (e.g. {"classics","romance"}).
   categories         text[] not null default '{}',
+  source             text not null default 'catalog',
   is_active          boolean not null default true, -- soft-hide without deleting
   is_featured        boolean not null default false,
   updated_at         timestamptz not null default now()
@@ -152,6 +153,32 @@ create trigger set_books_updated_at
   for each row execute function public.set_updated_at();
 
 create index if not exists books_categories_idx on public.books using gin (categories);
+
+alter table public.books enable row level security;
+drop policy if exists "public read books" on public.books;
+create policy "public read books" on public.books for select using (true);
+
+-- ============================================================================
+-- 2b. Japanese Literature (Aozora Bunko) Chapters & Texts
+-- ============================================================================
+create table if not exists public.japanese_chapters (
+  id               uuid primary key default gen_random_uuid(),
+  book_id          text not null references public.books(id) on delete cascade,
+  chapter_index    integer not null,
+  title            text not null,
+  slug             text not null,
+  content          text not null,
+  created_at       timestamptz not null default now(),
+  constraint uq_japanese_chapters_book_idx unique (book_id, chapter_index)
+);
+
+create index if not exists japanese_chapters_book_id_idx on public.japanese_chapters (book_id);
+
+alter table public.japanese_chapters enable row level security;
+drop policy if exists "Allow public read access to japanese_chapters" on public.japanese_chapters;
+create policy "Allow public read access to japanese_chapters"
+  on public.japanese_chapters for select
+  using (true);
 
 -- ============================================================================
 -- 3. Library items — the supertype every per-user table below points at.
@@ -768,3 +795,108 @@ create policy "public read" on public.scripture_traditions for select using (tru
 alter table public.scripture_verses enable row level security;
 drop policy if exists "public read" on public.scripture_verses;
 create policy "public read" on public.scripture_verses for select using (true);
+
+-- ============================================================================
+-- 9. Japanese Literature (Aozora Bunko) Seed Data
+-- ============================================================================
+insert into public.books (
+  id, title, author, source_language, synopsis, total_chapters, gutenberg_id, source_format, text_url, categories, source, is_active, is_featured
+) values
+(
+  'ja-kokoro',
+  'こころ',
+  '夏目漱石',
+  'ja',
+  '「私」と「先生」の出会いから始まる、人間のエゴイズムと孤独、罪の意識を描いた夏目漱石の最高傑作。人間の心の奥底にある光と影を静かに照らし出す物語。',
+  3,
+  null,
+  'aozora-bunko',
+  'internal://aozora/ja-kokoro',
+  array['近代文学', '小説'],
+  'aozora_bunko',
+  true,
+  true
+),
+(
+  'ja-botchan',
+  '坊っちゃん',
+  '夏目漱石',
+  'ja',
+  '親譲りの無鉄砲で小供の時から損ばかりしている坊っちゃんが、四国松山の中学校に数学教師として赴任。曲がったことが大嫌いな江戸っ子の痛快な活躍を描く。',
+  3,
+  null,
+  'aozora-bunko',
+  'internal://aozora/ja-botchan',
+  array['青春小説', 'ユーモア'],
+  'aozora_bunko',
+  true,
+  false
+),
+(
+  'ja-rashomon',
+  '羅生門',
+  '芥川龍之介',
+  'ja',
+  '荒廃した平安京の羅生門の下で、雨やみを待つ一人の下人。生死の境目で人間のエゴイズムを直視し、生きるための悪を選ぶ心理を描いた芥川の不朽の名作。',
+  2,
+  null,
+  'aozora-bunko',
+  'internal://aozora/ja-rashomon',
+  array['短編文学', '古典'],
+  'aozora_bunko',
+  true,
+  false
+),
+(
+  'ja-hashire-merosu',
+  '走れメロス',
+  '太宰治',
+  'ja',
+  '「メロスは激怒した。」暴君ディオニスに立ち向かい、身代わりとなった無二の友セリヌンティウスのために、命を賭して信実の走りを続けるメロスの熱き物語。',
+  2,
+  null,
+  'aozora-bunko',
+  'internal://aozora/ja-hashire-merosu',
+  array['人間讃歌', '名作'],
+  'aozora_bunko',
+  true,
+  false
+),
+(
+  'ja-gingatetsudo',
+  '銀河鉄道の夜',
+  '宮沢賢治',
+  'ja',
+  '孤独な少年ジョバンニが、親友カムパネルラと共に銀河を走る不思議な列車に乗り込み、天の川の美しい星々を巡りながら「本当のさいわい」を探し求める名作。',
+  3,
+  null,
+  'aozora-bunko',
+  'internal://aozora/ja-gingatetsudo',
+  array['幻想文学', '童話'],
+  'aozora_bunko',
+  true,
+  false
+),
+(
+  'ja-gon-gitsune',
+  'ごん狐',
+  '新美南吉',
+  'ja',
+  'ひとりぼっちの小狐ごんと、母を亡くした兵十。ごんは罪滅ぼしに毎日栗や松茸を兵十の家に届け続けるが、二人の心はすれ違い切ない結末を迎える。',
+  2,
+  null,
+  'aozora-bunko',
+  'internal://aozora/ja-gon-gitsune',
+  array['児童文学', '名作'],
+  'aozora_bunko',
+  true,
+  false
+)
+on conflict (id) do update set
+  title = excluded.title,
+  author = excluded.author,
+  synopsis = excluded.synopsis,
+  total_chapters = excluded.total_chapters,
+  categories = excluded.categories,
+  source = excluded.source,
+  is_active = true;

@@ -5,16 +5,22 @@ export function tokenizeParagraph(paragraph: string): string[] {
 }
 
 export function cleanWordForLookup(token: string): string {
-  return token.replace(/^[^A-Za-z\u0980-\u09FF']+|[^A-Za-z\u0980-\u09FF']+$/g, '');
+  // Supports Latin, Bengali, Japanese (Kana & Kanji), and Korean Hangul
+  return token.replace(
+    /^[^A-Za-z\u0980-\u09FF\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF\uAC00-\uD7AF\u1100-\u11FF']+|[^A-Za-z\u0980-\u09FF\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF\uAC00-\uD7AF\u1100-\u11FF']+$/g,
+    '',
+  );
 }
 
 // Splits a paragraph into sentence chunks (each keeping its trailing
 // punctuation and space), so quote selection can operate at sentence
-// granularity instead of grabbing a whole paragraph. Recognizes Latin (.!?)
-// and Bengali Dari (। \u0964, ॥ \u0965) terminators. Falls back to the whole
-// paragraph as one chunk when there's no sentence-ending punctuation.
+// granularity instead of grabbing a whole paragraph. Recognizes Latin (.!?),
+// Bengali Dari (। \u0964, ॥ \u0965), and CJK full stops (。 \u3002, ！？ \uFF01\uFF1F).
+// Falls back to the whole paragraph as one chunk when there's no sentence-ending punctuation.
 export function splitIntoSentences(paragraph: string): string[] {
-  const matches = paragraph.match(/[^.!?\u0964\u0965]+[.!?\u0964\u0965]+["'’”)\]]*\s*|[^.!?\u0964\u0965]+$/g);
+  const matches = paragraph.match(
+    /[^.!?\u0964\u0965\u3002\uFF01\uFF1F]+[.!?\u0964\u0965\u3002\uFF01\uFF1F]+["'’”)\]]*\s*|[^.!?\u0964\u0965\u3002\uFF01\uFF1F]+$/g,
+  );
   return matches && matches.length > 0 ? matches : [paragraph];
 }
 

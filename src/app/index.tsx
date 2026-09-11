@@ -71,11 +71,19 @@ export default function SplashScreen() {
 
       <Animated.View
         entering={FadeInUp.delay(820).duration(420).easing(Easing.out(Easing.cubic))}
-        style={[styles.footer, { bottom: insets.bottom + 32 }]}
+        style={[styles.footer, { bottom: Math.max(insets.bottom + 24, 36) }]}
       >
         <Pressable
           onPress={handleBegin}
-          style={[styles.beginButton, { backgroundColor: colors.flameAmber }]}
+          hitSlop={8}
+          style={({ pressed }) => [
+            styles.beginButton,
+            {
+              backgroundColor: colors.flameAmber,
+              opacity: pressed ? 0.88 : 1,
+              transform: [{ scale: pressed ? 0.98 : 1 }],
+            },
+          ]}
         >
           <Text
             style={[

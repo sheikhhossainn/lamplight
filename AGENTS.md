@@ -77,4 +77,5 @@ Everything else: `docs/design.md`.
 | `docs/scriptures.md` | Scripture verticals (Quran/Bible/Vedas): sources, recipe |
 | `docs/context-verses.md` | Mood→verse semantic search, embeddings, Edge Function |
 | `docs/feeling-feature.md` | Feeling sanctuary: voice STT, emotion matcher, wild card deck |
+| `docs/APP_VISUAL_BLUEPRINT.md` | Complete visual blueprint, ASCII wireframes, and design context for AI |
 | `ROADMAP.md` | Product phasing, free-tier caps, schema-to-feature map |

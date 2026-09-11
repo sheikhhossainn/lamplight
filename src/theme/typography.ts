@@ -166,18 +166,49 @@ export const LamplightTypography = {
     letterSpacing: 0,
     writingDirection: 'rtl',
   },
+  cjkReadingBody: {
+    fontSize: 18,
+    lineHeight: 34,
+    letterSpacing: 0,
+  },
+  cjkBookCoverTitle: {
+    fontSize: 20,
+    lineHeight: 28,
+    fontWeight: '700',
+    letterSpacing: 0,
+  },
+  cjkBookSpineTitle: {
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '600',
+    letterSpacing: 0,
+  },
 } as const satisfies Record<string, TextStyle>;
 
 export type LamplightTypographyKey = keyof typeof LamplightTypography;
 
 export function getReadingTextStyle(language?: string): TextStyle {
-  return language === 'bn' ? LamplightTypography.banglaReadingBody : LamplightTypography.readingBody;
+  if (language === 'bn') return LamplightTypography.banglaReadingBody;
+  if (language === 'ja' || language === 'ko') return LamplightTypography.cjkReadingBody;
+  return LamplightTypography.readingBody;
 }
 
 // Bengali script detection (\u0980-\u09FF)
 export function isBengaliText(str?: string | null): boolean {
   if (!str) return false;
   return /[\u0980-\u09FF]/.test(str);
+}
+
+// Japanese script detection (Kana & Kanji)
+export function isJapaneseText(str?: string | null): boolean {
+  if (!str) return false;
+  return /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/.test(str);
+}
+
+// Korean Hangul script detection
+export function isKoreanText(str?: string | null): boolean {
+  if (!str) return false;
+  return /[\uAC00-\uD7AF\u1100-\u11FF]/.test(str);
 }
 
 // Converts Latin numbers (0-9) to Bengali digits (০-৯)

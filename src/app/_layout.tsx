@@ -16,12 +16,19 @@ import { View } from 'react-native';
 import { AppUpdatePrompt } from '@/components/AppUpdatePrompt';
 import { WhatsNewOverlay } from '@/components/WhatsNewOverlay';
 import { hydrateWhatsNewStatus } from '@/features/app-update/whatsNew';
+import { hydrateMotherTongue } from '@/features/settings/motherTongue';
+import { seedJapaneseCatalog } from '@/features/content-ingestion/japaneseApi';
+import { seedKoreanCatalog } from '@/features/content-ingestion/koreanApi';
 import { hydrateTargetLanguage } from '@/features/settings/languagePair';
 import { hydrateOnboardingStatus } from '@/features/settings/onboardingStatus';
 import { LamplightThemeProvider, useTheme } from '@/theme/ThemeProvider';
 import { ThemeTransitionOverlay } from '@/theme/ThemeTransitionOverlay';
 
 SplashScreen.preventAutoHideAsync();
+
+export const unstable_settings = {
+  initialRouteName: 'index',
+};
 
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
@@ -39,9 +46,14 @@ export default function RootLayout() {
 
   const ready = (fontsLoaded || Boolean(fontError)) && onboardingChecked;
 
-  // Load persisted settings (translation language pair) once on launch.
+  // Load persisted settings (translation language pair, mother tongue) once on launch.
   useEffect(() => {
-    void hydrateTargetLanguage();
+    void Promise.all([
+      hydrateTargetLanguage(),
+      hydrateMotherTongue(),
+      seedJapaneseCatalog(),
+      seedKoreanCatalog(),
+    ]);
   }, []);
 
   // Resolve the has-onboarded flag before the Stack mounts, so the "/" splash

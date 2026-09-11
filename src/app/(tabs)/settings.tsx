@@ -27,6 +27,12 @@ import { isPremiumUser } from '@/features/subscription/subscriptionState';
 import { checkCachedTranslationCap, checkTranslationCap } from '@/features/translation';
 import type { CapCheck } from '@/features/translation/capPolicy';
 import { LanguagePicker } from '@/components/LanguagePicker';
+import { MotherTonguePicker } from '@/components/MotherTonguePicker';
+import {
+  getMotherTongueOption,
+  setMotherTongue,
+  useMotherTongue,
+} from '@/features/settings/motherTongue';
 import { useTheme } from '@/theme/ThemeProvider';
 import { Layout, Spacing } from '@/theme/tokens';
 
@@ -271,12 +277,15 @@ export default function SettingsScreen() {
 
   const theme = useReadingTheme();
   const targetLanguage = useTargetLanguage();
+  const motherTongue = useMotherTongue();
+  const motherTongueOption = getMotherTongueOption(motherTongue);
   const pageTurnSound = usePageTurnSoundEnabled();
   // undefined = not known yet, null = unlimited (premium). Collapsing those two
   // into null made the row flash "Unlimited translations" on every focus while
   // the server round-trip was still in flight.
   const [translationsLeft, setTranslationsLeft] = useState<number | null | undefined>(undefined);
   const [languagePickerVisible, setLanguagePickerVisible] = useState(false);
+  const [motherTonguePickerVisible, setMotherTonguePickerVisible] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -355,21 +364,41 @@ export default function SettingsScreen() {
       <View
         style={[
           styles.card,
-          styles.settingsRow,
-          { backgroundColor: colors.card, borderColor: colors.hairline, borderRadius: radius.card, marginBottom: spacing.xl },
+          {
+            backgroundColor: colors.card,
+            borderColor: colors.hairline,
+            borderRadius: radius.card,
+            marginBottom: spacing.xl,
+            paddingVertical: 4,
+          },
         ]}
       >
-        <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
-          Default language pair
-        </Text>
-        <Pressable
-          onPress={() => setLanguagePickerVisible(true)}
-          style={[styles.pairPill, { backgroundColor: colors.pairPillBackground, borderRadius: radius.pill }]}
-        >
-          <Text style={[typography.uiRowTitle, { color: colors.pairPillText, fontSize: 12 }]}>
-            EN → {targetLanguageLabel(targetLanguage)}
+        <View style={styles.settingsRow}>
+          <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
+            Mother tongue
           </Text>
-        </Pressable>
+          <Pressable
+            onPress={() => setMotherTonguePickerVisible(true)}
+            style={[styles.pairPill, { backgroundColor: colors.pairPillBackground, borderRadius: radius.pill }]}
+          >
+            <Text style={[typography.uiRowTitle, { color: colors.pairPillText, fontSize: 12 }]}>
+              {motherTongueOption.flag} {motherTongueOption.nativeName}
+            </Text>
+          </Pressable>
+        </View>
+        <View style={styles.settingsRow}>
+          <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
+            Default translation pair
+          </Text>
+          <Pressable
+            onPress={() => setLanguagePickerVisible(true)}
+            style={[styles.pairPill, { backgroundColor: colors.pairPillBackground, borderRadius: radius.pill }]}
+          >
+            <Text style={[typography.uiRowTitle, { color: colors.pairPillText, fontSize: 12 }]}>
+              EN → {targetLanguageLabel(targetLanguage)}
+            </Text>
+          </Pressable>
+        </View>
       </View>
 
       <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginBottom: spacing.sm }]}>
@@ -458,6 +487,16 @@ export default function SettingsScreen() {
           </Pressable>
         ) : null}
       </View>
+
+      <MotherTonguePicker
+        visible={motherTonguePickerVisible}
+        selected={motherTongue}
+        onSelect={(code) => {
+          setMotherTongue(code);
+          setMotherTonguePickerVisible(false);
+        }}
+        onClose={() => setMotherTonguePickerVisible(false)}
+      />
 
       <LanguagePicker
         visible={languagePickerVisible}

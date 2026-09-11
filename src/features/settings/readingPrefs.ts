@@ -20,10 +20,19 @@ export const READING_LINE_HEIGHT_PX = Math.round(READING_FONT_SIZE_PX * 1.85); /
 export const BANGLA_READING_FONT_SIZE_PX = 18;
 export const BANGLA_READING_LINE_HEIGHT_PX = Math.round(BANGLA_READING_FONT_SIZE_PX * 1.95); // 35
 
+// Japanese (Kanji/Kana) and Korean (Hangul) square ideographic glyphs read best
+// with a balanced 18px body and 34px line-height (1.88 ratio).
+export const CJK_READING_FONT_SIZE_PX = 18;
+export const CJK_READING_LINE_HEIGHT_PX = Math.round(CJK_READING_FONT_SIZE_PX * 1.88); // 34
+
 export function getReadingFontSize(language?: string): number {
-  return language === 'bn' ? BANGLA_READING_FONT_SIZE_PX : READING_FONT_SIZE_PX;
+  if (language === 'bn') return BANGLA_READING_FONT_SIZE_PX;
+  if (language === 'ja' || language === 'ko') return CJK_READING_FONT_SIZE_PX;
+  return READING_FONT_SIZE_PX;
 }
 
 export function getReadingLineHeight(language?: string): number {
-  return language === 'bn' ? BANGLA_READING_LINE_HEIGHT_PX : READING_LINE_HEIGHT_PX;
+  if (language === 'bn') return BANGLA_READING_LINE_HEIGHT_PX;
+  if (language === 'ja' || language === 'ko') return CJK_READING_LINE_HEIGHT_PX;
+  return READING_LINE_HEIGHT_PX;
 }

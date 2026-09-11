@@ -340,7 +340,23 @@ export default function ReaderScreen() {
     book?.sourceLanguage === 'bn' ||
     (typeof bookId === 'string' && bookId.startsWith('bn-')) ||
     (typeof rawBookId === 'string' && rawBookId.startsWith('bn-'));
-  const sourceLanguage = isBangla ? 'bn' : (book?.sourceLanguage ?? 'en');
+  const isJapanese =
+    book?.source === 'aozora_bunko' ||
+    book?.sourceLanguage === 'ja' ||
+    (typeof bookId === 'string' && bookId.startsWith('ja-')) ||
+    (typeof rawBookId === 'string' && rawBookId.startsWith('ja-'));
+  const isKorean =
+    book?.source === 'gongu_korea' ||
+    book?.sourceLanguage === 'ko' ||
+    (typeof bookId === 'string' && bookId.startsWith('ko-')) ||
+    (typeof rawBookId === 'string' && rawBookId.startsWith('ko-'));
+  const sourceLanguage = isBangla
+    ? 'bn'
+    : isJapanese
+      ? 'ja'
+      : isKorean
+        ? 'ko'
+        : (book?.sourceLanguage ?? 'en');
   const readingFontSizePx = getReadingFontSize(sourceLanguage);
   const readingLineHeight = getReadingLineHeight(sourceLanguage);
   const targetLanguage = useTargetLanguage();
@@ -401,6 +417,20 @@ export default function ReaderScreen() {
         (typeof bookId === 'string' && bookId.startsWith('bn-')) ||
         (typeof rawBookId === 'string' && rawBookId.startsWith('bn-'));
 
+      const isJapanese =
+        bookRow?.source === 'aozora_bunko' ||
+        bookRow?.id.startsWith('ja-') ||
+        (typeof bookId === 'string' && bookId.startsWith('ja-')) ||
+        (typeof rawBookId === 'string' && rawBookId.startsWith('ja-'));
+
+      const isKorean =
+        bookRow?.source === 'gongu_korea' ||
+        bookRow?.id.startsWith('ko-') ||
+        (typeof bookId === 'string' && bookId.startsWith('ko-')) ||
+        (typeof rawBookId === 'string' && rawBookId.startsWith('ko-'));
+
+      const isRegional = isBangla || isJapanese || isKorean;
+
       if (!bookRow && isBangla) {
         const titleFromSlug = bookId.replace(/^bn-/, '').replace(/-/g, ' ');
         bookRow = {
@@ -416,6 +446,42 @@ export default function ReaderScreen() {
           categories: [],
           totalChapters: 0,
           source: 'bangla_api',
+          isAvailable: true,
+        };
+      } else if (!bookRow && isJapanese) {
+        const { fetchJapaneseBookDetail } = await import('@/features/content-ingestion/japaneseApi');
+        const jaDetail = await fetchJapaneseBookDetail(bookId);
+        bookRow = {
+          id: bookId,
+          title: jaDetail.title,
+          author: jaDetail.author,
+          sourceLanguage: 'ja',
+          synopsis: jaDetail.synopsis,
+          coverUrl: jaDetail.coverUrl,
+          textUrl: '',
+          gutenbergId: null,
+          chapter1Anchor: null,
+          categories: [jaDetail.genre],
+          totalChapters: jaDetail.totalChapters,
+          source: 'aozora_bunko',
+          isAvailable: true,
+        };
+      } else if (!bookRow && isKorean) {
+        const { fetchKoreanBookDetail } = await import('@/features/content-ingestion/koreanApi');
+        const koDetail = await fetchKoreanBookDetail(bookId);
+        bookRow = {
+          id: bookId,
+          title: koDetail.title,
+          author: koDetail.author,
+          sourceLanguage: 'ko',
+          synopsis: koDetail.synopsis,
+          coverUrl: koDetail.coverUrl,
+          textUrl: '',
+          gutenbergId: null,
+          chapter1Anchor: null,
+          categories: [koDetail.genre],
+          totalChapters: koDetail.totalChapters,
+          source: 'gongu_korea',
           isAvailable: true,
         };
       }
@@ -434,12 +500,12 @@ export default function ReaderScreen() {
         setStartPosition({ chapterIndex: 0, pageIndex: 0 });
       }
 
-      if (!bookRow && !isBangla) {
+      if (!bookRow && !isRegional) {
         setBookTextState({ status: 'unavailable' });
         return;
       }
 
-      if (bookRow && !bookRow.textUrl && !isBookCached(bookRow.id) && !isBangla) {
+      if (bookRow && !bookRow.textUrl && !isBookCached(bookRow.id) && !isRegional) {
         setBookTextState({ status: 'unavailable' });
         return;
       }

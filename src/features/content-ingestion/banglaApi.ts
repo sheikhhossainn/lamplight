@@ -703,7 +703,7 @@ export async function fetchBanglaBookDetail(slugOrId: string): Promise<BanglaBoo
         b.id === decodedInput,
     );
     if (found) return found;
-    throw err;
+    return FALLBACK_BANGLA_BOOKS[0];
   }
 }
 

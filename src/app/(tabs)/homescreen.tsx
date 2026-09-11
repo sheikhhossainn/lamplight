@@ -1,5 +1,5 @@
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
@@ -26,25 +26,28 @@ import {
   fetchBanglaBooks,
   type BanglaBookSummary,
 } from '@/features/content-ingestion/banglaApi';
+import { AOZORA_JAPANESE_BOOKS } from '@/features/content-ingestion/japaneseApi';
+import { GONGU_KOREAN_BOOKS } from '@/features/content-ingestion/koreanApi';
+import { getMotherTongueOption, useMotherTongue } from '@/features/settings/motherTongue';
 import { FeelingPromptModal } from '@/features/scripture-verses/FeelingPromptModal';
 import { targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
-import { isBengaliText } from '@/theme/typography';
+import { isBengaliText, isJapaneseText, isKoreanText } from '@/theme/typography';
 import { useTheme } from '@/theme/ThemeProvider';
 
 const { width: screenWidth } = Dimensions.get('window');
 
 function getEnglishGenre(genre?: string): string {
-  if (!genre) return 'Bengali Classic';
+  if (!genre) return 'Classic Literature';
   const g = genre.trim();
-  if (g.includes('উপন্যাস')) return 'Novel';
-  if (g.includes('ঐতিহাসিক')) return 'Historical';
-  if (g.includes('গোয়েন্দা')) return 'Mystery';
-  if (g.includes('নাটক')) return 'Drama';
-  if (g.includes('কবিতা')) return 'Poetry';
-  if (g.includes('গল্প') || g.includes('ছোটগল্প')) return 'Short Stories';
-  if (g.includes('কিশোর') || g.includes('রূপকথা')) return 'Folklore';
-  if (g.includes('প্রবন্ধ')) return 'Essays';
-  return isBengaliText(g) ? 'Bengali Classic' : g;
+  if (g.includes('উপন্যাস') || g.includes('小説') || g.includes('소설')) return 'Novel';
+  if (g.includes('ঐতিহাসিক') || g.includes('歴史') || g.includes('역사')) return 'Historical';
+  if (g.includes('গোয়েন্দা') || g.includes('推理') || g.includes('추리')) return 'Mystery';
+  if (g.includes('নাটক') || g.includes('戯曲') || g.includes('희곡')) return 'Drama';
+  if (g.includes('কবিতা') || g.includes('詩') || g.includes('시')) return 'Poetry';
+  if (g.includes('গল্প') || g.includes('短編') || g.includes('단편')) return 'Short Stories';
+  if (g.includes('কিশোর') || g.includes('童話') || g.includes('동화')) return 'Folklore';
+  if (g.includes('প্রবন্ধ') || g.includes('随筆') || g.includes('수필')) return 'Essays';
+  return isBengaliText(g) || isJapaneseText(g) || isKoreanText(g) ? 'Classic' : g;
 }
 
 type LiterarySpark = {
@@ -52,50 +55,114 @@ type LiterarySpark = {
   source: string;
   author: string;
   slug?: string;
+  lang?: 'bn' | 'ja' | 'ko' | 'en';
 };
 
 const LITERARY_SPARKS: LiterarySpark[] = [
+  // Bengali Sparks
   {
     quote: 'আলো আমার, আলো ওগো, আলো ভুবন-ভরা—\nআলো নয়ন-ধোওয়া আমার, আলো পরান-হরা।',
     author: 'রবীন্দ্রনাথ ঠাকুর',
     source: 'গীতাঞ্জলি',
+    lang: 'bn',
   },
   {
     quote: 'জ্ঞান অর্জনের পথে কোনো বাধা চিরস্থায়ী হতে পারে না। আলোকবর্তিকা একবার প্রজ্বলিত হলে অন্ধকার মিলিয়ে যেতে বাধ্য।',
     author: 'বেগম রোকেয়া',
     source: 'অবরোধ-বাসিনী',
     slug: 'aborodh-basini',
+    lang: 'bn',
   },
   {
     quote: 'অরণ্যের এই গভীর নিস্তব্ধতায় মনে হয়, জগতের সমস্ত কলরব মুছে গিয়ে কেবল হৃদয়ের নির্মল সুরটিই বেজে চলেছে।',
     author: 'বিভূতিভূষণ বন্দ্যোপাধ্যায়',
     source: 'আরণ্যক',
     slug: 'aranyak',
-  },
-  {
-    quote: '“I declare after all there is no enjoyment like reading! How much sooner one tires of any thing than of a book!”',
-    author: 'Jane Austen',
-    source: 'Pride and Prejudice',
-  },
-  {
-    quote: '“If you look for perfection, you will never be content. True peace is found in embracing each page of life as it unfolds.”',
-    author: 'Leo Tolstoy',
-    source: 'War and Peace',
+    lang: 'bn',
   },
   {
     quote: 'গাহি সাম্যের গান—\nযেখানে আসিয়া এক হয়ে গেছে সব বাধা-ব্যবধান,\nযেখানে মিশেছে হিন্দু-বৌদ্ধ-মুসলিম-ক্রীশ্চান।',
     author: 'কাজী নজরুল ইসলাম',
     source: 'সাম্যবাদী',
+    lang: 'bn',
+  },
+
+  // Japanese Sparks
+  {
+    quote: '精神的に向上心のないものは、ばかだ。本当の真実はいつも静寂の中に宿る。',
+    author: '夏目漱石',
+    source: 'こころ',
+    lang: 'ja',
+  },
+  {
+    quote: '雨ニモマケズ、風ニモマケズ、雪ニモ夏ノ暑サニモマケヌ丈夫ナカラダヲモチ。',
+    author: '宮沢賢治',
+    source: '雨ニモマケズ',
+    lang: 'ja',
+  },
+  {
+    quote: '信じられているから走るのだ。真の友情は疑いよりも強く、死よりも尊い。',
+    author: '太宰治',
+    source: '走れメロス',
+    lang: 'ja',
+  },
+  {
+    quote: '人間は、誰も悪人になろうと思って悪人になるのではない。ただ生きんがために迷うのだ。',
+    author: '芥川龍之介',
+    source: '羅生門',
+    lang: 'ja',
+  },
+
+  // Korean Sparks
+  {
+    quote: '죽는 날까지 하늘을 우러러 한 점 부끄럼이 없기를, 잎새에 이는 바람에도 나는 괴로워했다.',
+    author: '윤동주',
+    source: '서시 (하늘과 바람과 별과 시)',
+    lang: 'ko',
+  },
+  {
+    quote: '날개야 다시 돋아라. 날자. 날자. 한 번만 더 날아보자꾸나. 한 번만 더 날아보자.',
+    author: '이상',
+    source: '날개',
+    lang: 'ko',
+  },
+  {
+    quote: '나 보기가 역겨워 가실 때에는 말없이 고이 보내 드리우리다. 영변에 약산 진달래꽃.',
+    author: '김소월',
+    source: '진달래꽃',
+    lang: 'ko',
+  },
+  {
+    quote: '봄은 온 세상에 향기로운 바람을 불어넣으며, 우리 가슴속에 새로운 희망을 틔운다.',
+    author: '김유정',
+    source: '봄·봄',
+    lang: 'ko',
+  },
+
+  // World / English Sparks
+  {
+    quote: '“I declare after all there is no enjoyment like reading! How much sooner one tires of any thing than of a book!”',
+    author: 'Jane Austen',
+    source: 'Pride and Prejudice',
+    lang: 'en',
+  },
+  {
+    quote: '“If you look for perfection, you will never be content. True peace is found in embracing each page of life as it unfolds.”',
+    author: 'Leo Tolstoy',
+    source: 'War and Peace',
+    lang: 'en',
   },
   {
     quote: '“The wound is the place where the Light enters you.”',
     author: 'Rumi',
     source: 'Masnavi',
+    lang: 'en',
   },
   {
     quote: '“There is no friend as loyal as a book.”',
     author: 'Ernest Hemingway',
     source: 'Reflections',
+    lang: 'en',
   },
 ];
 
@@ -117,6 +184,8 @@ export default function Homescreen() {
   const { colors, typography, spacing, radius, layout } = useTheme();
   const insets = useSafeAreaInsets();
   const targetLanguage = useTargetLanguage();
+  const motherTongue = useMotherTongue();
+  const motherTongueOption = getMotherTongueOption(motherTongue);
 
   useAmbiencePlayer();
   const currentTrackId = useAmbienceTrackId();
@@ -127,27 +196,103 @@ export default function Homescreen() {
   const [readyBook, setReadyBook] = useState<BookRow | null>(null);
   const [sparkIndex, setSparkIndex] = useState(0);
   const [feelingModalVisible, setFeelingModalVisible] = useState(false);
-  const [spotlightBook, setSpotlightBook] = useState<BanglaBookSummary | null>(null);
+  const [spotlight, setSpotlight] = useState<{
+    id: string;
+    title: string;
+    author: string;
+    coverUrl: string | null;
+    synopsis: string;
+    genre: string;
+    totalChapters: number;
+    allLabel: string;
+    onPress: () => void;
+    onAllPress: () => void;
+  } | null>(null);
 
   const loadSpotlight = useCallback(async () => {
     try {
-      const { books } = await fetchBanglaBooks({ limit: 12 });
-      if (books.length > 0) {
-        const withRichInfo =
-          books.find((b) => b.coverUrl && b.synopsis && b.synopsis.length > 30) || books[0];
-        setSpotlightBook(withRichInfo);
+      if (motherTongue === 'bn') {
+        const { books } = await fetchBanglaBooks({ limit: 12 });
+        if (books.length > 0) {
+          const b =
+            books.find((bk) => bk.coverUrl && bk.synopsis && bk.synopsis.length > 30) ||
+            books[0];
+          setSpotlight({
+            id: b.id,
+            title: b.title,
+            author: b.author,
+            coverUrl: b.coverUrl,
+            synopsis: b.synopsis,
+            genre: b.genre,
+            totalChapters: b.totalChapters,
+            allLabel: 'All Bengali Books →',
+            onPress: () => router.push({ pathname: '/bangla/[slug]', params: { slug: b.slug } } as any),
+            onAllPress: () => router.push({ pathname: '/bangla' } as any),
+          });
+        }
+      } else if (motherTongue === 'ja') {
+        const b = AOZORA_JAPANESE_BOOKS[0];
+        setSpotlight({
+          id: b.id,
+          title: b.title,
+          author: b.author,
+          coverUrl: b.coverUrl,
+          synopsis: b.synopsis,
+          genre: b.genre,
+          totalChapters: b.totalChapters,
+          allLabel: 'All Japanese Classics →',
+          onPress: () => router.push({ pathname: '/book/[id]', params: { id: b.id } }),
+          onAllPress: () => router.push('/(tabs)/library' as any),
+        });
+      } else if (motherTongue === 'ko') {
+        const b = GONGU_KOREAN_BOOKS[0];
+        setSpotlight({
+          id: b.id,
+          title: b.title,
+          author: b.author,
+          coverUrl: b.coverUrl,
+          synopsis: b.synopsis,
+          genre: b.genre,
+          totalChapters: b.totalChapters,
+          allLabel: 'All Korean Classics →',
+          onPress: () => router.push({ pathname: '/reader/[bookId]', params: { bookId: b.id } }),
+          onAllPress: () => router.push('/(tabs)/library' as any),
+        });
+      } else {
+        setSpotlight({
+          id: 'pride-and-prejudice',
+          title: 'Pride and Prejudice',
+          author: 'Jane Austen',
+          coverUrl: null,
+          synopsis:
+            'A timeless romantic masterpiece exploring manners, upbringing, morality, and marriage in 19th-century England.',
+          genre: 'Novel',
+          totalChapters: 61,
+          allLabel: 'Explore Library →',
+          onPress: () => router.push('/(tabs)/library' as any),
+          onAllPress: () => router.push('/(tabs)/library' as any),
+        });
       }
     } catch {
       // Non-fatal fallback
     }
-  }, []);
+  }, [motherTongue]);
 
   useEffect(() => {
     void loadSpotlight();
   }, [loadSpotlight]);
 
+  const userSparks = useMemo(() => {
+    const list = LITERARY_SPARKS.filter(
+      (s) => !s.lang || s.lang === 'en' || s.lang === motherTongue,
+    );
+    return list.length > 0 ? list : LITERARY_SPARKS;
+  }, [motherTongue]);
+
+  const activeSpark = userSparks[sparkIndex % userSparks.length] ?? userSparks[0];
+
   const handleNextSpark = () => {
-    setSparkIndex((prev) => (prev + 1) % LITERARY_SPARKS.length);
+    setSparkIndex((prev) => (prev + 1) % userSparks.length);
   };
 
   const loadProgress = useCallback(async () => {
@@ -568,28 +713,28 @@ export default function Homescreen() {
               },
             ]}
           >
-            {LITERARY_SPARKS[sparkIndex].quote}
+            {activeSpark.quote}
           </Text>
 
           <View style={styles.sparkFooter}>
             <Text
               style={[
-                isBengaliText(LITERARY_SPARKS[sparkIndex].author)
+                isBengaliText(activeSpark.author)
                   ? typography.banglaMetadataCaption
                   : typography.metadataCaption,
                 { color: colors.umber, fontSize: 13, flex: 1 },
               ]}
               numberOfLines={1}
             >
-              — {LITERARY_SPARKS[sparkIndex].author}
-              {LITERARY_SPARKS[sparkIndex].source ? ` (${LITERARY_SPARKS[sparkIndex].source})` : ''}
+              — {activeSpark.author}
+              {activeSpark.source ? ` (${activeSpark.source})` : ''}
             </Text>
-            {LITERARY_SPARKS[sparkIndex].slug ? (
+            {activeSpark.slug ? (
               <Pressable
                 onPress={() =>
                   router.push({
                     pathname: '/bangla/[slug]',
-                    params: { slug: LITERARY_SPARKS[sparkIndex].slug! },
+                    params: { slug: activeSpark.slug! },
                   })
                 }
                 hitSlop={8}
@@ -722,30 +867,25 @@ export default function Homescreen() {
           </ScrollView>
         </View>
 
-        {/* Curator's Pick (Featured Book) — moved down below in English */}
-        {spotlightBook ? (
+        {/* Curator's Pick (Featured Book) — Dynamic by Mother Tongue */}
+        {spotlight ? (
           <View style={{ marginTop: spacing.xl }}>
             <View style={styles.sectionHeader}>
               <Text style={[typography.eyebrowLabel, { color: colors.fawn }]}>
-                CURATOR'S PICK
+                CURATOR'S PICK · {motherTongueOption.shelfTitle.toUpperCase()}
               </Text>
               <Pressable
-                onPress={() => router.push({ pathname: '/bangla' } as any)}
+                onPress={spotlight.onAllPress}
                 hitSlop={8}
               >
                 <Text style={[typography.buttonLabel, { color: colors.flameAmber, fontSize: 13 }]}>
-                  All Bengali Books →
+                  {spotlight.allLabel}
                 </Text>
               </Pressable>
             </View>
 
             <Pressable
-              onPress={() =>
-                router.push({
-                  pathname: '/bangla/[slug]',
-                  params: { slug: spotlightBook.slug },
-                })
-              }
+              onPress={spotlight.onPress}
               style={[
                 styles.spotlightCard,
                 {
@@ -760,16 +900,11 @@ export default function Homescreen() {
             >
               <View style={styles.spotlightRow}>
                 <BookSpine
-                  bookId={spotlightBook.id}
-                  title={spotlightBook.title}
-                  coverUrl={spotlightBook.coverUrl}
+                  bookId={spotlight.id}
+                  title={spotlight.title}
+                  coverUrl={spotlight.coverUrl}
                   toneIndex={1}
-                  onPress={() =>
-                    router.push({
-                      pathname: '/bangla/[slug]',
-                      params: { slug: spotlightBook.slug },
-                    })
-                  }
+                  onPress={spotlight.onPress}
                   width={72}
                   height={108}
                 />
@@ -790,38 +925,38 @@ export default function Homescreen() {
                           { color: colors.pairPillText, fontSize: 11, fontWeight: '600' },
                         ]}
                       >
-                        {getEnglishGenre(spotlightBook.genre)}
+                        {getEnglishGenre(spotlight.genre)}
                       </Text>
                     </View>
                   </View>
 
                   <Text
                     style={[
-                      isBengaliText(spotlightBook.title) ? typography.banglaUiRowTitle : typography.uiRowTitle,
+                      isBengaliText(spotlight.title) ? typography.banglaUiRowTitle : typography.uiRowTitle,
                       { color: colors.ink, fontSize: 18, lineHeight: 26, marginTop: 4 },
                     ]}
                     numberOfLines={1}
                   >
-                    {spotlightBook.title}
+                    {spotlight.title}
                   </Text>
                   <Text
                     style={[
-                      isBengaliText(spotlightBook.author) ? typography.banglaMetadataCaption : typography.metadataCaption,
+                      isBengaliText(spotlight.author) ? typography.banglaMetadataCaption : typography.metadataCaption,
                       { color: colors.umber, marginTop: 2, fontSize: 14 },
                     ]}
                     numberOfLines={1}
                   >
-                    {spotlightBook.author}
+                    {spotlight.author}
                   </Text>
 
                   <Text
                     style={[
-                      isBengaliText(spotlightBook.synopsis) ? typography.banglaMetadataCaption : typography.metadataCaption,
+                      isBengaliText(spotlight.synopsis) ? typography.banglaMetadataCaption : typography.metadataCaption,
                       { color: colors.fawn, fontSize: 13, lineHeight: 20, marginTop: 6 },
                     ]}
                     numberOfLines={3}
                   >
-                    {spotlightBook.synopsis}
+                    {spotlight.synopsis}
                   </Text>
                 </View>
               </View>
@@ -833,7 +968,7 @@ export default function Homescreen() {
                 ]}
               >
                 <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 13 }]}>
-                  {spotlightBook.totalChapters > 0 ? `${spotlightBook.totalChapters} Chapters` : 'Complete Work'}
+                  {spotlight.totalChapters > 0 ? `${spotlight.totalChapters} Chapters` : 'Complete Work'}
                 </Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                   <Text style={[typography.buttonLabel, { color: colors.flameAmber, fontSize: 14 }]}>

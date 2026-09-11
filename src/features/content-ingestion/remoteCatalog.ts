@@ -24,6 +24,7 @@ export type RemoteBookRow = {
   // Raw Gutendex subjects/bookshelves (Supabase `books.categories` text[]);
   // normalized into filter buckets on-device by bookCategories.ts.
   categories: string[];
+  source?: string;
 };
 
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
@@ -83,5 +84,6 @@ function parseRow(row: unknown): RemoteBookRow {
     coverUrl: typeof r.cover_url === 'string' ? r.cover_url : null,
     chapter1Anchor: typeof r.chapter1_anchor === 'string' ? r.chapter1_anchor : null,
     categories: Array.isArray(r.categories) ? r.categories.filter((c): c is string => typeof c === 'string') : [],
+    source: typeof r.source === 'string' ? r.source : 'catalog',
   };
 }

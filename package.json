@@ -54,6 +54,8 @@
     "lint": "expo lint",
     "sync:books": "tsx scripts/sync-books.mjs",
     "sync:bulk-catalog": "node scripts/sync-bulk-catalog.mjs",
+    "sync:aozora": "node --env-file=.env.local scripts/sync-aozora-catalog.mjs",
+    "sync:korean": "node --env-file=.env.local scripts/sync-korean-catalog.mjs",
     "fetch:quran": "node scripts/fetch-quran.mjs",
     "fetch:bible-ot": "node scripts/fetch-bible-ot.mjs",
     "fetch:bible-nt": "node scripts/fetch-bible-nt.mjs",

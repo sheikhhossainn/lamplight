@@ -76,8 +76,153 @@ export async function getBookText(
     return ingested;
   }
 
+  // Auto-ingest Japanese (Aozora Bunko) book if opening directly
+  if (cleanId.startsWith('ja-') || bookId.startsWith('ja-')) {
+    const { fetchJapaneseBookDetail, fetchJapaneseChapterText } = await import(
+      '@/features/content-ingestion/japaneseApi'
+    );
+    const { markJapaneseBookDownloaded } = await import('@/db/repositories/books');
+    const detail = await fetchJapaneseBookDetail(cleanId);
+    const chapters = await Promise.all(
+      detail.chapters.map(async (ch) => {
+        const text = await fetchJapaneseChapterText(ch.slug, cleanId);
+        const paragraphs = text
+          .split(/\n\s*\n/)
+          .map((p) => p.trim())
+          .filter((p) => p.length > 0);
+        return {
+          index: ch.index,
+          title: ch.title,
+          pages: [paragraphs],
+        };
+      }),
+    );
+    const ingested: IngestedBook = { chapters };
+    if (!booksDirectory.exists) booksDirectory.create({ intermediates: true });
+    cacheFile.write(JSON.stringify(ingested));
+    bookCache.set(cleanId, ingested);
+    if (cleanId !== bookId) bookCache.set(bookId, ingested);
+    await markJapaneseBookDownloaded(cleanId);
+    return ingested;
+  }
+
+  // Auto-ingest Korean (Gongu) book if opening directly
+  if (cleanId.startsWith('ko-') || bookId.startsWith('ko-')) {
+    const { fetchKoreanBookDetail, fetchKoreanChapterText } = await import(
+      '@/features/content-ingestion/koreanApi'
+    );
+    const { markKoreanBookDownloaded } = await import('@/db/repositories/books');
+    const detail = await fetchKoreanBookDetail(cleanId);
+
+    // If hero book with curated chapters
+    const isHeroBook =
+      detail &&
+      detail.chapters &&
+      detail.chapters.length > 0 &&
+      !detail.chapters[0].slug.endsWith('-full');
+
+    if (isHeroBook) {
+      const chapters = await Promise.all(
+        detail.chapters.map(async (ch) => {
+          const text = await fetchKoreanChapterText(ch.slug, cleanId);
+          const paragraphs = text
+            .split(/\n\s*\n/)
+            .map((p) => p.trim())
+            .filter((p) => p.length > 0);
+          return {
+            index: ch.index,
+            title: ch.title,
+            pages: [paragraphs],
+          };
+        }),
+      );
+      const ingested: IngestedBook = { chapters };
+      if (!booksDirectory.exists) booksDirectory.create({ intermediates: true });
+      cacheFile.write(JSON.stringify(ingested));
+      bookCache.set(cleanId, ingested);
+      if (cleanId !== bookId) bookCache.set(bookId, ingested);
+      try {
+        await markKoreanBookDownloaded(cleanId);
+      } catch {
+        // non-fatal
+      }
+      return ingested;
+    }
+
+    // Resolve textUrl if not provided
+    let effectiveTextUrl = textUrl;
+    if (!effectiveTextUrl) {
+      try {
+        const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+        const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+        if (supabaseUrl && supabaseKey) {
+          const res = await fetch(
+            `${supabaseUrl}/rest/v1/books?id=eq.${encodeURIComponent(cleanId)}&select=text_url`,
+            {
+              headers: {
+                apikey: supabaseKey,
+                Authorization: `Bearer ${supabaseKey}`,
+              },
+            },
+          );
+          if (res.ok) {
+            const rows = await res.json();
+            if (Array.isArray(rows) && rows[0]?.text_url) {
+              effectiveTextUrl = rows[0].text_url;
+            }
+          }
+        }
+      } catch {
+        // non-fatal
+      }
+    }
+
+    // If remote textUrl (Wikisource or archive URL)
+    if (
+      effectiveTextUrl &&
+      (effectiveTextUrl.startsWith('wikisource://') ||
+        effectiveTextUrl.startsWith('http://') ||
+        effectiveTextUrl.startsWith('https://'))
+    ) {
+      const { downloadKoreanBook } = await import('@/features/content-ingestion/koreanDownloader');
+      const book = await downloadKoreanBook(effectiveTextUrl, title);
+      if (!booksDirectory.exists) booksDirectory.create({ intermediates: true });
+      cacheFile.write(JSON.stringify(book));
+      bookCache.set(cleanId, book);
+      if (cleanId !== bookId) bookCache.set(bookId, book);
+      try {
+        await markKoreanBookDownloaded(cleanId);
+      } catch {
+        // non-fatal
+      }
+      return book;
+    }
+  }
+
   if (!textUrl) {
     throw new Error(`No text source available for "${title}"`);
+  }
+
+  // Auto-ingest Aozora Bunko Japanese books from archive ZIP/TXT
+  if (
+    cleanId.startsWith('aozora-') ||
+    bookId.startsWith('aozora-') ||
+    textUrl.includes('aozora.gr.jp') ||
+    textUrl.endsWith('.zip')
+  ) {
+    const { downloadAozoraBook } = await import('@/features/content-ingestion/aozoraDownloader');
+    const { markJapaneseBookDownloaded } = await import('@/db/repositories/books');
+    const book = await downloadAozoraBook(textUrl, title);
+    if (!booksDirectory.exists) booksDirectory.create({ intermediates: true });
+    cacheFile.write(JSON.stringify(book));
+    bookCache.set(cleanId, book);
+    if (cleanId !== bookId) bookCache.set(bookId, book);
+    try {
+      await markJapaneseBookDownloaded(cleanId);
+    } catch {
+      // non-fatal
+    }
+    return book;
   }
 
   // Guard the known bad-data case (see toBulkRow): a text/plain URL that's
@@ -153,5 +298,27 @@ export async function deleteBookCache(bookId: string): Promise<void> {
   if (cleanId !== bookId) {
     const rawCacheFile = new File(booksDirectory, `${bookId}.json`);
     if (rawCacheFile.exists) rawCacheFile.delete();
+  }
+  if (
+    cleanId.startsWith('ja-') ||
+    bookId.startsWith('ja-') ||
+    cleanId.startsWith('aozora-') ||
+    bookId.startsWith('aozora-')
+  ) {
+    try {
+      const { markJapaneseBookRemoved } = await import('@/db/repositories/books');
+      await markJapaneseBookRemoved(cleanId);
+    } catch {
+      // Non-fatal if DB update fails
+    }
+  }
+
+  if (cleanId.startsWith('ko-') || bookId.startsWith('ko-')) {
+    try {
+      const { markKoreanBookRemoved } = await import('@/db/repositories/books');
+      await markKoreanBookRemoved(cleanId);
+    } catch {
+      // Non-fatal if DB update fails
+    }
   }
 }

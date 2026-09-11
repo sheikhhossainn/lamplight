@@ -98,8 +98,8 @@ async function upsertBooks(db: SQLiteDatabase, rows: RemoteBookRow[]) {
   await db.withTransactionAsync(async () => {
     for (const book of rows) {
       await db.runAsync(
-        `INSERT INTO books (id, title, author, source_language, synopsis, total_chapters, is_available, text_url, cover_url, gutenberg_id, chapter1_anchor, categories)
-         VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
+        `INSERT INTO books (id, title, author, source_language, synopsis, total_chapters, is_available, text_url, cover_url, gutenberg_id, chapter1_anchor, categories, source)
+         VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            title = excluded.title,
            author = excluded.author,
@@ -111,7 +111,8 @@ async function upsertBooks(db: SQLiteDatabase, rows: RemoteBookRow[]) {
            cover_url = excluded.cover_url,
            gutenberg_id = excluded.gutenberg_id,
            chapter1_anchor = excluded.chapter1_anchor,
-           categories = excluded.categories`,
+           categories = excluded.categories,
+           source = excluded.source`,
         [
           book.id,
           book.title,
@@ -124,6 +125,7 @@ async function upsertBooks(db: SQLiteDatabase, rows: RemoteBookRow[]) {
           book.gutenbergId,
           book.chapter1Anchor,
           JSON.stringify(book.categories),
+          book.source ?? 'catalog',
         ],
       );
     }
