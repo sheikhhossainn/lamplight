@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -69,108 +69,138 @@ export function DecipherPageSheet({
   const [sentences, setSentences] = useState<DecipherSentence[]>([]);
   const [savedWordSet, setSavedWordSet] = useState<Set<string>>(new Set());
 
-  useEffect(() => {
-    setActiveTargetLang(targetLanguage);
-  }, [targetLanguage]);
+  const runIdRef = useRef(0);
 
-  const initDecipher = useCallback(async () => {
-    if (!visible) return;
-    setLoading(true);
+  const runDecipher = useCallback(
+    async (lang: string) => {
+      if (!visible) return;
+      const currentRunId = ++runIdRef.current;
+      setLoading(true);
 
-    // 1. Check daily limit (bypassed in __DEV__ or premium)
-    const key = `decipher_usage_${getTodayKey()}`;
-    const rawCount = await getSetting(key);
-    const countUsed = rawCount ? parseInt(rawCount, 10) || 0 : 0;
+      // 1. Check daily limit (bypassed in __DEV__ or premium)
+      const key = `decipher_usage_${getTodayKey()}`;
+      const rawCount = await getSetting(key);
+      const countUsed = rawCount ? parseInt(rawCount, 10) || 0 : 0;
 
-    if (!isPremium && !__DEV__ && countUsed >= FREE_DAILY_DECIPHER_LIMIT) {
-      setLimitReached(true);
-      setRemainingUsage(0);
-      setLoading(false);
-      return;
-    }
-
-    setLimitReached(false);
-    const newRemaining = Math.max(0, FREE_DAILY_DECIPHER_LIMIT - (countUsed + 1));
-    setRemainingUsage(isPremium || __DEV__ ? Infinity : newRemaining);
-
-    if (!isPremium && !__DEV__) {
-      await setSetting(key, (countUsed + 1).toString());
-    }
-
-    // 2. Fetch existing saved words for book
-    try {
-      const existing = await listSavedWordsForBook(bookId);
-      setSavedWordSet(new Set(existing.map((w) => w.sourceWord.toLowerCase().trim())));
-    } catch {
-      // Continue
-    }
-
-    // 3. Break page into sentences
-    const cleanText = pageText.replace(/\r\n/g, '\n').trim();
-    const rawSentences =
-      cleanText.match(/[^.!?。！？\n]+[.!?。！？\n]*/g)?.map((s) => s.trim()).filter((s) => s.length > 2) ||
-      [cleanText];
-
-    const parsed: DecipherSentence[] = [];
-
-    for (const raw of rawSentences.slice(0, 10)) {
-      const phonetic = transliterateSentence(raw, sourceLanguage);
-
-      // Translate sentence
-      let translation = '';
-      try {
-        const res = await translationProvider.translateSelection(
-          raw,
-          sourceLanguage as any,
-          activeTargetLang as any,
-        );
-        translation = res.translatedText;
-      } catch {
-        translation = 'Translation unavailable offline.';
+      if (!isPremium && !__DEV__ && countUsed >= FREE_DAILY_DECIPHER_LIMIT) {
+        if (runIdRef.current !== currentRunId) return;
+        setLimitReached(true);
+        setRemainingUsage(0);
+        setLoading(false);
+        return;
       }
 
-      // Extract key words
-      const rawWords =
-        raw.match(/[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)?/gu)?.filter((w) => w.length > 2) || [];
-      const words: Array<{ word: string; definition: string }> = [];
+      if (runIdRef.current !== currentRunId) return;
+      setLimitReached(false);
+      const newRemaining = Math.max(0, FREE_DAILY_DECIPHER_LIMIT - (countUsed + 1));
+      setRemainingUsage(isPremium || __DEV__ ? Infinity : newRemaining);
 
-      // Translate up to 5 distinctive words per sentence
-      const uniqueWords = Array.from(new Set(rawWords)).slice(0, 5);
-      for (const w of uniqueWords) {
-        try {
-          const wRes = await translationProvider.translateWord(
-            w,
-            sourceLanguage as any,
-            activeTargetLang as any,
-          );
-          words.push({ word: w, definition: wRes.translatedText });
-        } catch {
-          words.push({ word: w, definition: '' });
+      if (!isPremium && !__DEV__) {
+        await setSetting(key, (countUsed + 1).toString());
+      }
+
+      // 2. Fetch existing saved words for book
+      try {
+        const existing = await listSavedWordsForBook(bookId);
+        if (runIdRef.current === currentRunId) {
+          setSavedWordSet(new Set(existing.map((w) => w.sourceWord.toLowerCase().trim())));
+        }
+      } catch {
+        // Continue
+      }
+
+      // 3. Break page into sentences
+      const cleanText = pageText.replace(/\r\n/g, '\n').trim();
+      const rawSentences =
+        cleanText.match(/[^.!?。！？\n]+[.!?。！？\n]*/g)?.map((s) => s.trim()).filter((s) => s.length > 2) ||
+        [cleanText];
+
+      try {
+        // Parallel translation of sentences & key words
+        const parsed = await Promise.all(
+          rawSentences.slice(0, 10).map(async (raw) => {
+            const phonetic = transliterateSentence(raw, sourceLanguage);
+
+            // Translate full sentence
+            let translation = '';
+            try {
+              const res = await translationProvider.translateSelection(
+                raw,
+                sourceLanguage as any,
+                lang as any,
+              );
+              translation = res.translatedText;
+            } catch {
+              translation = 'Translation unavailable offline.';
+            }
+
+            // Extract up to 5 key words
+            const rawWords =
+              raw.match(/[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)?/gu)?.filter((w) => w.length > 2) || [];
+            const uniqueWords = Array.from(new Set(rawWords)).slice(0, 5);
+
+            // Translate words in parallel
+            const words = await Promise.all(
+              uniqueWords.map(async (w) => {
+                try {
+                  const wRes = await translationProvider.translateWord(
+                    w,
+                    sourceLanguage as any,
+                    lang as any,
+                  );
+                  return { word: w, definition: wRes.translatedText };
+                } catch {
+                  return { word: w, definition: '' };
+                }
+              })
+            );
+
+            return {
+              original: raw,
+              phonetic,
+              translation,
+              words,
+            };
+          })
+        );
+
+        // Discard result if user changed language or closed sheet in the meantime
+        if (runIdRef.current !== currentRunId) return;
+
+        setSentences(parsed);
+      } catch (err) {
+        console.warn('Decipher translation failure:', err);
+      } finally {
+        if (runIdRef.current === currentRunId) {
+          setLoading(false);
         }
       }
-
-      parsed.push({
-        original: raw,
-        phonetic,
-        translation,
-        words,
-      });
-    }
-
-    setSentences(parsed);
-    setLoading(false);
-  }, [visible, bookId, pageText, sourceLanguage, activeTargetLang, isPremium]);
+    },
+    [visible, bookId, pageText, sourceLanguage, isPremium]
+  );
 
   useEffect(() => {
     if (visible) {
-      initDecipher();
+      runDecipher(activeTargetLang);
+    } else {
+      runIdRef.current++;
     }
-  }, [visible, initDecipher]);
+  }, [visible, pageText, bookId, runDecipher]);
+
+  useEffect(() => {
+    if (targetLanguage && targetLanguage !== activeTargetLang) {
+      setActiveTargetLang(targetLanguage);
+      if (visible) {
+        runDecipher(targetLanguage);
+      }
+    }
+  }, [targetLanguage, visible, runDecipher]);
 
   const handleSelectLanguage = (code: TargetLanguage) => {
     setActiveTargetLang(code);
     setLangPickerVisible(false);
     onTargetLanguageChange?.(code);
+    runDecipher(code);
   };
 
   const handleSaveWord = async (word: string, def: string, sentence: string) => {

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useTheme } from '@/theme/ThemeProvider';
@@ -14,6 +14,10 @@ export function WordChip({ word, definition, isSaved = false, onSave }: WordChip
   const { colors, typography, radius } = useTheme();
   const [saved, setSaved] = useState(isSaved);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setSaved(isSaved);
+  }, [isSaved]);
 
   const handlePress = async () => {
     if (saved || saving) return;
