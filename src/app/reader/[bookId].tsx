@@ -4,6 +4,7 @@ import {
   ActivityIndicator,
   Dimensions,
   FlatList,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -35,6 +36,7 @@ import {
   findGlobalIndex,
   paginateBook,
   PAGINATION_MEASURE_SAMPLE,
+  BANGLA_PAGINATION_SAMPLE,
   type ReaderPage,
 } from '@/features/reader/engine/paginate';
 import {
@@ -144,11 +146,19 @@ function selectedText(
 export default function ReaderScreen() {
   // jumpChapter/jumpPage are optional — set when arriving from Vocabulary
   // (tapping a saved word) to open directly on that word's page.
-  const { bookId, jumpChapter, jumpPage } = useLocalSearchParams<{
+  const { bookId: rawBookId, jumpChapter, jumpPage } = useLocalSearchParams<{
     bookId: string;
     jumpChapter?: string;
     jumpPage?: string;
   }>();
+  const bookId = useMemo(() => {
+    if (!rawBookId) return '';
+    try {
+      return decodeURIComponent(rawBookId);
+    } catch {
+      return rawBookId;
+    }
+  }, [rawBookId]);
   const { colors, typography, spacing, radius } = useTheme();
   const insets = useSafeAreaInsets();
   const listRef = useRef<FlatList<ReaderPage>>(null);
@@ -325,8 +335,14 @@ export default function ReaderScreen() {
     transform: [{ translateX: swipeArrowX.value }],
   }));
 
-  const readingFontSizePx = getReadingFontSize(book?.sourceLanguage);
-  const readingLineHeight = getReadingLineHeight(book?.sourceLanguage);
+  const isBangla =
+    book?.source === 'bangla_api' ||
+    book?.sourceLanguage === 'bn' ||
+    (typeof bookId === 'string' && bookId.startsWith('bn-')) ||
+    (typeof rawBookId === 'string' && rawBookId.startsWith('bn-'));
+  const sourceLanguage = isBangla ? 'bn' : (book?.sourceLanguage ?? 'en');
+  const readingFontSizePx = getReadingFontSize(sourceLanguage);
+  const readingLineHeight = getReadingLineHeight(sourceLanguage);
   const targetLanguage = useTargetLanguage();
 
   const sharedTheme = useReadingTheme();
@@ -364,13 +380,46 @@ export default function ReaderScreen() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [bookRow, position, bookHighlights, words] = await Promise.all([
+      let [bookRow, position, bookHighlights, words] = await Promise.all([
         getBook(bookId),
         getReadingPosition(bookId),
         listHighlightsForBook(bookId),
         listSavedWordsForBook(bookId),
       ]);
       if (cancelled) return;
+
+      if (!bookRow && rawBookId && rawBookId !== bookId) {
+        bookRow = await getBook(rawBookId);
+      }
+      if (!position && rawBookId && rawBookId !== bookId) {
+        position = await getReadingPosition(rawBookId);
+      }
+
+      const isBangla =
+        bookRow?.source === 'bangla_api' ||
+        bookRow?.id.startsWith('bn-') ||
+        (typeof bookId === 'string' && bookId.startsWith('bn-')) ||
+        (typeof rawBookId === 'string' && rawBookId.startsWith('bn-'));
+
+      if (!bookRow && isBangla) {
+        const titleFromSlug = bookId.replace(/^bn-/, '').replace(/-/g, ' ');
+        bookRow = {
+          id: bookId,
+          title: titleFromSlug || 'বাংলা গ্রন্থ',
+          author: '',
+          sourceLanguage: 'bn',
+          synopsis: '',
+          coverUrl: null,
+          textUrl: '',
+          gutenbergId: null,
+          chapter1Anchor: null,
+          categories: [],
+          totalChapters: 0,
+          source: 'bangla_api',
+          isAvailable: true,
+        };
+      }
+
       setBook(bookRow);
       setHighlights(bookHighlights);
       setSavedWords(words);
@@ -384,11 +433,6 @@ export default function ReaderScreen() {
       } else {
         setStartPosition({ chapterIndex: 0, pageIndex: 0 });
       }
-
-      const isBangla =
-        bookRow?.source === 'bangla_api' ||
-        bookRow?.id.startsWith('bn-') ||
-        (typeof bookId === 'string' && bookId.startsWith('bn-'));
 
       if (!bookRow && !isBangla) {
         setBookTextState({ status: 'unavailable' });
@@ -408,10 +452,17 @@ export default function ReaderScreen() {
           bookRow?.chapter1Anchor ?? undefined,
         );
         if (cancelled) return;
+        if (!ingested.chapters || ingested.chapters.length === 0) {
+          setBookTextState({
+            status: 'unavailable',
+            message: isBangla ? 'বইটিতে পড়ার মতো কোনো বিষয়বস্তু নেই।' : `${bookRow?.title ?? 'This book'} has no readable content.`,
+          });
+          return;
+        }
         setBookTextState({ status: 'ready', book: ingested });
-        if (!bookRow && isBangla) {
-          const freshRow = await getBook(bookId);
-          if (freshRow && !cancelled) setBook(freshRow);
+        const freshRow = (await getBook(bookId)) ?? (rawBookId ? await getBook(rawBookId) : null);
+        if (freshRow && !cancelled) {
+          setBook(freshRow);
         }
         // Bulk-imported books sync with an unknown (0) chapter count — now
         // that it's actually been parsed, fill in the real number locally.
@@ -435,7 +486,7 @@ export default function ReaderScreen() {
     return () => {
       cancelled = true;
     };
-  }, [bookId, jumpChapter, jumpPage]);
+  }, [bookId, rawBookId, jumpChapter, jumpPage]);
 
   // Text column metrics — how much room a page's body copy actually has, from
   // the real screen size + safe areas + current font settings. Pagination is
@@ -445,21 +496,23 @@ export default function ReaderScreen() {
   const contentHeightPx = screenHeight - (insets.top + spacing.xl) - (insets.bottom + 20);
   const chapterTitleExtraPx = spacing.xl + typography.screenTitle.lineHeight + spacing.lg;
 
-  // Real characters-per-line, measured from a hidden sample (below) at the exact
-  // reading style + column width, so pagination packs pages tightly instead of
-  // leaving a blank bottom strip. Re-measured whenever the font size changes.
-  const [measuredCharsPerLine, setMeasuredCharsPerLine] = useState<number | null>(null);
+  // Baseline characters-per-line, computed synchronously from geometry and font size
+  // so pagination begins immediately without blocking on asynchronous onTextLayout.
+  const baselineCharsPerLine = useMemo(
+    () => Math.max(8, Math.floor(contentWidthPx / (readingFontSizePx * (isBangla ? 0.6 : 0.54)))),
+    [contentWidthPx, readingFontSizePx, isBangla],
+  );
+  const [measuredCharsPerLine, setMeasuredCharsPerLine] = useState<number>(baselineCharsPerLine);
   useEffect(() => {
-    // Invalidate the measurement when the font metrics change; the hidden Text's
-    // onTextLayout will produce a fresh value for the new size.
-    setMeasuredCharsPerLine(null);
-  }, [readingFontSizePx, readingLineHeight, contentWidthPx]);
+    // Reset to baseline when font metrics change, ensuring pagination never blocks.
+    setMeasuredCharsPerLine(baselineCharsPerLine);
+  }, [baselineCharsPerLine, readingLineHeight]);
 
   // (Re)paginate whenever the book, the text metrics, or the measurement change.
   // Deferred off the interaction frame so opening a book (or nudging the font
   // slider) never drops frames while a whole novel is re-flowed.
   useEffect(() => {
-    if (bookTextState.status !== 'ready' || measuredCharsPerLine == null) return;
+    if (bookTextState.status !== 'ready') return;
     const bookText = bookTextState.book;
     let cancelled = false;
     const schedule = typeof requestIdleCallback === 'function'
@@ -639,12 +692,19 @@ export default function ReaderScreen() {
   }, [currentPage, translation, targetLanguage]);
 
   const retryDownload = useCallback(async () => {
-    if (!book || !book.textUrl) return;
+    const isBangla =
+      book?.source === 'bangla_api' ||
+      book?.id.startsWith('bn-') ||
+      (typeof bookId === 'string' && bookId.startsWith('bn-'));
+    if (!book && !isBangla) return;
+    if (!isBangla && !book?.textUrl) return;
     setBookTextState({ status: 'loading' });
     try {
-      const ingested = await getBookText(book.id, book.title, book.textUrl, book.chapter1Anchor ?? undefined);
+      const targetId = book?.id ?? bookId;
+      const targetTitle = book?.title ?? 'বাংলা গ্রন্থ';
+      const ingested = await getBookText(targetId, targetTitle, book?.textUrl, book?.chapter1Anchor ?? undefined);
       setBookTextState({ status: 'ready', book: ingested });
-      if (book.totalChapters === 0 && ingested.chapters.length > 0) {
+      if (book && book.totalChapters === 0 && ingested.chapters.length > 0) {
         updateBookTotalChapters(book.id, ingested.chapters.length);
       }
     } catch (err) {
@@ -654,7 +714,7 @@ export default function ReaderScreen() {
         setBookTextState({ status: 'error', message: err instanceof Error ? err.message : 'Download failed' });
       }
     }
-  }, [book]);
+  }, [book, bookId]);
 
   const handleWordLongPress = useCallback(
     (payload: {
@@ -1045,6 +1105,7 @@ export default function ReaderScreen() {
   // Hidden one-shot measurement of the real characters-per-line for the current
   // font/column, rendered in every state so pagination can proceed even before
   // pages exist. onTextLayout gives the exact wrapped-line count for the sample.
+  const sampleText = isBangla ? BANGLA_PAGINATION_SAMPLE : PAGINATION_MEASURE_SAMPLE;
   const measurement = (
     <View style={[styles.measureHost, { width: contentWidthPx }]} pointerEvents="none">
       <Text
@@ -1055,11 +1116,14 @@ export default function ReaderScreen() {
         onTextLayout={(e) => {
           const lines = e.nativeEvent.lines.length;
           if (lines > 0) {
-            setMeasuredCharsPerLine((prev) => prev ?? PAGINATION_MEASURE_SAMPLE.length / lines);
+            const measured = Math.round(sampleText.length / lines);
+            if (measured > 0) {
+              setMeasuredCharsPerLine(measured);
+            }
           }
         }}
       >
-        {PAGINATION_MEASURE_SAMPLE}
+        {sampleText}
       </Text>
       {/* One-time hidden pass measuring each character's real advance in the
           reading font — each glyph is on its own line, so its reported line
@@ -1079,30 +1143,30 @@ export default function ReaderScreen() {
     </View>
   );
 
-  if (!book) return <View style={styles.container}>{measurement}</View>;
+  if (bookTextState.status === 'loading') {
+    return <BookLoadingScreen title={book?.title ?? 'বইটি লোড হচ্ছে…'} />;
+  }
 
   if (bookTextState.status === 'unavailable') {
     return (
       <View style={[styles.centered, { backgroundColor: colors.parchment, padding: 24 }]}>
         <Text style={[typography.uiRowTitle, { color: colors.ink, textAlign: 'center' }]}>
-          {bookTextState.message ?? `${book.title} isn't available to read yet.`}
+          {bookTextState.message ?? `${book?.title ?? 'This book'} isn't available to read yet.`}
         </Text>
         <Text style={[typography.metadataCaption, { color: colors.fawn, textAlign: 'center', marginTop: 10 }]}>
-          This title has no readable text edition on Project Gutenberg.
+          {isBangla
+            ? 'এই বইটির কোনো পাঠযোগ্য বিষয়বস্তু পাওয়া যায়নি।'
+            : 'This title has no readable text edition on Project Gutenberg.'}
         </Text>
       </View>
     );
-  }
-
-  if (bookTextState.status === 'loading') {
-    return <BookLoadingScreen title={book.title} />;
   }
 
   if (bookTextState.status === 'error') {
     return (
       <View style={[styles.centered, { backgroundColor: colors.parchment, padding: 24 }]}>
         <Text style={[typography.uiRowTitle, { color: colors.ink, textAlign: 'center', marginBottom: 4 }]}>
-          Couldn't download {book.title}.
+          Couldn't download {book?.title ?? 'this book'}.
         </Text>
         {/* Temporary diagnostic — surfaces the raw error while debugging the
             Gutenberg redirect issue; not meant to stay user-facing long-term. */}
@@ -1126,9 +1190,23 @@ export default function ReaderScreen() {
     );
   }
 
+  if (!book) {
+    return (
+      <View style={styles.container}>
+        {measurement}
+        <BookLoadingScreen title="বইটি প্রস্তুত হচ্ছে…" />
+      </View>
+    );
+  }
+
   // Still measuring / paginating / resolving the start page — keep measuring.
   if (pages.length === 0 || initialIndex == null) {
-    return <View style={styles.container}>{measurement}</View>;
+    return (
+      <View style={styles.container}>
+        {measurement}
+        <BookLoadingScreen title={book.title ?? 'বইটি প্রস্তুত হচ্ছে…'} />
+      </View>
+    );
   }
 
   const currentTranslation =
@@ -1191,9 +1269,15 @@ export default function ReaderScreen() {
         getItemLayout={(_, index) => ({ length: screenWidth, offset: screenWidth * index, index })}
         renderItem={renderPage}
         extraData={`${mode}-${readingFontSizePx}-${readingLineHeight}-${savedWordSet.size}-${selection ? `${selection.startPageGlobalIndex}:${selection.startParagraph}:${selection.startOffset}:${selection.endPageGlobalIndex}:${selection.endParagraph}:${selection.endOffset}` : ''}-${isDraggingHandle ? 'drag' : 'idle'}-${activeWord ? `${activeWord.pageGlobalIndex}:${activeWord.start}` : ''}-${wordMenu ? `${wordMenu.page.globalIndex}:${wordMenu.start}` : ''}-${translation ? `${translation.pageGlobalIndex}:${translation.status}` : ''}`}
-        // Detach off-screen pages' (heavy, per-word) native view trees so only
-        // the visible page and its immediate neighbors composite during a swipe.
-        removeClippedSubviews
+        // Detach off-screen pages' native view trees on iOS; disabled on Android
+        // where ClippingReactViewGroup detaches active pages during reflow, causing
+        // blank screens.
+        removeClippedSubviews={Platform.OS === 'ios'}
+        onScrollToIndexFailed={(info) => {
+          setTimeout(() => {
+            listRef.current?.scrollToIndex({ index: info.index, animated: false });
+          }, 50);
+        }}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={{ itemVisiblePercentThreshold: 90 }}
         // Kill Android's overscroll edge glow (defaults to the accent color and
@@ -1203,14 +1287,10 @@ export default function ReaderScreen() {
         // swipe between pages to review/adjust a multi-page quote whenever not dragging.
         scrollEnabled={!isDraggingHandle}
         decelerationRate="fast"
-        // Keep the very first open of a book fast (1 page rendered up front),
-        // but render a couple pages ahead in each direction during idle time
-        // between swipes — otherwise the neighboring page's first mount (word
-        // tokenization + its ~hundreds of per-word Text nodes) happens right
-        // at the moment you swipe to it instead of before, which is what
-        // "page change lags" actually was.
-        windowSize={5}
-        initialNumToRender={1}
+        // Keep the very first open of a book fast, but render adjacent pages ahead
+        // so swiping doesn't lag.
+        windowSize={7}
+        initialNumToRender={2}
         maxToRenderPerBatch={3}
         updateCellsBatchingPeriod={30}
         onScrollBeginDrag={dismissHint}

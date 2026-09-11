@@ -205,14 +205,14 @@ export default function BanglaLibraryScreen() {
         </View>
       </View>
 
-      {/* Genre Filter Chips */}
-      {genres.length > 0 ? (
+      {/* Genre Filter Chips — locked in a fixed container so it never shifts down while loading */}
+      <View style={{ height: 44, marginTop: spacing.md, flexShrink: 0 }}>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           overScrollMode="never"
           contentContainerStyle={[styles.chipRow, { paddingHorizontal: layout.screenMargin }]}
-          style={{ marginTop: spacing.md, flexGrow: 0 }}
+          style={{ flex: 1 }}
         >
           {[{ id: null as string | null, label: 'সব' }, ...genres.map((g) => ({ id: g, label: g }))].map(
             (item) => {
@@ -235,8 +235,12 @@ export default function BanglaLibraryScreen() {
                     style={[
                       typography.banglaUiRowTitle,
                       {
-                        fontSize: 12,
+                        fontSize: 13,
+                        lineHeight: 17,
                         color: on ? colors.primaryDark : colors.umber,
+                        includeFontPadding: false,
+                        textAlignVertical: 'center',
+                        textAlign: 'center',
                       },
                     ]}
                   >
@@ -247,7 +251,7 @@ export default function BanglaLibraryScreen() {
             },
           )}
         </ScrollView>
-      ) : null}
+      </View>
 
       {/* Books List */}
       {loading ? (
@@ -388,14 +392,16 @@ const styles = StyleSheet.create({
     height: 46,
   },
   chipRow: {
-    paddingVertical: 6,
     flexDirection: 'row',
     alignItems: 'center',
   },
   chip: {
+    height: 34,
     paddingHorizontal: 16,
-    paddingVertical: 7,
+    justifyContent: 'center',
+    alignItems: 'center',
     borderWidth: 1,
+    flexShrink: 0,
   },
   listContent: {
     paddingTop: 16,

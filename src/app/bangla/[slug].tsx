@@ -33,7 +33,15 @@ import { useTheme } from '@/theme/ThemeProvider';
 const { width: screenWidth } = Dimensions.get('window');
 
 export default function BanglaBookDetailScreen() {
-  const { slug } = useLocalSearchParams<{ slug: string }>();
+  const { slug: rawSlug } = useLocalSearchParams<{ slug: string }>();
+  const slug = (() => {
+    if (!rawSlug) return '';
+    try {
+      return decodeURIComponent(rawSlug);
+    } catch {
+      return rawSlug;
+    }
+  })();
   const { colors, typography, spacing, radius, layout } = useTheme();
   const insets = useSafeAreaInsets();
 
@@ -240,6 +248,25 @@ export default function BanglaBookDetailScreen() {
                 ]}
               />
             </View>
+          </View>
+        ) : !detail.chapters || detail.chapters.length === 0 ? (
+          <View
+            style={[
+              styles.ctaButton,
+              {
+                backgroundColor: colors.card,
+                borderRadius: radius.pill,
+                height: 50,
+                borderWidth: 1,
+                borderColor: colors.hairline,
+                justifyContent: 'center',
+                alignItems: 'center',
+              },
+            ]}
+          >
+            <Text style={[typography.banglaButtonLabel, { color: colors.fawn }]}>
+              বইটি বর্তমানে পড়ার জন্য উপলব্ধ নয়
+            </Text>
           </View>
         ) : (
           <Pressable

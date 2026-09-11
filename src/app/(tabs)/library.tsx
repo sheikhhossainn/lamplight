@@ -172,21 +172,28 @@ export default function LibraryScreen() {
   }, []);
 
   const load = useCallback(async () => {
-    const [bookRows, positionRows, shelfRows, shelfItemRows, banglaData] = await Promise.all([
+    // Phase 1: local SQLite — resolves in <10ms, unblocks the shelf immediately.
+    const [bookRows, positionRows, shelfRows, shelfItemRows] = await Promise.all([
       listBooks(),
       listActiveReadingPositions(),
       listShelves(),
       listShelfItems(),
-      fetchBanglaBooks({ limit: 20 }).catch(() => ({ books: FALLBACK_BANGLA_BOOKS, total: FALLBACK_BANGLA_BOOKS.length })),
     ]);
     setBooks(bookRows);
     setPositions(positionRows);
     setShelves(shelfRows);
     setShelfItems(shelfItemRows);
-    if (banglaData.books && banglaData.books.length > 0) {
-      setBanglaBooks(banglaData.books);
-    }
     setLoaded(true);
+
+    // Phase 2: Bangla catalog from Turso — network call, runs in background.
+    // The shelf is already visible from Phase 1; this just updates the Bangla row.
+    fetchBanglaBooks({ limit: 20 })
+      .then((banglaData) => {
+        if (banglaData.books && banglaData.books.length > 0) {
+          setBanglaBooks(banglaData.books);
+        }
+      })
+      .catch(() => {/* keep the FALLBACK already in state */});
   }, []);
 
   const handleClearContinue = useCallback(
@@ -234,14 +241,20 @@ export default function LibraryScreen() {
     if (!syncing) void load();
   }, [syncing, load]);
 
-  // Sync Bangla shelf with the active category filter (e.g. History -> ইতিহাস)
+  // Sync Bangla shelf when the user changes category filter.
+  // Skipped on initial mount because load() already fetched the default list.
+  const categoryMountRef = useRef(false);
   useEffect(() => {
+    if (!categoryMountRef.current) {
+      categoryMountRef.current = true;
+      return;
+    }
     let active = true;
     const categoryGenreMap: Record<string, string> = {
       history: 'ইতিহাস',
       fiction: 'উপন্যাস',
-      mystery: 'গোয়েন্দা',
-      'scifi-fantasy': 'সায়েন্স ফিকশন',
+      mystery: 'গোয়েন্দা',
+      'scifi-fantasy': 'সায়েন্স ফিকশন',
       horror: 'ভৌতিক',
       philosophy: 'প্রবন্ধ ও গবেষণা',
       religion: 'ধর্ম ও দর্শন',
@@ -658,13 +671,13 @@ export default function LibraryScreen() {
       {/* Bangla Literature shelf — dedicated shelf for Bengali classics */}
       <View>
         <View style={[styles.shelfHeader, { marginBottom: spacing.md }]}>
-          <Text style={[typography.banglaEyebrowLabel, { color: colors.fawn }]}>
+          <Text style={[typography.eyebrowLabel, { color: colors.fawn }]}>
             {activeCategory === 'history'
               ? 'বাংলা ইতিহাস'
               : activeCategory === 'fiction'
                 ? 'বাংলা উপন্যাস'
                 : activeCategory === 'mystery'
-                  ? 'বাংলা গোয়েন্দা ও রহস্য'
+                  ? 'বাংলা গোয়েন্দা ও রহস্য'
                   : activeCategory === 'poetry-drama'
                     ? 'বাংলা কবিতা ও নাটক'
                     : 'বাংলা সাহিত্য'}
@@ -674,8 +687,8 @@ export default function LibraryScreen() {
               const categoryGenreMap: Record<string, string> = {
                 history: 'ইতিহাস',
                 fiction: 'উপন্যাস',
-                mystery: 'গোয়েন্দা',
-                'scifi-fantasy': 'সায়েন্স ফিকশন',
+                mystery: 'গোয়েন্দা',
+                'scifi-fantasy': 'সায়েন্স ফিকশন',
                 horror: 'ভৌতিক',
                 philosophy: 'প্রবন্ধ ও গবেষণা',
                 religion: 'ধর্ম ও দর্শন',
@@ -691,7 +704,7 @@ export default function LibraryScreen() {
             hitSlop={8}
             style={styles.filterHeader}
           >
-            <Text style={[typography.banglaButtonLabel, { color: colors.progressLabel }]}>সবগুলো দেখুন →</Text>
+            <Text style={[typography.uiRowTitle, { color: colors.progressLabel, fontSize: 12 }]}>সবগুলো দেখুন →</Text>
           </Pressable>
         </View>
         <ScrollView

@@ -12,9 +12,9 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BookSpine } from '@/components/BookSpine';
-import { FlameGlow } from '@/components/FlameGlow';
+import { WordsIllustration } from '@/components/NotebookIllustrations';
 import { ChevronRightIcon, FeelingPromptIcon, SoundWaveIcon } from '@/components/icons';
-import { getBook, type BookRow } from '@/db/repositories/books';
+import { getBook, listBanglaBooks, type BookRow } from '@/db/repositories/books';
 import {
   listActiveReadingPositions,
   type ReadingPosition,
@@ -124,6 +124,7 @@ export default function Homescreen() {
   const [loading, setLoading] = useState(true);
   const [latestBook, setLatestBook] = useState<BookRow | null>(null);
   const [latestPosition, setLatestPosition] = useState<ReadingPosition | null>(null);
+  const [readyBook, setReadyBook] = useState<BookRow | null>(null);
   const [sparkIndex, setSparkIndex] = useState(0);
   const [feelingModalVisible, setFeelingModalVisible] = useState(false);
   const [spotlightBook, setSpotlightBook] = useState<BanglaBookSummary | null>(null);
@@ -153,21 +154,31 @@ export default function Homescreen() {
     setLoading(true);
     try {
       const positions = await listActiveReadingPositions();
-      if (positions.length === 0) {
-        setLatestBook(null);
-        setLatestPosition(null);
-        setLoading(false);
-        return;
+      if (positions.length > 0) {
+        const sorted = [...positions].sort((a, b) => b.updatedAt - a.updatedAt);
+        const topPos = sorted[0];
+        const topBookRow = await getBook(topPos.bookId);
+        if (topBookRow) {
+          setLatestBook(topBookRow);
+          setLatestPosition(topPos);
+          setReadyBook(null);
+          setLoading(false);
+          return;
+        }
       }
 
-      // Most recently read book is the first or sorted by updatedAt
-      const sorted = [...positions].sort((a, b) => b.updatedAt - a.updatedAt);
-      const topPos = sorted[0];
-
-      const topBookRow = await getBook(topPos.bookId);
-
-      setLatestBook(topBookRow);
-      setLatestPosition(topPos);
+      // Check if user has downloaded any books ready to read
+      const banglaBooks = await listBanglaBooks();
+      const downloaded = banglaBooks.find((b) => b.isAvailable);
+      if (downloaded) {
+        setReadyBook(downloaded);
+        setLatestBook(null);
+        setLatestPosition(null);
+      } else {
+        setReadyBook(null);
+        setLatestBook(null);
+        setLatestPosition(null);
+      }
     } catch (err) {
       console.warn('[Homescreen] loadProgress failed:', err);
     } finally {
@@ -341,8 +352,117 @@ export default function Homescreen() {
             </Pressable>
 
           </View>
+        ) : readyBook ? (
+          /* Ready to Read State: Downloaded Book */
+          <View style={{ marginTop: spacing.lg }}>
+            <View style={styles.sectionHeader}>
+              <Text style={[typography.eyebrowLabel, { color: colors.fawn }]}>
+                Ready to Read
+              </Text>
+              <Text style={[typography.metadataCaption, { color: colors.flameAmber, fontSize: 12 }]}>
+                Downloaded on device
+              </Text>
+            </View>
+
+            <Pressable
+              onPress={() => handleOpenBook(readyBook.id)}
+              style={[
+                styles.featuredCard,
+                {
+                  backgroundColor: colors.card,
+                  borderRadius: radius.card,
+                  borderColor: colors.hairline,
+                  borderWidth: 1,
+                  marginTop: spacing.sm,
+                  padding: spacing.lg,
+                },
+              ]}
+            >
+              <View style={styles.featuredTop}>
+                <BookSpine
+                  bookId={readyBook.id}
+                  title={readyBook.title}
+                  coverUrl={readyBook.coverUrl}
+                  toneIndex={0}
+                  onPress={() => handleOpenBook(readyBook.id)}
+                  width={68}
+                  height={100}
+                />
+                <View style={styles.featuredInfo}>
+                  <Text
+                    style={[typography.uiRowTitle, { color: colors.ink, fontSize: 18 }]}
+                    numberOfLines={2}
+                  >
+                    {readyBook.title}
+                  </Text>
+                  <Text
+                    style={[typography.metadataCaption, { color: colors.umber, marginTop: 4 }]}
+                    numberOfLines={1}
+                  >
+                    {readyBook.author ? `${readyBook.author} · ` : ''}{readyBook.sourceLanguage === 'bn' ? 'বাংলা সাহিত্য' : 'Classic Edition'}
+                  </Text>
+
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      marginTop: spacing.md,
+                      backgroundColor: colors.parchment,
+                      alignSelf: 'flex-start',
+                      paddingHorizontal: 8,
+                      paddingVertical: 4,
+                      borderRadius: radius.pill,
+                    }}
+                  >
+                    <Text style={[typography.metadataCaption, { color: colors.flameAmber, fontSize: 11, fontWeight: '600' }]}>
+                      ✓ Ready for offline reading
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              <View
+                style={[
+                  styles.quoteBox,
+                  {
+                    backgroundColor: colors.libraryBackground,
+                    borderRadius: radius.card,
+                    marginTop: spacing.md,
+                    padding: spacing.md,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    typography.readingBody,
+                    { color: colors.ink, fontSize: 13, lineHeight: 20, fontStyle: 'italic' },
+                  ]}
+                  numberOfLines={2}
+                >
+                  {readyBook.synopsis && readyBook.synopsis.length > 20
+                    ? `“${readyBook.synopsis.slice(0, 120)}…”`
+                    : '“The book is downloaded and waiting. Tap below to begin chapter one.”'}
+                </Text>
+
+                <Pressable
+                  onPress={() => handleOpenBook(readyBook.id)}
+                  style={[
+                    styles.continueButton,
+                    { backgroundColor: colors.flameAmber, borderRadius: radius.pill, marginTop: spacing.md },
+                  ]}
+                >
+                  <Text style={[typography.buttonLabel, { color: colors.primaryDark, fontSize: 14 }]}>
+                    Start Reading Now
+                  </Text>
+                  <View style={{ marginLeft: 6 }}>
+                    <ChevronRightIcon color={colors.primaryDark} size={15} />
+                  </View>
+                </Pressable>
+              </View>
+            </Pressable>
+          </View>
         ) : (
-          /* New User / Empty Reading State */
+          /* New User / Empty Reading State with meaningful illustration */
           <View style={{ marginTop: spacing.lg }}>
             <View
               style={[
@@ -358,7 +478,7 @@ export default function Homescreen() {
               ]}
             >
               <View style={{ marginBottom: spacing.md }}>
-                <FlameGlow size={58} variant="flicker" />
+                <WordsIllustration />
               </View>
               <Text
                 style={[
@@ -366,7 +486,7 @@ export default function Homescreen() {
                   { color: colors.ink, textAlign: 'center', fontSize: 22 },
                 ]}
               >
-                Welcome to Lamplight
+                Begin Your Journey
               </Text>
               <Text
                 style={[

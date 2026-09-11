@@ -60,8 +60,11 @@ export function paginateBook(book: IngestedBook, m: PaginationMetrics): ReaderPa
   let globalIndex = 0;
 
   for (const chapter of book.chapters) {
-    const paragraphs = chapter.pages
+    const rawParagraphs = chapter.pages
       .flat()
+      .map((p) => (typeof p === 'string' ? p.trim() : ''))
+      .filter((p) => p.length > 0);
+    const paragraphs = rawParagraphs
       .flatMap((paragraph) => splitOverlongParagraph(paragraph, maxParagraphChars));
     if (paragraphs.length === 0) continue;
 
@@ -103,13 +106,19 @@ export function paginateBook(book: IngestedBook, m: PaginationMetrics): ReaderPa
         }
       }
 
+      const cleanPageParagraphs = pageParagraphs.map((p) => p.trim()).filter((p) => p.length > 0);
+      if (cleanPageParagraphs.length === 0) {
+        start = i;
+        continue;
+      }
+
       pages.push({
         globalIndex,
         chapterIndex: chapter.index,
         pageIndexInChapter,
         chapterTitle: chapter.title,
         isChapterStart,
-        paragraphs: pageParagraphs,
+        paragraphs: cleanPageParagraphs,
       });
       globalIndex += 1;
       pageIndexInChapter += 1;
@@ -126,6 +135,9 @@ export function paginateBook(book: IngestedBook, m: PaginationMetrics): ReaderPa
 // whole book, and re-measured whenever the font size changes.
 export const PAGINATION_MEASURE_SAMPLE =
   'It is a truth universally acknowledged, that a single man in possession of a good fortune, must be in want of a wife. However little known the feelings or views of such a man may be on his first entering a neighbourhood, this truth is so well fixed in the minds of the surrounding families, that he is considered as the rightful property of some one or other of their daughters.';
+
+export const BANGLA_PAGINATION_SAMPLE =
+  'সকল মানুষের জন্মগতভাবে স্বাধীন এবং মর্যাদা ও অধিকারে সমান। তারা বিবেক ও বুদ্ধি সম্পন্ন এবং তাদের একে অপরের প্রতি ভ্রাতৃত্বপূর্ণ মনোভাব নিয়ে আচরণ করা উচিত। প্রত্যেক মানুষেরই জীবন, স্বাধীনতা ও ব্যক্তিগত নিরাপত্তার অধিকার রয়েছে।';
 
 export function findGlobalIndex(
   pages: ReaderPage[],

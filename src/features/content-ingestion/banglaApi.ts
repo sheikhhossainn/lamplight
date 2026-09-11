@@ -365,6 +365,10 @@ export async function executeTurso<T = Record<string, any>>(
   }
 
   const json = await res.json();
+  const execError = json.results?.[0]?.response?.error;
+  if (execError) {
+    throw new Error(`Turso SQL error: ${execError.message || JSON.stringify(execError)}`);
+  }
   const execResult = json.results?.[0]?.response?.result;
   if (!execResult || !Array.isArray(execResult.rows)) {
     return [];
@@ -379,6 +383,12 @@ export async function executeTurso<T = Record<string, any>>(
     return obj as T;
   });
 }
+
+// 60-second in-memory cache for catalog fetch so repeated tab focuses
+// or queries don't redundantly re-hit Turso.
+type CatalogCache = { ts: number; result: { books: BanglaBookSummary[]; total: number } };
+const catalogCache = new Map<string, CatalogCache>();
+const CACHE_TTL_MS = 60_000;
 
 export function normalizeBanglaBook(raw: any): BanglaBookSummary {
   const slug = raw.slug || raw.book_slug || String(raw.id || 'book');
@@ -484,28 +494,40 @@ export async function fetchBanglaBooks(params?: {
       sqlArgs.push(`%${params.author}%`);
     }
 
+    // Only include books that have at least one readable chapter with actual content.
+    // Uses UNION so SQLite utilizes both partial indexes (idx_chapters_readable & idx_chapters_readable_html) in ~50ms.
+    whereClauses.push(
+      'b.id IN (SELECT book_id FROM chapters WHERE length(content_text) > 50 UNION SELECT book_id FROM chapters WHERE length(content_html) > 50)',
+    );
+
     const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
 
-    // Total matching count
-    const countSql = `SELECT count(*) as total FROM books b LEFT JOIN authors a ON a.id = b.author_id ${whereSql}`;
-    const countRows = await executeTurso<{ total: string }>(countSql, sqlArgs);
-    const total = Number(countRows[0]?.total ?? 0);
+    // Cache key — stable for the same filter + page combination
+    const cacheKey = `${whereSql}|${sqlArgs.join(',')}|${limit}|${offset}`;
+    const cached = catalogCache.get(cacheKey);
+    if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
+      return cached.result;
+    }
 
-    // Prioritize books with real covers first, then books with non-empty chapters
+    const countSql = `SELECT count(*) as total FROM books b LEFT JOIN authors a ON a.id = b.author_id ${whereSql}`;
     const querySql = `
       SELECT b.id, b.slug, b.title, b.cover_url, b.synopsis,
-             a.name AS author_name,
              (SELECT count(*) FROM chapters c WHERE c.book_id = b.id) AS total_chapters,
+             a.name AS author_name,
              (SELECT g.name FROM book_genres bg JOIN genres g ON g.id = bg.genre_id WHERE bg.book_id = b.id LIMIT 1) AS genre_name
       FROM books b
       LEFT JOIN authors a ON a.id = b.author_id
       ${whereSql}
       ORDER BY
         (CASE WHEN b.cover_url NOT LIKE '%egb_logo%' AND b.cover_url IS NOT NULL THEN 0 ELSE 1 END),
-        (CASE WHEN (SELECT count(*) FROM chapters c WHERE c.book_id = b.id) > 0 THEN 0 ELSE 1 END),
         b.id ASC
       LIMIT ? OFFSET ?
     `;
+
+    // Two sequential Turso calls — count then data. Both are fast because the
+    // partial indexes (idx_chapters_readable) handle the readable-filter subquery.
+    const countRows = await executeTurso<{ total: string }>(countSql, sqlArgs);
+    const total = Number(countRows[0]?.total ?? 0);
 
     const rows = await executeTurso(querySql, [...sqlArgs, limit, offset]);
 
@@ -529,7 +551,9 @@ export async function fetchBanglaBooks(params?: {
       };
     });
 
-    return { books, total };
+    const result = { books, total };
+    catalogCache.set(cacheKey, { ts: Date.now(), result });
+    return result;
   } catch (err) {
     console.warn('[banglaApi] Turso query failed, falling back to local classics:', err);
     let list = [...FALLBACK_BANGLA_BOOKS];
@@ -560,7 +584,15 @@ export async function fetchBanglaBooks(params?: {
 }
 
 export async function fetchBanglaBookDetail(slugOrId: string): Promise<BanglaBookDetail> {
-  const cleanSlug = slugOrId.replace(/^bn-/, '');
+  const decodedInput = (() => {
+    try {
+      return decodeURIComponent(slugOrId);
+    } catch {
+      return slugOrId;
+    }
+  })();
+  const cleanSlug = decodedInput.replace(/^bn-/, '');
+  const rawCleanSlug = slugOrId.replace(/^bn-/, '');
 
   if (BASE_URL) {
     try {
@@ -594,13 +626,17 @@ export async function fetchBanglaBookDetail(slugOrId: string): Promise<BanglaBoo
              (SELECT g.name FROM book_genres bg JOIN genres g ON g.id = bg.genre_id WHERE bg.book_id = b.id LIMIT 1) AS genre_name
       FROM books b
       LEFT JOIN authors a ON a.id = b.author_id
-      WHERE b.slug = ? OR b.id = ?
+      WHERE b.slug = ? OR b.slug = ? OR b.id = ?
       LIMIT 1
     `;
-    const bookRows = await executeTurso(bookSql, [cleanSlug, Number(cleanSlug) || -1]);
+    const bookRows = await executeTurso(bookSql, [cleanSlug, rawCleanSlug, Number(cleanSlug) || -1]);
     if (bookRows.length === 0) {
       const found = FALLBACK_BANGLA_BOOKS.find(
-        (b) => normalizeSlug(b.slug) === normalizeSlug(cleanSlug) || b.id === slugOrId,
+        (b) =>
+          normalizeSlug(b.slug) === normalizeSlug(cleanSlug) ||
+          normalizeSlug(b.slug) === normalizeSlug(rawCleanSlug) ||
+          b.id === slugOrId ||
+          b.id === decodedInput,
       );
       if (found) return found;
       throw new Error(`Book "${cleanSlug}" not found in catalog`);
@@ -613,6 +649,10 @@ export async function fetchBanglaBookDetail(slugOrId: string): Promise<BanglaBoo
       SELECT c.id, c.slug, c.title, c.order_index
       FROM chapters c
       WHERE c.book_id = ?
+        AND (
+          (c.content_text IS NOT NULL AND length(trim(c.content_text)) > 50 AND c.content_text NOT LIKE 'Bookmark%')
+          OR (c.content_html IS NOT NULL AND length(trim(c.content_html)) > 50)
+        )
       ORDER BY c.order_index ASC, c.id ASC
     `;
     const chapterRows = await executeTurso(chapterSql, [bookDbId]);
@@ -622,6 +662,17 @@ export async function fetchBanglaBookDetail(slugOrId: string): Promise<BanglaBoo
       title: ch.title || `অধ্যায় ${idx + 1}`,
       slug: ch.slug,
     }));
+
+    if (chapters.length === 0) {
+      const found = FALLBACK_BANGLA_BOOKS.find(
+        (b) =>
+          normalizeSlug(b.slug) === normalizeSlug(cleanSlug) ||
+          normalizeSlug(b.slug) === normalizeSlug(rawCleanSlug) ||
+          b.id === slugOrId ||
+          b.id === decodedInput,
+      );
+      if (found) return found;
+    }
 
     const coverUrl = cleanCoverUrl(b.cover_url);
     const title = cleanBookTitle(b.title);
@@ -645,24 +696,61 @@ export async function fetchBanglaBookDetail(slugOrId: string): Promise<BanglaBoo
   } catch (err) {
     console.warn('[banglaApi] Turso book detail failed, searching fallback:', err);
     const found = FALLBACK_BANGLA_BOOKS.find(
-      (b) => normalizeSlug(b.slug) === normalizeSlug(cleanSlug) || b.id === slugOrId,
+      (b) =>
+        normalizeSlug(b.slug) === normalizeSlug(cleanSlug) ||
+        normalizeSlug(b.slug) === normalizeSlug(rawCleanSlug) ||
+        b.id === slugOrId ||
+        b.id === decodedInput,
     );
     if (found) return found;
     throw err;
   }
 }
 
+/**
+ * Strips web scraping artifacts (such as trailing or standalone "Bookmark" / "Bookmarks"
+ * button labels, "This book has no content" stubs from web readers) and normalizes whitespace.
+ */
+export function cleanBanglaText(raw: string): string {
+  if (!raw) return '';
+  return raw
+    // Remove standalone "Bookmark" or "Bookmarks" lines (with optional punctuation)
+    .replace(/^\s*bookmarks?[\s.?!।]*$/gim, '')
+    // Remove "Bookmark" / "Bookmarks" words with surrounding whitespace or punctuation
+    .replace(/[\t ]*\bbookmarks?[\s.?!।]*$/gim, '')
+    .replace(/\bbookmarks?\b[\s.?!।]*/gi, '')
+    // Remove "This book has no content" / "no content" placeholders
+    .replace(/^\s*this book has no content[\s.?!।]*$/gim, '')
+    .replace(/\bthis book has no content\b[\s.?!।]*/gi, '')
+    .replace(/^\s*no content[\s.?!।]*$/gim, '')
+    .replace(/^\s*অধ্যায়টির বিষয়বস্তু উপলব্ধ নেই[\s.?!।]*$/gim, '')
+    .replace(/^\s*অধ্যায়টির বিষয়বস্তু উপলব্ধ নেই[\s.?!।]*$/gim, '')
+    // Collapse excess newlines
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 export async function fetchBanglaChapterText(chapterSlug: string): Promise<string> {
+  const decodedChapterSlug = (() => {
+    try {
+      return decodeURIComponent(chapterSlug);
+    } catch {
+      return chapterSlug;
+    }
+  })();
+
   if (BASE_URL) {
     try {
-      const res = await fetch(`${BASE_URL}/api/chapters/${encodeURIComponent(chapterSlug)}?format=text`);
+      const res = await fetch(`${BASE_URL}/api/chapters/${encodeURIComponent(decodedChapterSlug)}?format=text`);
       if (res.ok) {
         const contentType = res.headers.get('content-type') || '';
         if (contentType.includes('application/json')) {
           const data = await res.json();
-          return data.content || data.text || data.body || '';
+          const cleaned = cleanBanglaText(data.content || data.text || data.body || '');
+          if (cleaned.length > 30) return cleaned;
         }
-        return await res.text();
+        const cleaned = cleanBanglaText(await res.text());
+        if (cleaned.length > 30) return cleaned;
       }
     } catch (err) {
       console.warn('[banglaApi] REST fetch chapter failed, falling back to Turso:', err);
@@ -670,24 +758,29 @@ export async function fetchBanglaChapterText(chapterSlug: string): Promise<strin
   }
 
   try {
-    const chapterSql = `SELECT c.content_text, c.content_html FROM chapters c WHERE c.slug = ? LIMIT 1`;
-    const rows = await executeTurso<{ content_text?: string; content_html?: string }>(chapterSql, [chapterSlug]);
+    const chapterSql = `SELECT c.content_text, c.content_html FROM chapters c WHERE c.slug = ? OR c.slug = ? LIMIT 1`;
+    const rows = await executeTurso<{ content_text?: string; content_html?: string }>(chapterSql, [
+      decodedChapterSlug,
+      chapterSlug,
+    ]);
     if (rows.length > 0 && rows[0].content_text) {
-      return rows[0].content_text.trim();
+      const cleaned = cleanBanglaText(rows[0].content_text);
+      if (cleaned.length > 30) return cleaned;
     }
     if (rows.length > 0 && rows[0].content_html) {
-      return rows[0].content_html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+      const cleaned = cleanBanglaText(rows[0].content_html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' '));
+      if (cleaned.length > 30) return cleaned;
     }
-    if (FALLBACK_CHAPTER_TEXTS[chapterSlug]) {
-      return FALLBACK_CHAPTER_TEXTS[chapterSlug];
+    if (FALLBACK_CHAPTER_TEXTS[decodedChapterSlug] || FALLBACK_CHAPTER_TEXTS[chapterSlug]) {
+      return cleanBanglaText(FALLBACK_CHAPTER_TEXTS[decodedChapterSlug] || FALLBACK_CHAPTER_TEXTS[chapterSlug]);
     }
-    return 'অধ্যায়টির বিষয়বস্তু উপলব্ধ নেই।';
+    return '';
   } catch (err) {
     console.warn('[banglaApi] Turso fetch chapter failed:', err);
-    if (FALLBACK_CHAPTER_TEXTS[chapterSlug]) {
-      return FALLBACK_CHAPTER_TEXTS[chapterSlug];
+    if (FALLBACK_CHAPTER_TEXTS[decodedChapterSlug] || FALLBACK_CHAPTER_TEXTS[chapterSlug]) {
+      return cleanBanglaText(FALLBACK_CHAPTER_TEXTS[decodedChapterSlug] || FALLBACK_CHAPTER_TEXTS[chapterSlug]);
     }
-    throw err;
+    return '';
   }
 }
 

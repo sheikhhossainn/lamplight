@@ -23,30 +23,56 @@ function resolveDirectUrl(textUrl: string): string {
   return match ? `https://www.gutenberg.org/cache/epub/${match[1]}/pg${match[1]}.txt` : textUrl;
 }
 
+function normalizeBookId(id: string): string {
+  try {
+    return decodeURIComponent(id);
+  } catch {
+    return id;
+  }
+}
+
 export async function getBookText(
   bookId: string,
   title: string,
   textUrl?: string | null,
   chapter1Anchor?: string,
 ): Promise<IngestedBook> {
-  const cached = bookCache.get(bookId);
+  const cleanId = normalizeBookId(bookId);
+  const cached = bookCache.get(cleanId) ?? bookCache.get(bookId);
   if (cached) return cached;
 
-  const cacheFile = new File(booksDirectory, `${bookId}.json`);
+  let cacheFile = new File(booksDirectory, `${cleanId}.json`);
+  if (!cacheFile.exists && cleanId !== bookId) {
+    cacheFile = new File(booksDirectory, `${bookId}.json`);
+  }
+
   if (cacheFile.exists) {
-    const book = JSON.parse(await cacheFile.text()) as IngestedBook;
-    bookCache.set(bookId, book);
+    const rawJson = await cacheFile.text();
+    let book = JSON.parse(rawJson) as IngestedBook;
+    if (cleanId.startsWith('bn-') || bookId.startsWith('bn-')) {
+      const { sanitizeBanglaIngestedBook } = await import('@/features/content-ingestion/banglaDownloader');
+      book = sanitizeBanglaIngestedBook(book);
+      if (book.chapters.length === 0) {
+        throw new BookFormatError('এই বইটিতে পড়ার মতো কোনো বিষয়বস্তু নেই।');
+      }
+    }
+    bookCache.set(cleanId, book);
+    if (cleanId !== bookId) bookCache.set(bookId, book);
     return book;
   }
 
   // Auto-download Bangla book if opening directly
-  if (bookId.startsWith('bn-')) {
+  if (cleanId.startsWith('bn-') || bookId.startsWith('bn-')) {
     const { fetchBanglaBookDetail } = await import('@/features/content-ingestion/banglaApi');
     const { downloadBanglaBook } = await import('@/features/content-ingestion/banglaDownloader');
-    const slug = bookId.replace(/^bn-/, '');
+    const slug = cleanId.replace(/^bn-/, '');
     const detail = await fetchBanglaBookDetail(slug);
     const ingested = await downloadBanglaBook(detail);
-    bookCache.set(bookId, ingested);
+    if (ingested.chapters.length === 0) {
+      throw new BookFormatError('এই বইটিতে পড়ার মতো কোনো বিষয়বস্তু নেই।');
+    }
+    bookCache.set(cleanId, ingested);
+    if (cleanId !== bookId) bookCache.set(bookId, ingested);
     return ingested;
   }
 
@@ -70,7 +96,8 @@ export async function getBookText(
 
   if (!booksDirectory.exists) booksDirectory.create({ intermediates: true });
   cacheFile.write(JSON.stringify(book));
-  bookCache.set(bookId, book);
+  bookCache.set(cleanId, book);
+  if (cleanId !== bookId) bookCache.set(bookId, book);
   return book;
 }
 
@@ -78,8 +105,11 @@ export async function getBookText(
 // device) — gates the Book Detail "Remove download" option so it never shows
 // for a book that was never downloaded.
 export function isBookCached(bookId: string): boolean {
-  if (bookCache.has(bookId)) return true;
-  return new File(booksDirectory, `${bookId}.json`).exists;
+  const cleanId = normalizeBookId(bookId);
+  if (bookCache.has(cleanId) || bookCache.has(bookId)) return true;
+  if (new File(booksDirectory, `${cleanId}.json`).exists) return true;
+  if (cleanId !== bookId && new File(booksDirectory, `${bookId}.json`).exists) return true;
+  return false;
 }
 
 // Which books are downloaded to this device — one cache file per book id.
@@ -96,10 +126,16 @@ export function listDownloadedBookIds(): string[] {
 // there's no text_url to download from, so this writes straight to the same
 // cache file getBookText reads, skipping the fetch entirely on first open.
 export function cacheImportedBook(bookId: string, book: IngestedBook): void {
+  const cleanId = normalizeBookId(bookId);
   if (!booksDirectory.exists) booksDirectory.create({ intermediates: true });
-  const cacheFile = new File(booksDirectory, `${bookId}.json`);
+  const cacheFile = new File(booksDirectory, `${cleanId}.json`);
   cacheFile.write(JSON.stringify(book));
-  bookCache.set(bookId, book);
+  bookCache.set(cleanId, book);
+  if (cleanId !== bookId) {
+    const rawCacheFile = new File(booksDirectory, `${bookId}.json`);
+    rawCacheFile.write(JSON.stringify(book));
+    bookCache.set(bookId, book);
+  }
 }
 
 // "Delete book" (Book Detail's more-options menu) — frees the on-device
@@ -109,7 +145,13 @@ export function cacheImportedBook(bookId: string, book: IngestedBook): void {
 // saved vocabulary/quotes are left untouched — they're independently valuable
 // and a user wouldn't expect removing a book to wipe them incidentally.
 export async function deleteBookCache(bookId: string): Promise<void> {
+  const cleanId = normalizeBookId(bookId);
+  bookCache.delete(cleanId);
   bookCache.delete(bookId);
-  const cacheFile = new File(booksDirectory, `${bookId}.json`);
+  const cacheFile = new File(booksDirectory, `${cleanId}.json`);
   if (cacheFile.exists) cacheFile.delete();
+  if (cleanId !== bookId) {
+    const rawCacheFile = new File(booksDirectory, `${bookId}.json`);
+    if (rawCacheFile.exists) rawCacheFile.delete();
+  }
 }
