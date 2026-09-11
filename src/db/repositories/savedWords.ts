@@ -13,6 +13,12 @@ export type SavedWord = {
   pageIndex: number;
   paragraphIndex: number;
   createdAt: number;
+  status?: 'learning' | 'known';
+  reviewCount?: number;
+  lastReviewedAt?: number;
+  nextReviewAt?: number;
+  intervalDays?: number;
+  frequencyRank?: number;
 };
 
 type SavedWordSqlRow = {
@@ -27,6 +33,12 @@ type SavedWordSqlRow = {
   page_index: number;
   paragraph_index: number;
   created_at: number;
+  status?: string | null;
+  review_count?: number | null;
+  last_reviewed_at?: number | null;
+  next_review_at?: number | null;
+  interval_days?: number | null;
+  frequency_rank?: number | null;
 };
 
 function fromSqlRow(row: SavedWordSqlRow): SavedWord {
@@ -42,6 +54,12 @@ function fromSqlRow(row: SavedWordSqlRow): SavedWord {
     pageIndex: row.page_index,
     paragraphIndex: row.paragraph_index,
     createdAt: row.created_at,
+    status: (row.status as 'learning' | 'known') || 'learning',
+    reviewCount: row.review_count ?? 0,
+    lastReviewedAt: row.last_reviewed_at ?? 0,
+    nextReviewAt: row.next_review_at ?? 0,
+    intervalDays: row.interval_days ?? 1,
+    frequencyRank: row.frequency_rank ?? 99999,
   };
 }
 
@@ -86,31 +104,83 @@ export async function getReviewStats(startOfTodayMs: number): Promise<{
   return { total: row?.total ?? 0, readyToReview: row?.ready ?? 0 };
 }
 
+export async function listAllKnownWords(): Promise<Set<string>> {
+  const db = await getDb();
+  try {
+    const rows = await db.getAllAsync<{ source_word: string }>(
+      "SELECT source_word FROM saved_words WHERE status = 'known'",
+    );
+    return new Set(rows.map((r) => r.source_word.toLowerCase().trim()));
+  } catch {
+    return new Set<string>();
+  }
+}
+
 export async function saveWord(input: Omit<SavedWord, 'id' | 'createdAt'>): Promise<SavedWord> {
   const db = await getDb();
   const id = generateId();
   const createdAt = Date.now();
-  await db.runAsync(
-    `INSERT INTO saved_words (id, book_id, source_word, source_lang, target_lang, translation, context_sentence, chapter_index, page_index, paragraph_index, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      id,
-      input.bookId,
-      input.sourceWord,
-      input.sourceLang,
-      input.targetLang,
-      input.translation,
-      input.contextSentence,
-      input.chapterIndex,
-      input.pageIndex,
-      input.paragraphIndex,
-      createdAt,
-    ],
-  );
-  return { ...input, id, createdAt };
+  const status = input.status || 'learning';
+  const reviewCount = input.reviewCount ?? 0;
+  const lastReviewedAt = input.lastReviewedAt ?? 0;
+  const nextReviewAt = input.nextReviewAt ?? 0;
+  const intervalDays = input.intervalDays ?? 1;
+  const frequencyRank = input.frequencyRank ?? 99999;
+
+  try {
+    await db.runAsync(
+      `INSERT INTO saved_words (
+        id, book_id, source_word, source_lang, target_lang, translation,
+        context_sentence, chapter_index, page_index, paragraph_index, created_at,
+        status, review_count, last_reviewed_at, next_review_at, interval_days, frequency_rank
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id,
+        input.bookId,
+        input.sourceWord,
+        input.sourceLang,
+        input.targetLang,
+        input.translation,
+        input.contextSentence,
+        input.chapterIndex,
+        input.pageIndex,
+        input.paragraphIndex,
+        createdAt,
+        status,
+        reviewCount,
+        lastReviewedAt,
+        nextReviewAt,
+        intervalDays,
+        frequencyRank,
+      ],
+    );
+  } catch {
+    // Fallback if migration hasn't reached v13 yet
+    await db.runAsync(
+      `INSERT INTO saved_words (
+        id, book_id, source_word, source_lang, target_lang, translation,
+        context_sentence, chapter_index, page_index, paragraph_index, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id,
+        input.bookId,
+        input.sourceWord,
+        input.sourceLang,
+        input.targetLang,
+        input.translation,
+        input.contextSentence,
+        input.chapterIndex,
+        input.pageIndex,
+        input.paragraphIndex,
+        createdAt,
+      ],
+    );
+  }
+  return { ...input, id, createdAt, status, reviewCount, lastReviewedAt, nextReviewAt, intervalDays, frequencyRank };
 }
 
 export async function deleteSavedWord(id: string): Promise<void> {
   const db = await getDb();
   await db.runAsync('DELETE FROM saved_words WHERE id = ?', [id]);
 }
+

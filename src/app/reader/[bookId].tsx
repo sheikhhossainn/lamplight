@@ -25,7 +25,7 @@ import Animated, {
 import Svg, { Circle, Defs, LinearGradient, Path, Rect, Stop } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ChevronLeftIcon, CloseIcon, MoonIcon, QuestionIcon, SoundWaveIcon, SunIcon, TranslateIcon } from '@/components/icons';
+import { ChevronLeftIcon, CloseIcon, FeelingPromptIcon, MoonIcon, QuestionIcon, SoundWaveIcon, SunIcon, TranslateIcon } from '@/components/icons';
 import { AmbiencePicker } from '@/features/ambience/AmbiencePicker';
 import { useAmbienceTrackId } from '@/features/ambience/ambiencePreference';
 import { ambienceTrackById } from '@/features/ambience/tracks';
@@ -59,6 +59,7 @@ import { getReadingPosition, upsertReadingPosition } from '@/db/repositories/rea
 import { listSavedWordsForBook, saveWord, type SavedWord } from '@/db/repositories/savedWords';
 import { getSetting, setSetting } from '@/db/repositories/appSettings';
 import { LanguagePicker } from '@/components/LanguagePicker';
+import { DecipherPageSheet } from '@/features/reader/components/DecipherPageSheet';
 import { ReaderGuideModal } from '@/features/reader/components/ReaderGuideModal';
 import { setTargetLanguage, targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
 import { getReadingFontSize, getReadingLineHeight, READING_FONT_SIZE_PX, READING_LINE_HEIGHT_PX } from '@/features/settings/readingPrefs';
@@ -316,6 +317,7 @@ export default function ReaderScreen() {
 
   const [languagePickerVisible, setLanguagePickerVisible] = useState(false);
   const [guideVisible, setGuideVisible] = useState(false);
+  const [decipherVisible, setDecipherVisible] = useState(false);
   const guideDismissedRef = useRef(false);
   const readerHintDismissedRef = useRef(false);
 
@@ -1542,6 +1544,26 @@ export default function ReaderScreen() {
         </View>
       </AnimatedPressable>
 
+      {/* Decipher Page (Illuminated Decryption Sheet) Button */}
+      <AnimatedPressable
+        hitSlop={12}
+        style={[
+          styles.decipherButton,
+          { top: insets.top + 10 },
+          animatedButtonStyle,
+        ]}
+        onPress={() => setDecipherVisible(true)}
+      >
+        <View style={styles.buttonIconContainer}>
+          <Animated.View style={[StyleSheet.absoluteFill, styles.centered, dayChromeFadeStyle]}>
+            <FeelingPromptIcon color={READING_TEXT_LIGHT} size={18} />
+          </Animated.View>
+          <Animated.View style={[StyleSheet.absoluteFill, styles.centered, nightChromeFadeStyle]}>
+            <FeelingPromptIcon color={READING_TEXT_DARK} size={18} />
+          </Animated.View>
+        </View>
+      </AnimatedPressable>
+
       {/* Reading mode toggle */}
       <AnimatedPressable
         hitSlop={12}
@@ -1802,6 +1824,18 @@ export default function ReaderScreen() {
           setLanguagePickerVisible(true);
         }}
       />
+
+      <DecipherPageSheet
+        visible={decipherVisible}
+        onClose={() => setDecipherVisible(false)}
+        bookId={bookId}
+        pageText={currentPage?.paragraphs.join('\n\n') || ''}
+        pageIndex={currentPage?.pageIndexInChapter ?? 0}
+        chapterIndex={currentPage?.chapterIndex ?? 0}
+        sourceLanguage={book?.sourceLanguage || 'en'}
+        targetLanguage={targetLanguage}
+        isPremium={isPremiumUser()}
+      />
     </View>
   );
 }
@@ -1894,6 +1928,18 @@ const styles = StyleSheet.create({
   guideButton: {
     position: 'absolute',
     left: 16,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 20,
+    elevation: 6,
+  },
+  decipherButton: {
+    position: 'absolute',
+    left: 64,
     width: 38,
     height: 38,
     borderRadius: 19,

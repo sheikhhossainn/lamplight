@@ -59,9 +59,21 @@ export default function RootLayout() {
   // Resolve the has-onboarded flag before the Stack mounts, so the "/" splash
   // route can redirect straight past itself instead of flashing then bouncing.
   useEffect(() => {
-    void Promise.all([hydrateOnboardingStatus(), hydrateWhatsNewStatus()]).then(() =>
-      setOnboardingChecked(true),
-    );
+    // Failsafe timer: ensure splash never stays stuck longer than 2.5s
+    const timeout = setTimeout(() => {
+      setOnboardingChecked(true);
+    }, 2500);
+
+    void Promise.all([hydrateOnboardingStatus(), hydrateWhatsNewStatus()])
+      .catch((err) => {
+        console.warn('[RootLayout] Hydration error:', err);
+      })
+      .finally(() => {
+        clearTimeout(timeout);
+        setOnboardingChecked(true);
+      });
+
+    return () => clearTimeout(timeout);
   }, []);
 
   useEffect(() => {
