@@ -211,4 +211,22 @@ export const MIGRATIONS: string[] = [
     PRIMARY KEY (book_id, chapter_index)
   );
   `,
+  // v13 — Word-state tracking and spaced repetition retention engine
+  `
+  ALTER TABLE saved_words ADD COLUMN status TEXT NOT NULL DEFAULT 'learning';
+  ALTER TABLE saved_words ADD COLUMN review_count INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE saved_words ADD COLUMN last_reviewed_at INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE saved_words ADD COLUMN next_review_at INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE saved_words ADD COLUMN interval_days INTEGER NOT NULL DEFAULT 1;
+  ALTER TABLE saved_words ADD COLUMN frequency_rank INTEGER NOT NULL DEFAULT 99999;
+  `,
+  // v14 — Book lexicons storage for real-time Hu & Nation 98% coverage calculations
+  `
+  CREATE TABLE IF NOT EXISTS book_lexicons (
+    book_id TEXT PRIMARY KEY REFERENCES books(id),
+    total_tokens INTEGER NOT NULL,
+    unique_words INTEGER NOT NULL,
+    lexicon_json TEXT NOT NULL
+  );
+  `,
 ];

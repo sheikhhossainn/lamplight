@@ -34,6 +34,7 @@ import { ShelfEditorModal, type ShelfDraft } from '@/components/ShelfEditorModal
 import { VocabReviewPrompt } from '@/components/VocabReviewPrompt';
 import { FeelingPromptModal } from '@/features/scripture-verses/FeelingPromptModal';
 import { checkVocabReviewPrompt, markVocabReviewPrompted } from '@/features/vocabulary/reviewPrompt';
+import { useCatalogCoverage } from '@/features/vocabulary/coverageEngine';
 import { type BookRow, listBooks } from '@/db/repositories/books';
 import {
   hideFromContinueReading,
@@ -138,6 +139,8 @@ export default function LibraryScreen() {
   const [importing, setImporting] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  const [readabilityFilter, setReadabilityFilter] = useState<'all' | 'ready' | 'challenging' | 'mastered'>('all');
+  const { coverageMap } = useCatalogCoverage();
   const [reviewPrompt, setReviewPrompt] = useState<{ wordCount: number } | null>(null);
   const [feelingModalVisible, setFeelingModalVisible] = useState(false);
   const [guideVisible, setGuideVisible] = useState(false);
@@ -400,10 +403,39 @@ export default function LibraryScreen() {
     .map((position) => ({ position, book: books.find((b) => b.id === position.bookId) }))
     .filter((entry): entry is { position: ReadingPosition; book: BookRow } => entry.book !== undefined);
 
-  // The "All books" shelf, narrowed to the active category filter (if any).
-  const shelfBooks = activeCategory
-    ? books.filter((b) => bookCategoryMap.get(b.id)?.includes(activeCategory))
-    : books;
+  // The "All books" shelf, narrowed to the active category & readability filters.
+  const shelfBooks = useMemo(() => {
+    let list = activeCategory
+      ? books.filter((b) => bookCategoryMap.get(b.id)?.includes(activeCategory))
+      : books;
+
+    if (readabilityFilter === 'ready') {
+      list = list.filter((b) => {
+        const cov = coverageMap.get(b.id);
+        return cov ? cov.coveragePercent >= 98 : false;
+      });
+    } else if (readabilityFilter === 'challenging') {
+      list = list.filter((b) => {
+        const cov = coverageMap.get(b.id);
+        return cov ? cov.coveragePercent >= 95 && cov.coveragePercent < 98 : false;
+      });
+    } else if (readabilityFilter === 'mastered') {
+      list = list.filter((b) => {
+        const pos = positions.find((p) => p.bookId === b.id);
+        const cov = coverageMap.get(b.id);
+        return (pos && pos.percentComplete >= 0.95) || (cov ? cov.coveragePercent >= 99 : false);
+      });
+    }
+
+    // Default sort order: Books closest to 98% appear first
+    return [...list].sort((a, b) => {
+      const covA = coverageMap.get(a.id)?.coveragePercent ?? 0;
+      const covB = coverageMap.get(b.id)?.coveragePercent ?? 0;
+      const diffA = Math.abs(98 - covA);
+      const diffB = Math.abs(98 - covB);
+      return diffA - diffB;
+    });
+  }, [activeCategory, books, bookCategoryMap, readabilityFilter, coverageMap, positions]);
 
   const booksOnShelf = (shelfId: string): BookRow[] => {
     const ids = new Set(shelfItems.filter((it) => it.shelfId === shelfId).map((it) => it.bookId));
@@ -491,6 +523,7 @@ export default function LibraryScreen() {
                 toneIndex={toneIndexById.get(book.id) ?? i}
                 rotateDeg={ROW_ROTATIONS[i % ROW_ROTATIONS.length]}
                 onPress={handlePress}
+                coverage={coverageMap.get(book.id)}
               />
             </View>
           );
@@ -604,6 +637,7 @@ export default function LibraryScreen() {
                 onPress={() => handleOpenContinueBook(book)}
                 width={56}
                 height={80}
+                coverage={coverageMap.get(book.id)}
               />
               <View style={{ flex: 1, marginLeft: spacing.md }}>
                 <Text style={[typography.uiRowTitle, { color: colors.ink }]} numberOfLines={1}>
@@ -666,6 +700,49 @@ export default function LibraryScreen() {
           </Text>
         </Pressable>
       </View>
+
+      {/* Readability Filter Segment (Hu & Nation 98% Lexical Threshold) */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        overScrollMode="never"
+        contentContainerStyle={styles.chipRow}
+        style={{ marginBottom: spacing.sm }}
+      >
+        {(
+          [
+            { id: 'all' as const, label: 'All' },
+            { id: 'ready' as const, label: 'Ready to Read (98%)' },
+            { id: 'challenging' as const, label: 'Challenging (95%)' },
+            { id: 'mastered' as const, label: 'Mastered' },
+          ] as const
+        ).map((segment) => {
+          const on = segment.id === readabilityFilter;
+          return (
+            <Pressable
+              key={segment.id}
+              onPress={() => setReadabilityFilter(segment.id)}
+              style={[
+                styles.chip,
+                {
+                  backgroundColor: on ? colors.flameAmber : colors.card,
+                  borderColor: on ? colors.flameAmber : colors.hairline,
+                  borderRadius: radius.pill,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  typography.uiRowTitle,
+                  { fontSize: 11.5, color: on ? colors.primaryDark : colors.umber },
+                ]}
+              >
+                {segment.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
 
       {/* Category chips — a horizontal filter row that opens under the header. */}
       {filterOpen && availableCategories.length > 0 ? (
@@ -808,6 +885,7 @@ export default function LibraryScreen() {
                       toneIndex={i}
                       rotateDeg={ROW_ROTATIONS[i % ROW_ROTATIONS.length]}
                       onPress={() => router.push({ pathname: '/bangla/[slug]', params: { slug: b.slug } } as any)}
+                      coverage={coverageMap.get(b.id)}
                     />
                   </View>
                 ))
@@ -821,6 +899,7 @@ export default function LibraryScreen() {
                         toneIndex={i}
                         rotateDeg={ROW_ROTATIONS[i % ROW_ROTATIONS.length]}
                         onPress={() => router.push({ pathname: '/book/[id]', params: { id: b.id } })}
+                        coverage={coverageMap.get(b.id)}
                       />
                     </View>
                   ))
@@ -833,6 +912,7 @@ export default function LibraryScreen() {
                         toneIndex={i}
                         rotateDeg={ROW_ROTATIONS[i % ROW_ROTATIONS.length]}
                         onPress={() => router.push({ pathname: '/book/[id]', params: { id: b.id } })}
+                        coverage={coverageMap.get(b.id)}
                       />
                     </View>
                   ))}

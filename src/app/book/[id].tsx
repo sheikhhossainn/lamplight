@@ -13,7 +13,8 @@ import { deleteBookCache, isBookCached } from '@/features/content-ingestion/book
 import { deleteImportedBook, getBook, isImportedBook, type BookRow } from '@/db/repositories/books';
 import { listHighlightsForBook } from '@/db/repositories/highlights';
 import { getReadingPosition, type ReadingPosition } from '@/db/repositories/readingPosition';
-import { listSavedWordsForBook, type SavedWord } from '@/db/repositories/savedWords';
+import { listSavedWordsForBook, saveWord, type SavedWord } from '@/db/repositories/savedWords';
+import { useBookCoverage } from '@/features/vocabulary/coverageEngine';
 import {
   addBookToShelf,
   createShelf,
@@ -46,6 +47,7 @@ export default function BookDetailScreen() {
   const [shelfItems, setShelfItems] = useState<ShelfItem[]>([]);
   const [shelfSheetVisible, setShelfSheetVisible] = useState(false);
   const targetLanguage = useTargetLanguage();
+  const { coverage, recalculate: recalculateCoverage } = useBookCoverage(id);
 
   useFocusEffect(
     useCallback(() => {
@@ -478,6 +480,131 @@ export default function BookDetailScreen() {
         </View>
       ) : null}
 
+      {coverage ? (
+        <View
+          style={[
+            styles.coverageContainer,
+            {
+              backgroundColor: colors.card,
+              borderColor: colors.hairline,
+              borderRadius: radius.card,
+              padding: spacing.md,
+              marginTop: spacing.xl,
+            },
+          ]}
+        >
+          {/* Top row: percentage & tier pill */}
+          <View style={styles.coverageHeaderRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginBottom: 2 }]}>
+                Hu & Nation Lexical Forecast
+              </Text>
+              <Text style={[typography.screenTitle, { color: colors.ink, fontSize: 24 }]}>
+                {coverage.coveragePercent.toFixed(1)}% Comprehensible
+              </Text>
+            </View>
+            <View
+              style={[
+                styles.tierBadge,
+                coverage.tier === 'ready'
+                  ? { backgroundColor: colors.flameAmber }
+                  : coverage.tier === 'challenging'
+                  ? { backgroundColor: colors.fawn }
+                  : { backgroundColor: colors.hairline },
+                { borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 4 },
+              ]}
+            >
+              <Text
+                style={[
+                  typography.uiRowTitle,
+                  {
+                    fontSize: 11,
+                    color: coverage.tier === 'ready' ? colors.primaryDark : colors.parchment,
+                  },
+                ]}
+              >
+                {coverage.tier === 'ready'
+                  ? 'Ready to Read'
+                  : coverage.tier === 'challenging'
+                  ? 'Instructional'
+                  : 'Advanced'}
+              </Text>
+            </View>
+          </View>
+
+          {/* Subtitle based on unknown count */}
+          <Text style={[typography.metadataCaption, { color: colors.umber, marginTop: spacing.xs }]}>
+            {coverage.coveragePercent >= 98
+              ? 'Effortless independent flow — under 2 unknown words per page.'
+              : coverage.coveragePercent >= 95
+              ? `Approx. ${Math.max(3, Math.min(8, Math.round((coverage.unknownTokenCount / (coverage.unknownTokenCount + 100)) * 15)))} unknown words per page — perfect for instructional reading.`
+              : 'Demanding vocabulary load — frequent dictionary lookup recommended.'}
+          </Text>
+
+          {/* Target Words Preview */}
+          {coverage.highLeverageTargetWords.length > 0 ? (
+            <View style={{ marginTop: spacing.md, paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.hairline }}>
+              <Text style={[typography.eyebrowLabel, { color: colors.fawn, fontSize: 10.5, marginBottom: spacing.xs }]}>
+                Learn these words to reach 98%:
+              </Text>
+              <View style={styles.targetWordsRow}>
+                {coverage.highLeverageTargetWords.map((word) => {
+                  const isSaved = savedWords.some((w) => w.sourceWord.toLowerCase() === word.toLowerCase());
+                  return (
+                    <Pressable
+                      key={word}
+                      onPress={async () => {
+                        if (!isSaved) {
+                          await saveWord({
+                            bookId: id,
+                            sourceWord: word,
+                            sourceLang: book?.sourceLanguage || 'en',
+                            targetLang: targetLanguage,
+                            translation: 'Target vocabulary',
+                            contextSentence: `Vocabulary target in ${book?.title || 'book'}`,
+                            chapterIndex: 0,
+                            pageIndex: 0,
+                            paragraphIndex: 0,
+                            status: 'learning',
+                          });
+                          const updated = await listSavedWordsForBook(id);
+                          setSavedWords(updated);
+                          await recalculateCoverage();
+                        }
+                      }}
+                      style={[
+                        styles.targetWordChip,
+                        {
+                          backgroundColor: isSaved ? colors.fawn : colors.parchment,
+                          borderColor: isSaved ? colors.fawn : colors.flameAmber,
+                          borderRadius: radius.pill,
+                          paddingHorizontal: 10,
+                          paddingVertical: 5,
+                          marginRight: 6,
+                          marginBottom: 6,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          typography.uiRowTitle,
+                          {
+                            fontSize: 12,
+                            color: isSaved ? colors.card : colors.ink,
+                          },
+                        ]}
+                      >
+                        {isSaved ? `✓ ${word}` : `+ ${word}`}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+
       <Pressable
         disabled={!isAvailable}
         onPress={handlePressCta}
@@ -621,5 +748,24 @@ const styles = StyleSheet.create({
   cta: {
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  coverageContainer: {
+    borderWidth: 1,
+  },
+  coverageHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+  },
+  tierBadge: {
+    alignSelf: 'flex-start',
+  },
+  targetWordsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 6,
+  },
+  targetWordChip: {
+    borderWidth: 1,
   },
 });

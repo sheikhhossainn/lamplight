@@ -55,6 +55,7 @@ import { getReadingPosition, upsertReadingPosition } from '@/db/repositories/rea
 import { listSavedWordsForBook, saveWord, type SavedWord } from '@/db/repositories/savedWords';
 import { getSetting, setSetting } from '@/db/repositories/appSettings';
 import { LanguagePicker } from '@/components/LanguagePicker';
+import { DecipherPageSheet } from '@/features/reader/components/DecipherPageSheet';
 import { ReaderGuideModal } from '@/features/reader/components/ReaderGuideModal';
 import { ReaderMenuModal } from '@/features/reader/components/ReaderMenuModal';
 import { setTargetLanguage, targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
@@ -247,6 +248,7 @@ export default function ReaderScreen() {
   const [languagePickerVisible, setLanguagePickerVisible] = useState(false);
   const [guideVisible, setGuideVisible] = useState(false);
   const [menuVisible, setMenuVisible] = useState(false);
+  const [decipherVisible, setDecipherVisible] = useState(false);
   const guideDismissedRef = useRef(false);
   const readerHintDismissedRef = useRef(false);
 
@@ -1626,6 +1628,7 @@ export default function ReaderScreen() {
         onToggleTranslation={toggleTranslation}
         isTranslated={currentTranslation?.status === 'ready'}
         isTranslating={currentTranslation?.status === 'loading'}
+        onOpenDecipher={() => setDecipherVisible(true)}
         onOpenLanguagePicker={() => setLanguagePickerVisible(true)}
         targetLanguage={targetLanguage}
         onOpenAmbience={() => setAmbienceOpen(true)}
@@ -1641,6 +1644,18 @@ export default function ReaderScreen() {
           handleCloseGuide();
           setLanguagePickerVisible(true);
         }}
+      />
+
+      <DecipherPageSheet
+        visible={decipherVisible}
+        onClose={() => setDecipherVisible(false)}
+        bookId={bookId}
+        pageText={currentPage?.paragraphs.join('\n\n') || ''}
+        pageIndex={currentPage?.pageIndexInChapter ?? 0}
+        chapterIndex={currentPage?.chapterIndex ?? 0}
+        sourceLanguage={book?.sourceLanguage || 'en'}
+        targetLanguage={targetLanguage}
+        isPremium={isPremiumUser()}
       />
     </View>
   );

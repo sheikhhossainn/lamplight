@@ -27,6 +27,7 @@ type ReaderMenuModalProps = {
   onToggleTranslation: () => void;
   isTranslated: boolean;
   isTranslating: boolean;
+  onOpenDecipher?: () => void;
   onOpenLanguagePicker: () => void;
   targetLanguage: TargetLanguage;
   onOpenAmbience: () => void;
@@ -42,6 +43,7 @@ export function ReaderMenuModal({
   onToggleTranslation,
   isTranslated,
   isTranslating,
+  onOpenDecipher,
   onOpenLanguagePicker,
   targetLanguage,
   onOpenAmbience,
@@ -173,6 +175,43 @@ export function ReaderMenuModal({
                 </View>
               ) : null}
             </Pressable>
+
+            {/* Decipher Page (Illuminated Interlinear Breakdown) */}
+            {onOpenDecipher ? (
+              <Pressable
+                onPress={() => {
+                  onClose();
+                  onOpenDecipher();
+                }}
+                style={({ pressed }) => [
+                  styles.itemRow,
+                  { borderRadius: radius.card },
+                  pressed && { backgroundColor: `${colors.flameAmber}10` },
+                ]}
+              >
+                <View
+                  style={[
+                    styles.iconBox,
+                    { backgroundColor: `${colors.flameAmber}18` },
+                  ]}
+                >
+                  <TranslateIcon color={colors.flameAmber} size={18} />
+                </View>
+                <View style={styles.itemBody}>
+                  <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 14 }]}>
+                    Decipher Page
+                  </Text>
+                  <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11.5, marginTop: 1 }]}>
+                    Interlinear phonetics, word chips & translation
+                  </Text>
+                </View>
+                <View style={[styles.pillBadge, { backgroundColor: colors.flameAmber, borderRadius: radius.pill }]}>
+                  <Text style={[typography.eyebrowLabel, { color: colors.primaryDark, fontSize: 10, fontWeight: '700' }]}>
+                    SLA
+                  </Text>
+                </View>
+              </Pressable>
+            ) : null}
 
             {/* 3. Target Language */}
             <Pressable
