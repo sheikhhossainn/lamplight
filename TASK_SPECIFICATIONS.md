@@ -4,7 +4,7 @@ This document provides exhaustive technical specifications, user flows, database
 
 ---
 
-# SECTION 1: LEAD (YOU) — UI/UX ATMOSPHERE & SCRIPTURE COMPARATIVE Q&A
+# SECTION 1: LEAD (Sheikhhossainn) — UI/UX ATMOSPHERE & SCRIPTURE COMPARATIVE Q&A
 
 ---
 
@@ -99,7 +99,7 @@ This document provides exhaustive technical specifications, user flows, database
 
 ---
 
-# SECTION 2: TEAMMATE 1 — WORD-STATE, SRS & RETENTION ENGINE
+# SECTION 2: Mahim — WORD-STATE, SRS & RETENTION ENGINE
 
 ---
 
@@ -222,7 +222,7 @@ This document provides exhaustive technical specifications, user flows, database
 
 ---
 
-# SECTION 3: TEAMMATE 2 — BOOK LEXICONS, 98% COVERAGE & DECIPHER SHEET
+# SECTION 3: mahihasan909-gif — BOOK LEXICONS, 98% COVERAGE & DECIPHER SHEET
 
 ---
 
