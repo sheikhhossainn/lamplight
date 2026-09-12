@@ -279,7 +279,7 @@ export function DecipherPageSheet({
           {/* Content Body */}
           {limitReached ? (
             <View style={[styles.paywallCard, { borderColor: colors.flameAmber, backgroundColor: colors.parchment }]}>
-              <Text style={[typography.screenTitle, { color: colors.primaryDark, fontSize: 18, textAlign: 'center' }]}>
+              <Text style={[typography.screenTitle, { color: colors.ink, fontSize: 18, textAlign: 'center' }]}>
                 Daily Decryption Limit Reached
               </Text>
               <Text
@@ -395,7 +395,7 @@ export function DecipherPageSheet({
                         style={[
                           typography.readingBody,
                           {
-                            color: colors.primaryDark,
+                            color: colors.ink,
                             fontSize: 14,
                             lineHeight: 22,
                           },
