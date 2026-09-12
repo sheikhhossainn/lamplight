@@ -1,10 +1,10 @@
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { ChevronLeftIcon, ChevronRightIcon, TrashIcon } from '@/components/icons';
+import { ChevronLeftIcon, ChevronRightIcon, CloseIcon, TrashIcon } from '@/components/icons';
 import {
   FlashcardsIllustration,
   QuotesIllustration,
@@ -112,6 +112,8 @@ export default function VocabularyScreen() {
   // One themed confirm for both remove flows (word / quote), replacing the OS
   // alert. Holds the title/message and the action to run on confirm.
   const [confirm, setConfirm] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
+  const [selectedQuote, setSelectedQuote] = useState<Highlight | null>(null);
+  const [copiedToast, setCopiedToast] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
   const reload = useCallback(() => {
@@ -272,12 +274,8 @@ export default function VocabularyScreen() {
                 {groupQuotes.map((quote, index) => (
                   <Pressable
                     key={quote.id}
-                    // Tap -> reopen the share card for this quote. Long-press ->
-                    // remove it (with a confirm) — same action as the trash icon.
-                    onPress={() =>
-                      router.push({ pathname: '/quote-share/[highlightId]', params: { highlightId: quote.id } })
-                    }
-                    onLongPress={() => confirmRemoveQuote(quote)}
+                    onPress={() => setSelectedQuote(quote)}
+                    onLongPress={() => setSelectedQuote(quote)}
                     style={[
                       styles.row,
                       index < groupQuotes.length - 1 && {
@@ -286,9 +284,18 @@ export default function VocabularyScreen() {
                       },
                     ]}
                   >
-                    <View style={{ flex: 1, minWidth: 0 }}>
+                    <View
+                      style={[
+                        styles.quoteColorStrip,
+                        { backgroundColor: colors.highlight[quote.colorKey] ?? colors.flameAmber },
+                      ]}
+                    />
+                    <View style={{ flex: 1, minWidth: 0, paddingLeft: 8 }}>
                       <Text numberOfLines={2} style={[typography.poeticTagline, { color: colors.ink }]}>
                         &ldquo;{quote.quoteText}&rdquo;
+                      </Text>
+                      <Text style={[typography.metadataCaption, { color: colors.fawn, marginTop: 4, fontSize: 11.5 }]}>
+                        Page {quote.pageIndex + 1} · {new Date(quote.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
                       </Text>
                     </View>
                     <Pressable onPress={() => confirmRemoveQuote(quote)} hitSlop={10} style={styles.rowTrash}>
@@ -440,6 +447,159 @@ export default function VocabularyScreen() {
         }}
         onCancel={() => setConfirm(null)}
       />
+
+      {/* Quote Action Menu Modal */}
+      <Modal
+        visible={selectedQuote != null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSelectedQuote(null)}
+      >
+        <View style={styles.menuOverlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setSelectedQuote(null)} />
+          <View
+            style={[
+              styles.menuSheet,
+              {
+                backgroundColor: colors.card,
+                borderColor: colors.hairline,
+                borderRadius: radius.card,
+                padding: spacing.lg,
+              },
+            ]}
+          >
+            {/* Header: Book Title & Page Info */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.xs }}>
+              <View style={{ flex: 1, marginRight: 8 }}>
+                <Text style={[typography.eyebrowLabel, { color: colors.progressLabel }]} numberOfLines={1}>
+                  {selectedQuote ? bookTitle(selectedQuote.bookId) : ''}
+                </Text>
+                <Text style={[typography.metadataCaption, { color: colors.fawn, marginTop: 2 }]}>
+                  {selectedQuote
+                    ? `Page ${selectedQuote.pageIndex + 1} · ${new Date(selectedQuote.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`
+                    : ''}
+                </Text>
+              </View>
+              <Pressable onPress={() => setSelectedQuote(null)} hitSlop={12}>
+                <CloseIcon color={colors.fawn} size={18} />
+              </Pressable>
+            </View>
+
+            {/* Quote Snippet Preview */}
+            <View
+              style={{
+                backgroundColor: colors.parchment,
+                borderRadius: radius.card,
+                padding: spacing.md,
+                marginVertical: spacing.sm,
+                borderLeftWidth: 3.5,
+                borderLeftColor: selectedQuote
+                  ? colors.highlight[selectedQuote.colorKey] ?? colors.flameAmber
+                  : colors.flameAmber,
+              }}
+            >
+              <Text
+                numberOfLines={3}
+                style={[
+                  typography.readingBody,
+                  { color: colors.ink, fontSize: 14.5, lineHeight: 22, fontStyle: 'italic' },
+                ]}
+              >
+                &ldquo;{selectedQuote?.quoteText}&rdquo;
+              </Text>
+            </View>
+
+            {/* Action Buttons */}
+            <View style={{ marginTop: spacing.sm, gap: spacing.sm }}>
+              {/* 1. Jump to Book Page */}
+              <Pressable
+                onPress={() => {
+                  if (!selectedQuote) return;
+                  const q = selectedQuote;
+                  setSelectedQuote(null);
+                  router.push({
+                    pathname: '/reader/[bookId]',
+                    params: {
+                      bookId: q.bookId,
+                      jumpChapter: String(q.chapterIndex),
+                      jumpPage: String(q.pageIndex),
+                    },
+                  });
+                }}
+                style={[styles.menuActionBtn, { backgroundColor: colors.flameAmber }]}
+              >
+                <Text style={[typography.buttonLabel, { color: colors.primaryDark }]}>
+                  📖 Go to Page {selectedQuote ? selectedQuote.pageIndex + 1 : ''}
+                </Text>
+              </Pressable>
+
+              {/* 2. Copy Quote */}
+              <Pressable
+                onPress={async () => {
+                  if (!selectedQuote) return;
+                  const textToCopy = `“${selectedQuote.quoteText}”\n— ${bookTitle(selectedQuote.bookId)}`;
+                  setSelectedQuote(null);
+                  try {
+                    await Share.share({ message: textToCopy });
+                  } catch {}
+                  setCopiedToast(true);
+                  setTimeout(() => setCopiedToast(false), 2500);
+                }}
+                style={[
+                  styles.menuActionBtn,
+                  { backgroundColor: colors.parchment, borderWidth: 1, borderColor: colors.hairline },
+                ]}
+              >
+                <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13.5 }]}>
+                  📋 Copy / Share Quote
+                </Text>
+              </Pressable>
+
+              {/* 3. Aesthetic Quote Card */}
+              <Pressable
+                onPress={() => {
+                  if (!selectedQuote) return;
+                  const q = selectedQuote;
+                  setSelectedQuote(null);
+                  router.push({ pathname: '/quote-share/[highlightId]', params: { highlightId: q.id } });
+                }}
+                style={[
+                  styles.menuActionBtn,
+                  { backgroundColor: colors.parchment, borderWidth: 1, borderColor: colors.hairline },
+                ]}
+              >
+                <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13.5 }]}>
+                  🖼️ View Antique Card
+                </Text>
+              </Pressable>
+
+              {/* 4. Remove Quote */}
+              <Pressable
+                onPress={() => {
+                  if (!selectedQuote) return;
+                  const q = selectedQuote;
+                  setSelectedQuote(null);
+                  confirmRemoveQuote(q);
+                }}
+                style={[styles.menuActionBtn, { backgroundColor: 'transparent' }]}
+              >
+                <Text style={[typography.uiRowTitle, { color: '#C95D5D', fontSize: 13 }]}>
+                  🗑️ Remove Quote
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Copy feedback toast */}
+      {copiedToast ? (
+        <View style={[styles.toastContainer, { backgroundColor: colors.primaryDark, borderRadius: radius.pill }]}>
+          <Text style={[typography.metadataCaption, { color: colors.parchment, fontSize: 12.5 }]}>
+            ✓ Quote copied
+          </Text>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -624,5 +784,43 @@ const styles = StyleSheet.create({
     height: 52,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  quoteColorStrip: {
+    width: 3.5,
+    alignSelf: 'stretch',
+    borderRadius: 2,
+  },
+  menuOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.48)',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  menuSheet: {
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8,
+  },
+  menuActionBtn: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  toastContainer: {
+    position: 'absolute',
+    bottom: 24,
+    alignSelf: 'center',
+    paddingHorizontal: 18,
+    paddingVertical: 9,
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    elevation: 6,
+    zIndex: 100,
   },
 });

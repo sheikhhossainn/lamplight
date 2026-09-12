@@ -244,6 +244,7 @@ export default function ReaderScreen() {
   const [initialIndex, setInitialIndex] = useState<number | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [highlights, setHighlights] = useState<Highlight[]>([]);
+  const [selectedColorKey, setSelectedColorKey] = useState<HighlightColorKey>('amber');
   const [savedWords, setSavedWords] = useState<SavedWord[]>([]);
 
   const [chromeVisible, setChromeVisible] = useState(true);
@@ -1147,7 +1148,7 @@ export default function ReaderScreen() {
         pageIndex: page.pageIndexInChapter,
         startOffset: startPara,
         endOffset: endPara,
-        colorKey: 'amber',
+        colorKey: selectedColorKey,
         quoteText: pageQuoteText,
       });
 
@@ -1164,7 +1165,7 @@ export default function ReaderScreen() {
     if (primaryHighlight) {
       router.push({ pathname: '/quote-share/[highlightId]', params: { highlightId: primaryHighlight.id } });
     }
-  }, [book, selection, pages, clearEdgeTurnTimer]);
+  }, [book, selection, pages, clearEdgeTurnTimer, selectedColorKey]);
 
   const renderPage = useCallback(
     ({ item, index }: { item: ReaderPage; index: number }) => {
@@ -1230,7 +1231,7 @@ export default function ReaderScreen() {
               activeWordColor={colors.highlight.amber}
               activeWordTextColor="#2B2621"
               selectionRange={selectionForItem}
-              selectionColor={colors.highlight.amber}
+              selectionColor={colors.highlight[selectedColorKey]}
               onWordLongPress={handleWordLongPress}
               onRangeEdgeDragStart={handleRangeEdgeDragStart}
               onRangeEdgeDrag={(edge, pos, direction) =>
@@ -1261,6 +1262,7 @@ export default function ReaderScreen() {
       insets.top,
       insets.bottom,
       selection,
+      selectedColorKey,
       activeWord,
       wordMenu,
       mode,
@@ -1745,19 +1747,31 @@ export default function ReaderScreen() {
           >
             <Text style={[typography.uiRowTitle, { color: colors.mutedOnDark, fontSize: 13 }]}>Cancel</Text>
           </Pressable>
-          <Text style={[typography.metadataCaption, { color: colors.lampText, fontSize: 12 }]}>
-            {(() => {
-              const n = selectedText(pages, selection)
-                .split(/\s+/)
-                .filter(Boolean).length;
-              return `${n} word${n === 1 ? '' : 's'} selected`;
-            })()}
-          </Text>
+
+          {/* 4 Multi-color Highlighter Dots */}
+          <View style={styles.colorPickerRow}>
+            {(['amber', 'sage', 'clay', 'dusk'] as HighlightColorKey[]).map((key) => {
+              const active = key === selectedColorKey;
+              return (
+                <Pressable
+                  key={key}
+                  onPress={() => setSelectedColorKey(key)}
+                  hitSlop={8}
+                  style={[
+                    styles.colorDot,
+                    { backgroundColor: colors.highlight[key] },
+                    active && styles.colorDotActive,
+                  ]}
+                />
+              );
+            })}
+          </View>
+
           <Pressable
             onPress={handleSaveQuote}
-            style={[styles.selectionSave, { backgroundColor: colors.flameAmber }]}
+            style={[styles.selectionSave, { backgroundColor: colors.highlight[selectedColorKey] }]}
           >
-            <Text style={[typography.uiRowTitle, { color: colors.primaryDark, fontSize: 12 }]}>
+            <Text style={[typography.uiRowTitle, { color: colors.primaryDark, fontSize: 12, fontWeight: '700' }]}>
               Save quote
             </Text>
           </Pressable>
@@ -2056,6 +2070,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 9,
     borderRadius: 100,
+  },
+  colorPickerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  colorDot: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.25)',
+  },
+  colorDotActive: {
+    borderColor: '#FFFFFF',
+    borderWidth: 2.5,
+    transform: [{ scale: 1.25 }],
   },
 });
 
