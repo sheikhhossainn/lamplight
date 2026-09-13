@@ -211,4 +211,14 @@ export const MIGRATIONS: string[] = [
     PRIMARY KEY (book_id, chapter_index)
   );
   `,
+  // v13 — Word-State tracking & Spaced Repetition (SRS): evolves saved_words into
+  // an active retention state machine with Leitner/SM-2 intervals and frequency rank.
+  `
+  ALTER TABLE saved_words ADD COLUMN status TEXT NOT NULL DEFAULT 'learning';
+  ALTER TABLE saved_words ADD COLUMN review_count INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE saved_words ADD COLUMN last_reviewed_at INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE saved_words ADD COLUMN next_review_at INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE saved_words ADD COLUMN interval_days INTEGER NOT NULL DEFAULT 1;
+  ALTER TABLE saved_words ADD COLUMN frequency_rank INTEGER NOT NULL DEFAULT 99999;
+  `,
 ];

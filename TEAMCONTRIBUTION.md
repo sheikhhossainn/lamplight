@@ -117,15 +117,15 @@ export type BookCoverageResult = {
 ## 3. Non-Negotiable Engineering Rules
 
 1. **Git Author & Push Identity (CRITICAL):**
-   - Every commit and push **must** be authored under the authorized repo identity:
-     - Name: `sheikhhossainn`
-     - Email: `skhossain799@gmail.com`
+   - Every commit and push **must** be authored under an authorized team contributor identity:
+     - Lead: `sheikhhossainn` (`skhossain799@gmail.com`)
+     - Teammate 1 (Mahim): `Mahim25800` (`mhim2580@gmail.com`)
    - Set locally before writing code:
      ```bash
-     git config user.name "sheikhhossainn"
-     git config user.email "skhossain799@gmail.com"
+     git config user.name "Mahim25800"
+     git config user.email "mhim2580@gmail.com"
      ```
-   - Commits authored under any other GitHub user will be rejected.
+   - Commits authored under any unauthorized user will be rejected.
 
 2. **SQLite Serializing Queue (Android Stability):**
    - **Never** call the raw SQLite database handle directly.
