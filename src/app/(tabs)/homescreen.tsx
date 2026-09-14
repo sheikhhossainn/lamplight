@@ -13,7 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BookSpine } from '@/components/BookSpine';
 import { WordsIllustration } from '@/components/NotebookIllustrations';
-import { ChevronRightIcon, FeelingPromptIcon, SoundWaveIcon } from '@/components/icons';
+import { ChevronRightIcon, QuestionIcon, SoundWaveIcon } from '@/components/icons';
 import { getBook, listBanglaBooks, type BookRow } from '@/db/repositories/books';
 import {
   listActiveReadingPositions,
@@ -29,7 +29,6 @@ import {
 import { AOZORA_JAPANESE_BOOKS } from '@/features/content-ingestion/japaneseApi';
 import { GONGU_KOREAN_BOOKS } from '@/features/content-ingestion/koreanApi';
 import { getMotherTongueOption, useMotherTongue } from '@/features/settings/motherTongue';
-import { FeelingPromptModal } from '@/features/scripture-verses/FeelingPromptModal';
 import { targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
 import { isBengaliText, isJapaneseText, isKoreanText } from '@/theme/typography';
 import { useTheme } from '@/theme/ThemeProvider';
@@ -203,7 +202,6 @@ export default function Homescreen() {
   const [readyBook, setReadyBook] = useState<BookRow | null>(null);
   const [calibratedBook, setCalibratedBook] = useState<CalibratedStartingBook | null>(null);
   const [sparkIndex, setSparkIndex] = useState(0);
-  const [feelingModalVisible, setFeelingModalVisible] = useState(false);
   const [spotlight, setSpotlight] = useState<{
     id: string;
     title: string;
@@ -930,10 +928,10 @@ export default function Homescreen() {
           </View>
         </View>
 
-        {/* Heart Sanctuary Portal — in English */}
+        {/* Comparative Scripture Inquiry Card */}
         <View style={{ marginTop: spacing.xl }}>
           <Pressable
-            onPress={() => setFeelingModalVisible(true)}
+            onPress={() => router.push('/mood-verses/ask')}
             style={[
               styles.sanctuaryCard,
               {
@@ -947,14 +945,14 @@ export default function Homescreen() {
           >
             <View style={styles.sanctuaryHeader}>
               <View style={[styles.sanctuaryIconCircle, { backgroundColor: colors.flameAmber + '22' }]}>
-                <FeelingPromptIcon color={colors.flameAmber} size={20} />
+                <QuestionIcon color={colors.flameAmber} size={20} />
               </View>
               <View style={{ flex: 1, marginLeft: 12 }}>
                 <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 17 }]}>
-                  Heart Sanctuary
+                  Comparative Scriptures
                 </Text>
                 <Text style={[typography.metadataCaption, { color: colors.fawn, marginTop: 2, fontSize: 13 }]}>
-                  Comfort in sacred scripture
+                  Learn & ask about major religions
                 </Text>
               </View>
             </View>
@@ -970,7 +968,7 @@ export default function Homescreen() {
                 },
               ]}
             >
-              Carrying grief, burnout, loneliness, or quiet gratitude? Speak or write your heart. Sacred words from the Quran, Bible, and Vedas meet you where you are.
+              Ask questions on women, justice, peace, and spiritual ethics. Explore verified commentary and primary verses across the Quran, Bible, Torah, and Vedas.
             </Text>
 
             <View
@@ -986,7 +984,7 @@ export default function Homescreen() {
               ]}
             >
               <Text style={[typography.buttonLabel, { color: colors.flameAmber, fontSize: 13 }]}>
-                Speak or Write Your Heart →
+                Ask Scriptures ➔
               </Text>
             </View>
           </Pressable>
@@ -1221,7 +1219,7 @@ export default function Homescreen() {
           </Pressable>
 
           <Pressable
-            onPress={handleExploreLibrary}
+            onPress={() => router.push('/mood-verses/ask')}
             style={[
               styles.quickCard,
               {
@@ -1246,15 +1244,6 @@ export default function Homescreen() {
           </Pressable>
         </View>
       </ScrollView>
-
-      <FeelingPromptModal
-        visible={feelingModalVisible}
-        onClose={() => setFeelingModalVisible(false)}
-        onSubmit={(text) => {
-          setFeelingModalVisible(false);
-          router.push({ pathname: '/mood-verses/reflect', params: { text } });
-        }}
-      />
     </View>
   );
 }

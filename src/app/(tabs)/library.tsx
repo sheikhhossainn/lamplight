@@ -32,7 +32,6 @@ import { GONGU_KOREAN_BOOKS } from '@/features/content-ingestion/koreanApi';
 import { getMotherTongueOption, useMotherTongue } from '@/features/settings/motherTongue';
 import { ShelfEditorModal, type ShelfDraft } from '@/components/ShelfEditorModal';
 import { VocabReviewPrompt } from '@/components/VocabReviewPrompt';
-import { FeelingPromptModal } from '@/features/scripture-verses/FeelingPromptModal';
 import { checkVocabReviewPrompt, markVocabReviewPrompted } from '@/features/vocabulary/reviewPrompt';
 import { type BookRow, listBooks } from '@/db/repositories/books';
 import {
@@ -139,7 +138,6 @@ export default function LibraryScreen() {
   const [filterOpen, setFilterOpen] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [reviewPrompt, setReviewPrompt] = useState<{ wordCount: number } | null>(null);
-  const [feelingModalVisible, setFeelingModalVisible] = useState(false);
   const [guideVisible, setGuideVisible] = useState(false);
   const [downloadConfirmBook, setDownloadConfirmBook] = useState<BookRow | null>(null);
   const [banglaBooks, setBanglaBooks] = useState<BanglaBookSummary[]>(FALLBACK_BANGLA_BOOKS);
@@ -853,11 +851,11 @@ export default function LibraryScreen() {
         <View style={[styles.shelfHeader, { marginBottom: spacing.md }]}>
           <Text style={[typography.eyebrowLabel, { color: colors.fawn }]}>Scriptures</Text>
           <Pressable
-            onPress={() => setFeelingModalVisible(true)}
+            onPress={() => router.push('/mood-verses/ask')}
             hitSlop={8}
             style={styles.filterHeader}
           >
-            <Text style={[typography.uiRowTitle, { color: colors.progressLabel, fontSize: 12 }]}>Feeling?</Text>
+            <Text style={[typography.uiRowTitle, { color: colors.flameAmber, fontSize: 12 }]}>Ask Scriptures ✦</Text>
           </Pressable>
         </View>
         <ScrollView
@@ -954,15 +952,6 @@ export default function LibraryScreen() {
       ) : null}
         </>
       )}
-
-      <FeelingPromptModal
-        visible={feelingModalVisible}
-        onClose={() => setFeelingModalVisible(false)}
-        onSubmit={(text) => {
-          setFeelingModalVisible(false);
-          router.push({ pathname: '/mood-verses/reflect', params: { text } });
-        }}
-      />
 
       <ShelfEditorModal
         visible={editor.visible}
