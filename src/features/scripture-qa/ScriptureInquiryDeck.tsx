@@ -23,6 +23,7 @@ import {
   queryScriptureInquiry,
   type ScriptureInquiryResult,
 } from './scriptureInquiryApi';
+import { ScriptureInquirySpinner } from './ScriptureInquirySpinner';
 import { SACRED_TRADITION_EMBLEMS, IslamEmblem } from './TraditionEmblems';
 
 type ScriptureInquiryDeckProps = {
@@ -48,11 +49,15 @@ export function ScriptureInquiryDeck({ questionQuery, initialTradition }: Script
 
     const timer1 = setTimeout(() => {
       if (mounted) setLoadingStep(1);
-    }, 450);
+    }, 800);
 
     const timer2 = setTimeout(() => {
       if (mounted) setLoadingStep(2);
-    }, 1200);
+    }, 2200);
+
+    const timer3 = setTimeout(() => {
+      if (mounted) setLoadingStep(3);
+    }, 4200);
 
     queryScriptureInquiry(questionQuery)
       .then((res) => {
@@ -81,6 +86,7 @@ export function ScriptureInquiryDeck({ questionQuery, initialTradition }: Script
       mounted = false;
       clearTimeout(timer1);
       clearTimeout(timer2);
+      clearTimeout(timer3);
     };
   }, [questionQuery]);
 
@@ -169,29 +175,7 @@ export function ScriptureInquiryDeck({ questionQuery, initialTradition }: Script
       </View>
 
       {loading ? (
-        <View style={styles.centerLoading}>
-          <ActivityIndicator size="large" color={colors.flameAmber} />
-          <Text
-            style={[
-              typography.screenTitle,
-              { color: colors.ink, marginTop: 18, fontSize: 17, textAlign: 'center' },
-            ]}
-          >
-            {loadingStep === 0
-              ? 'Checking on-device cache...'
-              : loadingStep === 1
-              ? 'Synthesizing scriptural citations...'
-              : 'Hydrating verified texts & commentaries...'}
-          </Text>
-          <Text
-            style={[
-              typography.metadataCaption,
-              { color: colors.fawn, marginTop: 8, fontSize: 12.5, textAlign: 'center' },
-            ]}
-          >
-            Quran • New Testament • Torah • Rigveda
-          </Text>
-        </View>
+        <ScriptureInquirySpinner stepIndex={loadingStep} />
       ) : data ? (
         <ScrollView
           contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 48 }]}
