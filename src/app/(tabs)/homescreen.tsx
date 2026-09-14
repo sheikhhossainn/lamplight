@@ -28,6 +28,7 @@ import { GONGU_KOREAN_BOOKS } from '@/features/content-ingestion/koreanApi';
 import { getMotherTongueOption, useMotherTongue } from '@/features/settings/motherTongue';
 import { targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
 import { isBengaliText, isJapaneseText, isKoreanText } from '@/theme/typography';
+import { hapticOpenInquiry } from '@/lib/haptics';
 import { useTheme } from '@/theme/ThemeProvider';
 import {
   getStoredCalibrationData,
@@ -925,7 +926,10 @@ export default function Homescreen() {
         {/* Comparative Scripture Inquiry Card */}
         <View style={{ marginTop: spacing.xl }}>
           <Pressable
-            onPress={() => router.push('/mood-verses/ask')}
+            onPress={() => {
+              void hapticOpenInquiry();
+              router.push('/mood-verses/ask');
+            }}
             style={[
               styles.sanctuaryCard,
               {
@@ -1155,7 +1159,10 @@ export default function Homescreen() {
           </Pressable>
 
           <Pressable
-            onPress={() => router.push('/mood-verses/ask')}
+            onPress={() => {
+              void hapticOpenInquiry();
+              router.push('/mood-verses/ask');
+            }}
             style={[
               styles.quickCard,
               {

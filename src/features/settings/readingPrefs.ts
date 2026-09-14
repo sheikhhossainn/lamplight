@@ -9,10 +9,9 @@
 // ("never shrink below 17px").
 export const READING_FONT_SIZE_PX = 18;
 
-// 1.85 is the design system's reading-body line-height — "the single most
-// important number in the system." Never tighten below it. Kept as a resolved
-// pixel value so the paginator's line math stays integer-stable.
-export const READING_LINE_HEIGHT_PX = Math.round(READING_FONT_SIZE_PX * 1.85); // 33
+// 1.88 is the design system's reading-body line-height for handwritten script.
+// Kept as a resolved pixel value so the paginator's line math stays integer-stable.
+export const READING_LINE_HEIGHT_PX = 34;
 
 // Bengali script features prominent top hanging lines (Matra), ascenders,
 // descenders, and complex conjuncts (যুক্তাক্ষর). Matching the 18px body size with

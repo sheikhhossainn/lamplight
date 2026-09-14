@@ -32,6 +32,7 @@ import {
   StopIcon,
 } from '@/components/icons';
 import { transcribeAudioUri } from '@/features/scripture-verses/voiceTranscriber';
+import { hapticOpenInquiry } from '@/lib/haptics';
 import { useTheme } from '@/theme/ThemeProvider';
 
 import {
@@ -230,6 +231,10 @@ export default function AskScriptureScreen() {
     remainingSeconds: 0,
     adviceMessage: '',
   });
+
+  useEffect(() => {
+    void hapticOpenInquiry();
+  }, []);
 
   // Recording animated pulse
   const pulseAnim = useSharedValue(1);

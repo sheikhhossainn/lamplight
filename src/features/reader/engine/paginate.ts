@@ -22,39 +22,21 @@ export type PaginationMetrics = {
   measuredCharsPerLine?: number;
 };
 
-// Pagination is paragraph-atomic — except when a single paragraph is taller
-// than a whole page, where "atomic" would force the overflow off the bottom
-// edge (some P&P paragraphs run 20+ lines on a phone). Only that case splits,
-// at a word boundary, sized a line short of a full page so the estimate error
-// lands as slack instead of clipping.
-function splitOverlongParagraph(paragraph: string, maxChars: number): string[] {
-  if (paragraph.length <= maxChars) return [paragraph];
-  const pieces: string[] = [];
-  let rest = paragraph;
-  while (rest.length > maxChars) {
-    let cut = rest.lastIndexOf(' ', maxChars);
-    if (cut <= 0) cut = maxChars;
-    pieces.push(rest.slice(0, cut));
-    rest = rest.slice(cut).trimStart();
-  }
-  if (rest.length > 0) pieces.push(rest);
-  return pieces;
-}
-
-// Height-aware pagination computed on-device from the actual screen size and
-// the reader's current font settings — so a page fills the screen without
-// spilling text past the bottom edge, and reflows when the font changes.
+// Fluid continuous-flow pagination computed on-device from the actual screen
+// size and the reader's current font settings. Text flows smoothly across page
+// boundaries at word boundaries, ensuring pages fill the full vertical span
+// between upper and lower bounds without ragged gaps or premature page turns.
 export function paginateBook(book: IngestedBook, m: PaginationMetrics): ReaderPage[] {
   const charsPerLine =
     m.measuredCharsPerLine && m.measuredCharsPerLine > 0
       ? m.measuredCharsPerLine
       : Math.max(8, Math.floor(m.contentWidthPx / (m.fontSizePx * 0.54)));
   const gapLines = m.paragraphGapPx / m.lineHeightPx;
-  // Floored, never rounded up: a partial line still occupies a full
-  // line-height on screen, so fractional slack here packs one line more than
-  // physically fits and clips the page bottom.
-  const pageLines = Math.max(3, Math.floor((m.contentHeightPx - m.chapterTitleExtraPx) / m.lineHeightPx));
-  const maxParagraphChars = charsPerLine * Math.max(2, pageLines - 1);
+  // Upper and lower bounds vertical budget:
+  // Chapter-start pages deduct chapter title footprint;
+  // Continuation pages budget for the full vertical span between upper and lower bounds.
+  const chapterStartLines = Math.max(3, Math.floor((m.contentHeightPx - m.chapterTitleExtraPx) / m.lineHeightPx));
+  const continuationLines = Math.max(3, Math.floor(m.contentHeightPx / m.lineHeightPx));
 
   const pages: ReaderPage[] = [];
   let globalIndex = 0;
@@ -64,52 +46,93 @@ export function paginateBook(book: IngestedBook, m: PaginationMetrics): ReaderPa
       .flat()
       .map((p) => (typeof p === 'string' ? p.trim() : ''))
       .filter((p) => p.length > 0);
-    const paragraphs = rawParagraphs
-      .flatMap((paragraph) => splitOverlongParagraph(paragraph, maxParagraphChars));
-    if (paragraphs.length === 0) continue;
 
-    let start = 0;
+    if (rawParagraphs.length === 0) continue;
+
+    // Working copy of paragraphs so fluid splits mutate in-flight cleanly
+    const paragraphs = [...rawParagraphs];
+    let i = 0;
     let pageIndexInChapter = 0;
-    while (start < paragraphs.length) {
+
+    while (i < paragraphs.length) {
       const isChapterStart = pageIndexInChapter === 0;
-      // Reserve the chapter-title zone on EVERY page (not just chapter starts):
-      // on a chapter start the "Chapter N" heading fills it; on a continuation
-      // page it's an empty top band. Either way the body's first line starts at
-      // the same Y, so paging never makes the text jump up/down.
+      const maxLines = isChapterStart ? chapterStartLines : continuationLines;
+
+      const pageParagraphs: string[] = [];
       let usedLines = 0;
-      let i = start;
+
       while (i < paragraphs.length) {
-        const paraLines = Math.max(1, Math.ceil(paragraphs[i].length / charsPerLine));
-        const need = paraLines + (i > start ? gapLines : 0);
-        if (i > start && usedLines + need > pageLines) break;
-        usedLines += need;
-        i += 1;
-      }
-      if (i === start) i = start + 1; // one piece per page at minimum (post-split, always fits)
+        const text = paragraphs[i].trim();
+        if (text.length === 0) {
+          i += 1;
+          continue;
+        }
 
-      const pageParagraphs = paragraphs.slice(start, i);
+        const gapCost = pageParagraphs.length > 0 ? gapLines : 0;
+        const remainingLines = maxLines - usedLines - gapCost;
 
-      // Fill a ragged bottom: when the page broke because the NEXT paragraph
-      // didn't fit and several empty lines remain, take the leading sentences
-      // of that paragraph (word-boundary cut sized to the leftover lines) onto
-      // this page and leave the remainder to start the next one — a paragraph
-      // flowing across a page turn, exactly like print.
-      if (i < paragraphs.length) {
-        const leftover = Math.floor(pageLines - usedLines - gapLines);
-        if (leftover >= 3 && paragraphs[i].length > leftover * charsPerLine) {
-          const fillChars = leftover * charsPerLine;
-          const cut = paragraphs[i].lastIndexOf(' ', fillChars);
-          if (cut >= charsPerLine) {
-            pageParagraphs.push(paragraphs[i].slice(0, cut));
-            paragraphs[i] = paragraphs[i].slice(cut).trimStart();
+        if (remainingLines < 0.85) {
+          // Page is full between upper and lower bounds
+          break;
+        }
+
+        const rawLines = text.length / charsPerLine;
+        const roundedLines = Math.max(1, Math.ceil(rawLines));
+
+        // If paragraph fits comfortably (or within slight slack tolerance)
+        if (rawLines <= remainingLines + 0.35) {
+          pageParagraphs.push(text);
+          usedLines += roundedLines + gapCost;
+          i += 1;
+        } else {
+          // Paragraph exceeds available room: flow as many full lines as fit
+          const linesToTake = Math.floor(remainingLines + 0.2);
+          if (linesToTake >= 1) {
+            const maxChars = linesToTake * charsPerLine;
+            let cut = text.lastIndexOf(' ', maxChars);
+            if (cut <= 0 || cut < Math.floor(charsPerLine * 0.5)) {
+              // Try finding next space within small tolerance
+              const nextSpace = text.indexOf(' ', maxChars);
+              if (nextSpace !== -1 && nextSpace <= maxChars + Math.floor(charsPerLine * 0.35)) {
+                cut = nextSpace;
+              } else {
+                cut = maxChars;
+              }
+            }
+
+            const remainder = text.slice(cut).trim();
+            // If remainder is just 1-2 words (< 15 chars), absorb onto current page to prevent orphan line
+            if (remainder.length > 0 && remainder.length < 15 && rawLines <= remainingLines + 0.6) {
+              pageParagraphs.push(text);
+              usedLines += roundedLines + gapCost;
+              i += 1;
+            } else if (remainder.length > 0) {
+              const chunk = text.slice(0, cut).trim();
+              if (chunk.length > 0) {
+                pageParagraphs.push(chunk);
+                usedLines += Math.max(1, Math.ceil(chunk.length / charsPerLine)) + gapCost;
+                paragraphs[i] = remainder;
+              } else {
+                i += 1;
+              }
+            } else {
+              pageParagraphs.push(text);
+              usedLines += roundedLines + gapCost;
+              i += 1;
+            }
           }
+          break;
         }
       }
 
-      const cleanPageParagraphs = pageParagraphs.map((p) => p.trim()).filter((p) => p.length > 0);
-      if (cleanPageParagraphs.length === 0) {
-        start = i;
-        continue;
+      const cleanParagraphs = pageParagraphs.map((p) => p.trim()).filter((p) => p.length > 0);
+      if (cleanParagraphs.length === 0) {
+        if (i < paragraphs.length) {
+          cleanParagraphs.push(paragraphs[i]);
+          i += 1;
+        } else {
+          break;
+        }
       }
 
       pages.push({
@@ -118,11 +141,11 @@ export function paginateBook(book: IngestedBook, m: PaginationMetrics): ReaderPa
         pageIndexInChapter,
         chapterTitle: chapter.title,
         isChapterStart,
-        paragraphs: cleanPageParagraphs,
+        paragraphs: cleanParagraphs,
       });
+
       globalIndex += 1;
       pageIndexInChapter += 1;
-      start = i;
     }
   }
 

@@ -1,4 +1,6 @@
 import { Amiri_400Regular, Amiri_700Bold } from '@expo-google-fonts/amiri';
+import { Atma_400Regular, Atma_500Medium, Atma_600SemiBold } from '@expo-google-fonts/atma';
+import { Kalam_400Regular, Kalam_700Bold } from '@expo-google-fonts/kalam';
 import {
   Lora_400Regular,
   Lora_500Medium_Italic,
@@ -21,6 +23,7 @@ import { seedJapaneseCatalog } from '@/features/content-ingestion/japaneseApi';
 import { seedKoreanCatalog } from '@/features/content-ingestion/koreanApi';
 import { hydrateTargetLanguage } from '@/features/settings/languagePair';
 import { hydrateOnboardingStatus } from '@/features/settings/onboardingStatus';
+import { hydratePageStyle } from '@/features/settings/pageStylePrefs';
 import { LamplightThemeProvider, useTheme } from '@/theme/ThemeProvider';
 import { ThemeTransitionOverlay } from '@/theme/ThemeTransitionOverlay';
 
@@ -41,16 +44,22 @@ export default function RootLayout() {
     Manrope_700Bold,
     Amiri_400Regular,
     Amiri_700Bold,
+    Kalam_400Regular,
+    Kalam_700Bold,
+    Atma_400Regular,
+    Atma_500Medium,
+    Atma_600SemiBold,
   });
   const [onboardingChecked, setOnboardingChecked] = useState(false);
 
   const ready = (fontsLoaded || Boolean(fontError)) && onboardingChecked;
 
-  // Load persisted settings (translation language pair, mother tongue) once on launch.
+  // Load persisted settings (translation language pair, mother tongue, page style) once on launch.
   useEffect(() => {
     void Promise.all([
       hydrateTargetLanguage(),
       hydrateMotherTongue(),
+      hydratePageStyle(),
       seedJapaneseCatalog(),
       seedKoreanCatalog(),
     ]);

@@ -1,9 +1,9 @@
-import { useRef, useState } from 'react';
-import { LayoutChangeEvent, Modal, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useRef } from 'react';
+import { LayoutChangeEvent, Modal, PanResponder, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 
-import { SoundWaveIcon } from '@/components/icons';
+import { CloseIcon, SoundWaveIcon } from '@/components/icons';
 import {
   setAmbienceTrackId,
   setAmbienceVolume,
@@ -11,6 +11,11 @@ import {
   useAmbienceVolume,
 } from '@/features/ambience/ambiencePreference';
 import { AMBIENCE_TRACKS } from '@/features/ambience/tracks';
+import {
+  setPageTurnSoundEnabled,
+  usePageTurnSoundEnabled,
+} from '@/features/settings/soundPrefs';
+import { hapticFlashcardAction } from '@/lib/haptics';
 import { useTheme } from '@/theme/ThemeProvider';
 
 function CheckIcon({ color }: { color: string }) {
@@ -88,6 +93,7 @@ export function AmbiencePicker({ visible, onClose }: AmbiencePickerProps) {
   const { colors, typography, spacing, radius } = useTheme();
   const insets = useSafeAreaInsets();
   const selectedId = useAmbienceTrackId();
+  const pageTurnSoundEnabled = usePageTurnSoundEnabled();
 
   const rows: { id: string | null; label: string; hint: string }[] = [
     { id: null, label: 'Off', hint: 'Read in silence' },
@@ -101,58 +107,146 @@ export function AmbiencePicker({ visible, onClose }: AmbiencePickerProps) {
         <View
           style={[
             styles.sheet,
-            { backgroundColor: colors.card, borderColor: colors.hairline, paddingBottom: insets.bottom + 16 },
+            {
+              backgroundColor: colors.card,
+              borderColor: colors.hairline,
+              paddingBottom: Math.max(insets.bottom + 16, 28),
+            },
           ]}
         >
           <View style={[styles.grabber, { backgroundColor: colors.hairline }]} />
 
-          <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 15, marginBottom: spacing.md }]}>
-            Reading sounds
-          </Text>
+          {/* Header */}
+          <View style={styles.headerRow}>
+            <View style={{ flex: 1, paddingRight: 12 }}>
+              <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 18 }]}>
+                Reading Sounds
+              </Text>
+              <Text style={[typography.metadataCaption, { color: colors.fawn, marginTop: 2 }]}>
+                Page swipe audio & background ambience
+              </Text>
+            </View>
+            <Pressable onPress={onClose} hitSlop={12} style={styles.closeBtn}>
+              <CloseIcon color={colors.fawn} size={16} />
+            </Pressable>
+          </View>
 
-          {rows.map((row) => {
-            const on = row.id === selectedId;
-            return (
-              <Pressable
-                key={row.id ?? 'off'}
-                onPress={() => setAmbienceTrackId(row.id)}
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            overScrollMode="never"
+            contentContainerStyle={{ paddingBottom: 12 }}
+          >
+            {/* Page Audio / Turn Sound Section */}
+            <View style={{ marginBottom: spacing.md, marginTop: 4 }}>
+              <Text
                 style={[
-                  styles.row,
-                  { borderRadius: radius.card },
-                  on && { backgroundColor: colors.pairPillBackground },
+                  typography.eyebrowLabel,
+                  { color: colors.fawn, marginBottom: spacing.xs, fontSize: 10, letterSpacing: 0.8 },
+                ]}
+              >
+                PAGE AUDIO
+              </Text>
+              <Pressable
+                onPress={() => {
+                  void hapticFlashcardAction('graduate');
+                  setPageTurnSoundEnabled(!pageTurnSoundEnabled);
+                }}
+                style={({ pressed }) => [
+                  styles.pageTurnCard,
+                  {
+                    backgroundColor: pageTurnSoundEnabled ? `${colors.flameAmber}10` : colors.parchment,
+                    borderColor: pageTurnSoundEnabled ? `${colors.flameAmber}55` : colors.hairline,
+                    borderRadius: radius.card,
+                  },
+                  pressed && { opacity: 0.85 },
                 ]}
               >
                 <View style={{ flex: 1, marginRight: spacing.sm }}>
-                  <Text style={[typography.uiRowTitle, { color: on ? colors.pairPillText : colors.ink, fontSize: 14 }]}>
-                    {row.label}
+                  <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 14 }]}>
+                    Page-turn sound
                   </Text>
-                  <Text
+                  <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11.5, marginTop: 2 }]}>
+                    {pageTurnSoundEnabled ? 'Soft paper rustle on swipe (On)' : 'Silent page turns (Off)'}
+                  </Text>
+                </View>
+                <Switch
+                  trackColor={{ false: colors.hairline, true: colors.flameAmber }}
+                  thumbColor={pageTurnSoundEnabled ? colors.primaryDark : colors.parchment}
+                  ios_backgroundColor={colors.hairline}
+                  onValueChange={(val) => {
+                    void hapticFlashcardAction('graduate');
+                    setPageTurnSoundEnabled(val);
+                  }}
+                  value={pageTurnSoundEnabled}
+                />
+              </Pressable>
+            </View>
+
+            {/* Background Ambience / Music Section */}
+            <View style={{ marginBottom: spacing.sm }}>
+              <Text
+                style={[
+                  typography.eyebrowLabel,
+                  { color: colors.fawn, marginBottom: spacing.xs, fontSize: 10, letterSpacing: 0.8 },
+                ]}
+              >
+                BACKGROUND AMBIENCE
+              </Text>
+              {rows.map((row) => {
+                const on = row.id === selectedId;
+                return (
+                  <Pressable
+                    key={row.id ?? 'off'}
+                    onPress={() => {
+                      void hapticFlashcardAction('graduate');
+                      setAmbienceTrackId(row.id);
+                    }}
                     style={[
-                      typography.metadataCaption,
-                      { color: on ? colors.pairPillText : colors.fawn, fontSize: 11, marginTop: 1 },
+                      styles.row,
+                      { borderRadius: radius.card },
+                      on && { backgroundColor: colors.pairPillBackground },
                     ]}
                   >
-                    {row.hint}
-                  </Text>
-                </View>
-                <View
+                    <View style={{ flex: 1, marginRight: spacing.sm }}>
+                      <Text style={[typography.uiRowTitle, { color: on ? colors.pairPillText : colors.ink, fontSize: 14 }]}>
+                        {row.label}
+                      </Text>
+                      <Text
+                        style={[
+                          typography.metadataCaption,
+                          { color: on ? colors.pairPillText : colors.fawn, fontSize: 11, marginTop: 1 },
+                        ]}
+                      >
+                        {row.hint}
+                      </Text>
+                    </View>
+                    <View
+                      style={[
+                        styles.check,
+                        { borderColor: on ? colors.flameAmber : colors.straw, backgroundColor: on ? colors.flameAmber : 'transparent' },
+                      ]}
+                    >
+                      {on ? <CheckIcon color={colors.primaryDark} /> : null}
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            {selectedId ? (
+              <View style={{ marginTop: spacing.sm }}>
+                <Text
                   style={[
-                    styles.check,
-                    { borderColor: on ? colors.flameAmber : colors.straw, backgroundColor: on ? colors.flameAmber : 'transparent' },
+                    typography.eyebrowLabel,
+                    { color: colors.fawn, marginBottom: spacing.xs, fontSize: 10, letterSpacing: 0.8 },
                   ]}
                 >
-                  {on ? <CheckIcon color={colors.primaryDark} /> : null}
-                </View>
-              </Pressable>
-            );
-          })}
-
-          {selectedId ? (
-            <View style={{ marginTop: spacing.md }}>
-              <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginBottom: spacing.sm }]}>Volume</Text>
-              <VolumeSlider />
-            </View>
-          ) : null}
+                  VOLUME
+                </Text>
+                <VolumeSlider />
+              </View>
+            ) : null}
+          </ScrollView>
         </View>
       </View>
     </Modal>
@@ -171,13 +265,32 @@ const styles = StyleSheet.create({
     borderBottomWidth: 0,
     paddingHorizontal: 20,
     paddingTop: 10,
+    maxHeight: '85%',
   },
   grabber: {
     alignSelf: 'center',
     width: 40,
     height: 4,
     borderRadius: 2,
-    marginBottom: 16,
+    marginBottom: 14,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+  },
+  closeBtn: {
+    padding: 6,
+    marginTop: 2,
+  },
+  pageTurnCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderWidth: 1.5,
   },
   row: {
     flexDirection: 'row',
