@@ -15,6 +15,8 @@ import {
 } from 'react-native';
 import Animated, {
   Easing,
+  FadeIn,
+  FadeOut,
   interpolateColor,
   type SharedValue,
   useAnimatedScrollHandler,
@@ -71,6 +73,7 @@ import { getReadingFontSize, getReadingLineHeight, READING_FONT_SIZE_PX, READING
 import { getReadingTheme, setReadingTheme, useReadingTheme } from '@/features/settings/readingTheme';
 import { isPremiumUser } from '@/features/subscription/subscriptionState';
 import { checkTranslationCap, recordTranslationUsage, translationProvider } from '@/features/translation';
+import { batchTranslateSentences, splitSentences } from '@/features/translation/interlinearParser';
 import { LamplightColor, type HighlightColorKey } from '@/theme/tokens';
 import { useTheme } from '@/theme/ThemeProvider';
 
@@ -317,10 +320,19 @@ export default function ReaderScreen() {
   // from a translated page doesn't carry its translated text onto the next
   // one). 'capped' surfaces the same daily-limit message the word-tap popup
   // shows, just as a small inline card instead of another screen.
-  const [translation, setTranslation] = useState<
-    | { pageGlobalIndex: number; status: 'loading' | 'ready' | 'capped' | 'error'; paragraphs?: string[] }
-    | null
-  >(null);
+  const [translation, setTranslation] = useState<{
+    pageGlobalIndex: number;
+    status: 'loading' | 'ready' | 'capped' | 'error';
+    paragraphs?: string[];
+    bilingualParagraphs?: Array<{
+      paragraphIndex: number;
+      sentences: Array<{
+        id: string;
+        original: string;
+        translated: string;
+      }>;
+    }>;
+  } | null>(null);
 
   // Reading ambience: plays the chosen loop while this screen is mounted and
   // stops automatically when leaving the book (expo-audio releases on unmount).
@@ -357,6 +369,7 @@ export default function ReaderScreen() {
     start: number;
     end: number;
     anchor: { x: number; y: number };
+    contextSentence?: string;
   } | null>(null);
   // Selection is a word-aligned char range across one or more pages' paragraphs,
   // always normalized so start <= end. It begins as the single held word and is
@@ -796,11 +809,12 @@ export default function ReaderScreen() {
 
   const scheduleAutoHide = useCallback(() => {
     if (hideTimer.current) clearTimeout(hideTimer.current);
+    if (translation?.status === 'loading') return;
     hideTimer.current = setTimeout(() => {
       chromeOpacity.value = withTiming(0, { duration: 220 });
       setChromeVisible(false);
     }, 4500);
-  }, [chromeOpacity]);
+  }, [chromeOpacity, translation?.status]);
 
   useEffect(() => {
     scheduleAutoHide();
@@ -927,23 +941,75 @@ export default function ReaderScreen() {
     }
     const pageGlobalIndex = currentPage.globalIndex;
     setTranslation({ pageGlobalIndex, status: 'loading' });
+    // Instantly fade away chrome icons so only the on-page spinner is active
+    if (hideTimer.current) {
+      clearTimeout(hideTimer.current);
+      hideTimer.current = null;
+    }
+    setChromeVisible(false);
+    chromeOpacity.value = withTiming(0, { duration: 150 });
+
     const premium = isPremiumUser();
     const cap = await checkTranslationCap(premium);
     if (!cap.allowed) {
       setTranslation({ pageGlobalIndex, status: 'capped' });
+      scheduleAutoHide();
       return;
     }
     try {
-      const results = await Promise.all(
-        currentPage.paragraphs.map((paragraph) => translationProvider.translateSelection(paragraph, 'en', targetLanguage)),
+      const sourceLang = book?.sourceLanguage ?? (bookId?.startsWith('bn-') ? 'bn' : 'en');
+      const sentencesPerPara = currentPage.paragraphs.map((p, pIdx) => {
+        const sList = splitSentences(p);
+        return sList.map((s, sIdx) => ({
+          pIdx,
+          sIdx,
+          id: `p${pIdx}_s${sIdx}`,
+          sentence: s,
+        }));
+      });
+      const allSentences = sentencesPerPara.flat();
+
+      const translatedList = await batchTranslateSentences(
+        allSentences.map((s) => s.sentence),
+        sourceLang,
+        targetLanguage,
       );
+
+      let cursor = 0;
+      const bilingualParagraphs = sentencesPerPara.map((paraSentences, pIdx) => {
+        const sentences = paraSentences.map((item) => {
+          const trans = translatedList[cursor] ?? '';
+          cursor++;
+          return {
+            id: item.id,
+            original: item.sentence,
+            translated: trans,
+          };
+        });
+        return {
+          paragraphIndex: pIdx,
+          sentences,
+        };
+      });
+
+      const paragraphs = bilingualParagraphs.map((bp) =>
+        bp.sentences.map((s) => s.translated).join(' ')
+      );
+
       await recordTranslationUsage(premium);
       logEvent('translate_page', { target_lang: targetLanguage });
-      setTranslation({ pageGlobalIndex, status: 'ready', paragraphs: results.map((r) => r.translatedText) });
+      setTranslation({
+        pageGlobalIndex,
+        status: 'ready',
+        paragraphs,
+        bilingualParagraphs,
+      });
+      scheduleAutoHide();
     } catch {
       setTranslation({ pageGlobalIndex, status: 'error' });
+      scheduleAutoHide();
     }
-  }, [currentPage, translation, targetLanguage]);
+  }, [currentPage, translation, targetLanguage, book, bookId, scheduleAutoHide, chromeOpacity]);
 
   const retryDownload = useCallback(async () => {
     const isBangla =
@@ -1200,7 +1266,7 @@ export default function ReaderScreen() {
         translation,
         // The sentence the word is in, not the whole paragraph — the card only
         // shows a few lines of this.
-        contextSentence: sentenceAtOffset(paragraph, activeWord.start),
+        contextSentence: activeWord.contextSentence || sentenceAtOffset(paragraph, activeWord.start),
         chapterIndex: page.chapterIndex,
         pageIndex: page.pageIndexInChapter,
         paragraphIndex: activeWord.paragraphIndex,
@@ -1299,10 +1365,12 @@ export default function ReaderScreen() {
         hl && hl.pageGlobalIndex === item.globalIndex
           ? { paragraphIndex: hl.paragraphIndex, start: hl.start, end: hl.end }
           : null;
-      const translatedParagraphsForItem =
+      const translationForItem =
         translation && translation.status === 'ready' && translation.pageGlobalIndex === item.globalIndex
-          ? (translation.paragraphs ?? null)
+          ? translation
           : null;
+      const translatedParagraphsForItem = translationForItem?.paragraphs ?? null;
+      const bilingualParagraphsForItem = translationForItem?.bilingualParagraphs ?? null;
       return (
         <ReaderPageFrame
           pageIndex={index}
@@ -1311,7 +1379,11 @@ export default function ReaderScreen() {
           pageWidth={pageWidth}
           pageHeight={pageHeight}
         >
-          <Pressable style={styles.pageTouchable} onPress={selection ? undefined : toggleChrome}>
+          <Pressable
+            style={styles.pageTouchable}
+            disabled={selection != null || translationForItem != null}
+            onPress={toggleChrome}
+          >
             <ReaderPageView
               page={item}
               mode={mode}
@@ -1331,12 +1403,25 @@ export default function ReaderScreen() {
               selectionRange={selectionForItem}
               selectionColor={colors.highlight.amber}
               onWordLongPress={handleWordLongPress}
+              onBilingualWordLongPress={(payload) => {
+                setActiveWord({
+                  word: payload.word,
+                  paragraphIndex: payload.paragraphIndex,
+                  pageGlobalIndex: item.globalIndex,
+                  start: 0,
+                  end: payload.word.length,
+                  anchor: payload.anchor,
+                  contextSentence: payload.contextSentence,
+                });
+              }}
               onRangeEdgeDragStart={handleRangeEdgeDragStart}
               onRangeEdgeDrag={(edge, pos, direction) =>
                 handleRangeEdgeDrag(item.globalIndex, edge, pos, direction)
               }
               onRangeEdgeDragEnd={handleRangeEdgeDragEnd}
               translatedParagraphs={translatedParagraphsForItem}
+              bilingualParagraphs={bilingualParagraphsForItem}
+              onCloseTranslation={toggleTranslation}
               onPagePress={selection ? undefined : toggleChrome}
             />
           </Pressable>
@@ -1350,6 +1435,7 @@ export default function ReaderScreen() {
       savedWordColor,
       savedWordTextColor,
       translation,
+      toggleTranslation,
       handleWordLongPress,
       handleRangeEdgeDragStart,
       handleRangeEdgeDrag,
@@ -1550,9 +1636,8 @@ export default function ReaderScreen() {
         // Kill Android's overscroll edge glow (defaults to the accent color and
         // shows as a stray tinted line at the scroll boundaries in dark mode).
         overScrollMode="never"
-        // Lock paging while actively dragging a handle — lets the reader freely
-        // swipe between pages to review/adjust a multi-page quote whenever not dragging.
-        scrollEnabled={!isDraggingHandle}
+        // Lock paging while actively dragging a handle or reading whole-page translation
+        scrollEnabled={!isDraggingHandle && currentTranslation == null}
         decelerationRate="fast"
         // Keep the very first open of a book fast, but render adjacent pages ahead
         // so swiping doesn't lag.
@@ -1765,6 +1850,37 @@ export default function ReaderScreen() {
           </Animated.View>
         </View>
       </AnimatedPressable>
+
+      {/* On-page translating toast with spinner so the reader has immediate feedback */}
+      {currentTranslation?.status === 'loading' ? (
+        <Animated.View
+          entering={FadeIn.duration(200)}
+          exiting={FadeOut.duration(180)}
+          style={[
+            styles.translatingToast,
+            {
+              top: insets.top + 24,
+              backgroundColor: isLamp ? '#2B2621' : '#F7F1E6',
+              borderColor: isLamp ? '#423A32' : '#E2D6C3',
+            },
+          ]}
+        >
+          <ActivityIndicator size="small" color={colors.flameAmber} />
+          <Text
+            style={[
+              typography.uiRowTitle,
+              {
+                color: isLamp ? '#F5EDE1' : '#1C1B1E',
+                fontSize: 12.5,
+                marginLeft: 9,
+                fontWeight: '600',
+              },
+            ]}
+          >
+            {isBangla ? 'পৃষ্ঠা অনুবাদ হচ্ছে…' : 'Translating page…'}
+          </Text>
+        </Animated.View>
+      ) : null}
 
       {/* Daily free-limit notice — the same message the word-tap popup shows,
           just as a small inline card (matching the gesture-hint card below)
@@ -2190,6 +2306,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 9,
     borderRadius: 100,
+  },
+  translatingToast: {
+    position: 'absolute',
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    borderRadius: 22,
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOpacity: 0.16,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
+    zIndex: 40,
   },
 });
 

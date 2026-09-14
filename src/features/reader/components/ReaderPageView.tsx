@@ -2,6 +2,8 @@ import { memo, useEffect, useMemo, useRef, useState, type ReactElement } from 'r
 import {
   Dimensions,
   PanResponder,
+  Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -10,15 +12,21 @@ import {
 } from 'react-native';
 import Animated, {
   Easing,
+  FadeIn,
   interpolateColor,
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
+  withSpring,
   withTiming,
 } from 'react-native-reanimated';
+import * as Haptics from 'expo-haptics';
 
+import { SpeakerIcon } from '@/components/icons';
+import { speakWord, toggleSpeech, useCurrentSpeechId } from '@/features/audio/pronunciationEngine';
 import { charAdvance } from '@/features/reader/engine/glyphWidths';
 import { cleanWordForLookup, tokenizeParagraph } from '@/features/reader/engine/words';
+import { splitSentences } from '@/features/translation/interlinearParser';
 import type { ReaderPage } from '@/features/reader/engine/paginate';
 import { getPageStyleConfig } from '@/features/reader/pageStyles';
 import { usePageStyle } from '@/features/settings/pageStylePrefs';
@@ -101,7 +109,23 @@ type ReaderPageViewProps = {
   // toggle button (a spinner replacing the icon), not here — this component
   // only ever animates between "original" and "have text".
   translatedParagraphs: string[] | null;
+  bilingualParagraphs?: Array<{
+    paragraphIndex: number;
+    sentences: Array<{
+      id: string;
+      original: string;
+      translated: string;
+    }>;
+  }> | null;
   onPagePress?: () => void;
+  onCloseTranslation?: () => void;
+  onWordSelect?: (word: string, paragraphIndex: number) => void;
+  onBilingualWordLongPress?: (payload: {
+    word: string;
+    contextSentence: string;
+    paragraphIndex: number;
+    anchor: { x: number; y: number };
+  }) => void;
 };
 
 type Token = { text: string; word: string | null };
@@ -466,11 +490,16 @@ function ReaderPageViewImpl({
   onRangeEdgeDrag,
   onRangeEdgeDragEnd,
   translatedParagraphs,
+  bilingualParagraphs,
   onPagePress,
+  onCloseTranslation,
+  onWordSelect,
+  onBilingualWordLongPress,
 }: ReaderPageViewProps) {
-  const { typography, spacing } = useTheme();
+  const { colors, typography, spacing, radius } = useTheme();
   const pageStyleId = usePageStyle();
   const pageStyleConfig = getPageStyleConfig(pageStyleId);
+  const activeSpeechId = useCurrentSpeechId();
 
   const isLamp = mode === 'lamp';
   const textThemeAnim = useSharedValue(isLamp ? 1 : 0);
@@ -485,13 +514,13 @@ function ReaderPageViewImpl({
     color: interpolateColor(
       textThemeAnim.value,
       [0, 1],
-      ['#241D17', '#F0E6D6'],
+      [textColor, '#F5EDE1'],
     ),
   }));
 
   const selecting = selectionRange != null;
 
-  // Retains the last non-null translation through the fade-OUT so the old
+  // Whole-page translation crossfade: cached locally while active so the old
   // text is still there to animate away, instead of vanishing the instant the
   // caller clears it (translatedParagraphs goes null immediately on toggle-off).
   const [renderedTranslation, setRenderedTranslation] = useState(translatedParagraphs);
@@ -507,6 +536,42 @@ function ReaderPageViewImpl({
     }
   }, [translatedParagraphs, translateProgress]);
   const showingTranslation = renderedTranslation != null;
+  const [interlinearMode, setInterlinearMode] = useState(true);
+  const tabProgress = useSharedValue(0);
+  const [tabWidth, setTabWidth] = useState(106);
+
+  const handleSwitchMode = (isParallel: boolean) => {
+    if (interlinearMode === isParallel) return;
+    void Haptics.selectionAsync().catch(() => {});
+    setInterlinearMode(isParallel);
+    tabProgress.value = withSpring(isParallel ? 0 : 1, {
+      damping: 24,
+      stiffness: 260,
+      mass: 0.7,
+    });
+  };
+
+  const sliderIndicatorStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: tabProgress.value * tabWidth }],
+  }));
+
+  const bilingualItems = useMemo(() => {
+    if (bilingualParagraphs && bilingualParagraphs.length > 0) {
+      return bilingualParagraphs;
+    }
+    if (!renderedTranslation) return [];
+    return renderedTranslation.map((paraTrans, pIdx) => {
+      const origPara = page.paragraphs[pIdx] ?? '';
+      const origSentences = splitSentences(origPara);
+      const transSentences = splitSentences(paraTrans);
+      const sentences = origSentences.map((orig, sIdx) => ({
+        id: `p${pIdx}_s${sIdx}`,
+        original: orig,
+        translated: transSentences[sIdx] || (sIdx === 0 ? paraTrans : ''),
+      }));
+      return { paragraphIndex: pIdx, sentences };
+    });
+  }, [bilingualParagraphs, renderedTranslation, page.paragraphs]);
 
   const originalFadeStyle = useAnimatedStyle(() => ({
     opacity: 1 - translateProgress.value,
@@ -774,8 +839,10 @@ function ReaderPageViewImpl({
 
       {/* Body stack: the original and its translation occupy the SAME box, so
           the translated text inherits the original's exact left/right margins
-          and first-line Y instead of re-deriving them from hardcoded offsets. */}
-      <View>
+          and first-line Y instead of re-deriving them from hardcoded offsets.
+          Must have flex: 1 so translatedOverlay can fill the entire page height
+          regardless of how short or sparse the original paragraphs are. */}
+      <View style={styles.bodyStack}>
       <Animated.View
         style={originalFadeStyle}
         pointerEvents={showingTranslation ? 'none' : 'auto'}
@@ -952,26 +1019,316 @@ function ReaderPageViewImpl({
           style={[styles.translatedOverlay, translatedFadeStyle]}
           pointerEvents="auto"
         >
-          {renderedTranslation!.map((paragraph, i) => (
-            <Text
-              key={i}
-              onPress={onPagePress}
-              style={[
-                typography.readingBody,
-                {
-                  color: textColor,
-                  fontFamily: isBengaliText(paragraph) ? pageStyleConfig.banglaFont : pageStyleConfig.englishFont,
-                  fontSize: isBengaliText(paragraph) ? pageStyleConfig.banglaFontSize : pageStyleConfig.fontSize,
-                  lineHeight: isBengaliText(paragraph) ? pageStyleConfig.banglaLineHeight : pageStyleConfig.lineHeight,
-                  letterSpacing: isBengaliText(paragraph) ? pageStyleConfig.banglaLetterSpacing : pageStyleConfig.letterSpacing,
-                  marginBottom: i === renderedTranslation!.length - 1 ? 0 : spacing.sm,
-                },
-                baseParagraphStyle,
-              ]}
+          {/* High-Contrast Segmented Header */}
+          <View
+            style={[
+              styles.bilingualHeader,
+              {
+                backgroundColor: isLamp ? '#23201D' : '#EFE7DA',
+                borderColor: isLamp ? '#36312B' : '#DFD4C2',
+              },
+            ]}
+          >
+            <View style={[styles.headerPillTrack, { backgroundColor: isLamp ? '#191816' : '#DFD4C1' }]}>
+              {/* Sliding spring pill indicator */}
+              <Animated.View
+                style={[
+                  styles.slidingPill,
+                  {
+                    width: tabWidth,
+                    backgroundColor: isLamp ? '#3A342D' : '#FFFFFF',
+                  },
+                  sliderIndicatorStyle,
+                ]}
+              />
+              <Pressable
+                onLayout={(e) => {
+                  const w = e.nativeEvent.layout.width;
+                  if (w > 0) setTabWidth(w);
+                }}
+                onPress={() => handleSwitchMode(true)}
+                style={styles.headerPillBtn}
+              >
+                <Text
+                  style={[
+                    styles.headerPillText,
+                    {
+                      color: interlinearMode
+                        ? (isLamp ? '#F5EDE1' : '#1C1B1E')
+                        : (isLamp ? '#8F8578' : '#736B60'),
+                      fontWeight: interlinearMode ? '700' : '500',
+                    },
+                  ]}
+                >
+                  Parallel Study
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => handleSwitchMode(false)}
+                style={styles.headerPillBtn}
+              >
+                <Text
+                  style={[
+                    styles.headerPillText,
+                    {
+                      color: !interlinearMode
+                        ? (isLamp ? '#F5EDE1' : '#1C1B1E')
+                        : (isLamp ? '#8F8578' : '#736B60'),
+                      fontWeight: !interlinearMode ? '700' : '500',
+                    },
+                  ]}
+                >
+                  Full Translation
+                </Text>
+              </Pressable>
+            </View>
+
+            {onCloseTranslation ? (
+              <Pressable
+                hitSlop={10}
+                onPress={onCloseTranslation}
+                style={[
+                  styles.headerCloseBtn,
+                  { backgroundColor: isLamp ? '#2E2924' : '#E2D7C5' },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.headerCloseText,
+                    { color: isLamp ? '#DDD1BF' : '#2D2721' },
+                  ]}
+                >
+                  ✕ Close
+                </Text>
+              </Pressable>
+            ) : null}
+          </View>
+
+          <ScrollView
+            style={{ flex: 1 }}
+            showsVerticalScrollIndicator={true}
+            overScrollMode="never"
+            nestedScrollEnabled={true}
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={{ flexGrow: 1, paddingBottom: 64 }}
+          >
+            <Animated.View
+              key={interlinearMode ? 'parallel' : 'full'}
+              entering={FadeIn.duration(200).easing(Easing.out(Easing.cubic))}
+              style={{ flexGrow: 1 }}
             >
-              {paragraph}
-            </Text>
-          ))}
+              {interlinearMode ? (
+                bilingualItems.map((bp) => (
+                <View key={bp.paragraphIndex} style={styles.bilingualParagraphBlock}>
+                  {bp.sentences.map((sent) => {
+                    const isSpeakingOriginal = activeSpeechId === sent.id;
+                    const isSpeakingTranslated = activeSpeechId === `${sent.id}_tr`;
+                    const origTokens = tokenizeParagraph(sent.original);
+
+                    return (
+                      <View
+                        key={sent.id}
+                        style={[
+                          styles.sentenceCard,
+                          {
+                            backgroundColor: isLamp ? '#23201D' : '#F7F1E6',
+                            borderColor:
+                              isSpeakingOriginal || isSpeakingTranslated
+                                ? colors.flameAmber
+                                : isLamp
+                                  ? '#36312B'
+                                  : '#E6DCCF',
+                          },
+                        ]}
+                      >
+                        {/* Source English Sentence with word-by-word tap */}
+                        <View style={styles.sentenceSourceContainer}>
+                          <View style={styles.sentenceWordsFlow}>
+                            {origTokens.map((token, tIdx) => {
+                              const clean = cleanWordForLookup(token);
+                              const isWhitespace = /^\s+$/.test(token);
+                              if (isWhitespace || !clean) {
+                                return (
+                                  <Text
+                                    key={tIdx}
+                                    style={[
+                                      styles.sentenceWordText,
+                                      {
+                                        color: textColor,
+                                        fontFamily: isBengaliText(sent.original)
+                                          ? pageStyleConfig.banglaFont
+                                          : pageStyleConfig.englishFont,
+                                        fontSize: Math.max(16, fontSize - 1),
+                                        lineHeight: Math.max(24, lineHeight - 2),
+                                      },
+                                    ]}
+                                  >
+                                    {token}
+                                  </Text>
+                                );
+                              }
+
+                              const isSaved = savedWordSet.has(clean.toLowerCase());
+                              const isWordSpeaking = activeSpeechId === `word_${clean.toLowerCase()}`;
+                              return (
+                                <Pressable
+                                  key={tIdx}
+                                  unstable_pressDelay={75}
+                                  hitSlop={3}
+                                  onPress={() => {
+                                    void speakWord(clean, isBengaliText(clean) ? 'bn' : 'en');
+                                    onWordSelect?.(clean, bp.paragraphIndex);
+                                  }}
+                                  onLongPress={(e) => {
+                                    const { pageX, pageY } = e.nativeEvent;
+                                    onBilingualWordLongPress?.({
+                                      word: clean,
+                                      contextSentence: sent.original,
+                                      paragraphIndex: bp.paragraphIndex,
+                                      anchor: { x: pageX, y: pageY },
+                                    });
+                                  }}
+                                  style={({ pressed }) => [
+                                    styles.wordChip,
+                                    isSaved && {
+                                      backgroundColor: isLamp ? 'rgba(245, 166, 35, 0.22)' : 'rgba(245, 166, 35, 0.18)',
+                                      borderRadius: 4,
+                                      paddingHorizontal: 2,
+                                    },
+                                    pressed && { opacity: 0.6 },
+                                    isWordSpeaking && styles.wordChipSpeaking,
+                                  ]}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.sentenceWordText,
+                                      {
+                                        color: isWordSpeaking
+                                          ? colors.flameAmber
+                                          : isSaved
+                                          ? (isLamp ? colors.flameAmber : '#8A4F00')
+                                          : textColor,
+                                        fontWeight: isWordSpeaking || isSaved ? '700' : '400',
+                                        fontFamily: isBengaliText(sent.original)
+                                          ? pageStyleConfig.banglaFont
+                                          : pageStyleConfig.englishFont,
+                                        fontSize: Math.max(16, fontSize - 1),
+                                        lineHeight: Math.max(24, lineHeight - 2),
+                                        textDecorationLine: isSaved ? 'underline' : 'none',
+                                        textDecorationColor: colors.flameAmber,
+                                      },
+                                    ]}
+                                  >
+                                    {token}
+                                  </Text>
+                                </Pressable>
+                              );
+                            })}
+                          </View>
+
+                          {/* Sentence Speaker button */}
+                          <Pressable
+                            hitSlop={8}
+                            onPress={() =>
+                              void toggleSpeech(
+                                sent.id,
+                                sent.original,
+                                isBengaliText(sent.original) ? 'bn' : 'en',
+                              )
+                            }
+                            style={[
+                              styles.sentencePlayBtn,
+                              isSpeakingOriginal && styles.sentencePlayBtnActive,
+                            ]}
+                          >
+                            <SpeakerIcon
+                              color={isSpeakingOriginal ? '#1C1B1E' : colors.flameAmber}
+                              size={15}
+                            />
+                          </Pressable>
+                        </View>
+
+                        {/* Translated Bengali Sentence */}
+                        {sent.translated ? (
+                          <View
+                            style={[
+                              styles.sentenceTranslationBox,
+                              {
+                                borderLeftColor: colors.flameAmber,
+                                backgroundColor: isLamp
+                                  ? 'rgba(245, 166, 35, 0.06)'
+                                  : 'rgba(245, 166, 35, 0.08)',
+                              },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.sentenceTranslationText,
+                                {
+                                  color: isLamp ? '#FAF6EF' : '#231F1A',
+                                  fontFamily: pageStyleConfig.banglaFont,
+                                  fontSize: pageStyleConfig.banglaFontSize,
+                                  lineHeight: pageStyleConfig.banglaLineHeight,
+                                },
+                              ]}
+                            >
+                              {sent.translated}
+                            </Text>
+                            <Pressable
+                              hitSlop={8}
+                              onPress={() =>
+                                void toggleSpeech(
+                                  `${sent.id}_tr`,
+                                  sent.translated,
+                                  isBengaliText(sent.translated) ? 'bn' : 'en',
+                                )
+                              }
+                              style={styles.sentenceSmallPlayBtn}
+                            >
+                              <SpeakerIcon
+                                color={isSpeakingTranslated ? colors.flameAmber : colors.fawn}
+                                size={13}
+                              />
+                            </Pressable>
+                          </View>
+                        ) : null}
+                      </View>
+                    );
+                  })}
+                </View>
+              ))
+            ) : (
+              renderedTranslation!.map((paragraph, i) => (
+                <Text
+                  key={i}
+                  onPress={onPagePress}
+                  style={[
+                    typography.readingBody,
+                    {
+                      color: textColor,
+                      fontFamily: isBengaliText(paragraph)
+                        ? pageStyleConfig.banglaFont
+                        : pageStyleConfig.englishFont,
+                      fontSize: isBengaliText(paragraph)
+                        ? pageStyleConfig.banglaFontSize
+                        : pageStyleConfig.fontSize,
+                      lineHeight: isBengaliText(paragraph)
+                        ? pageStyleConfig.banglaLineHeight
+                        : pageStyleConfig.lineHeight,
+                      letterSpacing: isBengaliText(paragraph)
+                        ? pageStyleConfig.banglaLetterSpacing
+                        : pageStyleConfig.letterSpacing,
+                      marginBottom: i === renderedTranslation!.length - 1 ? 0 : spacing.md,
+                    },
+                    baseParagraphStyle,
+                  ]}
+                >
+                  {paragraph}
+                </Text>
+              ))
+            )}
+            </Animated.View>
+          </ScrollView>
         </Animated.View>
       ) : null}
       </View>
@@ -984,13 +1341,11 @@ export const ReaderPageView = memo(ReaderPageViewImpl);
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    // Belt-and-suspenders against the rare pagination overestimate — never let
-    // a stray last line spill past the page's own bounds onto the next page.
     overflow: 'hidden',
   },
-  // 28px wide hit target centered on the handle's true x — the visible bar +
-  // knob are much thinner, but a knob you can actually grab with a fingertip
-  // needs a wider invisible catch area (native handles do the same).
+  bodyStack: {
+    flex: 1,
+  },
   handleHitArea: {
     position: 'absolute',
     width: 44,
@@ -1011,5 +1366,121 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
+    bottom: 0,
+  },
+  bilingualHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginBottom: 12,
+  },
+  headerPillTrack: {
+    position: 'relative',
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 20,
+    padding: 3,
+  },
+  slidingPill: {
+    position: 'absolute',
+    top: 3,
+    bottom: 3,
+    left: 3,
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.12,
+    shadowRadius: 2.5,
+    elevation: 2,
+  },
+  headerPillBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 16,
+    zIndex: 2,
+  },
+  headerPillText: {
+    fontSize: 11,
+    letterSpacing: 0.2,
+  },
+  headerCloseBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+  },
+  headerCloseText: {
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.2,
+  },
+  bilingualParagraphBlock: {
+    marginBottom: 14,
+  },
+  sentenceCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 10,
+    marginBottom: 12,
+  },
+  sentenceSourceContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  sentenceWordsFlow: {
+    flex: 1,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+  },
+  wordChip: {
+    borderRadius: 4,
+    paddingHorizontal: 1,
+  },
+  wordChipSpeaking: {
+    backgroundColor: 'rgba(245, 166, 35, 0.24)',
+    borderRadius: 4,
+  },
+  sentenceWordText: {
+    // dynamically sized via inline styles
+  },
+  sentencePlayBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(245, 166, 35, 0.14)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 4,
+  },
+  sentencePlayBtnActive: {
+    backgroundColor: '#F5A623',
+  },
+  sentenceTranslationBox: {
+    marginTop: 8,
+    paddingLeft: 10,
+    paddingRight: 6,
+    paddingVertical: 6,
+    borderLeftWidth: 2.5,
+    borderRadius: 4,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  sentenceTranslationText: {
+    flex: 1,
+  },
+  sentenceSmallPlayBtn: {
+    padding: 4,
+    marginTop: 2,
   },
 });
+

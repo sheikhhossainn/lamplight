@@ -211,4 +211,14 @@ export const MIGRATIONS: string[] = [
     PRIMARY KEY (book_id, chapter_index)
   );
   `,
+  // v13 — Spaced repetition system (SRS) columns for language learner retention
+  `
+  ALTER TABLE saved_words ADD COLUMN srs_stage INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE saved_words ADD COLUMN srs_interval_days REAL NOT NULL DEFAULT 0;
+  ALTER TABLE saved_words ADD COLUMN srs_ease_factor REAL NOT NULL DEFAULT 2.5;
+  ALTER TABLE saved_words ADD COLUMN srs_due_date INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE saved_words ADD COLUMN srs_reps INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE saved_words ADD COLUMN srs_lapses INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE saved_words ADD COLUMN phonetic TEXT;
+  `,
 ];

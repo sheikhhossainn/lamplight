@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Dimensions, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Path, Rect } from 'react-native-svg';
 
+import { SpeakerIcon } from '@/components/icons';
+import { speakWord } from '@/features/audio/pronunciationEngine';
 import { logEvent } from '@/features/analytics/analytics';
 import { targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
 import { isPremiumUser } from '@/features/subscription/subscriptionState';
@@ -106,7 +108,10 @@ export function WordTranslationPopup({
         const result = await translationProvider.translateWord(word, sourceLang, targetLanguage);
         await recordTranslationUsage(premium);
         logEvent('translate_tap', { target_lang: targetLanguage });
-        if (!cancelled) setState({ status: 'ready', translation: result.translatedText });
+        if (!cancelled) {
+          setState({ status: 'ready', translation: result.translatedText });
+          void speakWord(word, sourceLang, 'normal');
+        }
       } catch {
         if (!cancelled) setState({ status: 'error' });
       }
@@ -133,7 +138,21 @@ export function WordTranslationPopup({
             onPress={() => {}}
           >
             <View style={styles.headerRow}>
-              <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 12 }]}>{word}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, marginRight: 6 }}>
+                <Text numberOfLines={1} style={[typography.metadataCaption, { color: colors.fawn, fontSize: 13, fontWeight: '600' }]}>
+                  {word}
+                </Text>
+                {word ? (
+                  <Pressable
+                    hitSlop={8}
+                    onPress={() => void speakWord(word, sourceLang, 'normal')}
+                    onLongPress={() => void speakWord(word, sourceLang, 'slow')}
+                    style={styles.speakerBtn}
+                  >
+                    <SpeakerIcon color={colors.flameAmber} size={13} />
+                  </Pressable>
+                ) : null}
+              </View>
               <Pressable
                 onPress={onChangeLanguage}
                 disabled={!onChangeLanguage}
@@ -254,5 +273,10 @@ const styles = StyleSheet.create({
     gap: 6,
     borderRadius: 8,
     paddingVertical: 9,
+  },
+  speakerBtn: {
+    padding: 4,
+    borderRadius: 100,
+    backgroundColor: '#2B2621',
   },
 });

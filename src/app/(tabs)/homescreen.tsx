@@ -15,6 +15,7 @@ import { BookSpine } from '@/components/BookSpine';
 import { WordsIllustration } from '@/components/NotebookIllustrations';
 import { ChevronRightIcon, QuestionIcon } from '@/components/icons';
 import { getBook, listBanglaBooks, type BookRow } from '@/db/repositories/books';
+import { getSrsMetrics } from '@/db/repositories/savedWords';
 import {
   listActiveReadingPositions,
   type ReadingPosition,
@@ -197,6 +198,11 @@ export default function Homescreen() {
   const [readyBook, setReadyBook] = useState<BookRow | null>(null);
   const [calibratedBook, setCalibratedBook] = useState<CalibratedStartingBook | null>(null);
   const [sparkIndex, setSparkIndex] = useState(0);
+  const [srsMetrics, setSrsMetrics] = useState<{
+    totalWords: number;
+    dueToday: number;
+    masteredCount: number;
+  } | null>(null);
   const [spotlight, setSpotlight] = useState<{
     id: string;
     title: string;
@@ -299,6 +305,9 @@ export default function Homescreen() {
   const loadProgress = useCallback(async () => {
     setLoading(true);
     try {
+      const metrics = await getSrsMetrics();
+      setSrsMetrics(metrics);
+
       const positions = await listActiveReadingPositions();
       if (positions.length > 0) {
         const sorted = [...positions].sort((a, b) => b.updatedAt - a.updatedAt);
@@ -842,6 +851,90 @@ export default function Homescreen() {
             </View>
           </View>
         )}
+
+        {/* The Daily Flame — Language Learner Habit Ritual */}
+        {srsMetrics && srsMetrics.totalWords > 0 ? (
+          <View
+            style={[
+              styles.sparkCard,
+              {
+                backgroundColor: colors.card,
+                borderColor: srsMetrics.dueToday > 0 ? 'rgba(245, 166, 35, 0.45)' : colors.hairline,
+                borderWidth: 1,
+                borderRadius: radius.card,
+                marginTop: spacing.xl,
+                padding: spacing.md,
+              },
+            ]}
+          >
+            <View style={styles.sparkHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <View
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: 4,
+                    backgroundColor: srsMetrics.dueToday > 0 ? colors.flameAmber : '#27AE60',
+                  }}
+                />
+                <Text style={[typography.eyebrowLabel, { color: colors.flameAmber, fontSize: 11 }]}>
+                  {srsMetrics.dueToday > 0 ? 'DAILY MEMORY HABIT' : 'DAILY FLAME LIT'}
+                </Text>
+              </View>
+              <View
+                style={{
+                  backgroundColor: colors.libraryBackground,
+                  paddingHorizontal: 8,
+                  paddingVertical: 3,
+                  borderRadius: radius.pill,
+                }}
+              >
+                <Text style={[typography.metadataCaption, { color: colors.umber, fontSize: 11 }]}>
+                  {srsMetrics.masteredCount} Mastered · {srsMetrics.totalWords} Saved
+                </Text>
+              </View>
+            </View>
+
+            <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 16, marginTop: spacing.sm }]}>
+              {srsMetrics.dueToday > 0
+                ? `${srsMetrics.dueToday} word${srsMetrics.dueToday === 1 ? '' : 's'} waiting for review`
+                : 'All memory cards reviewed for today'}
+            </Text>
+
+            <Text style={[typography.metadataCaption, { color: colors.fawn, marginTop: 4, lineHeight: 18 }]}>
+              {srsMetrics.dueToday > 0
+                ? 'Practice spaced recall for 2 minutes to lock these literary words into permanent memory.'
+                : 'Your language memory sanctuary is bright. Keep reading to discover new vocabulary.'}
+            </Text>
+
+            <Pressable
+              onPress={() => router.push({ pathname: '/(tabs)/vocabulary', params: { tab: 'flashcards' } })}
+              style={[
+                styles.continueButton,
+                {
+                  backgroundColor: srsMetrics.dueToday > 0 ? colors.flameAmber : colors.libraryBackground,
+                  borderRadius: radius.pill,
+                  marginTop: spacing.md,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  typography.buttonLabel,
+                  { color: srsMetrics.dueToday > 0 ? colors.primaryDark : colors.flameAmber, fontSize: 13 },
+                ]}
+              >
+                {srsMetrics.dueToday > 0 ? 'Review Due Words Now' : 'Open Flashcard Studio'}
+              </Text>
+              <View style={{ marginLeft: 6 }}>
+                <ChevronRightIcon
+                  color={srsMetrics.dueToday > 0 ? colors.primaryDark : colors.flameAmber}
+                  size={14}
+                />
+              </View>
+            </Pressable>
+          </View>
+        ) : null}
 
         {/* Daily Literary Spark — placed just below Current Reading */}
         <View

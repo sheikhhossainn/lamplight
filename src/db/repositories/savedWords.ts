@@ -1,6 +1,8 @@
 import { getDb } from '@/db/client';
 import { generateId } from '@/lib/id';
 
+import type { SrsCardState, SrsStage } from '@/features/vocabulary/srsAlgorithm';
+
 export type SavedWord = {
   id: string;
   bookId: string;
@@ -13,6 +15,13 @@ export type SavedWord = {
   pageIndex: number;
   paragraphIndex: number;
   createdAt: number;
+  srsStage: SrsStage;
+  srsIntervalDays: number;
+  srsEaseFactor: number;
+  srsDueDate: number;
+  srsReps: number;
+  srsLapses: number;
+  phonetic?: string | null;
 };
 
 type SavedWordSqlRow = {
@@ -27,6 +36,13 @@ type SavedWordSqlRow = {
   page_index: number;
   paragraph_index: number;
   created_at: number;
+  srs_stage?: number;
+  srs_interval_days?: number;
+  srs_ease_factor?: number;
+  srs_due_date?: number;
+  srs_reps?: number;
+  srs_lapses?: number;
+  phonetic?: string | null;
 };
 
 function fromSqlRow(row: SavedWordSqlRow): SavedWord {
@@ -42,6 +58,13 @@ function fromSqlRow(row: SavedWordSqlRow): SavedWord {
     pageIndex: row.page_index,
     paragraphIndex: row.paragraph_index,
     createdAt: row.created_at,
+    srsStage: ((row.srs_stage ?? 0) as SrsStage),
+    srsIntervalDays: row.srs_interval_days ?? 0,
+    srsEaseFactor: row.srs_ease_factor ?? 2.5,
+    srsDueDate: row.srs_due_date ?? 0,
+    srsReps: row.srs_reps ?? 0,
+    srsLapses: row.srs_lapses ?? 0,
+    phonetic: row.phonetic ?? null,
   };
 }
 
@@ -86,13 +109,35 @@ export async function getReviewStats(startOfTodayMs: number): Promise<{
   return { total: row?.total ?? 0, readyToReview: row?.ready ?? 0 };
 }
 
-export async function saveWord(input: Omit<SavedWord, 'id' | 'createdAt'>): Promise<SavedWord> {
+export async function saveWord(
+  input: Omit<
+    SavedWord,
+    'id' | 'createdAt' | 'srsStage' | 'srsIntervalDays' | 'srsEaseFactor' | 'srsDueDate' | 'srsReps' | 'srsLapses'
+  > &
+    Partial<
+      Pick<
+        SavedWord,
+        'srsStage' | 'srsIntervalDays' | 'srsEaseFactor' | 'srsDueDate' | 'srsReps' | 'srsLapses' | 'phonetic'
+      >
+    >,
+): Promise<SavedWord> {
   const db = await getDb();
   const id = generateId();
   const createdAt = Date.now();
+  const srsStage = input.srsStage ?? 0;
+  const srsIntervalDays = input.srsIntervalDays ?? 0;
+  const srsEaseFactor = input.srsEaseFactor ?? 2.5;
+  const srsDueDate = input.srsDueDate ?? createdAt;
+  const srsReps = input.srsReps ?? 0;
+  const srsLapses = input.srsLapses ?? 0;
+  const phonetic = input.phonetic ?? null;
+
   await db.runAsync(
-    `INSERT INTO saved_words (id, book_id, source_word, source_lang, target_lang, translation, context_sentence, chapter_index, page_index, paragraph_index, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO saved_words (
+       id, book_id, source_word, source_lang, target_lang, translation, context_sentence,
+       chapter_index, page_index, paragraph_index, created_at,
+       srs_stage, srs_interval_days, srs_ease_factor, srs_due_date, srs_reps, srs_lapses, phonetic
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       input.bookId,
@@ -105,12 +150,88 @@ export async function saveWord(input: Omit<SavedWord, 'id' | 'createdAt'>): Prom
       input.pageIndex,
       input.paragraphIndex,
       createdAt,
+      srsStage,
+      srsIntervalDays,
+      srsEaseFactor,
+      srsDueDate,
+      srsReps,
+      srsLapses,
+      phonetic,
     ],
   );
-  return { ...input, id, createdAt };
+
+  return {
+    ...input,
+    id,
+    createdAt,
+    srsStage,
+    srsIntervalDays,
+    srsEaseFactor,
+    srsDueDate,
+    srsReps,
+    srsLapses,
+    phonetic,
+  };
+}
+
+export async function listDueWords(nowMs: number = Date.now()): Promise<SavedWord[]> {
+  const db = await getDb();
+  // Words due for review: either never reviewed / scheduled (srs_due_date <= nowMs)
+  const rows = await db.getAllAsync<SavedWordSqlRow>(
+    'SELECT * FROM saved_words WHERE srs_due_date <= ? OR srs_due_date = 0 ORDER BY srs_due_date ASC, created_at ASC',
+    [nowMs],
+  );
+  return rows.map(fromSqlRow);
+}
+
+export async function updateWordSrs(id: string, srs: SrsCardState): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    `UPDATE saved_words
+     SET srs_stage = ?,
+         srs_interval_days = ?,
+         srs_ease_factor = ?,
+         srs_due_date = ?,
+         srs_reps = ?,
+         srs_lapses = ?
+     WHERE id = ?`,
+    [srs.stage, srs.intervalDays, srs.easeFactor, srs.dueDate, srs.reps, srs.lapses, id],
+  );
+}
+
+export async function getSrsMetrics(): Promise<{
+  totalWords: number;
+  dueToday: number;
+  learningCount: number;
+  masteredCount: number;
+}> {
+  const db = await getDb();
+  const now = Date.now();
+  const row = await db.getFirstAsync<{
+    total: number;
+    due: number;
+    learning: number;
+    mastered: number;
+  }>(
+    `SELECT
+       COUNT(*) as total,
+       SUM(CASE WHEN srs_due_date <= ? OR srs_due_date = 0 THEN 1 ELSE 0 END) as due,
+       SUM(CASE WHEN srs_stage = 1 THEN 1 ELSE 0 END) as learning,
+       SUM(CASE WHEN srs_stage = 3 THEN 1 ELSE 0 END) as mastered
+     FROM saved_words`,
+    [now],
+  );
+
+  return {
+    totalWords: row?.total ?? 0,
+    dueToday: row?.due ?? 0,
+    learningCount: row?.learning ?? 0,
+    masteredCount: row?.mastered ?? 0,
+  };
 }
 
 export async function deleteSavedWord(id: string): Promise<void> {
   const db = await getDb();
   await db.runAsync('DELETE FROM saved_words WHERE id = ?', [id]);
 }
+
