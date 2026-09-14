@@ -29,6 +29,7 @@ import { getBookMeta as getBibleNtBookMeta, getBookVerses as getBibleNtVerses } 
 import { getSurahMeta, getSurahVerses } from '@/features/quran-content/quranData';
 import { sentenceContaining } from '@/features/reader/engine/words';
 import { MIN_DECK_SIZE } from '@/features/vocabulary/reviewPrompt';
+import { hapticFlashcardAction } from '@/lib/haptics';
 import { useTheme } from '@/theme/ThemeProvider';
 
 type Tab = 'list' | 'flashcards' | 'quotes' | 'verses';
@@ -512,7 +513,10 @@ function FlashcardDeck({ words, books }: { words: SavedWord[]; books: BookRow[] 
         {clampedIndex + 1} / {deck.length}
       </Text>
       <Pressable
-        onPress={() => setFlipped((f) => !f)}
+        onPress={() => {
+          void hapticFlashcardAction('flip');
+          setFlipped((f) => !f);
+        }}
         style={[styles.flashcard, { backgroundColor: colors.card, borderRadius: radius.card }]}
       >
         {flipped ? (
@@ -548,13 +552,19 @@ function FlashcardDeck({ words, books }: { words: SavedWord[]; books: BookRow[] 
       </Pressable>
       <View style={[styles.deckNav, { marginTop: spacing.xl }]}>
         <Pressable
-          onPress={() => goTo(clampedIndex - 1)}
+          onPress={() => {
+            void hapticFlashcardAction('flip');
+            goTo(clampedIndex - 1);
+          }}
           style={[styles.deckNavButton, { backgroundColor: colors.segmentedTrack, borderRadius: radius.pill }]}
         >
           <ChevronLeftIcon color={colors.ink} size={18} />
         </Pressable>
         <Pressable
-          onPress={() => goTo(clampedIndex + 1)}
+          onPress={() => {
+            void hapticFlashcardAction('graduate');
+            goTo(clampedIndex + 1);
+          }}
           style={[styles.deckNavButton, { backgroundColor: colors.flameAmber, borderRadius: radius.pill }]}
         >
           <ChevronRightIcon color={colors.primaryDark} size={18} />

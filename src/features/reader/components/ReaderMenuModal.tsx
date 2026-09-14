@@ -18,12 +18,15 @@ import {
   TranslateIcon,
 } from '@/components/icons';
 import { TargetLanguage, targetLanguageLabel } from '@/features/settings/languagePair';
+import { getPageStyleConfig } from '@/features/reader/pageStyles';
+import { usePageStyle } from '@/features/settings/pageStylePrefs';
 import { useTheme } from '@/theme/ThemeProvider';
 
 type ReaderMenuModalProps = {
   visible: boolean;
   onClose: () => void;
   onOpenGuide: () => void;
+  onOpenPageStyle: () => void;
   onToggleTranslation: () => void;
   isTranslated: boolean;
   isTranslating: boolean;
@@ -39,6 +42,7 @@ export function ReaderMenuModal({
   visible,
   onClose,
   onOpenGuide,
+  onOpenPageStyle,
   onToggleTranslation,
   isTranslated,
   isTranslating,
@@ -51,6 +55,8 @@ export function ReaderMenuModal({
 }: ReaderMenuModalProps) {
   const { colors, typography, radius } = useTheme();
   const insets = useSafeAreaInsets();
+  const pageStyleId = usePageStyle();
+  const pageStyleConfig = getPageStyleConfig(pageStyleId);
 
   const modeProgress = useSharedValue(mode === 'lamp' ? 1 : 0);
   const prevModeRef = useRef(mode);
@@ -133,7 +139,46 @@ export function ReaderMenuModal({
               </View>
             </Pressable>
 
-            {/* 2. Full Page Translation */}
+            {/* 2. Page & Font Style */}
+            <Pressable
+              onPress={() => {
+                onClose();
+                onOpenPageStyle();
+              }}
+              style={({ pressed }) => [
+                styles.itemRow,
+                { borderRadius: radius.card },
+                pressed && { backgroundColor: `${colors.flameAmber}10` },
+              ]}
+            >
+              <View style={[styles.iconBox, { backgroundColor: `${colors.flameAmber}18` }]}>
+                <Text
+                  style={{
+                    color: colors.flameAmber,
+                    fontSize: 16,
+                    fontFamily: pageStyleConfig.englishFont,
+                    fontWeight: '700',
+                  }}
+                >
+                  Aa
+                </Text>
+              </View>
+              <View style={styles.itemBody}>
+                <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 14 }]}>
+                  Page & Font Style
+                </Text>
+                <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11.5, marginTop: 1 }]}>
+                  {pageStyleConfig.name} · {pageStyleConfig.tag}
+                </Text>
+              </View>
+              <View style={[styles.pillBadge, { backgroundColor: `${colors.flameAmber}20`, borderRadius: radius.pill }]}>
+                <Text style={[typography.eyebrowLabel, { color: colors.flameAmber, fontSize: 10, fontWeight: '700' }]}>
+                  {pageStyleConfig.tag} ▾
+                </Text>
+              </View>
+            </Pressable>
+
+            {/* 3. Full Page Translation */}
             <Pressable
               onPress={() => {
                 onClose();

@@ -7,6 +7,7 @@ import { logEvent } from '@/features/analytics/analytics';
 import { targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
 import { isPremiumUser } from '@/features/subscription/subscriptionState';
 import { checkTranslationCap, recordTranslationUsage, translationProvider } from '@/features/translation';
+import { hapticSaveWord } from '@/lib/haptics';
 import { useTheme } from '@/theme/ThemeProvider';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
@@ -186,7 +187,10 @@ export function WordTranslationPopup({
                   </Pressable>
                   <Pressable
                     style={[styles.actionButton, { backgroundColor: colors.flameAmber }]}
-                    onPress={() => onSave(state.translation)}
+                    onPress={() => {
+                      void hapticSaveWord();
+                      onSave(state.translation);
+                    }}
                   >
                     <SaveIcon color={colors.primaryDark} />
                     <Text style={[typography.uiRowTitle, { color: colors.primaryDark, fontSize: 11 }]}>

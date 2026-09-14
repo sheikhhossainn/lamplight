@@ -13,6 +13,11 @@ export const FontFamily = {
   manropeBold: 'Manrope_700Bold',
   amiriRegular: 'Amiri_400Regular',
   amiriBold: 'Amiri_700Bold',
+  kalamRegular: 'Kalam_400Regular',
+  kalamBold: 'Kalam_700Bold',
+  atmaRegular: 'Atma_400Regular',
+  atmaMedium: 'Atma_500Medium',
+  atmaSemiBold: 'Atma_600SemiBold',
 } as const;
 
 // Named styles — screens must consume these, never inline TextStyle with raw fontFamily.
@@ -50,16 +55,16 @@ export const LamplightTypography = {
     letterSpacing: 0,
   },
   readingBody: {
-    fontFamily: FontFamily.loraRegular,
-    fontSize: 17,
-    lineHeight: 31, // 17 * 1.85 — never go below 17px or shrink this ratio
-    letterSpacing: 0,
+    fontFamily: FontFamily.kalamRegular,
+    fontSize: 18,
+    lineHeight: 34, // 18 * 1.88 — spacious manuscript line-height for clean legibility
+    letterSpacing: 0.2,
   },
   banglaReadingBody: {
-    fontFamily: FontFamily.loraRegular,
-    fontSize: 18,
+    fontFamily: FontFamily.atmaMedium,
+    fontSize: 18.5,
     lineHeight: 35,
-    letterSpacing: 0,
+    letterSpacing: 0.2,
   },
   banglaScreenTitle: {
     fontFamily: FontFamily.loraSemiBold,
@@ -187,9 +192,46 @@ export const LamplightTypography = {
 
 export type LamplightTypographyKey = keyof typeof LamplightTypography;
 
-export function getReadingTextStyle(language?: string): TextStyle {
-  if (language === 'bn') return LamplightTypography.banglaReadingBody;
-  if (language === 'ja' || language === 'ko') return LamplightTypography.cjkReadingBody;
+export function getReadingTextStyle(language?: string, pageStyle?: 'manuscript' | 'classic' | 'modern'): TextStyle {
+  const style = pageStyle ?? 'manuscript';
+  if (language === 'bn') {
+    if (style === 'classic') {
+      return {
+        fontFamily: FontFamily.loraRegular,
+        fontSize: 18,
+        lineHeight: 34,
+        letterSpacing: 0,
+      };
+    }
+    if (style === 'modern') {
+      return {
+        fontFamily: FontFamily.manropeRegular,
+        fontSize: 17.5,
+        lineHeight: 33,
+        letterSpacing: 0.1,
+      };
+    }
+    return LamplightTypography.banglaReadingBody;
+  }
+  if (language === 'ja' || language === 'ko') {
+    return LamplightTypography.cjkReadingBody;
+  }
+  if (style === 'classic') {
+    return {
+      fontFamily: FontFamily.loraRegular,
+      fontSize: 17.5,
+      lineHeight: 33,
+      letterSpacing: 0,
+    };
+  }
+  if (style === 'modern') {
+    return {
+      fontFamily: FontFamily.manropeRegular,
+      fontSize: 17,
+      lineHeight: 32,
+      letterSpacing: 0.15,
+    };
+  }
   return LamplightTypography.readingBody;
 }
 

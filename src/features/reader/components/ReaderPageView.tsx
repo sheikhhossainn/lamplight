@@ -20,8 +20,11 @@ import Animated, {
 import { charAdvance } from '@/features/reader/engine/glyphWidths';
 import { cleanWordForLookup, tokenizeParagraph } from '@/features/reader/engine/words';
 import type { ReaderPage } from '@/features/reader/engine/paginate';
+import { getPageStyleConfig } from '@/features/reader/pageStyles';
+import { usePageStyle } from '@/features/settings/pageStylePrefs';
 import type { HighlightColorKey } from '@/theme/tokens';
 import { useTheme } from '@/theme/ThemeProvider';
+import { isBengaliText } from '@/theme/typography';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
@@ -98,6 +101,7 @@ type ReaderPageViewProps = {
   // toggle button (a spinner replacing the icon), not here — this component
   // only ever animates between "original" and "have text".
   translatedParagraphs: string[] | null;
+  onPagePress?: () => void;
 };
 
 type Token = { text: string; word: string | null };
@@ -462,8 +466,11 @@ function ReaderPageViewImpl({
   onRangeEdgeDrag,
   onRangeEdgeDragEnd,
   translatedParagraphs,
+  onPagePress,
 }: ReaderPageViewProps) {
   const { typography, spacing } = useTheme();
+  const pageStyleId = usePageStyle();
+  const pageStyleConfig = getPageStyleConfig(pageStyleId);
 
   const isLamp = mode === 'lamp';
   const textThemeAnim = useSharedValue(isLamp ? 1 : 0);
@@ -515,7 +522,7 @@ function ReaderPageViewImpl({
     [page.paragraphs],
   );
 
-  const baseParagraphStyle = { fontSize, lineHeight, marginBottom: spacing.sm };
+  const baseParagraphStyle = { fontSize, lineHeight };
 
   // Drag-to-select plumbing (only exercised while `selecting` is true). Refs
   // (not state) because the geometry itself shouldn't trigger a re-render —
@@ -735,32 +742,35 @@ function ReaderPageViewImpl({
         styles.container,
         {
           paddingHorizontal: spacing.xl,
-          paddingTop: topInset + spacing.xl,
+          paddingTop: topInset + spacing.md,
           // Must match ReaderScreen's contentHeightPx bottom term exactly
-          // (insets.bottom + 20) — a mismatch here means pagination budgets
+          // (insets.bottom + 18) — a mismatch here means pagination budgets
           // for a shorter/taller page than what's actually rendered, so every
           // page ends up with the wrong amount of bottom whitespace.
-          paddingBottom: bottomInset + 20,
+          paddingBottom: bottomInset + 18,
         },
       ]}
     >
       {page.isChapterStart ? (
         <Animated.Text
+          onPress={onPagePress}
           style={[
             typography.screenTitle,
             animatedBodyColorStyle,
-            { marginTop: spacing.xl, marginBottom: spacing.lg },
+            {
+              fontFamily: isBengaliText(page.chapterTitle)
+                ? pageStyleConfig.banglaBoldFont
+                : pageStyleConfig.id === 'manuscript'
+                ? pageStyleConfig.englishBoldFont
+                : typography.screenTitle.fontFamily,
+              marginTop: spacing.sm,
+              marginBottom: spacing.md,
+            },
           ]}
         >
           {page.chapterTitle}
         </Animated.Text>
-      ) : (
-        // Continuation page: an empty band the exact height of the chapter-title
-        // footprint (marginTop + lineHeight + marginBottom), so the body's first
-        // line lands at the same Y as on a chapter-start page — no jump when
-        // paging. Must match the paginator's chapterTitleExtraPx.
-        <View style={{ height: spacing.xl + typography.screenTitle.lineHeight + spacing.lg }} />
-      )}
+      ) : null}
 
       {/* Body stack: the original and its translation occupy the SAME box, so
           the translated text inherits the original's exact left/right margins
@@ -790,7 +800,18 @@ function ReaderPageViewImpl({
           return (
             <Animated.Text
               key={paragraphIndex}
-              style={[typography.readingBody, animatedBodyColorStyle, baseParagraphStyle]}
+              style={[
+                typography.readingBody,
+                animatedBodyColorStyle,
+                baseParagraphStyle,
+                {
+                  fontFamily: isBengaliText(paragraph) ? pageStyleConfig.banglaFont : pageStyleConfig.englishFont,
+                  fontSize: isBengaliText(paragraph) ? pageStyleConfig.banglaFontSize : pageStyleConfig.fontSize,
+                  lineHeight: isBengaliText(paragraph) ? pageStyleConfig.banglaLineHeight : pageStyleConfig.lineHeight,
+                  letterSpacing: isBengaliText(paragraph) ? pageStyleConfig.banglaLetterSpacing : pageStyleConfig.letterSpacing,
+                  marginBottom: paragraphIndex === page.paragraphs.length - 1 ? 0 : spacing.sm,
+                },
+              ]}
               onLayout={(e) => {
                 paragraphLayoutsRef.current.set(paragraphIndex, {
                   y: e.nativeEvent.layout.y,
@@ -838,11 +859,17 @@ function ReaderPageViewImpl({
             style={[
               typography.readingBody,
               animatedBodyColorStyle,
+              baseParagraphStyle,
               {
+                fontFamily: isBengaliText(paragraph) ? pageStyleConfig.banglaFont : pageStyleConfig.englishFont,
+                fontSize: isBengaliText(paragraph) ? pageStyleConfig.banglaFontSize : pageStyleConfig.fontSize,
+                lineHeight: isBengaliText(paragraph) ? pageStyleConfig.banglaLineHeight : pageStyleConfig.lineHeight,
+                letterSpacing: isBengaliText(paragraph) ? pageStyleConfig.banglaLetterSpacing : pageStyleConfig.letterSpacing,
+                marginBottom: paragraphIndex === page.paragraphs.length - 1 ? 0 : spacing.sm,
                 backgroundColor: highlightWash && !highlightRun ? highlightWash : undefined,
-                ...baseParagraphStyle,
               },
             ]}
+            onPress={onPagePress}
             onLongPress={(e) => handleWordLongPress(paragraphIndex, e)}
             onLayout={(e) => {
               paragraphLayoutsRef.current.set(paragraphIndex, {
@@ -926,7 +953,22 @@ function ReaderPageViewImpl({
           pointerEvents="auto"
         >
           {renderedTranslation!.map((paragraph, i) => (
-            <Text key={i} style={[typography.readingBody, { color: textColor }, baseParagraphStyle]}>
+            <Text
+              key={i}
+              onPress={onPagePress}
+              style={[
+                typography.readingBody,
+                {
+                  color: textColor,
+                  fontFamily: isBengaliText(paragraph) ? pageStyleConfig.banglaFont : pageStyleConfig.englishFont,
+                  fontSize: isBengaliText(paragraph) ? pageStyleConfig.banglaFontSize : pageStyleConfig.fontSize,
+                  lineHeight: isBengaliText(paragraph) ? pageStyleConfig.banglaLineHeight : pageStyleConfig.lineHeight,
+                  letterSpacing: isBengaliText(paragraph) ? pageStyleConfig.banglaLetterSpacing : pageStyleConfig.letterSpacing,
+                  marginBottom: i === renderedTranslation!.length - 1 ? 0 : spacing.sm,
+                },
+                baseParagraphStyle,
+              ]}
+            >
               {paragraph}
             </Text>
           ))}

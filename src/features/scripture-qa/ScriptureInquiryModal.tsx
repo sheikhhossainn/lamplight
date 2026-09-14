@@ -22,6 +22,7 @@ import {
   StopIcon,
 } from '@/components/icons';
 import { transcribeAudioUri } from '@/features/scripture-verses/voiceTranscriber';
+import { hapticOpenInquiry } from '@/lib/haptics';
 import { useTheme } from '@/theme/ThemeProvider';
 
 import {
@@ -170,6 +171,7 @@ export function ScriptureInquiryModal({
   // Refresh recent inquiries when modal opens or tab changes
   useEffect(() => {
     if (visible) {
+      void hapticOpenInquiry();
       getRecentInquiries().then((items) => {
         setRecentItems(items);
       });

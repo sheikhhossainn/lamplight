@@ -55,6 +55,7 @@ import { HomeGuideModal } from '@/components/HomeGuideModal';
 import { isBookCached } from '@/features/content-ingestion/bookDownloader';
 import { importEpubFromFile } from '@/features/content-ingestion/epubImporter';
 import { targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
+import { hapticOpenInquiry } from '@/lib/haptics';
 import { useTheme } from '@/theme/ThemeProvider';
 
 const { width: screenWidth } = Dimensions.get('window');
@@ -851,7 +852,10 @@ export default function LibraryScreen() {
         <View style={[styles.shelfHeader, { marginBottom: spacing.md }]}>
           <Text style={[typography.eyebrowLabel, { color: colors.fawn }]}>Scriptures</Text>
           <Pressable
-            onPress={() => router.push('/mood-verses/ask')}
+            onPress={() => {
+              void hapticOpenInquiry();
+              router.push('/mood-verses/ask');
+            }}
             hitSlop={8}
             style={styles.filterHeader}
           >

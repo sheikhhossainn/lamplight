@@ -13,15 +13,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BookSpine } from '@/components/BookSpine';
 import { WordsIllustration } from '@/components/NotebookIllustrations';
-import { ChevronRightIcon, QuestionIcon, SoundWaveIcon } from '@/components/icons';
+import { ChevronRightIcon, QuestionIcon } from '@/components/icons';
 import { getBook, listBanglaBooks, type BookRow } from '@/db/repositories/books';
 import {
   listActiveReadingPositions,
   type ReadingPosition,
 } from '@/db/repositories/readingPosition';
-import { AMBIENCE_TRACKS } from '@/features/ambience/tracks';
-import { setAmbienceTrackId, useAmbienceTrackId } from '@/features/ambience/ambiencePreference';
-import { useAmbiencePlayer } from '@/features/ambience/useAmbiencePlayer';
 import {
   fetchBanglaBooks,
   type BanglaBookSummary,
@@ -31,6 +28,7 @@ import { GONGU_KOREAN_BOOKS } from '@/features/content-ingestion/koreanApi';
 import { getMotherTongueOption, useMotherTongue } from '@/features/settings/motherTongue';
 import { targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
 import { isBengaliText, isJapaneseText, isKoreanText } from '@/theme/typography';
+import { hapticOpenInquiry } from '@/lib/haptics';
 import { useTheme } from '@/theme/ThemeProvider';
 import {
   getStoredCalibrationData,
@@ -192,9 +190,6 @@ export default function Homescreen() {
   const targetLanguage = useTargetLanguage();
   const motherTongue = useMotherTongue();
   const motherTongueOption = getMotherTongueOption(motherTongue);
-
-  useAmbiencePlayer();
-  const currentTrackId = useAmbienceTrackId();
 
   const [loading, setLoading] = useState(true);
   const [latestBook, setLatestBook] = useState<BookRow | null>(null);
@@ -931,7 +926,10 @@ export default function Homescreen() {
         {/* Comparative Scripture Inquiry Card */}
         <View style={{ marginTop: spacing.xl }}>
           <Pressable
-            onPress={() => router.push('/mood-verses/ask')}
+            onPress={() => {
+              void hapticOpenInquiry();
+              router.push('/mood-verses/ask');
+            }}
             style={[
               styles.sanctuaryCard,
               {
@@ -988,64 +986,6 @@ export default function Homescreen() {
               </Text>
             </View>
           </Pressable>
-        </View>
-
-        {/* Sanctuary Ambience Bar */}
-        <View style={{ marginTop: spacing.xl }}>
-          <View style={styles.sectionHeader}>
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <SoundWaveIcon color={currentTrackId ? colors.flameAmber : colors.fawn} size={17} />
-              <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginLeft: 6 }]}>
-                AMBIENCE
-              </Text>
-            </View>
-            {currentTrackId ? (
-              <Pressable onPress={() => setAmbienceTrackId(null)} hitSlop={8}>
-                <Text style={[typography.buttonLabel, { color: colors.flameAmber, fontSize: 12 }]}>
-                  Mute
-                </Text>
-              </Pressable>
-            ) : null}
-          </View>
-
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.ambienceScroll}
-          >
-            {AMBIENCE_TRACKS.map((track) => {
-              const isActive = currentTrackId === track.id;
-              return (
-                <Pressable
-                  key={track.id}
-                  onPress={() => setAmbienceTrackId(isActive ? null : track.id)}
-                  style={[
-                    styles.ambienceChip,
-                    {
-                      backgroundColor: isActive ? colors.flameAmber : colors.card,
-                      borderColor: isActive ? colors.flameAmber : colors.hairline,
-                      borderWidth: 1,
-                      borderRadius: radius.pill,
-                      marginRight: spacing.sm,
-                    },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      typography.buttonLabel,
-                      {
-                        color: isActive ? colors.primaryDark : colors.ink,
-                        fontWeight: isActive ? '600' : '400',
-                        fontSize: 13,
-                      },
-                    ]}
-                  >
-                    {isActive ? '▶ ' : ''}{track.label}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
         </View>
 
         {/* Curator's Pick (Featured Book) — Dynamic by Mother Tongue */}
@@ -1219,7 +1159,10 @@ export default function Homescreen() {
           </Pressable>
 
           <Pressable
-            onPress={() => router.push('/mood-verses/ask')}
+            onPress={() => {
+              void hapticOpenInquiry();
+              router.push('/mood-verses/ask');
+            }}
             style={[
               styles.quickCard,
               {
@@ -1375,14 +1318,5 @@ const styles = StyleSheet.create({
     height: 42,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  ambienceScroll: {
-    flexDirection: 'row',
-    marginTop: 10,
-    paddingBottom: 4,
-  },
-  ambienceChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
   },
 });
