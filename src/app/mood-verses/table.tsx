@@ -1,5 +1,5 @@
-import { VerseTableDeck } from '@/features/scripture-verses/VerseTableDeck';
+import { ScriptureInquiryDeck } from '@/features/scripture-qa/ScriptureInquiryDeck';
 
 export default function VerseTableScreen() {
-  return <VerseTableDeck />;
+  return <ScriptureInquiryDeck questionQuery="" />;
 }

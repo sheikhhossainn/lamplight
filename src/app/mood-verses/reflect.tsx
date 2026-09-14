@@ -1,11 +1,16 @@
 import { useLocalSearchParams } from 'expo-router';
 
-import { ScriptureTableDeck } from '@/features/scripture-verses/ScriptureTableDeck';
+import { ScriptureInquiryDeck } from '@/features/scripture-qa/ScriptureInquiryDeck';
 
 export default function ReflectScreen() {
-  const { text } = useLocalSearchParams<{ text: string }>();
+  const { text, query, question, tradition } = useLocalSearchParams<{
+    text?: string;
+    query?: string;
+    question?: string;
+    tradition?: string;
+  }>();
 
-  return <ScriptureTableDeck userFeelingText={text ?? ''} />;
+  const targetQuery = question ?? query ?? text ?? '';
+
+  return <ScriptureInquiryDeck questionQuery={targetQuery} initialTradition={tradition} />;
 }
-
-
