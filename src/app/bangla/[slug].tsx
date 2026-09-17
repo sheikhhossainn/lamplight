@@ -85,7 +85,7 @@ export default function BanglaBookDetailScreen() {
       // Already downloaded, launch reader immediately
       router.push({
         pathname: '/reader/[bookId]',
-        params: { bookId: detail.id },
+        params: { bookId: detail.id, bookTitle: detail.title, bookCoverUrl: detail.coverUrl ?? '' },
       });
       return;
     }
@@ -104,7 +104,7 @@ export default function BanglaBookDetailScreen() {
       // Open reader
       router.push({
         pathname: '/reader/[bookId]',
-        params: { bookId: detail.id },
+        params: { bookId: detail.id, bookTitle: detail.title, bookCoverUrl: detail.coverUrl ?? '' },
       });
     } catch (err) {
       setDownloading(false);

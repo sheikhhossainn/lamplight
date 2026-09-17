@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, View, type ViewToken } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View, type ViewToken } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BookmarkIcon, ChevronLeftIcon, ChevronRightIcon, ShareIcon } from '@/components/icons';
@@ -16,6 +16,7 @@ import {
 import { TappableWords } from '@/features/reader/components/TappableWords';
 import { WordActionMenu } from '@/features/reader/components/WordActionMenu';
 import { WordTranslationPopup } from '@/features/reader/components/WordTranslationPopup';
+import { QuranRecitationButton } from '@/features/scripture-audio/QuranRecitationButton';
 import { cleanArabicWordForLookup, cleanWordForLookup } from '@/features/quran-content/verseWords';
 import { getSurahMeta, getSurahVerses, type QuranVerse } from '@/features/quran-content/quranData';
 import { useTargetLanguage } from '@/features/settings/languagePair';
@@ -30,22 +31,11 @@ type HeldWord = {
   anchor: { x: number; y: number };
 };
 
-function estimateQuranVerseOffset(verses: QuranVerse[], targetIndex: number): number {
-  let offset = 0;
-  for (let i = 0; i < targetIndex && i < verses.length; i++) {
-    const v = verses[i];
-    const arLines = Math.max(1, Math.ceil((v.textArabic?.length ?? 0) / 32));
-    const trLines = Math.max(1, Math.ceil((v.textTransliteration?.length ?? 0) / 42));
-    const enLines = Math.max(1, Math.ceil((v.textEnglish?.length ?? 0) / 40));
-    offset += arLines * 44 + trLines * 22 + enLines * 28 + 84;
-  }
-  return offset;
-}
-
 export default function QuranVerseReaderScreen() {
-  const { surahNumber: surahNumberParam, jumpVerse } = useLocalSearchParams<{
+  const { surahNumber: surahNumberParam, jumpVerse, resumeVerse: resumeVerseParam } = useLocalSearchParams<{
     surahNumber: string;
     jumpVerse?: string;
+    resumeVerse?: string;
   }>();
   const { colors, typography, spacing, radius, layout } = useTheme();
   const insets = useSafeAreaInsets();
@@ -61,6 +51,7 @@ export default function QuranVerseReaderScreen() {
   const [heldWord, setHeldWord] = useState<HeldWord | null>(null);
   const [activeWord, setActiveWord] = useState<HeldWord | null>(null);
   const [expandedTafsir, setExpandedTafsir] = useState<Set<number>>(new Set());
+  const [recitingVerse, setRecitingVerse] = useState<number | null>(null);
 
   const toggleTafsir = useCallback((verseNumber: number) => {
     setExpandedTafsir((prev) => {
@@ -76,6 +67,8 @@ export default function QuranVerseReaderScreen() {
   }, [surahNumber]);
 
   const [isReady, setIsReady] = useState(false);
+  const [resumeVerse, setResumeVerse] = useState<number | null | undefined>(undefined);
+  const [isPositionReady, setIsPositionReady] = useState(false);
   const [activeLandingVerse, setActiveLandingVerse] = useState<number | null>(() => {
     return jumpVerse ? Number(jumpVerse) : null;
   });
@@ -96,14 +89,32 @@ export default function QuranVerseReaderScreen() {
   }, []);
 
   useEffect(() => {
-    void (async () => {
-      const existing = await getQuranReadingPosition(surahNumber);
-      const targetVerse = jumpVerse ? Number(jumpVerse) : (existing?.verseNumber ?? 1);
-      await upsertQuranReadingPosition({ surahNumber, verseNumber: targetVerse });
-    })();
-  }, [surahNumber, jumpVerse]);
+    let cancelled = false;
+    setIsPositionReady(false);
+    if (jumpVerse) {
+      setResumeVerse(null);
+      return () => {
+        cancelled = true;
+      };
+    }
+    if (resumeVerseParam) {
+      setResumeVerse(Number(resumeVerseParam));
+      return () => {
+        cancelled = true;
+      };
+    }
+    setResumeVerse(undefined);
+    void getQuranReadingPosition(surahNumber).then((position) => {
+      if (!cancelled) setResumeVerse(position?.verseNumber ?? null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [surahNumber, jumpVerse, resumeVerseParam]);
 
   const visibleIndicesRef = useRef<Set<number>>(new Set());
+  const isUserDraggingRef = useRef(false);
+  const followResumeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingTargetRef = useRef<{ index: number; verseNumber: number } | null>(null);
   const landingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollRetries = useRef(0);
@@ -122,62 +133,79 @@ export default function QuranVerseReaderScreen() {
     }
   }, []);
 
+  useEffect(() => {
+    if (recitingVerse === null || isUserDraggingRef.current) return;
+    const verseIndex = recitingVerse - 1;
+    if (verseIndex < 0) return;
+
+    const frame = requestAnimationFrame(() => {
+      // Viewability only estimates how much of variable-height content is on
+      // screen. Always align the active ayah unless the user is dragging, so a
+      // card can never remain cut off below the viewport.
+      listRef.current?.scrollToIndex({ index: verseIndex, viewPosition: 0.1, animated: true });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [recitingVerse]);
+
   const onScrollToIndexFailed = useCallback(
     (info: { index: number; highestMeasuredFrameIndex: number; averageItemLength: number }) => {
       scrollRetries.current += 1;
-      const estimatedOffset = estimateQuranVerseOffset(verses, info.index);
       listRef.current?.scrollToOffset({
-        offset: Math.max(0, estimatedOffset - 40),
+        offset: Math.max(0, info.averageItemLength * info.index - info.averageItemLength * 0.2),
         animated: false,
       });
 
       if (scrollRetryTimer.current) clearTimeout(scrollRetryTimer.current);
-      if (scrollRetries.current <= 5) {
-        const delay = Math.min(60 * scrollRetries.current, 240);
+      if (scrollRetries.current <= 12) {
+        const delay = Math.min(80 * scrollRetries.current, 320);
         scrollRetryTimer.current = setTimeout(() => {
           performScrollToTarget(info.index);
         }, delay);
       }
     },
-    [verses, performScrollToTarget],
+    [performScrollToTarget],
   );
 
   const handleTarget = useCallback(
-    (targetIndex: number, targetVerseNumber: number) => {
-      setActiveLandingVerse(targetVerseNumber);
+    (targetIndex: number, targetVerseNumber: number, shouldHighlight = true) => {
+      if (shouldHighlight) setActiveLandingVerse(targetVerseNumber);
 
-      if (targetIndex < 0) return;
+      if (targetIndex < 0) {
+        setIsPositionReady(true);
+        return;
+      }
 
       // If the verse is already fully visible on screen, DO NOT scroll!
       if (visibleIndicesRef.current.has(targetIndex)) {
         pendingTargetRef.current = null;
-        if (landingTimerRef.current) clearTimeout(landingTimerRef.current);
-        landingTimerRef.current = setTimeout(() => {
-          setActiveLandingVerse(null);
-        }, 3500);
+        setIsPositionReady(true);
+        if (shouldHighlight) {
+          if (landingTimerRef.current) clearTimeout(landingTimerRef.current);
+          landingTimerRef.current = setTimeout(() => {
+            setActiveLandingVerse(null);
+          }, 3500);
+        }
         return;
       }
 
       pendingTargetRef.current = { index: targetIndex, verseNumber: targetVerseNumber };
+      scrollRetries.current = 0;
       performScrollToTarget(targetIndex);
     },
     [performScrollToTarget],
   );
 
   useEffect(() => {
-    if (!isReady) return;
+    if (!isReady || (!jumpVerse && resumeVerse === undefined)) return;
 
     if (jumpVerse) {
       const vNum = Number(jumpVerse);
       handleTarget(vNum - 1, vNum);
+    } else if (resumeVerse && resumeVerse > 1) {
+      handleTarget(resumeVerse - 1, resumeVerse, false);
     } else {
-      void getQuranReadingPosition(surahNumber).then((pos) => {
-        if (pos && pos.verseNumber > 1) {
-          handleTarget(pos.verseNumber - 1, pos.verseNumber);
-        } else {
-          initialScrollDone.current = true;
-        }
-      });
+      initialScrollDone.current = true;
+      setIsPositionReady(true);
     }
 
     const fallbackTimer = setTimeout(() => {
@@ -192,9 +220,10 @@ export default function QuranVerseReaderScreen() {
     return () => {
       if (landingTimerRef.current) clearTimeout(landingTimerRef.current);
       if (scrollRetryTimer.current) clearTimeout(scrollRetryTimer.current);
+      if (followResumeTimerRef.current) clearTimeout(followResumeTimerRef.current);
       clearTimeout(fallbackTimer);
     };
-  }, [jumpVerse, surahNumber, isReady, handleTarget, performScrollToTarget]);
+  }, [jumpVerse, resumeVerse, isReady, handleTarget, performScrollToTarget]);
 
   const highlightByVerse = useMemo(
     () => new Map(highlights.map((h) => [h.verseNumber, h])),
@@ -246,7 +275,9 @@ export default function QuranVerseReaderScreen() {
   persistPositionRef.current = persistPosition;
 
   const viewabilityConfig = useRef({
-    itemVisiblePercentThreshold: 40,
+    // A card only counts as visible once it has real reading room; this also
+    // makes recitation follow bring a bottom-edge card back into clear view.
+    itemVisiblePercentThreshold: 70,
     waitForInteraction: false,
   }).current;
 
@@ -264,13 +295,12 @@ export default function QuranVerseReaderScreen() {
           pendingTargetRef.current = null;
           scrollRetries.current = 0;
           if (scrollRetryTimer.current) clearTimeout(scrollRetryTimer.current);
+          setIsPositionReady(true);
 
           if (landingTimerRef.current) clearTimeout(landingTimerRef.current);
           landingTimerRef.current = setTimeout(() => {
             setActiveLandingVerse(null);
           }, 3500);
-        } else {
-          performScrollToTarget(pending.index);
         }
       }
 
@@ -288,20 +318,31 @@ export default function QuranVerseReaderScreen() {
         <Pressable onPress={() => router.back()} hitSlop={12}>
           <ChevronLeftIcon color={colors.ink} />
         </Pressable>
-        <View style={{ marginLeft: spacing.md }}>
+        <View style={{ marginLeft: spacing.md, flex: 1 }}>
           <Text style={[typography.screenTitle, { color: colors.ink }]}>{surahMeta.nameEnglish}</Text>
           <Text style={[typography.metadataCaption, { color: colors.fawn }]}>
             {surahMeta.nameTranslation} · {surahMeta.revelationType}
           </Text>
         </View>
       </View>
+      <View style={[styles.recitationRow, { paddingHorizontal: layout.screenMargin, marginTop: spacing.sm }]}>
+        <QuranRecitationButton
+          surahName={surahMeta.nameEnglish}
+          surahNumber={surahNumber}
+          verses={verses}
+          onActiveVerseChange={setRecitingVerse}
+        />
+      </View>
 
       {isReady ? (
+        <>
         <FlatList
           ref={listRef}
           data={verses}
+          style={{ opacity: isPositionReady ? 1 : 0 }}
+          pointerEvents={isPositionReady ? 'auto' : 'none'}
           keyExtractor={(item) => String(item.number)}
-          extraData={`${activeLandingVerse}-${highlightByVerse.size}-${expandedTafsir.size}`}
+          extraData={`${activeLandingVerse}-${recitingVerse}-${highlightByVerse.size}-${expandedTafsir.size}`}
           initialNumToRender={20}
           maxToRenderPerBatch={20}
           windowSize={7}
@@ -314,6 +355,20 @@ export default function QuranVerseReaderScreen() {
           }}
           onScrollBeginDrag={() => {
             isUserInteracting.current = true;
+            isUserDraggingRef.current = true;
+            if (followResumeTimerRef.current) clearTimeout(followResumeTimerRef.current);
+          }}
+          onScrollEndDrag={() => {
+            followResumeTimerRef.current = setTimeout(() => {
+              isUserDraggingRef.current = false;
+            }, 180);
+          }}
+          onMomentumScrollBegin={() => {
+            isUserDraggingRef.current = true;
+            if (followResumeTimerRef.current) clearTimeout(followResumeTimerRef.current);
+          }}
+          onMomentumScrollEnd={() => {
+            isUserDraggingRef.current = false;
           }}
           onScrollToIndexFailed={onScrollToIndexFailed}
           viewabilityConfig={viewabilityConfig}
@@ -322,7 +377,8 @@ export default function QuranVerseReaderScreen() {
             const highlighted = highlightByVerse.has(item.number);
             const tafsirOpen = expandedTafsir.has(item.number);
             const isLanding = activeLandingVerse === item.number;
-            const isMarked = isLanding || highlighted;
+            const isReciting = recitingVerse === item.number;
+            const isMarked = isLanding || highlighted || isReciting;
             return (
               <View
                 style={[
@@ -330,6 +386,8 @@ export default function QuranVerseReaderScreen() {
                   {
                     backgroundColor: isLanding
                       ? `${colors.flameAmber}35`
+                      : isReciting
+                      ? `${colors.flameAmber}22`
                       : highlighted
                       ? `${colors.flameAmber}25`
                       : colors.card,
@@ -337,7 +395,7 @@ export default function QuranVerseReaderScreen() {
                     marginBottom: spacing.md,
                     padding: spacing.lg,
                     borderWidth: 1.5,
-                    borderColor: isLanding
+                    borderColor: isLanding || isReciting
                       ? colors.flameAmber
                       : highlighted
                       ? `${colors.flameAmber}80`
@@ -390,7 +448,7 @@ export default function QuranVerseReaderScreen() {
               <TappableWords
                 text={item.textArabic}
                 cleanWord={cleanArabicWordForLookup}
-                style={[typography.arabicVerse, { color: colors.ink, textAlign: 'right', marginTop: spacing.sm }]}
+                style={[typography.scriptureArabicVerse, { color: colors.ink, textAlign: 'right', marginTop: spacing.sm }]}
                 onWordLongPress={(word, anchor) => setHeldWord({ word, lang: 'ar', verseNumber: item.number, anchor })}
               />
               <Text
@@ -404,7 +462,7 @@ export default function QuranVerseReaderScreen() {
               <TappableWords
                 text={item.textEnglish}
                 cleanWord={cleanWordForLookup}
-                style={[typography.readingBody, { color: colors.umber, marginTop: spacing.sm }]}
+                style={[typography.scriptureVerse, { color: colors.umber, marginTop: spacing.sm }]}
                 onWordLongPress={(word, anchor) => setHeldWord({ word, lang: 'en', verseNumber: item.number, anchor })}
               />
               {item.textTafsir ? (
@@ -440,13 +498,21 @@ export default function QuranVerseReaderScreen() {
               ) : null}
             </View>
           );
-        }}
-      />
-    ) : null}
+          }}
+        />
+        {!isPositionReady ? (
+          <View pointerEvents="none" style={styles.restoreLoader}>
+            <ActivityIndicator size="small" color={colors.flameAmber} />
+          </View>
+        ) : null}
+        </>
+      ) : null}
 
       <WordActionMenu
         word={heldWord?.word ?? null}
         anchor={heldWord?.anchor ?? null}
+        sourceLanguage={heldWord?.lang ?? 'en'}
+        showPronunciation={false}
         saveLabel={heldWord && highlightByVerse.has(heldWord.verseNumber) ? 'Remove highlight' : 'Highlight verse'}
         onTranslate={() => {
           setActiveWord(heldWord);
@@ -464,6 +530,7 @@ export default function QuranVerseReaderScreen() {
         anchor={activeWord?.anchor ?? null}
         sourceLang={activeWord?.lang ?? 'en'}
         sourceLangLabel={activeWord?.lang === 'ar' ? 'AR' : 'EN'}
+        showPronunciation={false}
         onClose={() => setActiveWord(null)}
         onSave={handleSaveTranslation}
       />
@@ -472,9 +539,17 @@ export default function QuranVerseReaderScreen() {
 }
 
 const styles = StyleSheet.create({
+  restoreLoader: {
+    ...StyleSheet.absoluteFill,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   topRow: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  recitationRow: {
+    alignItems: 'flex-end',
   },
   verseCard: {
     position: 'relative',

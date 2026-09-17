@@ -1,7 +1,7 @@
 import { getDb } from '@/db/client';
 import { generateId } from '@/lib/id';
 
-import type { SrsCardState, SrsStage } from '@/features/vocabulary/srsAlgorithm';
+import { nextLocalMidnight, type SrsCardState, type SrsStage } from '@/features/vocabulary/srsAlgorithm';
 
 export type SavedWord = {
   id: string;
@@ -22,6 +22,11 @@ export type SavedWord = {
   srsReps: number;
   srsLapses: number;
   phonetic?: string | null;
+};
+
+export type DailySavedWordCount = {
+  date: string;
+  count: number;
 };
 
 type SavedWordSqlRow = {
@@ -127,7 +132,7 @@ export async function saveWord(
   const srsStage = input.srsStage ?? 0;
   const srsIntervalDays = input.srsIntervalDays ?? 0;
   const srsEaseFactor = input.srsEaseFactor ?? 2.5;
-  const srsDueDate = input.srsDueDate ?? createdAt;
+  const srsDueDate = input.srsDueDate ?? nextLocalMidnight(createdAt);
   const srsReps = input.srsReps ?? 0;
   const srsLapses = input.srsLapses ?? 0;
   const phonetic = input.phonetic ?? null;
@@ -182,6 +187,22 @@ export async function listDueWords(nowMs: number = Date.now()): Promise<SavedWor
     [nowMs],
   );
   return rows.map(fromSqlRow);
+}
+
+export async function listSavedWordCountsByDay(days: number = 30, nowMs: number = Date.now()): Promise<DailySavedWordCount[]> {
+  const safeDays = Math.max(1, Math.floor(days));
+  const now = new Date(nowMs);
+  const rangeStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (safeDays - 1)).getTime();
+  const db = await getDb();
+  const rows = await db.getAllAsync<DailySavedWordCount>(
+    `SELECT DATE(created_at / 1000, 'unixepoch', 'localtime') as date, COUNT(*) as count
+     FROM saved_words
+     WHERE created_at >= ?
+     GROUP BY DATE(created_at / 1000, 'unixepoch', 'localtime')
+     ORDER BY date ASC`,
+    [rangeStart],
+  );
+  return rows;
 }
 
 export async function updateWordSrs(id: string, srs: SrsCardState): Promise<void> {

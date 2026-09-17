@@ -1,9 +1,10 @@
+import * as Clipboard from 'expo-clipboard';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Dimensions, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Path, Rect } from 'react-native-svg';
 
-import { SpeakerIcon } from '@/components/icons';
+import { ReloadIcon } from '@/components/icons';
 import { speakWord } from '@/features/audio/pronunciationEngine';
 import { logEvent } from '@/features/analytics/analytics';
 import { targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
@@ -14,12 +15,13 @@ import { useTheme } from '@/theme/ThemeProvider';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
-const CARD_WIDTH = 216;
 const POINTER_SIZE = 14;
 const EDGE_MARGIN = 12;
 // Vertical clearance between the tapped word and the card's near edge — the
 // pointer (the little diamond tail) sits inside this gap.
 const WORD_GAP = 16;
+const MIN_CARD_WIDTH = 210;
+const MAX_CARD_WIDTH = Math.min(screenWidth - EDGE_MARGIN * 2, 320);
 
 type WordTranslationPopupProps = {
   word: string | null;
@@ -35,6 +37,7 @@ type WordTranslationPopupProps = {
   sourceLang?: string;
   sourceLangLabel?: string;
   onChangeLanguage?: () => void;
+  showPronunciation?: boolean;
 };
 
 type LoadState =
@@ -68,9 +71,11 @@ export function WordTranslationPopup({
   sourceLang = 'en',
   sourceLangLabel = 'EN',
   onChangeLanguage,
+  showPronunciation = true,
 }: WordTranslationPopupProps) {
   const { colors, typography, spacing, radius } = useTheme();
   const [state, setState] = useState<LoadState>({ status: 'loading' });
+  const [cardWidth, setCardWidth] = useState(MIN_CARD_WIDTH);
   const targetLanguage = useTargetLanguage();
 
   // Show below the word by default; flip above it when the tap is low enough
@@ -78,14 +83,14 @@ export function WordTranslationPopup({
   // horizontally so the card never runs off the left/right edges either.
   const showBelow = !anchor || anchor.y < screenHeight * 0.55;
   const cardLeft = anchor
-    ? Math.min(Math.max(anchor.x - CARD_WIDTH / 2, EDGE_MARGIN), screenWidth - CARD_WIDTH - EDGE_MARGIN)
-    : (screenWidth - CARD_WIDTH) / 2;
+    ? Math.min(Math.max(anchor.x - cardWidth / 2, EDGE_MARGIN), screenWidth - cardWidth - EDGE_MARGIN)
+    : (screenWidth - cardWidth) / 2;
   const pointerLeft = anchor
     ? Math.min(
         Math.max(anchor.x - cardLeft - POINTER_SIZE / 2, EDGE_MARGIN),
-        CARD_WIDTH - POINTER_SIZE - EDGE_MARGIN,
+        cardWidth - POINTER_SIZE - EDGE_MARGIN,
       )
-    : CARD_WIDTH / 2 - POINTER_SIZE / 2;
+    : cardWidth / 2 - POINTER_SIZE / 2;
   const positionStyle = anchor
     ? showBelow
       ? { top: anchor.y + WORD_GAP }
@@ -110,7 +115,6 @@ export function WordTranslationPopup({
         logEvent('translate_tap', { target_lang: targetLanguage });
         if (!cancelled) {
           setState({ status: 'ready', translation: result.translatedText });
-          void speakWord(word, sourceLang, 'normal');
         }
       } catch {
         if (!cancelled) setState({ status: 'error' });
@@ -125,7 +129,15 @@ export function WordTranslationPopup({
   return (
     <Modal visible={word != null} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose}>
-        <View style={[styles.cardWrap, { left: cardLeft }, positionStyle]}>
+        <View
+          style={[styles.cardWrap, { left: cardLeft }, positionStyle]}
+          onLayout={(e) => {
+            const w = Math.round(e.nativeEvent.layout.width);
+            if (w > 0 && Math.abs(w - cardWidth) > 3) {
+              setCardWidth(w);
+            }
+          }}
+        >
           <View
             style={[
               styles.pointer,
@@ -138,18 +150,19 @@ export function WordTranslationPopup({
             onPress={() => {}}
           >
             <View style={styles.headerRow}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, marginRight: 6 }}>
-                <Text numberOfLines={1} style={[typography.metadataCaption, { color: colors.fawn, fontSize: 13, fontWeight: '600' }]}>
+              <View style={styles.wordRow}>
+                <Text numberOfLines={1} style={[typography.metadataCaption, styles.wordText, { color: colors.fawn }]}>
                   {word}
                 </Text>
-                {word ? (
+                {word && showPronunciation ? (
                   <Pressable
                     hitSlop={8}
+                    accessibilityLabel="Repeat pronunciation"
                     onPress={() => void speakWord(word, sourceLang, 'normal')}
                     onLongPress={() => void speakWord(word, sourceLang, 'slow')}
                     style={styles.speakerBtn}
                   >
-                    <SpeakerIcon color={colors.flameAmber} size={13} />
+                    <ReloadIcon color={colors.flameAmber} size={13} />
                   </Pressable>
                 ) : null}
               </View>
@@ -200,7 +213,10 @@ export function WordTranslationPopup({
                   {state.translation}
                 </Text>
                 <View style={styles.buttonRow}>
-                  <Pressable style={[styles.actionButton, { backgroundColor: '#2B2621' }]}>
+                  <Pressable
+                    style={[styles.actionButton, { backgroundColor: '#2B2621' }]}
+                    onPress={() => void Clipboard.setStringAsync(state.translation)}
+                  >
                     <CopyIcon color={colors.lampText} />
                     <Text style={[typography.uiRowTitle, { color: colors.lampText, fontSize: 11 }]}>Copy</Text>
                   </Pressable>
@@ -232,7 +248,9 @@ const styles = StyleSheet.create({
   },
   cardWrap: {
     position: 'absolute',
-    width: CARD_WIDTH,
+    alignSelf: 'flex-start',
+    minWidth: MIN_CARD_WIDTH,
+    maxWidth: MAX_CARD_WIDTH,
   },
   pointer: {
     position: 'absolute',
@@ -252,13 +270,26 @@ const styles = StyleSheet.create({
   },
   headerRow: {
     flexDirection: 'row',
-    alignItems: 'baseline',
+    alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 8,
+  },
+  wordRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexShrink: 1,
+  },
+  wordText: {
+    fontSize: 13,
+    fontWeight: '600',
+    flexShrink: 1,
   },
   pairTag: {
     paddingHorizontal: 6,
     paddingVertical: 3,
     borderRadius: 100,
+    flexShrink: 0,
   },
   buttonRow: {
     flexDirection: 'row',
@@ -278,5 +309,6 @@ const styles = StyleSheet.create({
     padding: 4,
     borderRadius: 100,
     backgroundColor: '#2B2621',
+    flexShrink: 0,
   },
 });

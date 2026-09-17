@@ -14,7 +14,7 @@
 |---|---|---|---|
 | 1 | Paragraph-by-paragraph bilingual parallel view | ✅ | `ReaderPageView.tsx` (60 KB) |
 | 2 | "Parallel Study" ↔ "Full Translation" toggle | ✅ | `ReaderMenuModal.tsx`, `PageStyleSelectorModal.tsx` |
-| 3 | Tap word → instant translation popup | ✅ | `WordTranslationPopup.tsx`, `TappableWords.tsx` |
+| 3 | Tap word → instant translation popup | ✅ | `WordTranslationPopup.tsx`, `TappableWords.tsx` (Copy button wired via `expo-clipboard`, flexible dynamic width sizing, pronunciation replay via `ReloadIcon`) |
 | 4 | Long-press word → save to vocabulary | ✅ | `WordActionMenu.tsx` |
 | 5 | Select sentence → save as highlight/quote | ✅ | `highlights` table in schema, `ReaderPageView.tsx` |
 | 6 | Reading position persistence (resume where you left off) | ✅ | `readingPosition.ts` repository |
@@ -25,7 +25,7 @@
 | 11 | "Continue reading" hide/remove from history | ✅ | schema v5: `continue_hidden` column |
 | 12 | Word-level phonetic stored with save | ⚠️ | `phonetic TEXT` column exists in schema v13 — but `pronunciationEngine.ts` is only 3.7 KB; unclear if phonetic is consistently populated on save |
 | 13 | Paragraph audio (🔊 per paragraph) | ⚠️ | `pronunciationEngine.ts` exists — needs verification that it's wired to the paragraph 🔊 button in `ReaderPageView.tsx` |
-| 14 | Word-level audio on long press (tap 🔊 on a single word) | ❌ | Not found — `WordActionMenu.tsx` and `WordTranslationPopup.tsx` don't reference audio playback |
+| 14 | Word-level audio on long press (tap 🔊 on a single word) | ⚠️ | `WordTranslationPopup.tsx` auto-speaks on success and supports tap (normal) / long-press (slow) replay via `ReloadIcon`; `WordActionMenu.tsx` mount-speak pending (1-I) |
 | 15 | Offline reading (cached book content) | ❌ | Books fetched from `text_url` (schema v3) — no local cache layer found |
 | 16 | Book import (EPUB / PDF / MOBI) | ❌ | No import feature found |
 | 17 | Lemmatization (save root word, not inflected form) | ❌ | Saves raw `source_word` — no stemming/lemmatization logic found |
@@ -57,7 +57,7 @@
 | 29 | SM-2 spaced repetition algorithm | ✅ | `srsAlgorithm.ts` — full SM-2 with Again/Hard/Good/Easy ratings |
 | 30 | SRS stage tracking (New → Learning → Reviewing → Mastered) | ✅ | `srs_stage` column (schema v13), `getStageLabel()` |
 | 31 | SRS review screen (vocabulary tab) | ✅ | `src/app/(tabs)/vocabulary.tsx` (43 KB) |
-| 32 | **Context sentence shown during SRS review** | ❌ | Column exists but `contextSentence` is NOT referenced in `vocabulary.tsx` — data is saved but not displayed during review |
+| 32 | **Context sentence shown during SRS review** | ✅ | Implemented in `FlashcardDeck` (`vocabulary.tsx`) as an interactive blurred tap-to-reveal hint on front of card, and displayed in full context on back |
 | 33 | Vocabulary growth visualization (graph/chart) | ❌ | Not found anywhere |
 | 34 | CEFR level estimation from saved words | ❌ | Not found |
 | 35 | Vocabulary mini-games | ❌ | Not found |
@@ -148,7 +148,7 @@
 
 | # | Feature | Priority | Notes |
 |---|---|---|---|
-| A | **Context sentence shown during SRS review** | 🔴 Critical | Data is already saved in DB — just need to display it in `vocabulary.tsx` |
+| A | **Context sentence shown during SRS review** | ✅ Done | Rendered as tap-to-reveal blurred hint on review card in `vocabulary.tsx` |
 | B | **Word-level audio on long press** | 🔴 Critical | `pronunciationEngine.ts` exists — wire to `WordActionMenu.tsx` |
 | C | **Vocabulary growth graph** | 🔴 Critical | Pure frontend — count saved words by date from existing DB |
 | D | **Culture-matched reading themes** | 🟡 Strong differentiator | Token sets — low effort, high demo impact |

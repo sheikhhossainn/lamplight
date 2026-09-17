@@ -251,7 +251,10 @@ export default function BookDetailScreen() {
 
   const openReader = () => {
     if (!book) return;
-    router.push({ pathname: '/reader/[bookId]', params: { bookId: book.id } });
+    router.push({
+      pathname: '/reader/[bookId]',
+      params: { bookId: book.id, bookTitle: book.title, bookCoverUrl: book.coverUrl ?? '' },
+    });
   };
 
   const handlePressCta = () => {
@@ -451,6 +454,8 @@ export default function BookDetailScreen() {
                       bookId: word.bookId,
                       jumpChapter: String(word.chapterIndex),
                       jumpPage: String(word.pageIndex),
+                      bookTitle: book.title,
+                      bookCoverUrl: book.coverUrl ?? '',
                     },
                   })
                 }

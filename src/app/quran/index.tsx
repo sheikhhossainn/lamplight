@@ -63,7 +63,7 @@ export default function QuranSurahListScreen() {
           onPress={() =>
             push({
               pathname: '/quran/[surahNumber]',
-              params: { surahNumber: String(latestPosition.surahNumber), jumpVerse: String(latestPosition.verseNumber) },
+              params: { surahNumber: String(latestPosition.surahNumber), resumeVerse: String(latestPosition.verseNumber) },
             })
           }
           style={({ pressed }) => [
@@ -104,7 +104,7 @@ export default function QuranSurahListScreen() {
                   pathname: '/quran/[surahNumber]',
                   params: {
                     surahNumber: String(item.number),
-                    ...(pos ? { jumpVerse: String(pos.verseNumber) } : {}),
+                    ...(pos ? { resumeVerse: String(pos.verseNumber) } : {}),
                   },
                 })
               }

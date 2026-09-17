@@ -24,16 +24,14 @@ import type {
   TraditionKey,
 } from './curatedScriptureQA';
 import type { ScriptureInquiryResult } from './scriptureInquiryApi';
-import { fetchScripturalWebContext } from './scriptureWebSearch';
 import { parseCitation } from './citationResolver';
+import { requestScriptureInquiry } from './scriptureInquiryRemote';
 
 type AICitation = {
   surahNumber?: number;
   bookId?: string;
   chapter?: number;
   verseNumber: number;
-  historicalContext?: string;
-  commentaryNote?: string;
 };
 
 type AITraditionBlock = {
@@ -43,7 +41,7 @@ type AITraditionBlock = {
   citations: AICitation[];
 };
 
-type AIResponseSchema = {
+export type AIResponseSchema = {
   topicBackground: string;
   traditions: AITraditionBlock[];
 };
@@ -133,63 +131,10 @@ const GROQ_MODELS = [
 ];
 
 /**
- * Calls Groq AI endpoint with web-grounded supplementary context.
+ * Calls the protected server endpoint for citation candidates only.
  */
-async function callLLMEndpoint(query: string, webContext?: string): Promise<AIResponseSchema | null> {
-  const groqKey = process.env.EXPO_PUBLIC_GROQ_API_KEY;
-  if (!groqKey) {
-    return null;
-  }
-
-  const endpoint = 'https://api.groq.com/openai/v1/chat/completions';
-  const userContent = webContext
-    ? `User Inquiry: ${query}\n\nSupplementary Scholarly Records & Theological Literature:\n${webContext}`
-    : `User Inquiry: ${query}`;
-
-  for (const model of GROQ_MODELS) {
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 12000);
-
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${groqKey}`,
-        },
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: 'system', content: SYSTEM_PROMPT },
-            { role: 'user', content: userContent },
-          ],
-          temperature: 0.1,
-          response_format: { type: 'json_object' },
-          max_tokens: 1800,
-        }),
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeout);
-
-      if (!res.ok) continue;
-
-      const data = (await res.json()) as {
-        choices?: { message?: { content?: string } }[];
-      };
-      const content = data.choices?.[0]?.message?.content;
-      if (!content) continue;
-
-      const parsed = extractJSON<AIResponseSchema>(content);
-      if (parsed && Array.isArray(parsed.traditions) && parsed.traditions.length > 0) {
-        return parsed;
-      }
-    } catch {
-      // Continue to next model in cascade
-    }
-  }
-
-  return null;
+async function callLLMEndpoint(query: string, signal?: AbortSignal): Promise<AIResponseSchema | null> {
+  return requestScriptureInquiry(query, signal);
 }
 
 export function normalizeTraditionKey(raw: string): TraditionKey | null {
@@ -226,10 +171,9 @@ function hydrateAndVerifyTraditionVerses(
           originalText: verseObj.textArabic,
           translation: verseObj.textEnglish,
           historicalContext:
-            cite.historicalContext ||
             `Surah ${meta?.nameEnglish ?? cite.surahNumber} (${meta?.revelationType ?? 'Medina'}), Verse ${cite.verseNumber}.`,
           classicalCommentary:
-            verseObj.textTafsir ? `Tafsir al-Jalalayn: ${verseObj.textTafsir}` : cite.commentaryNote,
+            verseObj.textTafsir ? `Tafsir al-Jalalayn: ${verseObj.textTafsir}` : undefined,
         });
       }
     } else if (tradition === 'bible-nt' && cite.bookId && cite.chapter && cite.verseNumber) {
@@ -252,11 +196,11 @@ function hydrateAndVerifyTraditionVerses(
           verseNumber: cite.verseNumber,
           translation: verseObj.verse.text,
           historicalContext:
-            cite.historicalContext || `Apostolic record in ${meta?.name ?? bookId}, Chapter ${cite.chapter}.`,
+            `Apostolic record in ${meta?.name ?? bookId}, Chapter ${cite.chapter}.`,
           classicalCommentary:
             verseObj.verse.commentary
               ? `Jamieson-Fausset-Brown: ${verseObj.verse.commentary}`
-              : cite.commentaryNote,
+              : undefined,
         });
       }
     } else if (
@@ -284,11 +228,11 @@ function hydrateAndVerifyTraditionVerses(
           verseNumber: cite.verseNumber,
           translation: verseObj.verse.text,
           historicalContext:
-            cite.historicalContext || `Biblical record in ${meta?.name ?? bookId}, Chapter ${cite.chapter}.`,
+            `Biblical record in ${meta?.name ?? bookId}, Chapter ${cite.chapter}.`,
           classicalCommentary:
             verseObj.verse.commentary
               ? `Jamieson-Fausset-Brown: ${verseObj.verse.commentary}`
-              : cite.commentaryNote,
+              : undefined,
         });
       }
     } else if (tradition === 'vedas' && cite.bookId && cite.chapter && cite.verseNumber) {
@@ -306,8 +250,8 @@ function hydrateAndVerifyTraditionVerses(
           verseNumber: cite.verseNumber,
           translation: verseObj.verse.text,
           historicalContext:
-            cite.historicalContext || `Vedic hymn in ${meta?.name ?? cite.bookId}, Hymn ${cite.chapter}.`,
-          classicalCommentary: cite.commentaryNote,
+            `Vedic hymn in ${meta?.name ?? cite.bookId}, Hymn ${cite.chapter}.`,
+          classicalCommentary: undefined,
         });
       }
     }
@@ -591,17 +535,17 @@ function searchInternalScriptureDatasets(query: string): TraditionGroup[] {
 
 /**
  * Main AI Scripture Inference Engine:
- * 1. Fetches supplementary theological & historical context from external open records.
- * 2. Queries live LLM endpoint with grounded context and strict multi-tradition directives.
- * 3. Hydrates and cross-checks every citation against our local verified databases.
- * 4. Merges and supplements missing canons from exhaustive internal search.
+ * 1. Requests citation candidates from the protected server endpoint.
+ * 2. Hydrates and cross-checks every citation against local verified databases.
+ * 3. Merges and supplements missing canons from exhaustive internal search.
  */
-export async function askAIScriptureInquiry(query: string): Promise<ScriptureInquiryResult> {
-  // Step 1: Gather supplementary theological records & web context
-  const webContext = await fetchScripturalWebContext(query);
-
-  // Step 2: Try Live AI Model with web-grounded prompt
-  const aiRaw = await callLLMEndpoint(query, webContext);
+export async function askAIScriptureInquiry(
+  query: string,
+  options: { allowRemote?: boolean; signal?: AbortSignal } = {},
+): Promise<ScriptureInquiryResult> {
+  // AI returns candidate citations only. Every displayed verse is still hydrated
+  // from the bundled scripture data below.
+  const aiRaw = options.allowRemote === false ? null : await callLLMEndpoint(query, options.signal);
 
   if (aiRaw && Array.isArray(aiRaw.traditions) && aiRaw.traditions.length > 0) {
     const hydratedTraditions: TraditionGroup[] = [];
@@ -623,7 +567,12 @@ export async function askAIScriptureInquiry(query: string): Promise<ScriptureInq
     // If a major tradition had 0 citations from the LLM, supplement from internal search
     if (hydratedTraditions.length > 0) {
       const coveredTraditions = new Set(hydratedTraditions.map((t) => t.tradition));
-      if (!coveredTraditions.has('quran') || !coveredTraditions.has('torah') || !coveredTraditions.has('bible-nt')) {
+      if (
+        !coveredTraditions.has('quran') ||
+        !coveredTraditions.has('torah') ||
+        !coveredTraditions.has('bible-nt') ||
+        !coveredTraditions.has('vedas')
+      ) {
         const supplementalTraditions = searchInternalScriptureDatasets(query);
         for (const supp of supplementalTraditions) {
           if (!coveredTraditions.has(supp.tradition)) {
@@ -636,9 +585,7 @@ export async function askAIScriptureInquiry(query: string): Promise<ScriptureInq
         id: `ai-${Date.now()}`,
         question: query,
         shortTitle: query.length > 32 ? `${query.slice(0, 32)}...` : query,
-        topicBackground:
-          aiRaw.topicBackground ||
-          `Comparative scriptural examination for "${query}". Explore primary texts, original scripts, and verified contexts across traditions below.`,
+        topicBackground: `AI-guided citation discovery for "${query}". The passages below are verified against Lamplight's bundled scripture texts.`,
         traditions: hydratedTraditions,
         isCurated: false,
       };

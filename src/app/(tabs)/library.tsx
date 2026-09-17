@@ -151,7 +151,10 @@ export default function LibraryScreen() {
     if (!isBookCached(b.id)) {
       setDownloadConfirmBook(b);
     } else {
-      router.push({ pathname: '/reader/[bookId]', params: { bookId: b.id } });
+      router.push({
+        pathname: '/reader/[bookId]',
+        params: { bookId: b.id, bookTitle: b.title, bookCoverUrl: b.coverUrl ?? '' },
+      });
     }
   }, []);
 
@@ -998,7 +1001,10 @@ export default function LibraryScreen() {
           onConfirm={() => {
             const b = downloadConfirmBook;
             setDownloadConfirmBook(null);
-            router.push({ pathname: '/reader/[bookId]', params: { bookId: b.id } });
+            router.push({
+              pathname: '/reader/[bookId]',
+              params: { bookId: b.id, bookTitle: b.title, bookCoverUrl: b.coverUrl ?? '' },
+            });
           }}
           onCancel={() => setDownloadConfirmBook(null)}
         />

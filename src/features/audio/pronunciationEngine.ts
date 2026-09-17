@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Alert, Linking, Platform } from 'react-native';
 import * as Speech from 'expo-speech';
 
 export type SpeechRate = 'normal' | 'slow';
@@ -6,6 +7,50 @@ export type SpeechRate = 'normal' | 'slow';
 const RATE_VALUES: Record<SpeechRate, number> = {
   normal: 0.95,
   slow: 0.72,
+};
+
+const SPEECH_LOCALES: Record<string, string> = {
+  en: 'en-US',
+  ar: 'ar-SA',
+  bn: 'bn-BD',
+  cs: 'cs-CZ',
+  da: 'da-DK',
+  de: 'de-DE',
+  el: 'el-GR',
+  es: 'es-ES',
+  fa: 'fa-IR',
+  fi: 'fi-FI',
+  fr: 'fr-FR',
+  gu: 'gu-IN',
+  he: 'he-IL',
+  hi: 'hi-IN',
+  hu: 'hu-HU',
+  id: 'id-ID',
+  it: 'it-IT',
+  ja: 'ja-JP',
+  ko: 'ko-KR',
+  ms: 'ms-MY',
+  mr: 'mr-IN',
+  nl: 'nl-NL',
+  no: 'nb-NO',
+  pa: 'pa-IN',
+  pl: 'pl-PL',
+  pt: 'pt-BR',
+  ro: 'ro-RO',
+  ru: 'ru-RU',
+  sv: 'sv-SE',
+  sw: 'sw-KE',
+  ta: 'ta-IN',
+  te: 'te-IN',
+  th: 'th-TH',
+  tl: 'fil-PH',
+  tr: 'tr-TR',
+  uk: 'uk-UA',
+  ur: 'ur-PK',
+  vi: 'vi-VN',
+  'zh-cn': 'zh-CN',
+  'zh-tw': 'zh-TW',
+  zh: 'zh-CN',
 };
 
 let currentSpeechId: string | null = null;
@@ -41,31 +86,89 @@ export function useCurrentSpeechId(): string | null {
 }
 
 /**
- * Normalizes language codes for expo-speech.
- * e.g., 'en' -> 'en-US', 'bn' -> 'bn-BD', 'ja' -> 'ja-JP', 'ko' -> 'ko-KR'
+ * Warms up the native TTS engine in background so the first tap speaks instantly.
  */
-export function getSpeechLocale(langCode: string): string {
-  const code = langCode.toLowerCase().trim();
-  switch (code) {
-    case 'en':
-      return 'en-US';
-    case 'bn':
-      return 'bn-BD';
-    case 'ja':
-      return 'ja-JP';
-    case 'ko':
-      return 'ko-KR';
-    case 'ar':
-      return 'ar-SA';
-    case 'es':
-      return 'es-ES';
-    case 'fr':
-      return 'fr-FR';
-    case 'de':
-      return 'de-DE';
-    default:
-      return code.includes('-') ? code : `${code}-${code.toUpperCase()}`;
+export function warmUpSpeechEngine(): void {
+  try {
+    void Speech.isSpeakingAsync();
+  } catch {
+    // Ignore warmup errors
   }
+}
+
+// Pre-warm the native TTS engine immediately when audio module loads
+warmUpSpeechEngine();
+
+/**
+ * Resolves every configured reading language to a voice locale. expo-speech
+ * accepts BCP 47 on iOS, while its Android module constructs `Locale(language)`
+ * and therefore needs the primary language code.
+ */
+export function getSpeechLocale(langCode?: string | null): string {
+  const normalized = (langCode || 'en').toLowerCase().trim().replace(/_/g, '-');
+  const primary = normalized.split('-')[0] || 'en';
+  const locale = SPEECH_LOCALES[normalized] ?? SPEECH_LOCALES[primary] ?? SPEECH_LOCALES.en;
+
+  return Platform.OS === 'android' ? locale.split('-')[0] : locale;
+}
+
+/**
+ * Returns null when the platform cannot provide its installed-voice list, so
+ * callers never mistake an unavailable API for a missing language pack.
+ */
+export async function hasSpeechVoiceForLanguage(langCode: string): Promise<boolean | null> {
+  try {
+    const voices = await Speech.getAvailableVoicesAsync();
+    if (voices.length === 0) return null;
+
+    const normalized = langCode.toLowerCase().trim().replace(/_/g, '-');
+    const requestedPrimary = normalized.split('-')[0];
+    const localePrimary = getSpeechLocale(langCode).split('-')[0].toLowerCase();
+
+    return voices.some((voice) => {
+      const voicePrimary = voice.language.toLowerCase().split(/[-_]/)[0];
+      return voicePrimary === requestedPrimary || voicePrimary === localePrimary;
+    });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Offers, but never starts, a system voice download after the learner chooses
+ * a language without an installed TTS voice.
+ */
+export async function offerSpeechVoiceSetup(langCode: string, languageName: string): Promise<void> {
+  if (Platform.OS === 'web' || (await hasSpeechVoiceForLanguage(langCode)) !== false) return;
+
+  if (Platform.OS === 'android') {
+    Alert.alert(
+      `Download ${languageName} voice?`,
+      'Pronunciation uses your device’s text-to-speech voice. Android will show its own download screen, where you can choose whether to install it.',
+      [
+        { text: 'Not now', style: 'cancel' },
+        {
+          text: 'Open download',
+          onPress: () => {
+            void Linking.sendIntent('android.speech.tts.engine.INSTALL_TTS_DATA').catch(() => {
+              Alert.alert(
+                'Open text-to-speech settings',
+                'Your device did not provide a voice-download screen. Open Settings > System > Language & input > Text-to-speech output to install a voice.',
+                [{ text: 'Got it' }],
+              );
+            });
+          },
+        },
+      ],
+    );
+    return;
+  }
+
+  Alert.alert(
+    `Download ${languageName} voice`,
+    'To enable pronunciation, download this voice in Settings > Accessibility > Spoken Content > Voices, then return to Lamplight.',
+    [{ text: 'Got it' }],
+  );
 }
 
 /**
@@ -87,7 +190,7 @@ export async function toggleSpeech(
       return;
     }
 
-    await stopSpeech();
+    void Speech.stop();
     notifySpeechListeners(id);
 
     const locale = getSpeechLocale(langCode);
@@ -117,7 +220,8 @@ export async function speakWord(
   if (!clean) return;
 
   try {
-    await stopSpeech();
+    // Non-blocking fire-and-forget stop so speech isn't delayed by async bridge latency
+    void Speech.stop();
     notifySpeechListeners(`word_${clean.toLowerCase()}`);
 
     const locale = getSpeechLocale(langCode);

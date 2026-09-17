@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Path } from 'react-native-svg';
 
 import { CloseIcon } from '@/components/icons';
+import { offerSpeechVoiceSetup } from '@/features/audio/pronunciationEngine';
 import { TARGET_LANGUAGES, type TargetLanguage } from '@/features/settings/languagePair';
 import { useTheme } from '@/theme/ThemeProvider';
 
@@ -114,6 +115,7 @@ export function LanguagePicker({ visible, selected, onSelect, onClose }: Languag
                   onPress={() => {
                     Keyboard.dismiss();
                     onSelect(item.code);
+                    void offerSpeechVoiceSetup(item.code, item.name);
                   }}
                   style={[
                     styles.row,

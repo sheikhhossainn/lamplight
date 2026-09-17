@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, View, type ViewToken } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View, type ViewToken } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BookmarkIcon, ChevronLeftIcon, ChevronRightIcon, ShareIcon } from '@/components/icons';
@@ -34,16 +34,6 @@ function verseKey(chapter: number, verse: number): string {
   return `${chapter}:${verse}`;
 }
 
-function estimateVedasVerseOffset(verses: FlatVerse[], targetIndex: number): number {
-  let offset = 0;
-  for (let i = 0; i < targetIndex && i < verses.length; i++) {
-    const v = verses[i];
-    const lines = Math.max(1, Math.ceil((v.verse.text?.length ?? 0) / 42));
-    offset += lines * 34 + 56;
-  }
-  return offset;
-}
-
 export default function VedasVerseReaderScreen() {
   const { bookId, jumpChapter, jumpVerse } = useLocalSearchParams<{
     bookId: string;
@@ -60,20 +50,33 @@ export default function VedasVerseReaderScreen() {
     return jumpChapter ? Number(jumpChapter) : 1;
   });
 
-  useEffect(() => {
-    if (jumpChapter) {
-      setCurrentChapter(Number(jumpChapter));
-    }
-  }, [jumpChapter]);
+  const [resumePosition, setResumePosition] = useState<
+    { chapter: number; verse: number } | null | undefined
+  >(undefined);
 
   useEffect(() => {
-    if (!jumpChapter) {
-      void getBibleReadingPosition(bookId).then((pos) => {
-        if (pos?.chapter) {
-          setCurrentChapter(pos.chapter);
-        }
-      });
+    let cancelled = false;
+    if (jumpChapter) {
+      setCurrentChapter(Number(jumpChapter));
+      setResumePosition(null);
+      return () => {
+        cancelled = true;
+      };
     }
+
+    setResumePosition(undefined);
+    void getBibleReadingPosition(bookId).then((position) => {
+      if (cancelled) return;
+      if (position?.chapter) {
+        setCurrentChapter(position.chapter);
+        setResumePosition({ chapter: position.chapter, verse: position.verse });
+      } else {
+        setResumePosition(null);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [bookId, jumpChapter]);
 
   const bookMeta = getBookMeta(bookId);
@@ -102,6 +105,7 @@ export default function VedasVerseReaderScreen() {
     return jumpChapter && jumpVerse ? verseKey(Number(jumpChapter), Number(jumpVerse)) : null;
   });
   const [isReady, setIsReady] = useState(false);
+  const [isPositionReady, setIsPositionReady] = useState(false);
   const initialScrollDone = useRef(false);
   const isUserInteracting = useRef(false);
 
@@ -111,13 +115,8 @@ export default function VedasVerseReaderScreen() {
   }, []);
 
   useEffect(() => {
-    void (async () => {
-      const existing = await getBibleReadingPosition(bookId);
-      const targetChapter = jumpChapter ? Number(jumpChapter) : (existing?.chapter ?? 1);
-      const targetVerse = jumpVerse ? Number(jumpVerse) : (existing?.verse ?? 1);
-      await upsertBibleReadingPosition({ bookId, chapter: targetChapter, verse: targetVerse });
-    })();
-  }, [bookId, jumpChapter, jumpVerse]);
+    setIsPositionReady(false);
+  }, [bookId, jumpChapter]);
 
   const visibleIndicesRef = useRef<Set<number>>(new Set());
   const pendingTargetRef = useRef<{ index: number; key: string } | null>(null);
@@ -141,32 +140,35 @@ export default function VedasVerseReaderScreen() {
   const onScrollToIndexFailed = useCallback(
     (info: { index: number; highestMeasuredFrameIndex: number; averageItemLength: number }) => {
       scrollRetries.current += 1;
-      const estimatedOffset = estimateVedasVerseOffset(verses, info.index);
       listRef.current?.scrollToOffset({
-        offset: Math.max(0, estimatedOffset - 40),
+        offset: Math.max(0, info.averageItemLength * info.index - info.averageItemLength * 0.2),
         animated: false,
       });
 
       if (scrollRetryTimer.current) clearTimeout(scrollRetryTimer.current);
-      if (scrollRetries.current <= 5) {
-        const delay = Math.min(60 * scrollRetries.current, 240);
+      if (scrollRetries.current <= 12) {
+        const delay = Math.min(80 * scrollRetries.current, 320);
         scrollRetryTimer.current = setTimeout(() => {
           performScrollToTarget(info.index);
         }, delay);
       }
     },
-    [verses, performScrollToTarget],
+    [performScrollToTarget],
   );
 
   const handleTarget = useCallback(
     (targetIndex: number, targetKey: string) => {
       setLandingVerseKey(targetKey);
 
-      if (targetIndex < 0) return;
+      if (targetIndex < 0) {
+        setIsPositionReady(true);
+        return;
+      }
 
       // If the verse is already fully visible on screen, DO NOT scroll!
       if (visibleIndicesRef.current.has(targetIndex)) {
         pendingTargetRef.current = null;
+        setIsPositionReady(true);
         if (landingTimerRef.current) clearTimeout(landingTimerRef.current);
         landingTimerRef.current = setTimeout(() => {
           setLandingVerseKey(null);
@@ -175,13 +177,14 @@ export default function VedasVerseReaderScreen() {
       }
 
       pendingTargetRef.current = { index: targetIndex, key: targetKey };
+      scrollRetries.current = 0;
       performScrollToTarget(targetIndex);
     },
     [performScrollToTarget],
   );
 
   useEffect(() => {
-    if (!isReady) return;
+    if (!isReady || (!jumpVerse && !jumpChapter && resumePosition === undefined)) return;
 
     if (jumpVerse && (jumpChapter === undefined || Number(jumpChapter) === currentChapter)) {
       const vNum = Number(jumpVerse);
@@ -189,17 +192,15 @@ export default function VedasVerseReaderScreen() {
         (v) => v.chapter === currentChapter && v.verse.number === vNum,
       );
       handleTarget(index, verseKey(currentChapter, vNum));
-    } else if (!jumpChapter) {
-      void getBibleReadingPosition(bookId).then((pos) => {
-        if (pos && pos.chapter === currentChapter) {
-          const index = verses.findIndex(
-            (v) => v.chapter === currentChapter && v.verse.number === pos.verse,
-          );
-          handleTarget(index, verseKey(currentChapter, pos.verse));
-        } else {
-          initialScrollDone.current = true;
-        }
-      });
+    } else if (!jumpChapter && resumePosition) {
+      if (resumePosition.chapter !== currentChapter) return;
+      const index = verses.findIndex(
+        (v) => v.chapter === currentChapter && v.verse.number === resumePosition.verse,
+      );
+      handleTarget(index, verseKey(currentChapter, resumePosition.verse));
+    } else {
+      initialScrollDone.current = true;
+      setIsPositionReady(true);
     }
 
     const fallbackTimer = setTimeout(() => {
@@ -216,7 +217,7 @@ export default function VedasVerseReaderScreen() {
       if (scrollRetryTimer.current) clearTimeout(scrollRetryTimer.current);
       clearTimeout(fallbackTimer);
     };
-  }, [jumpChapter, jumpVerse, verses, bookId, currentChapter, isReady, handleTarget, performScrollToTarget]);
+  }, [jumpChapter, jumpVerse, verses, currentChapter, isReady, resumePosition, handleTarget, performScrollToTarget]);
 
   const highlightByVerse = useMemo(
     () => new Map(highlights.map((h) => [verseKey(h.chapter, h.verse), h])),
@@ -289,6 +290,7 @@ export default function VedasVerseReaderScreen() {
       if (pending) {
         if (visible.has(pending.index)) {
           pendingTargetRef.current = null;
+          setIsPositionReady(true);
           scrollRetries.current = 0;
           if (scrollRetryTimer.current) clearTimeout(scrollRetryTimer.current);
 
@@ -296,8 +298,6 @@ export default function VedasVerseReaderScreen() {
           landingTimerRef.current = setTimeout(() => {
             setLandingVerseKey(null);
           }, 3500);
-        } else {
-          performScrollToTarget(pending.index);
         }
       }
 
@@ -350,9 +350,12 @@ export default function VedasVerseReaderScreen() {
       </View>
 
       {isReady ? (
+        <>
         <FlatList
           ref={listRef}
           data={verses}
+          style={{ opacity: isPositionReady ? 1 : 0 }}
+          pointerEvents={isPositionReady ? 'auto' : 'none'}
           keyExtractor={(item) => verseKey(item.chapter, item.verse.number)}
           extraData={`${landingVerseKey}-${highlightByVerse.size}`}
           initialNumToRender={20}
@@ -452,7 +455,7 @@ export default function VedasVerseReaderScreen() {
                   <TappableWords
                     text={item.verse.text}
                     cleanWord={cleanWordForLookup}
-                    style={[typography.readingBody, { color: colors.ink, flex: 1 }]}
+                    style={[typography.scriptureVerse, { color: colors.ink, flex: 1 }]}
                     onWordLongPress={(word, anchor) =>
                       setHeldWord({ word, chapter: item.chapter, verseNumber: item.verse.number, anchor })
                     }
@@ -483,11 +486,18 @@ export default function VedasVerseReaderScreen() {
           );
         }}
       />
+        {!isPositionReady ? (
+          <View pointerEvents="none" style={styles.restoreLoader}>
+            <ActivityIndicator size="small" color={colors.flameAmber} />
+          </View>
+        ) : null}
+        </>
     ) : null}
 
       <WordActionMenu
         word={heldWord?.word ?? null}
         anchor={heldWord?.anchor ?? null}
+        showPronunciation={false}
         saveLabel={
           heldWord && highlightByVerse.has(verseKey(heldWord.chapter, heldWord.verseNumber))
             ? 'Remove highlight'
@@ -507,6 +517,7 @@ export default function VedasVerseReaderScreen() {
       <WordTranslationPopup
         word={activeWord?.word ?? null}
         anchor={activeWord?.anchor ?? null}
+        showPronunciation={false}
         onClose={() => setActiveWord(null)}
         onSave={handleSaveTranslation}
       />
@@ -515,6 +526,11 @@ export default function VedasVerseReaderScreen() {
 }
 
 const styles = StyleSheet.create({
+  restoreLoader: {
+    ...StyleSheet.absoluteFill,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   topRow: {
     flexDirection: 'row',
     alignItems: 'center',

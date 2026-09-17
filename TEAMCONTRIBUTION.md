@@ -1,4 +1,4 @@
-﻿# Lamplight — Team Contribution & Engineering Guidelines
+# Lamplight — Team Contribution & Engineering Guidelines
 
 Welcome to Lamplight. We are building a universal language learning platform built around reading free books — any language, any direction — paired with the world's first cross-scripture AI comparison engine. Built for Shipathon 2026.
 
@@ -16,13 +16,13 @@ Welcome to Lamplight. We are building a universal language learning platform bui
 
 ## 1. sheikhhossainn — Vocabulary, SRS & Translation
 
-### 1-A. Fix: Copy Button in Word Translation Popup
-**File:** `src/features/reader/components/WordTranslationPopup.tsx` line 203
-The Copy button renders with no `onPress`. Wire `Clipboard.setString(state.translation)` from `expo-clipboard`.
+### 1-A. Fix: Copy Button in Word Translation Popup — ✅ Completed
+**File:** `src/features/reader/components/WordTranslationPopup.tsx`
+The Copy button renders with `Clipboard.setStringAsync(state.translation)` from `expo-clipboard`, along with dynamic card width adaptation and pronunciation replay via `ReloadIcon`.
 
-### 1-B. Fix: Context Sentence Shown During SRS Review — Most impactful
+### 1-B. Fix: Context Sentence Shown During SRS Review — ✅ Completed
 **File:** `src/app/(tabs)/vocabulary.tsx`
-`contextSentence` is already saved in every `saved_words` row and fetched by `listDueWords()` — it just isn't rendered. Show it on the review card as a blurred hint the user taps to reveal. No DB changes needed.
+Rendered on the front of the SRS flashcard as a blurred hint with a "Context hint · Tap to reveal" badge and haptic feedback, and fully displayed in context on the back of the card.
 
 ### 1-C. Fix: SRS Review Flood
 **File:** `src/db/repositories/savedWords.ts` > `listDueWords()`

@@ -60,6 +60,15 @@ export const LamplightTypography = {
     lineHeight: 34, // 18 * 1.88 — spacious manuscript line-height for clean legibility
     letterSpacing: 0.2,
   },
+  // Scripture readers intentionally do not inherit prose-reader font or page
+  // style preferences. These preserve their established verse treatment even
+  // when the book reader evolves.
+  scriptureVerse: {
+    fontFamily: FontFamily.loraRegular,
+    fontSize: 18,
+    lineHeight: 34,
+    letterSpacing: 0,
+  },
   banglaReadingBody: {
     fontFamily: FontFamily.atmaMedium,
     fontSize: 18.5,
@@ -168,6 +177,13 @@ export const LamplightTypography = {
     fontFamily: FontFamily.amiriRegular,
     fontSize: 24,
     lineHeight: 46, // generous clearance for stacked diacritics (tashkeel)
+    letterSpacing: 0,
+    writingDirection: 'rtl',
+  },
+  scriptureArabicVerse: {
+    fontFamily: FontFamily.amiriRegular,
+    fontSize: 24,
+    lineHeight: 46,
     letterSpacing: 0,
     writingDirection: 'rtl',
   },

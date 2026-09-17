@@ -23,6 +23,7 @@ import {
   queryScriptureInquiry,
   type ScriptureInquiryResult,
 } from './scriptureInquiryApi';
+import { saveInquiryToCache } from './inquiryCache';
 import { ScriptureInquirySpinner } from './ScriptureInquirySpinner';
 import { SACRED_TRADITION_EMBLEMS, IslamEmblem } from './TraditionEmblems';
 
@@ -41,11 +42,18 @@ export function ScriptureInquiryDeck({ questionQuery, initialTradition }: Script
   const [selectedTraditionIndex, setSelectedTraditionIndex] = useState(0);
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
   const [loadingStep, setLoadingStep] = useState(0);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [requestVersion, setRequestVersion] = useState(0);
+  const [isInquirySaved, setIsInquirySaved] = useState(false);
 
   useEffect(() => {
     let mounted = true;
+    const controller = new AbortController();
     setLoading(true);
     setLoadingStep(0);
+    setErrorMessage(null);
+    setData(null);
+    setIsInquirySaved(false);
 
     const timer1 = setTimeout(() => {
       if (mounted) setLoadingStep(1);
@@ -59,10 +67,11 @@ export function ScriptureInquiryDeck({ questionQuery, initialTradition }: Script
       if (mounted) setLoadingStep(3);
     }, 4200);
 
-    queryScriptureInquiry(questionQuery)
+    queryScriptureInquiry(questionQuery, { signal: controller.signal })
       .then((res) => {
         if (mounted) {
           setData(res);
+          setIsInquirySaved(Boolean(res.isFromCache));
           const preferredTradition = initialTradition || res.initialTradition;
           if (preferredTradition) {
             const idx = res.traditions.findIndex(
@@ -78,17 +87,35 @@ export function ScriptureInquiryDeck({ questionQuery, initialTradition }: Script
           setLoading(false);
         }
       })
-      .catch(() => {
-        if (mounted) setLoading(false);
+      .catch((error: unknown) => {
+        if (mounted) {
+          setLoading(false);
+          setErrorMessage(
+            error instanceof Error && error.name === 'AbortError'
+              ? 'The request was cancelled.'
+              : 'We could not load this inquiry. Check your connection and try again.',
+          );
+        }
       });
 
     return () => {
       mounted = false;
+      controller.abort();
       clearTimeout(timer1);
       clearTimeout(timer2);
       clearTimeout(timer3);
     };
-  }, [questionQuery]);
+  }, [questionQuery, initialTradition, requestVersion]);
+
+  const handleSaveInquiry = async () => {
+    if (!data || isInquirySaved) return;
+    try {
+      await saveInquiryToCache(data.question, data);
+      setIsInquirySaved(true);
+    } catch {
+      // Saving history is optional and must never interrupt reading.
+    }
+  };
 
   // Deep linking directly into scripture readers with auto-scroll & highlight illumination
   const handleReadChapter = (verse: ScriptureQAVerse) => {
@@ -237,7 +264,7 @@ export function ScriptureInquiryDeck({ questionQuery, initialTradition }: Script
                     { color: colors.flameAmber, fontSize: 10 },
                   ]}
                 >
-                  SCHOLARLY INQUIRY • VERIFIED TEXTS
+                  AI-GUIDED • LOCALLY VERIFIED VERSES
                 </Text>
               </View>
             )}
@@ -412,6 +439,29 @@ export function ScriptureInquiryDeck({ questionQuery, initialTradition }: Script
                 </Text>
               </View>
             )}
+
+            {data.rateLimitNote ? (
+              <Text style={[typography.metadataCaption, { color: colors.progressLabel, marginTop: 10, lineHeight: 18 }]}>
+                {data.rateLimitNote}
+              </Text>
+            ) : null}
+
+            <Pressable
+              onPress={() => void handleSaveInquiry()}
+              disabled={isInquirySaved}
+              style={({ pressed }) => [
+                styles.saveInquiryButton,
+                {
+                  borderColor: colors.hairline,
+                  backgroundColor: colors.card,
+                  opacity: pressed && !isInquirySaved ? 0.7 : 1,
+                },
+              ]}
+            >
+              <Text style={[typography.metadataCaption, { color: isInquirySaved ? colors.fawn : colors.progressLabel }]}>
+                {isInquirySaved ? 'Saved on this device' : 'Save this inquiry on this device'}
+              </Text>
+            </Pressable>
           </View>
 
           {/* Section Header: Choose a Tradition */}
@@ -727,9 +777,32 @@ export function ScriptureInquiryDeck({ questionQuery, initialTradition }: Script
                 })}
               </View>
             </View>
-          ) : null}
+          ) : (
+            <View style={[styles.noResultsCard, { backgroundColor: colors.card, borderColor: colors.hairline }]}>
+              <Text style={[typography.uiRowTitle, { color: colors.ink }]}>No close local matches yet</Text>
+              <Text style={[typography.metadataCaption, { color: colors.umber, marginTop: 6, lineHeight: 19 }]}>
+                Try a more specific topic, scripture reference, or key term.
+              </Text>
+            </View>
+          )}
         </ScrollView>
-      ) : null}
+      ) : (
+        <View style={styles.centerLoading}>
+          <Text style={[typography.screenTitle, { color: colors.ink, textAlign: 'center' }]}>Unable to load inquiry</Text>
+          <Text style={[typography.metadataCaption, { color: colors.umber, textAlign: 'center', marginTop: 8, lineHeight: 19 }]}>
+            {errorMessage ?? 'Please try again.'}
+          </Text>
+          <Pressable
+            onPress={() => setRequestVersion((value) => value + 1)}
+            style={({ pressed }) => [
+              styles.retryButton,
+              { backgroundColor: colors.flameAmber, opacity: pressed ? 0.8 : 1 },
+            ]}
+          >
+            <Text style={[typography.uiRowTitle, { color: colors.primaryDark }]}>Try again</Text>
+          </Pressable>
+        </View>
+      )}
     </View>
   );
 }
@@ -763,6 +836,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: 32,
+  },
+  saveInquiryButton: {
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderRadius: 8,
+    marginTop: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  retryButton: {
+    borderRadius: 8,
+    marginTop: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  noResultsCard: {
+    borderWidth: 1,
+    borderRadius: 12,
+    marginTop: 24,
+    padding: 16,
   },
   scrollContent: {
     paddingHorizontal: 20,

@@ -221,4 +221,35 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE saved_words ADD COLUMN srs_lapses INTEGER NOT NULL DEFAULT 0;
   ALTER TABLE saved_words ADD COLUMN phonetic TEXT;
   `,
+  // v14 — Groq-generated cloze quiz questions and mother-tongue usage notes,
+  //        cached per word so the API is called only once per word ever.
+  `
+  CREATE TABLE IF NOT EXISTS cloze_cache (
+    word_id TEXT PRIMARY KEY,
+    sentence TEXT NOT NULL,
+    answer TEXT NOT NULL,
+    distractors TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS usage_note_cache (
+    word_id TEXT PRIMARY KEY,
+    note TEXT NOT NULL,
+    mother_tongue TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  `,
+  // v15 — Word cluster: usage note + synonyms + antonyms in mother tongue,
+  //        all from one Groq call, cached per (word_id, mother_tongue).
+  `
+  CREATE TABLE IF NOT EXISTS word_cluster_cache (
+    word_id TEXT NOT NULL,
+    mother_tongue TEXT NOT NULL,
+    usage_note TEXT NOT NULL,
+    synonyms TEXT NOT NULL,
+    antonyms TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (word_id, mother_tongue)
+  );
+  `,
 ];

@@ -262,7 +262,11 @@ export default function Homescreen() {
           genre: b.genre,
           totalChapters: b.totalChapters,
           allLabel: 'All Korean Classics →',
-          onPress: () => router.push({ pathname: '/reader/[bookId]', params: { bookId: b.id } }),
+          onPress: () =>
+            router.push({
+              pathname: '/reader/[bookId]',
+              params: { bookId: b.id, bookTitle: b.title, bookCoverUrl: b.coverUrl ?? '' },
+            }),
           onAllPress: () => router.push('/(tabs)/library' as any),
         });
       } else {
@@ -364,7 +368,11 @@ export default function Homescreen() {
     if (latestBook?.id === bookId) {
       router.push({
         pathname: '/reader/[bookId]',
-        params: { bookId },
+        params: {
+          bookId,
+          bookTitle: latestBook.title,
+          bookCoverUrl: latestBook.coverUrl ?? '',
+        },
       });
       return;
     }

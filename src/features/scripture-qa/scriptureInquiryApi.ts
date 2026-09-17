@@ -6,8 +6,9 @@ import {
   type TraditionKey,
 } from './curatedScriptureQA';
 import { askAIScriptureInquiry } from './aiScriptureEngine';
-import { getCachedInquiry, saveInquiryToCache } from './inquiryCache';
+import { getCachedInquiry } from './inquiryCache';
 import { checkAIRateLimit, recordAIRequest } from './inquiryRateLimit';
+import { ScriptureInquiryRateLimitError } from './scriptureInquiryRemote';
 import {
   matchCitationToCuratedQA,
   resolveDirectScriptureVerse,
@@ -244,7 +245,10 @@ export function matchCuratedQA(query: string): { qa: CuratedScriptureQA; initial
  * 4. Novel questions route to the Groq AI Scripture Inference Engine.
  * Always preserves the exact question string the user asked!
  */
-export async function queryScriptureInquiry(query: string): Promise<ScriptureInquiryResult> {
+export async function queryScriptureInquiry(
+  query: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<ScriptureInquiryResult> {
   const trimmed = query.trim();
   if (!trimmed) {
     const defaultQA = CURATED_SCRIPTURE_QA[0];
@@ -293,17 +297,22 @@ export async function queryScriptureInquiry(query: string): Promise<ScriptureInq
 
   // 4. Novel / Unseen Question: Send to AI Scripture Inference Engine
   const rateLimit = checkAIRateLimit();
-  if (rateLimit.allowed) {
-    recordAIRequest();
-  }
-
-  const aiResult = await askAIScriptureInquiry(trimmed);
   if (!rateLimit.allowed) {
-    aiResult.rateLimitNote = rateLimit.adviceMessage;
+    const offlineResult = await askAIScriptureInquiry(trimmed, { allowRemote: false });
+    offlineResult.rateLimitNote = rateLimit.adviceMessage;
+    return offlineResult;
   }
 
-  // 5. Save to device cache so user never pays or burns API quota twice for this inquiry
-  await saveInquiryToCache(trimmed, aiResult);
-
-  return aiResult;
+  try {
+    const aiResult = await askAIScriptureInquiry(trimmed, options);
+    recordAIRequest();
+    return aiResult;
+  } catch (error) {
+    if (error instanceof ScriptureInquiryRateLimitError) {
+      const offlineResult = await askAIScriptureInquiry(trimmed, { allowRemote: false });
+      offlineResult.rateLimitNote = `AI query cooldown active (${error.retryAfterSeconds}s remaining). Showing offline scripture matches instead.`;
+      return offlineResult;
+    }
+    throw error;
+  }
 }

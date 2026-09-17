@@ -29,14 +29,19 @@ const DEFAULT_EASE_FACTOR = 2.5;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const TEN_MINUTES_MS = 10 * 60 * 1000;
 
-export function initialSrsState(): SrsCardState {
+export function nextLocalMidnight(nowMs: number = Date.now()): number {
+  const now = new Date(nowMs);
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getTime();
+}
+
+export function initialSrsState(nowMs: number = Date.now()): SrsCardState {
   return {
     stage: 0,
     intervalDays: 0,
     easeFactor: DEFAULT_EASE_FACTOR,
     reps: 0,
     lapses: 0,
-    dueDate: Date.now(),
+    dueDate: nextLocalMidnight(nowMs),
   };
 }
 

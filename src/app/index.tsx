@@ -1,6 +1,6 @@
 import { Redirect, router } from 'expo-router';
 import { Dimensions, Pressable, StyleSheet, Text, View } from 'react-native';
-import Animated, { Easing, FadeIn, FadeInDown, FadeInUp } from 'react-native-reanimated';
+import Animated, { Easing, FadeIn, FadeInDown, FadeInUp, ReduceMotion } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 
@@ -10,6 +10,7 @@ import { hasCompletedOnboarding } from '@/features/settings/onboardingStatus';
 import { useTheme } from '@/theme/ThemeProvider';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+const EASE_OUT = Easing.bezier(0.23, 1, 0.32, 1);
 
 export default function SplashScreen() {
   const { colors, typography, spacing } = useTheme();
@@ -49,12 +50,12 @@ export default function SplashScreen() {
       </Svg>
 
       <View style={styles.content}>
-        <Animated.View entering={FadeIn.duration(600).easing(Easing.out(Easing.cubic))}>
+        <Animated.View entering={FadeIn.duration(280).easing(EASE_OUT).reduceMotion(ReduceMotion.System)}>
           <FlameGlow size={92} variant="flicker" showTile={false} />
         </Animated.View>
 
         <Animated.View
-          entering={FadeIn.delay(180).duration(500).easing(Easing.out(Easing.cubic))}
+          entering={FadeIn.delay(80).duration(240).easing(EASE_OUT).reduceMotion(ReduceMotion.System)}
           style={{ alignItems: 'center' }}
         >
           <Text
@@ -79,18 +80,20 @@ export default function SplashScreen() {
               },
             ]}
           >
-            A quiet sanctuary to read in original script and learn as you turn each page.
+            Read literature in its original language. Tap unfamiliar words for meaning, then turn them into vocabulary that stays with you.
           </Text>
         </Animated.View>
       </View>
 
       <Animated.View
-        entering={FadeIn.delay(350).duration(450).easing(Easing.out(Easing.cubic))}
+        entering={FadeInUp.delay(140).duration(240).easing(EASE_OUT).reduceMotion(ReduceMotion.System)}
         style={[styles.footer, { bottom: Math.max(insets.bottom + 28, 40) }]}
       >
         <Pressable
           onPress={handleBegin}
           hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel="See how Lamplight works"
           style={({ pressed }) => [
             styles.beginButton,
             {
@@ -112,7 +115,7 @@ export default function SplashScreen() {
               },
             ]}
           >
-            Begin
+            See how it works
           </Text>
           <View style={styles.iconCircle}>
             <ChevronRightIcon color={colors.primaryDark} size={13} />
@@ -143,7 +146,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     height: 46,
-    paddingHorizontal: 26,
+    minWidth: 190,
+    paddingHorizontal: 20,
     borderRadius: 23,
   },
   iconCircle: {

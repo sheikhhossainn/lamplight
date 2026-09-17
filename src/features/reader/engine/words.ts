@@ -5,11 +5,7 @@ export function tokenizeParagraph(paragraph: string): string[] {
 }
 
 export function cleanWordForLookup(token: string): string {
-  // Supports Latin, Bengali, Japanese (Kana & Kanji), and Korean Hangul
-  return token.replace(
-    /^[^A-Za-z\u0980-\u09FF\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF\uAC00-\uD7AF\u1100-\u11FF']+|[^A-Za-z\u0980-\u09FF\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF\uAC00-\uD7AF\u1100-\u11FF']+$/g,
-    '',
-  );
+  return token.normalize('NFC').replace(/^[^\p{L}\p{M}\p{N}\p{Pc}\u200C\u200D']+|[^\p{L}\p{M}\p{N}\p{Pc}\u200C\u200D']+$/gu, '');
 }
 
 // Splits a paragraph into sentence chunks (each keeping its trailing

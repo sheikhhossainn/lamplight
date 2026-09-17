@@ -13,20 +13,14 @@
 
 **Real issues found in code:**
 
-**Issue A — Translation fires immediately on tap, before the user intends to save.**  
-Line 113: `void speakWord(word, sourceLang, 'normal')` is called inside the translation `useEffect`, meaning the word is spoken *at the same time* as the translation is loading. If translation fails (network error), the word was still spoken. Speak only on success — move `speakWord` inside the `status: 'ready'` branch, not alongside it.
+**Issue A — Translation fires immediately on tap, before the user intends to save.** `[RESOLVED]`  
+`speakWord` was moved inside the `status: 'ready'` success branch in `WordTranslationPopup.tsx`, so words are only spoken after a successful translation.
 
-**Issue B — The Copy button on line 203 has no `onPress` handler.**  
-```tsx
-<Pressable style={...}>  // ← no onPress
-  <CopyIcon ... />
-  <Text>Copy</Text>
-</Pressable>
-```
-The Copy action is UI-only, completely non-functional. Either wire `Clipboard.setString(state.translation)` or remove the button until it's implemented.
+**Issue B — The Copy button on line 203 has no `onPress` handler.** `[RESOLVED]`  
+Wired `Clipboard.setStringAsync(state.translation)` using `expo-clipboard`. Added flexible content width and canonical `ReloadIcon` for pronunciation replay.
 
-**Issue C — `checkTranslationCap` does a DB read on every single word tap.**  
-Every tap → `getTodayUsageCount()` → SQLite read → async. For a fast reader tapping frequently this adds latency before the popup even starts translating. Fix: use `getCachedTodayUsageCount()` (already exists in `translationUsageApi.ts`) as the fast-path guard. Only fall back to the real DB read when the cached value is near or at the cap.
+**Issue C — `checkTranslationCap` does a DB read on every single word tap.** `[PENDING — Task 1-G]`  
+Every tap → `getTodayUsageCount()` → SQLite read → async. For a fast reader tapping frequently this adds latency before the popup even starts translating. Fix: use `checkCachedTranslationCap()` as the fast-path guard. Only fall back to the real DB read when the cached value is near or at the cap.
 
 ---
 
@@ -94,8 +88,8 @@ For Bangla and Arabic text, descenders and ascenders are taller than Latin scrip
 
 **Real issues found in code:**
 
-**Issue K — `contextSentence` is fetched from DB in `listDueWords()` but never displayed in `vocabulary.tsx`.**  
-This is the most impactful gap in the whole app. Every saved word already has its context sentence stored. The review card just doesn't show it. A single `<Text>{word.contextSentence}</Text>` in the card UI — shown as a blurred hint the user can reveal — would make LampLight's review cards better than every competitor immediately.
+**Issue K — `contextSentence` is fetched from DB in `listDueWords()` but never displayed in `vocabulary.tsx`.** `[RESOLVED]`  
+Implemented on the front of the SRS flashcard as an interactive blurred tap-to-reveal hint box with haptic feedback, and fully displayed in context on the back of the card.
 
 **Issue L — `listDueWords()` returns ALL due words in one query, no limit.**  
 ```sql
@@ -171,8 +165,8 @@ This directly contradicts the product vision of "any language, any direction." T
 
 | # | File | Issue | Severity |
 |---|---|---|---|
-| A | `WordTranslationPopup.tsx` | Word spoken on error, not just success | Low |
-| B | `WordTranslationPopup.tsx` | Copy button has no `onPress` — completely broken | **High** |
+| A | `WordTranslationPopup.tsx` | Word spoken on error, not just success | ✅ Resolved |
+| B | `WordTranslationPopup.tsx` | Copy button has no `onPress` — completely broken | ✅ Resolved |
 | C | `WordTranslationPopup.tsx` | DB read on every tap for cap check | Medium |
 | D | `WordActionMenu.tsx` | No audio on long-press despite engine being ready | Medium |
 | E | `WordActionMenu.tsx` | Two-menu flow adds unnecessary steps to common path | Low |
@@ -181,7 +175,7 @@ This directly contradicts the product vision of "any language, any direction." T
 | H | `ShareCardScreen.tsx` | No culture-aware card variants | Medium |
 | I | `ShareCardScreen.tsx` | Card doesn't show translated text below the quote | Medium |
 | J | `ShareCardScreen.tsx` | `lineHeight * 1.45` clips Bangla/Arabic/Hindi scripts | Medium |
-| K | `vocabulary.tsx` | `contextSentence` saved but never shown during SRS review | **Critical** |
+| K | `vocabulary.tsx` | `contextSentence` saved but never shown during SRS review | ✅ Resolved |
 | L | `savedWords.ts` | `listDueWords()` has no LIMIT — review floods on neglected decks | **High** |
 | M | `srsAlgorithm.ts` | `initialSrsState` sets dueDate to now — new words flood today's review | Medium |
 | N | `cloudTranslationProvider.ts` | Unofficial Google endpoint — fragile | Low |

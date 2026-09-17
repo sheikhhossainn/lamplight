@@ -4,8 +4,8 @@ import { getSetting, setSetting } from '@/db/repositories/appSettings';
 
 const STORAGE_KEY = 'target_language';
 
-// The bundled/source books are English, so the source side of the pair is fixed
-// — only the learner's target language is a choice. Codes are ISO 639-1 (a few
+// Source language is determined by the book; only the learner's translation
+// target is a choice. Codes are ISO 639-1 (a few
 // with region), passed straight to the translation endpoint's `tl` param. Each
 // carries a full name (for the picker) and a short label (for the pill).
 export const TARGET_LANGUAGES = [

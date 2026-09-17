@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import {
   Dimensions,
   PanResponder,
@@ -25,7 +25,8 @@ import * as Haptics from 'expo-haptics';
 import { SpeakerIcon } from '@/components/icons';
 import { speakWord, toggleSpeech, useCurrentSpeechId } from '@/features/audio/pronunciationEngine';
 import { charAdvance } from '@/features/reader/engine/glyphWidths';
-import { cleanWordForLookup, tokenizeParagraph } from '@/features/reader/engine/words';
+import { cleanWordForLookup } from '@/features/reader/engine/words';
+import { segmentWords } from '@/features/reader/engine/wordSegments';
 import { splitSentences } from '@/features/translation/interlinearParser';
 import type { ReaderPage } from '@/features/reader/engine/paginate';
 import { getPageStyleConfig } from '@/features/reader/pageStyles';
@@ -39,6 +40,8 @@ const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 type ReaderPageViewProps = {
   page: ReaderPage;
   mode?: 'day' | 'lamp';
+  sourceLanguage: string;
+  targetLanguage: string;
   textColor: string;
   topInset: number;
   bottomInset: number;
@@ -128,7 +131,7 @@ type ReaderPageViewProps = {
   }) => void;
 };
 
-type Token = { text: string; word: string | null };
+type Token = { text: string; word: string | null; start: number; end: number };
 type TextLine = { x: number; y: number; width: number; height: number; text: string };
 type ParagraphLayout = { y: number; height: number };
 type HandlePixel = { x: number; top: number; height: number };
@@ -137,35 +140,18 @@ type HandlePixel = { x: number; top: number; height: number };
 // cache the result per paragraph string so it's computed once.
 const tokenCache = new Map<string, Token[]>();
 
-function getTokens(paragraph: string): Token[] {
-  const cached = tokenCache.get(paragraph);
+function getTokens(paragraph: string, sourceLanguage?: string): Token[] {
+  const cacheKey = `${sourceLanguage ?? 'default'}\u0000${paragraph}`;
+  const cached = tokenCache.get(cacheKey);
   if (cached) return cached;
-  const tokens = tokenizeParagraph(paragraph).map((text) => ({
-    text,
-    word: /^\s+$/.test(text) ? null : cleanWordForLookup(text) || null,
+  const tokens = segmentWords(paragraph, sourceLanguage).map((segment) => ({
+    text: segment.text,
+    word: segment.isWordLike ? cleanWordForLookup(segment.text) || null : null,
+    start: segment.start,
+    end: segment.end,
   }));
-  tokenCache.set(paragraph, tokens);
+  tokenCache.set(cacheKey, tokens);
   return tokens;
-}
-
-const tokenOffsetCache = new Map<string, number[]>();
-
-// Start character-offset of each token within the paragraph — the basis for
-// finding a tapped word's real on-screen position via locateOffsetPixel,
-// rather than trusting the touch event's raw coordinates (which nested,
-// adjacent <Text> spans can report slightly off for on some devices).
-function getTokenOffsets(paragraph: string): number[] {
-  const cached = tokenOffsetCache.get(paragraph);
-  if (cached) return cached;
-  const tokens = getTokens(paragraph);
-  const offsets: number[] = [];
-  let offset = 0;
-  for (const token of tokens) {
-    offsets.push(offset);
-    offset += token.text.length;
-  }
-  tokenOffsetCache.set(paragraph, offsets);
-  return offsets;
 }
 
 // Fraction across a line's text (0..1) -> the character-boundary index nearest
@@ -315,62 +301,10 @@ function locateParagraphOffset(
   return { paragraphIndex: bestParagraph, charOffset };
 }
 
-// A tap's position WITHIN a paragraph <Text> (its own locationX/locationY, which
-// share the exact coordinate space of that Text's onTextLayout lines) -> the
-// character offset in the paragraph string. No container-origin math: because
-// the tap and the line geometry are both relative to the same <Text>, this is
-// precise enough to resolve the individual word tapped.
-function lineCharOffset(paragraph: string, lines: TextLine[] | undefined, localX: number, localY: number): number {
-  if (!lines || lines.length === 0) return 0;
-  const lineIndex = nearestLineIndex(lines, localY);
-  const starts = lineStartOffsets(paragraph, lines);
-  return starts[lineIndex] + charInLine(lines[lineIndex], localX);
-}
-
-// A character offset -> the word at it (with its char range, for highlighting).
-// When the offset lands inside a word token, that's the word. When it lands on
-// whitespace/punctuation (the common case: rounding puts a right-of-centre tap
-// on the word's TRAILING space), pick the nearest word token by character
-// distance, breaking ties toward the EARLIER word — because a trailing space
-// belongs to the word just tapped, not the one after it. This is what stops the
-// tap from resolving to the next word.
-function wordAtOffset(paragraph: string, offset: number): { word: string; start: number; end: number } | null {
-  const tokens = getTokens(paragraph);
-  const offsets = getTokenOffsets(paragraph);
-  let ti = 0;
-  for (let i = offsets.length - 1; i >= 0; i -= 1) {
-    if (offset >= offsets[i]) {
-      ti = i;
-      break;
-    }
-  }
-  if (tokens[ti]?.word) {
-    return { word: tokens[ti].word!, start: offsets[ti], end: offsets[ti] + tokens[ti].text.length };
-  }
-
-  let best = -1;
-  let bestDist = Infinity;
-  for (let i = 0; i < tokens.length; i += 1) {
-    if (!tokens[i]?.word) continue;
-    const start = offsets[i];
-    const end = start + tokens[i].text.length;
-    const dist = offset < start ? start - offset : offset >= end ? offset - (end - 1) : 0;
-    // `<` (not `<=`) so an equal-distance later token never displaces an earlier
-    // one — the backward tie-break.
-    if (dist < bestDist) {
-      bestDist = dist;
-      best = i;
-    }
-  }
-  if (best === -1) return null;
-  return { word: tokens[best].word!, start: offsets[best], end: offsets[best] + tokens[best].text.length };
-}
-
-// Build a paragraph's children for the single-<Text> reading render: plain
-// strings for runs of ordinary words (no element created), and a nested <Text>
-// span only for the few words that need a background — saved-vocabulary markers
-// and the word currently being translated (so the reader can see exactly which
-// word their tap landed on).
+// Build a paragraph's children with a native inline target for each word. The
+// punctuation/whitespace immediately after a word shares that target, so a hold
+// on the natural gap beside a word does not become a dead zone. Its visual
+// treatment remains limited to the word itself.
 function renderParagraphRuns(
   tokens: Token[],
   savedWordSet: Set<string>,
@@ -379,36 +313,60 @@ function renderParagraphRuns(
   activeRange: { start: number; end: number } | null,
   activeColor: string,
   activeTextColor: string,
+  highlightRange: { start: number; end: number } | null,
+  highlightColor: string | undefined,
+  paragraphIndex: number,
+  page: ReaderPage,
+  onWordLongPress: ReaderPageViewProps['onWordLongPress'],
 ): (string | ReactElement)[] {
   const children: (string | ReactElement)[] = [];
-  let buffer = '';
   let spanKey = 0;
-  let offset = 0;
-  for (const token of tokens) {
-    const start = offset;
-    const end = offset + token.text.length;
-    offset = end;
-    const isActive = activeRange != null && start === activeRange.start && end === activeRange.end;
-    const isSaved = !isActive && token.word != null && savedWordSet.has(token.word.toLowerCase());
-    if (isActive || isSaved) {
-      if (buffer) {
-        children.push(buffer);
-        buffer = '';
-      }
-      const spanStyle = isActive
-        ? { backgroundColor: activeColor, color: activeTextColor }
-        : { backgroundColor: savedWordColor, color: savedWordTextColor };
-      children.push(
-        <Text key={`s${spanKey}`} style={spanStyle}>
-          {token.text}
-        </Text>,
-      );
-      spanKey += 1;
-    } else {
-      buffer += token.text;
+  for (let tokenIndex = 0; tokenIndex < tokens.length; tokenIndex += 1) {
+    const token = tokens[tokenIndex];
+    if (!token.word) {
+      children.push(token.text);
+      continue;
     }
+
+    let trailingText = '';
+    let trailingIndex = tokenIndex + 1;
+    while (trailingIndex < tokens.length && !tokens[trailingIndex].word) {
+      trailingText += tokens[trailingIndex].text;
+      trailingIndex += 1;
+    }
+
+    const isActive = activeRange != null && token.start === activeRange.start && token.end === activeRange.end;
+    const isSaved = !isActive && token.word != null && savedWordSet.has(token.word.toLowerCase());
+    const isHighlighted = highlightRange != null && token.start < highlightRange.end && token.end > highlightRange.start;
+    const spanStyle = isActive
+      ? { backgroundColor: activeColor, color: activeTextColor }
+      : isSaved
+        ? { backgroundColor: savedWordColor, color: savedWordTextColor }
+        : isHighlighted && highlightColor
+          ? { backgroundColor: highlightColor }
+          : undefined;
+    children.push(
+      <Text
+        key={`s${spanKey}`}
+        onLongPress={(event) =>
+          onWordLongPress({
+            word: token.word!,
+            paragraphIndex,
+            page,
+            start: token.start,
+            end: token.end,
+            pageX: event.nativeEvent.pageX,
+            pageY: event.nativeEvent.pageY,
+          })
+        }
+      >
+        {spanStyle ? <Text style={spanStyle}>{token.text}</Text> : token.text}
+        {trailingText}
+      </Text>,
+    );
+    spanKey += 1;
+    tokenIndex = trailingIndex - 1;
   }
-  if (buffer) children.push(buffer);
   return children;
 }
 
@@ -470,6 +428,8 @@ function locateOffsetPixel(
 function ReaderPageViewImpl({
   page,
   mode = 'day',
+  sourceLanguage,
+  targetLanguage,
   textColor,
   topInset,
   bottomInset,
@@ -583,11 +543,30 @@ function ReaderPageViewImpl({
   }));
 
   const paragraphTokens = useMemo(
-    () => page.paragraphs.map((paragraph) => getTokens(paragraph)),
-    [page.paragraphs],
+    () => page.paragraphs.map((paragraph) => getTokens(paragraph, sourceLanguage)),
+    [page.paragraphs, sourceLanguage],
   );
 
   const baseParagraphStyle = { fontSize, lineHeight };
+
+  // Paint the selected word in this page first, then let the parent open the
+  // action menu on the next frame. This avoids a FlatList-wide state update
+  // delaying the visual acknowledgement of a long press on dense pages.
+  const [localActiveWordRange, setLocalActiveWordRange] = useState<ReaderPageViewProps['activeWordRange']>(null);
+  const onWordLongPressRef = useRef(onWordLongPress);
+  onWordLongPressRef.current = onWordLongPress;
+  const handleInlineWordLongPress = useCallback((payload: Parameters<ReaderPageViewProps['onWordLongPress']>[0]) => {
+    setLocalActiveWordRange({
+      paragraphIndex: payload.paragraphIndex,
+      start: payload.start,
+      end: payload.end,
+    });
+    requestAnimationFrame(() => onWordLongPressRef.current(payload));
+  }, []);
+  useEffect(() => {
+    setLocalActiveWordRange(activeWordRange);
+  }, [activeWordRange?.paragraphIndex, activeWordRange?.start, activeWordRange?.end]);
+  const displayedActiveWordRange = activeWordRange ?? localActiveWordRange;
 
   // Drag-to-select plumbing (only exercised while `selecting` is true). Refs
   // (not state) because the geometry itself shouldn't trigger a re-render —
@@ -604,34 +583,6 @@ function ReaderPageViewImpl({
   onRangeEdgeDragEndRef.current = onRangeEdgeDragEnd;
   const paragraphsRef = useRef(page.paragraphs);
   paragraphsRef.current = page.paragraphs;
-
-  // Hold on a paragraph -> the exact word under the finger (a stationary hold is
-  // precise). Uses the press's OWN locationX/locationY (relative to the pressed
-  // <Text>), which share the same coordinate space as that paragraph's
-  // onTextLayout lines — no container-origin conversion. Reports the word AND
-  // its sentence so the caller can open the action menu and act on either
-  // choice. A short tap does nothing here — it bubbles to the chrome toggle.
-  const handleWordLongPress = (paragraphIndex: number, evt: GestureResponderEvent) => {
-    const paragraph = paragraphsRef.current[paragraphIndex];
-    if (!paragraph) return;
-    const offset = lineCharOffset(
-      paragraph,
-      paragraphLinesRef.current.get(paragraphIndex),
-      evt.nativeEvent.locationX,
-      evt.nativeEvent.locationY,
-    );
-    const hit = wordAtOffset(paragraph, offset);
-    if (!hit) return;
-    onWordLongPress({
-      word: hit.word,
-      paragraphIndex,
-      page,
-      start: hit.start,
-      end: hit.end,
-      pageX: evt.nativeEvent.pageX,
-      pageY: evt.nativeEvent.pageY,
-    });
-  };
 
   const selectionRangeRef = useRef(selectionRange);
   selectionRangeRef.current = selectionRange;
@@ -899,12 +850,8 @@ function ReaderPageViewImpl({
           );
         }
 
-        // Normal (reading) mode: the whole paragraph is ONE <Text> — cheap to
-        // mount, so a page swipes in without the JS-thread hitch that ~1 <Text>
-        // per word used to cause. Word taps and sentence long-presses are
-        // resolved by hit-testing the tap against the wrapped-line geometry
-        // captured below (handleWordTap / handleSentenceLongPress). Saved-vocab
-        // words are the only per-word spans, and only when they exist.
+        // Native inline word targets keep the reader's own shaping and line
+        // wrapping in charge of long-press selection for every script.
         const highlightEntry = highlightMap.get(
           `${page.chapterIndex}-${page.pageIndexInChapter}-${paragraphIndex}`,
         );
@@ -937,7 +884,6 @@ function ReaderPageViewImpl({
               },
             ]}
             onPress={onPagePress}
-            onLongPress={(e) => handleWordLongPress(paragraphIndex, e)}
             onLayout={(e) => {
               paragraphLayoutsRef.current.set(paragraphIndex, {
                 y: e.nativeEvent.layout.y,
@@ -953,21 +899,22 @@ function ReaderPageViewImpl({
               setLayoutVersion((v) => v + 1);
             }}
           >
-            {highlightWash && highlightRun
-              ? renderSelectionRuns(paragraph, highlightRun.start, highlightRun.end, highlightWash, textColor)
-              : highlightWash
-                ? paragraph
-                : renderParagraphRuns(
-                    paragraphTokens[paragraphIndex],
-                    savedWordSet,
-                    savedWordColor,
-                    savedWordTextColor,
-                    activeWordRange && activeWordRange.paragraphIndex === paragraphIndex
-                      ? { start: activeWordRange.start, end: activeWordRange.end }
-                      : null,
-                    activeWordColor,
-                    activeWordTextColor,
-                  )}
+            {renderParagraphRuns(
+              paragraphTokens[paragraphIndex],
+              savedWordSet,
+              savedWordColor,
+              savedWordTextColor,
+              displayedActiveWordRange && displayedActiveWordRange.paragraphIndex === paragraphIndex
+                ? { start: displayedActiveWordRange.start, end: displayedActiveWordRange.end }
+                : null,
+              activeWordColor,
+              activeWordTextColor,
+              highlightRun,
+              highlightWash,
+              paragraphIndex,
+              page,
+              handleInlineWordLongPress,
+            )}
           </Animated.Text>
         );
       })}
@@ -1123,7 +1070,7 @@ function ReaderPageViewImpl({
                   {bp.sentences.map((sent) => {
                     const isSpeakingOriginal = activeSpeechId === sent.id;
                     const isSpeakingTranslated = activeSpeechId === `${sent.id}_tr`;
-                    const origTokens = tokenizeParagraph(sent.original);
+                    const origTokens = segmentWords(sent.original, sourceLanguage);
 
                     return (
                       <View
@@ -1145,9 +1092,8 @@ function ReaderPageViewImpl({
                         <View style={styles.sentenceSourceContainer}>
                           <View style={styles.sentenceWordsFlow}>
                             {origTokens.map((token, tIdx) => {
-                              const clean = cleanWordForLookup(token);
-                              const isWhitespace = /^\s+$/.test(token);
-                              if (isWhitespace || !clean) {
+                              const clean = token.isWordLike ? cleanWordForLookup(token.text) : '';
+                              if (!clean) {
                                 return (
                                   <Text
                                     key={tIdx}
@@ -1163,7 +1109,7 @@ function ReaderPageViewImpl({
                                       },
                                     ]}
                                   >
-                                    {token}
+                                    {token.text}
                                   </Text>
                                 );
                               }
@@ -1176,7 +1122,7 @@ function ReaderPageViewImpl({
                                   unstable_pressDelay={75}
                                   hitSlop={3}
                                   onPress={() => {
-                                    void speakWord(clean, isBengaliText(clean) ? 'bn' : 'en');
+                                    void speakWord(clean, sourceLanguage);
                                     onWordSelect?.(clean, bp.paragraphIndex);
                                   }}
                                   onLongPress={(e) => {
@@ -1219,7 +1165,7 @@ function ReaderPageViewImpl({
                                       },
                                     ]}
                                   >
-                                    {token}
+                                    {token.text}
                                   </Text>
                                 </Pressable>
                               );
@@ -1233,7 +1179,7 @@ function ReaderPageViewImpl({
                               void toggleSpeech(
                                 sent.id,
                                 sent.original,
-                                isBengaliText(sent.original) ? 'bn' : 'en',
+                                sourceLanguage,
                               )
                             }
                             style={[
@@ -1280,7 +1226,7 @@ function ReaderPageViewImpl({
                                 void toggleSpeech(
                                   `${sent.id}_tr`,
                                   sent.translated,
-                                  isBengaliText(sent.translated) ? 'bn' : 'en',
+                                  targetLanguage,
                                 )
                               }
                               style={styles.sentenceSmallPlayBtn}

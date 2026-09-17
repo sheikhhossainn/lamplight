@@ -405,5 +405,36 @@ export function SpeakerIcon({ color, size = 18 }: IconProps) {
   );
 }
 
+export function PauseIcon({ color, size = 18 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M8 5V19" stroke={color} strokeWidth={2} strokeLinecap="round" />
+      <Path d="M16 5V19" stroke={color} strokeWidth={2} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+// Canonical Feather rotate-cw / reload icon — matches the line weight and caps of the system icons
+export function ReloadIcon({ color, size = 18 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M23 4v6h-6"
+        stroke={color}
+        strokeWidth={1.7}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path
+        d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"
+        stroke={color}
+        strokeWidth={1.7}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
 
 

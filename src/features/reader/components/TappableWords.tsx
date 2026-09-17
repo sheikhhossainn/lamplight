@@ -1,7 +1,7 @@
 import { useMemo, type ReactElement } from 'react';
 import { Text, type GestureResponderEvent } from 'react-native';
 
-import { tokenizeParagraph } from '@/features/reader/engine/words';
+import { segmentWords } from '@/features/reader/engine/wordSegments';
 
 type TappableWordsProps = {
   text: string;
@@ -19,20 +19,33 @@ type TappableWordsProps = {
 // is a handful of words, so per-word spans are cheap and this sidesteps
 // needing a glyph-width model for every script it might render.
 export function TappableWords({ text, cleanWord, style, onWordLongPress }: TappableWordsProps) {
-  const tokens = useMemo(() => tokenizeParagraph(text), [text]);
-  const children: (string | ReactElement)[] = tokens.map((token, i) => {
-    const word = cleanWord(token);
-    if (!word) return token;
-    return (
+  const segments = useMemo(() => segmentWords(text), [text]);
+  const children: (string | ReactElement)[] = [];
+  for (let index = 0; index < segments.length; index += 1) {
+    const segment = segments[index];
+    const word = segment.isWordLike ? cleanWord(segment.text) : '';
+    if (!word) {
+      children.push(segment.text);
+      continue;
+    }
+    let trailingText = '';
+    let trailingIndex = index + 1;
+    while (trailingIndex < segments.length && !segments[trailingIndex].isWordLike) {
+      trailingText += segments[trailingIndex].text;
+      trailingIndex += 1;
+    }
+    children.push(
       <Text
-        key={i}
+        key={index}
         onLongPress={(e: GestureResponderEvent) =>
           onWordLongPress(word, { x: e.nativeEvent.pageX, y: e.nativeEvent.pageY })
         }
       >
-        {token}
-      </Text>
+        {segment.text}
+        {trailingText}
+      </Text>,
     );
-  });
+    index = trailingIndex - 1;
+  }
   return <Text style={style}>{children}</Text>;
 }

@@ -32,6 +32,10 @@ disk after every book, so a mid-run kill is wasteful, not destructive.
   can't `require()` a dynamic path.
 - **Runtime loader**: `src/features/quran-content/quranData.ts` — `listSurahs()`,
   `getSurahMeta(number)`, `getSurahVerses(number)`. Reads the bundled JSON directly, no network.
+- **Recitation**: the reader streams the surah ayah by ayah in Arabic from Al Quran Cloud's CDN
+  using the `ar.alafasy` (Mishary Rashid Alafasy) 128 kbps edition, so the active verse can be
+  shown exactly. It is a source recording, not device text-to-speech. Before a first listen, the
+  reader asks whether to stream or save the full surah to device storage for offline listening.
 - **DB**: schema migration v8 in `src/db/schema.ts` — tables `quran_reading_position` (PK
   surah_number), `quran_highlights`, `quran_saved_words`, all keyed by
   `(surah_number, verse_number)`.
@@ -84,6 +88,9 @@ disk after every book, so a mid-run kill is wasteful, not destructive.
   changes, and a collapsed-by-default "Interpretation" disclosure row per verse that has JFB
   commentary — same UI pattern as the Quran tafsir disclosure, attributed "— Jamieson-Fausset-
   Brown").
+- **Narration**: Genesis has source-backed chapter narration from the public-domain World English
+  Bible audio catalogue. The remaining Old Testament books deliberately do not show an audio
+  control until an equally verified recording set is sourced.
 - English-only text — no transliteration/dual-script concerns, reuses the prose reader's
   `cleanWordForLookup` directly from `src/features/reader/engine/words.ts`.
 
@@ -112,6 +119,8 @@ duplicated rather than parameterized, following this doc's own "Adding another s
   `bookId`).
 - **Screens**: `src/app/bible-nt/index.tsx` and `src/app/bible-nt/[bookId].tsx`, structurally
   identical to the OT screens.
+- **Narration**: every New Testament chapter streams the public-domain World English Bible
+  recording by Basil Sands from eBible.org. It matches the WEB text edition already bundled here.
 
 ## Shared UI
 
@@ -156,4 +165,6 @@ Sibling of the Bible NT and OT, not a merge into them. Uses the Ralph T.H. Griff
 - **DB & Repository**: Reuses `bible_reading_position`, `bible_highlights`, and `bible_saved_words` SQLite tables and `src/db/repositories/bible.ts` (generic over `bookId`), since unique Vedas Mandala book IDs (`RV01` to `RV10`) never collide with Bible OT/NT book IDs.
 - **Screens**: `src/app/vedas/index.tsx` and `src/app/vedas/[bookId].tsx`.
 - **Spine color**: Saffron/terracotta color (`#C05C1F`) mapped in `src/components/BookSpine.tsx`.
+- **Recitation**: not included yet. A complete, rights-safe recording set matching the bundled
+  Griffith edition has not been verified, so the app does not substitute generic text-to-speech.
 

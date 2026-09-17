@@ -226,10 +226,12 @@ function selectedText(
 export default function ReaderScreen() {
   // jumpChapter/jumpPage are optional — set when arriving from Vocabulary
   // (tapping a saved word) to open directly on that word's page.
-  const { bookId: rawBookId, jumpChapter, jumpPage } = useLocalSearchParams<{
+  const { bookId: rawBookId, jumpChapter, jumpPage, bookTitle, bookCoverUrl } = useLocalSearchParams<{
     bookId: string;
     jumpChapter?: string;
     jumpPage?: string;
+    bookTitle?: string;
+    bookCoverUrl?: string;
   }>();
   const bookId = useMemo(() => {
     if (!rawBookId) return '';
@@ -957,7 +959,6 @@ export default function ReaderScreen() {
       return;
     }
     try {
-      const sourceLang = book?.sourceLanguage ?? (bookId?.startsWith('bn-') ? 'bn' : 'en');
       const sentencesPerPara = currentPage.paragraphs.map((p, pIdx) => {
         const sList = splitSentences(p);
         return sList.map((s, sIdx) => ({
@@ -971,7 +972,7 @@ export default function ReaderScreen() {
 
       const translatedList = await batchTranslateSentences(
         allSentences.map((s) => s.sentence),
-        sourceLang,
+        sourceLanguage,
         targetLanguage,
       );
 
@@ -1261,7 +1262,7 @@ export default function ReaderScreen() {
       const created = await saveWord({
         bookId: book.id,
         sourceWord: activeWord.word,
-        sourceLang: 'en',
+        sourceLang: sourceLanguage,
         targetLang: targetLanguage,
         translation,
         // The sentence the word is in, not the whole paragraph — the card only
@@ -1275,7 +1276,7 @@ export default function ReaderScreen() {
       setActiveWord(null);
       logEvent('word_saved', { book_id: book.id, target_lang: targetLanguage });
     },
-    [book, activeWord, pages, currentIndex, targetLanguage],
+    [book, activeWord, pages, currentIndex, sourceLanguage, targetLanguage],
   );
 
   // Save the current selection as a quote across all spanned pages.
@@ -1379,14 +1380,12 @@ export default function ReaderScreen() {
           pageWidth={pageWidth}
           pageHeight={pageHeight}
         >
-          <Pressable
-            style={styles.pageTouchable}
-            disabled={selection != null || translationForItem != null}
-            onPress={toggleChrome}
-          >
+          <View style={styles.pageTouchable}>
             <ReaderPageView
               page={item}
               mode={mode}
+              sourceLanguage={sourceLanguage}
+              targetLanguage={targetLanguage}
               textColor={textColor}
               topInset={insets.top}
               bottomInset={insets.bottom}
@@ -1424,7 +1423,7 @@ export default function ReaderScreen() {
               onCloseTranslation={toggleTranslation}
               onPagePress={selection ? undefined : toggleChrome}
             />
-          </Pressable>
+          </View>
         </ReaderPageFrame>
       );
     },
@@ -1442,6 +1441,8 @@ export default function ReaderScreen() {
       handleRangeEdgeDragEnd,
       toggleChrome,
       textColor,
+      sourceLanguage,
+      targetLanguage,
       readingFontSizePx,
       readingLineHeight,
       insets.top,
@@ -1503,7 +1504,7 @@ export default function ReaderScreen() {
   );
 
   if (bookTextState.status === 'loading') {
-    return <BookLoadingScreen title={book?.title ?? 'বইটি লোড হচ্ছে…'} />;
+    return <BookLoadingScreen title={book?.title ?? bookTitle ?? 'বইটি লোড হচ্ছে…'} coverUrl={book?.coverUrl ?? bookCoverUrl} />;
   }
 
   if (bookTextState.status === 'unavailable') {
@@ -1553,7 +1554,7 @@ export default function ReaderScreen() {
     return (
       <View style={styles.container}>
         {measurement}
-        <BookLoadingScreen title="বইটি প্রস্তুত হচ্ছে…" />
+        <BookLoadingScreen title={bookTitle ?? 'বইটি প্রস্তুত হচ্ছে…'} coverUrl={bookCoverUrl} />
       </View>
     );
   }
@@ -1563,7 +1564,7 @@ export default function ReaderScreen() {
     return (
       <View style={styles.container}>
         {measurement}
-        <BookLoadingScreen title={book.title ?? 'বইটি প্রস্তুত হচ্ছে…'} />
+        <BookLoadingScreen title={book.title ?? bookTitle ?? 'বইটি প্রস্তুত হচ্ছে…'} coverUrl={book.coverUrl ?? bookCoverUrl} />
       </View>
     );
   }
@@ -2020,6 +2021,7 @@ export default function ReaderScreen() {
       <WordActionMenu
         word={wordMenu?.word ?? null}
         anchor={wordMenu?.anchor ?? null}
+        sourceLanguage={sourceLanguage}
         onTranslate={() => {
           if (!wordMenu) return;
           setActiveWord({
@@ -2050,6 +2052,8 @@ export default function ReaderScreen() {
       <WordTranslationPopup
         word={activeWord?.word ?? null}
         anchor={activeWord?.anchor ?? null}
+        sourceLang={sourceLanguage}
+        sourceLangLabel={sourceLanguage.toUpperCase()}
         onClose={() => setActiveWord(null)}
         onSave={handleSaveWord}
         onChangeLanguage={() => {

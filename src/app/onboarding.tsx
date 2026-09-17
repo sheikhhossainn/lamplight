@@ -11,7 +11,7 @@ import {
   type ViewToken,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, { Easing, FadeIn, FadeInUp } from 'react-native-reanimated';
+import Animated, { Easing, FadeIn, FadeInUp, ReduceMotion } from 'react-native-reanimated';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
 import { CheckIcon, ChevronRightIcon } from '@/components/icons';
@@ -45,9 +45,11 @@ import {
 import { useTheme } from '@/theme/ThemeProvider';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+const EASE_OUT = Easing.bezier(0.23, 1, 0.32, 1);
 
 type Slide = {
   key: string;
+  eyebrow?: string;
   headline: string;
   subtext: string;
 };
@@ -55,45 +57,48 @@ type Slide = {
 const SLIDES: Slide[] = [
   {
     key: 'read',
-    headline: 'Read in the original tongue.',
+    eyebrow: 'ORIGINAL-LANGUAGE READING',
+    headline: 'Read the book in the language it was written.',
     subtext:
-      'An 1890s candlelit sanctuary — ambient nature sounds, timeless typography, and zero distractions.',
+      'Lamplight gives you a calm reading space, with help only when you need it.',
   },
   {
     key: 'coverage',
-    headline: 'Know what you can understand.',
+    eyebrow: 'CHOOSE WITH CONFIDENCE',
+    headline: 'Start with a book you can actually enjoy.',
     subtext:
-      'Every book is analyzed against your vocabulary. Discover books near 98% coverage for effortless reading with zero fatigue.',
+      'See how much of each book you already understand before you begin, so reading feels challenging—not exhausting.',
   },
   {
     key: 'memory',
-    headline: 'Meet a word. Keep it forever.',
+    eyebrow: 'LEARN WHILE READING',
+    headline: 'Let every unfamiliar word make the next page easier.',
     subtext:
-      'Look up any unfamiliar word to add it to your spaced memory deck. Watch harder books unlock as your lexicon grows.',
+      'Hold a word for its meaning, save it, then revisit it in short reviews at the right time.',
   },
   {
     key: 'mother_tongue',
     headline: 'What is your mother tongue?',
     subtext:
-      'We translate unfamiliar words into your native language and showcase native literature.',
+      'Unknown words will be explained in this language. We will also surface literature from it.',
   },
   {
     key: 'target_language',
     headline: 'What do you wish to read?',
     subtext:
-      'Select the literature you wish to explore and expand your vocabulary in.',
+      'We will shape your starter shelf and word practice around the language you want to read.',
   },
   {
     key: 'theme',
-    headline: 'What themes draw you in?',
+    headline: 'Choose a starting shelf.',
     subtext:
-      'We tailor your starting shelf to stories that captivate your imagination.',
+      'Pick the stories you want to enter first. You can always change this later.',
   },
   {
     key: 'calibration',
-    headline: 'Calibrate your bookshelf',
+    headline: 'Find your first comfortable book.',
     subtext:
-      'Tap words you recognize to calculate your 98% coverage on day one.',
+      'Tap words you know. We will recommend a book that lets you grow without losing the story.',
   },
 ];
 
@@ -343,6 +348,12 @@ export default function OnboardingScreen() {
     listRef.current?.scrollToIndex({ index: activeIndex + 1, animated: true });
   }, [activeIndex]);
 
+  const goToPrevious = useCallback(() => {
+    if (activeIndex > 0) {
+      listRef.current?.scrollToIndex({ index: activeIndex - 1, animated: true });
+    }
+  }, [activeIndex]);
+
   const handleSkipToIntroQuestions = useCallback(() => {
     listRef.current?.scrollToIndex({ index: 3, animated: true });
   }, []);
@@ -422,9 +433,22 @@ export default function OnboardingScreen() {
         >
           {/* Top Header / Skip Button */}
           <View style={styles.topBar}>
+            {activeIndex > 0 ? (
+              <Pressable
+                style={({ pressed }) => [styles.skip, pressed && { opacity: 0.7, transform: [{ scale: 0.97 }] }]}
+                onPress={goToPrevious}
+                hitSlop={14}
+                accessibilityRole="button"
+                accessibilityLabel="Go to previous onboarding step"
+              >
+                <Text style={[typography.uiRowTitle, { color: colors.mutedOnDark, fontSize: 13 }]}>Back</Text>
+              </Pressable>
+            ) : (
+              <View style={styles.skipPlaceholder} />
+            )}
             {isIntro ? (
               <Pressable
-                style={styles.skip}
+                style={({ pressed }) => [styles.skip, pressed && { opacity: 0.7, transform: [{ scale: 0.97 }] }]}
                 onPress={handleSkipToIntroQuestions}
                 hitSlop={14}
               >
@@ -434,7 +458,7 @@ export default function OnboardingScreen() {
               </Pressable>
             ) : isCalibration ? (
               <Pressable
-                style={styles.skip}
+                style={({ pressed }) => [styles.skip, pressed && { opacity: 0.7, transform: [{ scale: 0.97 }]}]}
                 onPress={handleFinish}
                 hitSlop={14}
               >
@@ -452,7 +476,7 @@ export default function OnboardingScreen() {
             /* Slide 4: Mother Tongue Question */
             <View style={styles.questionSection}>
               <Animated.View
-                entering={FadeIn.delay(100).duration(450).easing(Easing.out(Easing.cubic))}
+                entering={FadeIn.delay(60).duration(260).easing(EASE_OUT).reduceMotion(ReduceMotion.System)}
                 style={[styles.copy, { marginBottom: spacing.md }]}
               >
                 <Text
@@ -474,7 +498,7 @@ export default function OnboardingScreen() {
               </Animated.View>
 
               <Animated.View
-                entering={FadeIn.delay(200).duration(450).easing(Easing.out(Easing.cubic))}
+                entering={FadeIn.delay(120).duration(260).easing(EASE_OUT).reduceMotion(ReduceMotion.System)}
                 style={styles.optionsList}
               >
                 {MOTHER_TONGUES.map((opt) => {
@@ -549,7 +573,7 @@ export default function OnboardingScreen() {
             /* Slide 5: Target Reading Language */
             <View style={styles.questionSection}>
               <Animated.View
-                entering={FadeIn.delay(100).duration(450).easing(Easing.out(Easing.cubic))}
+                entering={FadeIn.delay(60).duration(260).easing(EASE_OUT).reduceMotion(ReduceMotion.System)}
                 style={[styles.copy, { marginBottom: spacing.md }]}
               >
                 <Text
@@ -571,7 +595,7 @@ export default function OnboardingScreen() {
               </Animated.View>
 
               <Animated.View
-                entering={FadeIn.delay(200).duration(450).easing(Easing.out(Easing.cubic))}
+                entering={FadeIn.delay(120).duration(260).easing(EASE_OUT).reduceMotion(ReduceMotion.System)}
                 style={styles.optionsList}
               >
                 {TARGET_READING_LANGUAGES.map((opt) => {
@@ -646,7 +670,7 @@ export default function OnboardingScreen() {
             /* Slide 6: Literary Themes Selection */
             <View style={styles.questionSection}>
               <Animated.View
-                entering={FadeIn.delay(100).duration(450).easing(Easing.out(Easing.cubic))}
+                entering={FadeIn.delay(60).duration(260).easing(EASE_OUT).reduceMotion(ReduceMotion.System)}
                 style={[styles.copy, { marginBottom: spacing.md }]}
               >
                 <Text
@@ -668,7 +692,7 @@ export default function OnboardingScreen() {
               </Animated.View>
 
               <Animated.View
-                entering={FadeIn.delay(200).duration(450).easing(Easing.out(Easing.cubic))}
+                entering={FadeIn.delay(120).duration(260).easing(EASE_OUT).reduceMotion(ReduceMotion.System)}
                 style={styles.optionsList}
               >
                 {LITERARY_THEMES.map((opt) => {
@@ -740,7 +764,7 @@ export default function OnboardingScreen() {
             /* Slide 7: Vocabulary Calibration Test */
             <View style={styles.calibrationSection}>
               <Animated.View
-                entering={FadeIn.delay(100).duration(450).easing(Easing.out(Easing.cubic))}
+                entering={FadeIn.delay(60).duration(260).easing(EASE_OUT).reduceMotion(ReduceMotion.System)}
                 style={[styles.copy, { marginBottom: 12 }]}
               >
                 <Text
@@ -763,7 +787,7 @@ export default function OnboardingScreen() {
 
               {/* Level Presets Row */}
               <Animated.View
-                entering={FadeIn.delay(180).duration(450).easing(Easing.out(Easing.cubic))}
+                entering={FadeIn.delay(120).duration(260).easing(EASE_OUT).reduceMotion(ReduceMotion.System)}
                 style={styles.presetsRow}
               >
                 {(
@@ -873,7 +897,7 @@ export default function OnboardingScreen() {
 
               {/* Dynamic Lexicon Live Estimate Card with Book Unlock Match */}
               <Animated.View
-                entering={FadeInUp.delay(260).duration(450).easing(Easing.out(Easing.cubic))}
+                entering={FadeInUp.delay(180).duration(260).easing(EASE_OUT).reduceMotion(ReduceMotion.System)}
                 style={[
                   styles.estimationCard,
                   {
@@ -935,7 +959,7 @@ export default function OnboardingScreen() {
           ) : (
             /* Intro Promo Slides (Read, Coverage, Memory) */
             <View style={styles.middleSection}>
-              <Animated.View entering={FadeIn.delay(100).duration(480).easing(Easing.out(Easing.cubic))}>
+              <Animated.View entering={FadeIn.delay(60).duration(280).easing(EASE_OUT).reduceMotion(ReduceMotion.System)}>
                 {item.key === 'read' ? (
                   <ReadIllustration />
                 ) : item.key === 'coverage' ? (
@@ -945,9 +969,12 @@ export default function OnboardingScreen() {
                 )}
               </Animated.View>
               <Animated.View
-                entering={FadeIn.delay(240).duration(450).easing(Easing.out(Easing.cubic))}
+                entering={FadeIn.delay(140).duration(260).easing(EASE_OUT).reduceMotion(ReduceMotion.System)}
                 style={[styles.copy, { gap: spacing.sm, marginTop: 26 }]}
               >
+                {item.eyebrow ? (
+                  <Text style={[typography.eyebrowLabel, { color: colors.flameAmber }]}>{item.eyebrow}</Text>
+                ) : null}
                 <Text
                   style={[
                     typography.onboardingHeadline,
@@ -1019,7 +1046,7 @@ export default function OnboardingScreen() {
 
       {/* Footer Navigation Area */}
       <Animated.View
-        entering={FadeInUp.delay(350).duration(450).easing(Easing.out(Easing.cubic))}
+        entering={FadeInUp.delay(140).duration(260).easing(EASE_OUT).reduceMotion(ReduceMotion.System)}
         style={[
           isLastSlide ? styles.footerColumn : styles.footerRow,
           {
@@ -1029,19 +1056,24 @@ export default function OnboardingScreen() {
         ]}
       >
         {/* Progress Dots */}
-        <View style={styles.dots}>
-          {SLIDES.map((slide, index) => (
-            <View
-              key={slide.key}
-              style={[
-                styles.dot,
-                {
-                  width: index === activeIndex ? 20 : 6,
-                  backgroundColor: index === activeIndex ? colors.flameAmber : colors.dotInactive,
-                },
-              ]}
-            />
-          ))}
+        <View>
+          <Text style={[typography.metadataCaption, styles.stepLabel, { color: colors.mutedOnDark }]}>
+            Step {activeIndex + 1} of {SLIDES.length}
+          </Text>
+          <View style={styles.dots}>
+            {SLIDES.map((slide, index) => (
+              <View
+                key={slide.key}
+                style={[
+                  styles.dot,
+                  {
+                    width: index === activeIndex ? 20 : 6,
+                    backgroundColor: index === activeIndex ? colors.flameAmber : colors.dotInactive,
+                  },
+                ]}
+              />
+            ))}
+          </View>
         </View>
 
         {/* Action Button */}
@@ -1071,12 +1103,15 @@ export default function OnboardingScreen() {
               {
                 backgroundColor: colors.flameAmber,
                 opacity: pressed ? 0.85 : 1,
-                transform: [{ scale: pressed ? 0.94 : 1 }],
+                transform: [{ scale: pressed ? 0.97 : 1 }],
               },
             ]}
             onPress={goToNext}
           >
-            <ChevronRightIcon color={colors.primaryDark} size={20} />
+            <Text style={[typography.buttonLabel, { color: colors.primaryDark, fontSize: 14 }]}>Continue</Text>
+            <View style={{ marginLeft: 8 }}>
+              <ChevronRightIcon color={colors.primaryDark} size={18} />
+            </View>
           </Pressable>
         )}
       </Animated.View>
@@ -1094,7 +1129,7 @@ const styles = StyleSheet.create({
   },
   topBar: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
+    justifyContent: 'space-between',
     height: 32,
     alignItems: 'center',
   },
@@ -1229,14 +1264,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 7,
   },
+  stepLabel: {
+    fontSize: 11,
+    marginBottom: 6,
+  },
   dot: {
     height: 6,
     borderRadius: 3,
   },
   nextButton: {
-    width: 48,
+    minWidth: 118,
     height: 48,
     borderRadius: 24,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
   },
