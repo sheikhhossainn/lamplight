@@ -14,9 +14,11 @@ import {
   type ViewToken,
 } from 'react-native';
 import Animated, {
+  cancelAnimation,
   Easing,
   FadeIn,
   FadeOut,
+  interpolate,
   interpolateColor,
   ReduceMotion,
   runOnJS,
@@ -31,12 +33,13 @@ import Animated, {
 import Svg, { Circle, Defs, LinearGradient, Path, Rect, Stop } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ChevronLeftIcon, CloseIcon, MoonIcon, QuestionIcon, SpeakerIcon, SunIcon, TranslateIcon } from '@/components/icons';
+import { ChevronLeftIcon, CloseIcon, MenuIcon, MoonIcon, QuestionIcon, SoundWaveIcon, SpeakerIcon, SunIcon, TranslateIcon } from '@/components/icons';
 import { AmbiencePicker } from '@/features/ambience/AmbiencePicker';
 import { useAmbienceTrackId } from '@/features/ambience/ambiencePreference';
 import { ambienceTrackById } from '@/features/ambience/tracks';
 import { useAmbiencePlayer } from '@/features/ambience/useAmbiencePlayer';
 import { usePageTurnSound } from '@/features/reader/usePageTurnSound';
+import { getPageTurnSoundEnabled, setPageTurnSoundEnabled, usePageTurnSoundEnabled } from '@/features/settings/soundPrefs';
 import { BookLoadingScreen } from '@/features/reader/components/BookLoadingScreen';
 import { BookPageFrame } from '@/features/reader/components/BookPageFrame';
 import { ReaderPageView } from '@/features/reader/components/ReaderPageView';
@@ -76,7 +79,8 @@ import { getReadingTheme, setReadingTheme, useReadingTheme } from '@/features/se
 import { isPremiumUser } from '@/features/subscription/subscriptionState';
 import { checkTranslationCap, recordTranslationUsage, translationProvider } from '@/features/translation';
 import { batchTranslateSentences, splitSentences } from '@/features/translation/interlinearParser';
-import { LamplightColor, type HighlightColorKey } from '@/theme/tokens';
+import { LamplightColor, Spacing, type HighlightColorKey } from '@/theme/tokens';
+import { LamplightTypography } from '@/theme/typography';
 import { useTheme } from '@/theme/ThemeProvider';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
@@ -95,8 +99,8 @@ const READING_BG_LIGHT = '#F4EBD9';
 const READING_TEXT_LIGHT = '#241D17';
 const READING_TEXT_DARK = '#F0E6D6';
 const READING_DARK_STOPS = ['#1C1B1E', '#201E22', '#26221F'] as const;
-const READER_THEME_DURATION_MS = 200;
-const READER_THEME_EASING = Easing.bezier(0.77, 0, 0.175, 1);
+const READER_THEME_DURATION_MS = 360;
+const READER_THEME_EASING = Easing.inOut(Easing.cubic);
 const CHROME_REVEAL_DURATION_MS = 180;
 const CHROME_HIDE_DURATION_MS = 180;
 const CHROME_EASING = Easing.bezier(0.23, 1, 0.32, 1);
@@ -139,6 +143,8 @@ type ReaderChromeTouchTargetProps = {
   onPress: () => void;
   onLongPress?: () => void;
   delayLongPress?: number;
+  accessibilityLabel?: string;
+  testID?: string;
 };
 
 // Android can retain an Animated Pressable's native touch region after its
@@ -149,17 +155,128 @@ function ReaderChromeTouchTarget({
   onPress,
   onLongPress,
   delayLongPress,
+  accessibilityLabel,
+  testID,
 }: ReaderChromeTouchTargetProps) {
   if (!enabled) return null;
   return (
     <Pressable
-      hitSlop={{ top: 12, bottom: 12, left: 6, right: 6 }}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      testID={testID}
+      hitSlop={{ top: 8, bottom: 4, left: 8, right: 8 }}
       style={StyleSheet.absoluteFill}
-      pressRetentionOffset={12}
+      pressRetentionOffset={20}
       onPress={onPress}
       onLongPress={onLongPress}
       delayLongPress={delayLongPress}
     />
+  );
+}
+
+type TurnPageSoundMenuRowProps = {
+  isLamp: boolean;
+  playPageTurn: () => void;
+  stopPageTurn: () => void;
+};
+
+function TurnPageSoundMenuRow({ isLamp, playPageTurn, stopPageTurn }: TurnPageSoundMenuRowProps) {
+  const { typography, colors } = useTheme();
+  const enabled = usePageTurnSoundEnabled();
+  const progress = useSharedValue(enabled ? 1 : 0);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    progress.value = withTiming(enabled ? 1 : 0, {
+      duration: 160,
+      easing: Easing.out(Easing.cubic),
+      reduceMotion: ReduceMotion.System,
+    });
+  }, [enabled, progress]);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, []);
+
+  const handleToggle = useCallback(() => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+
+    const next = !getPageTurnSoundEnabled();
+
+    cancelAnimation(progress);
+    progress.value = withTiming(next ? 1 : 0, {
+      duration: 160,
+      easing: Easing.out(Easing.cubic),
+      reduceMotion: ReduceMotion.System,
+    });
+
+    if (next) {
+      timerRef.current = setTimeout(() => {
+        timerRef.current = null;
+        playPageTurn();
+      }, 160);
+    } else {
+      stopPageTurn();
+    }
+
+    setPageTurnSoundEnabled(next);
+  }, [progress, playPageTurn, stopPageTurn]);
+
+  const trackStyle = useAnimatedStyle(() => {
+    const p = progress.value;
+    return {
+      backgroundColor: interpolateColor(
+        p,
+        [0, 1],
+        [isLamp ? 'rgba(255,255,255,0.16)' : 'rgba(0,0,0,0.14)', colors.flameAmber],
+      ),
+    };
+  });
+
+  const thumbStyle = useAnimatedStyle(() => {
+    const p = progress.value;
+    return {
+      transform: [{ translateX: interpolate(p, [0, 1], [0, 16]) }],
+    };
+  });
+
+  const iconColor = enabled
+    ? colors.flameAmber
+    : isLamp
+      ? 'rgba(236,227,212,0.45)'
+      : 'rgba(42,36,30,0.45)';
+
+  return (
+    <Pressable
+      accessibilityRole="switch"
+      accessibilityState={{ checked: enabled }}
+      accessibilityLabel="Turn page sound"
+      testID="reader-turn-sound-button"
+      onPress={handleToggle}
+      style={styles.chromeMenuRow}
+    >
+      <SoundWaveIcon color={iconColor} size={18} />
+      <Text
+        style={[
+          typography.uiRowTitle,
+          styles.chromeMenuLabel,
+          { flex: 1, color: isLamp ? READING_TEXT_DARK : READING_TEXT_LIGHT },
+        ]}
+      >
+        Turn Page Sound
+      </Text>
+      <Animated.View style={[styles.menuToggleTrack, trackStyle]} pointerEvents="none">
+        <Animated.View style={[styles.menuToggleThumb, thumbStyle]} />
+      </Animated.View>
+    </Pressable>
   );
 }
 
@@ -303,6 +420,10 @@ export default function ReaderScreen() {
   const [highlights, setHighlights] = useState<Highlight[]>([]);
   const [savedWords, setSavedWords] = useState<SavedWord[]>([]);
 
+  const chromeMenuOpenRef = useRef(false);
+  const chromeMenuProgress = useSharedValue(0);
+  const closeChromeMenuRef = useRef<(action?: () => void) => void>(() => {});
+
   const [chromeVisible, setChromeVisible] = useState(true);
   const chromeVisibleRef = useRef(true);
   const chromeOpacity = useSharedValue(1);
@@ -383,7 +504,7 @@ export default function ReaderScreen() {
   // Soft page-turn sound. Stored in a ref so the stable onViewableItemsChanged
   // callback (built once via useRef) can reach the latest play fn — same reason
   // book/pages are mirrored into refs below.
-  const playPageTurn = usePageTurnSound();
+  const { play: playPageTurn, stop: stopPageTurn } = usePageTurnSound();
   const playPageTurnRef = useRef(playPageTurn);
   playPageTurnRef.current = playPageTurn;
   // Null until the first page settles, so opening a book (or jumping to a saved
@@ -425,10 +546,40 @@ export default function ReaderScreen() {
   } | null>(null);
 
   const [languagePickerVisible, setLanguagePickerVisible] = useState(false);
-  const [guideVisible, setGuideVisible] = useState(false);
+  const guideOpenRef = useRef(false);
+  const guideProgress = useSharedValue(0);
+  const closeGuideRef = useRef<() => void>(() => {});
   const [pageStyleVisible, setPageStyleVisible] = useState(false);
   const guideDismissedRef = useRef(false);
   const readerHintDismissedRef = useRef(false);
+
+  const closeGuide = useCallback(() => {
+    guideOpenRef.current = false;
+    cancelAnimation(guideProgress);
+    guideProgress.value = withTiming(0, {
+      duration: 180,
+      easing: Easing.out(Easing.cubic),
+      reduceMotion: ReduceMotion.System,
+    });
+  }, [guideProgress]);
+  closeGuideRef.current = closeGuide;
+
+  const openGuide = useCallback(() => {
+    closeChromeMenuRef.current();
+    guideOpenRef.current = true;
+    cancelAnimation(guideProgress);
+    guideProgress.value = withTiming(1, {
+      duration: 200,
+      easing: Easing.out(Easing.cubic),
+      reduceMotion: ReduceMotion.System,
+    });
+  }, [guideProgress]);
+
+  const handleCloseGuide = useCallback(() => {
+    guideDismissedRef.current = true;
+    closeGuide();
+    void setSetting(READER_GUIDE_SEEN_KEY, '1');
+  }, [closeGuide]);
 
   // Automatically show the Reader Guide modal once on first open of any book
   useEffect(() => {
@@ -439,16 +590,10 @@ export default function ReaderScreen() {
       if (seen === '1') {
         guideDismissedRef.current = true;
       } else {
-        setGuideVisible(true);
+        openGuide();
       }
     })();
-  }, [initialIndex]);
-
-  const handleCloseGuide = useCallback(() => {
-    guideDismissedRef.current = true;
-    setGuideVisible(false);
-    void setSetting(READER_GUIDE_SEEN_KEY, '1');
-  }, []);
+  }, [initialIndex, openGuide]);
 
   // Smart first-run reader gesture hint (swipe left arrow + language pill)
   const [hintVisible, setHintVisible] = useState(false);
@@ -485,7 +630,7 @@ export default function ReaderScreen() {
 
     let hideTimer: ReturnType<typeof setTimeout> | null = null;
     const showTimer = setTimeout(() => {
-      if (readerHintDismissedRef.current || guideVisible) return;
+      if (readerHintDismissedRef.current || guideOpenRef.current) return;
       setHintVisible(true);
       hintOpacity.value = withTiming(1, { duration: 350, easing: Easing.out(Easing.cubic) });
       hintTranslateY.value = withTiming(0, { duration: 350, easing: Easing.out(Easing.cubic) });
@@ -504,7 +649,7 @@ export default function ReaderScreen() {
       clearTimeout(showTimer);
       if (hideTimer) clearTimeout(hideTimer);
     };
-  }, [book, pages.length, initialIndex, guideVisible, hintOpacity, hintTranslateY, swipeArrowX, dismissHint]);
+  }, [book, pages.length, initialIndex, hintOpacity, hintTranslateY, swipeArrowX, dismissHint]);
 
   const hintAnimatedStyle = useAnimatedStyle(() => ({
     opacity: hintOpacity.value,
@@ -575,6 +720,7 @@ export default function ReaderScreen() {
     if (animatedThemeRef.current === next) return;
     animatedThemeRef.current = next;
     setMode(next);
+    cancelAnimation(bgProgress);
     bgProgress.set(withTiming(next === 'lamp' ? 1 : 0, {
       duration: READER_THEME_DURATION_MS,
       easing: READER_THEME_EASING,
@@ -776,9 +922,9 @@ export default function ReaderScreen() {
   // the real screen size + safe areas + current font settings. Pagination is
   // recomputed against these so pages fit the screen and reflow when the font
   // changes.
-  const contentWidthPx = pageWidth - spacing.xl * 2;
-  const contentHeightPx = pageHeight - (insets.top + spacing.md) - (insets.bottom + 18);
-  const chapterTitleExtraPx = spacing.sm + typography.screenTitle.lineHeight + spacing.md;
+  const contentWidthPx = pageWidth - Spacing.xl * 2;
+  const contentHeightPx = pageHeight - (insets.top + 64) - (insets.bottom + 18);
+  const chapterTitleExtraPx = Spacing.sm + LamplightTypography.screenTitle.lineHeight + Spacing.md;
 
   // Baseline characters-per-line, computed synchronously from geometry and font size
   // so pagination begins immediately without blocking on asynchronous onTextLayout.
@@ -799,6 +945,20 @@ export default function ReaderScreen() {
     if (bookTextState.status !== 'ready') return;
     const bookText = bookTextState.book;
     let cancelled = false;
+    if (pages.length === 0) {
+      const paginated = paginateBook(bookText, {
+        contentWidthPx,
+        contentHeightPx,
+        fontSizePx: readingFontSizePx,
+        lineHeightPx: readingLineHeight,
+        paragraphGapPx: Spacing.sm,
+        chapterTitleExtraPx,
+        measuredCharsPerLine,
+      });
+      setPages(paginated);
+      return;
+    }
+
     const schedule = typeof requestIdleCallback === 'function'
       ? requestIdleCallback
       : (fn: () => void) => setTimeout(fn, 50);
@@ -813,7 +973,7 @@ export default function ReaderScreen() {
         contentHeightPx,
         fontSizePx: readingFontSizePx,
         lineHeightPx: readingLineHeight,
-        paragraphGapPx: spacing.sm,
+        paragraphGapPx: Spacing.sm,
         chapterTitleExtraPx,
         measuredCharsPerLine,
       });
@@ -830,7 +990,6 @@ export default function ReaderScreen() {
     contentWidthPx,
     contentHeightPx,
     chapterTitleExtraPx,
-    spacing.sm,
     measuredCharsPerLine,
   ]);
 
@@ -851,60 +1010,67 @@ export default function ReaderScreen() {
     [savedWords],
   );
 
-  const hideChrome = useCallback(() => {
-    chromeVisibleRef.current = false;
-    setChromeVisible(false);
-  }, []);
+  const CHROME_MENU_DURATION_MS = 180;
 
-  const scheduleAutoHide = useCallback(() => {
-    if (hideTimer.current) clearTimeout(hideTimer.current);
-    if (translation?.status === 'loading') return;
-    hideTimer.current = setTimeout(() => {
-      chromeOpacity.set(withTiming(0, { duration: CHROME_HIDE_DURATION_MS, easing: CHROME_EASING, reduceMotion: ReduceMotion.System }, (finished) => {
-        if (finished) runOnJS(hideChrome)();
-      }));
-    }, 4500);
-  }, [chromeOpacity, hideChrome, translation?.status]);
+  const hideChrome = useCallback(() => {}, []);
+
+  const scheduleAutoHide = useCallback(() => {}, []);
 
   useEffect(() => {
-    scheduleAutoHide();
     return () => {
       if (hideTimer.current) clearTimeout(hideTimer.current);
     };
-  }, [scheduleAutoHide]);
+  }, []);
 
-  const toggleChrome = useCallback(() => {
-    if (hideTimer.current) {
-      clearTimeout(hideTimer.current);
-      hideTimer.current = null;
+  const toggleChrome = useCallback(() => {}, []);
+
+  const closeChromeMenu = useCallback((action?: () => void) => {
+    chromeMenuOpenRef.current = false;
+    cancelAnimation(chromeMenuProgress);
+    chromeMenuProgress.value = withTiming(
+      0,
+      {
+        duration: 150,
+        easing: Easing.out(Easing.cubic),
+        reduceMotion: ReduceMotion.System,
+      },
+      (finished) => {
+        if (finished && action) {
+          runOnJS(action)();
+        }
+      },
+    );
+  }, [chromeMenuProgress]);
+  closeChromeMenuRef.current = closeChromeMenu;
+
+  const openChromeMenu = useCallback(() => {
+    closeGuideRef.current();
+    chromeMenuOpenRef.current = true;
+    cancelAnimation(chromeMenuProgress);
+    chromeMenuProgress.value = withTiming(1, {
+      duration: 180,
+      easing: Easing.out(Easing.cubic),
+      reduceMotion: ReduceMotion.System,
+    });
+  }, [chromeMenuProgress]);
+
+  const toggleChromeMenu = useCallback(() => {
+    if (chromeMenuOpenRef.current) {
+      closeChromeMenu();
+    } else {
+      openChromeMenu();
     }
-    if (!chromeVisibleRef.current) {
-      chromeOpacity.set(withTiming(1, { duration: CHROME_REVEAL_DURATION_MS, easing: CHROME_EASING, reduceMotion: ReduceMotion.System }));
-      chromeVisibleRef.current = true;
-      setChromeVisible(true);
-      hideTimer.current = setTimeout(() => {
-        chromeOpacity.set(withTiming(0, { duration: CHROME_HIDE_DURATION_MS, easing: CHROME_EASING, reduceMotion: ReduceMotion.System }, (finished) => {
-          if (finished) runOnJS(hideChrome)();
-        }));
-      }, 4500);
-      return;
-    }
-    chromeOpacity.set(withTiming(0, { duration: CHROME_HIDE_DURATION_MS, easing: CHROME_EASING, reduceMotion: ReduceMotion.System }, (finished) => {
-      if (finished) runOnJS(hideChrome)();
-    }));
-  }, [chromeOpacity, hideChrome]);
+  }, [closeChromeMenu, openChromeMenu]);
 
   const handleScrollBeginDrag = useCallback(() => {
     dismissHint();
-    if (hideTimer.current) {
-      clearTimeout(hideTimer.current);
-      hideTimer.current = null;
+    if (chromeMenuOpenRef.current) {
+      closeChromeMenuRef.current();
     }
-    if (!chromeVisibleRef.current) return;
-    chromeOpacity.set(withTiming(0, { duration: CHROME_HIDE_DURATION_MS, easing: CHROME_EASING, reduceMotion: ReduceMotion.System }, (finished) => {
-      if (finished) runOnJS(hideChrome)();
-    }));
-  }, [dismissHint, chromeOpacity, hideChrome]);
+    if (guideOpenRef.current) {
+      closeGuideRef.current();
+    }
+  }, [dismissHint]);
 
   const commitReaderTheme = useCallback((nextTheme: ReaderMode) => {
     setMode(nextTheme);
@@ -916,6 +1082,7 @@ export default function ReaderScreen() {
     const nextTheme: ReaderMode = animatedThemeRef.current === 'lamp' ? 'day' : 'lamp';
     animatedThemeRef.current = nextTheme;
 
+    cancelAnimation(bgProgress);
     bgProgress.set(withTiming(
       nextTheme === 'lamp' ? 1 : 0,
       {
@@ -931,7 +1098,31 @@ export default function ReaderScreen() {
     ));
   }, [bgProgress, commitReaderTheme, scheduleAutoHide]);
 
-  const chromeStyle = useAnimatedStyle(() => ({ opacity: chromeOpacity.get() }));
+  const chromeStyle = useAnimatedStyle(() => ({ opacity: 1 }));
+
+  const chromeMenuLayerAnimStyle = useAnimatedStyle(() => {
+    const progress = chromeMenuProgress.value;
+    return {
+      opacity: progress,
+      display: progress <= 0.001 ? 'none' : 'flex',
+    };
+  });
+
+  const chromeMenuPanelStyle = useAnimatedStyle(() => {
+    const progress = chromeMenuProgress.value;
+    return {
+      opacity: progress,
+      elevation: interpolate(progress, [0, 0.05, 1], [0, 0, 8]),
+      transform: [
+        { translateY: interpolate(progress, [0, 1], [-12, 0]) },
+        { scale: interpolate(progress, [0, 1], [0.94, 1]) },
+      ],
+    };
+  });
+
+  const hamburgerIconAnimStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${chromeMenuProgress.value * 90}deg` }],
+  }));
 
   // FlatList requires onViewableItemsChanged to keep the same identity across
   // renders (it warns/throws if it changes), so the callback itself must be
@@ -1498,7 +1689,7 @@ export default function ReaderScreen() {
               translatedParagraphs={translatedParagraphsForItem}
               bilingualParagraphs={bilingualParagraphsForItem}
               onCloseTranslation={toggleTranslation}
-              onPagePress={selection ? undefined : toggleChrome}
+              onPagePress={undefined}
             />
           </View>
         </ReaderPageFrame>
@@ -1516,7 +1707,6 @@ export default function ReaderScreen() {
       handleRangeEdgeDragStart,
       handleRangeEdgeDrag,
       handleRangeEdgeDragEnd,
-      toggleChrome,
       bgProgress,
       sourceLanguage,
       targetLanguage,
@@ -1555,7 +1745,7 @@ export default function ReaderScreen() {
           if (lines > 0) {
             const measured = Math.round(sampleText.length / lines);
             if (measured > 0) {
-              setMeasuredCharsPerLine(measured);
+              setMeasuredCharsPerLine((prev) => (Math.abs(prev - measured) > 2 ? measured : prev));
             }
           }
         }}
@@ -1659,8 +1849,6 @@ export default function ReaderScreen() {
   const timeLeftLabel =
     pagesLeft <= 0 ? 'Last page' : minutesLeft < 1 ? 'Almost done' : `${minutesLeft} min left`;
 
-  const chromePercent = LamplightColor.flameAmber;
-
   return (
     <View style={styles.container} onLayout={handleContainerLayout}>
       {measurement}
@@ -1699,7 +1887,7 @@ export default function ReaderScreen() {
         initialScrollIndex={initialIndex}
         getItemLayout={(_, index) => ({ length: pageWidth, offset: pageWidth * index, index })}
         renderItem={renderPage}
-        extraData={`${mode}-${readingFontSizePx}-${readingLineHeight}-${pageWidth}-${pageHeight}-${savedWordSet.size}-${selection ? `${selection.startPageGlobalIndex}:${selection.startParagraph}:${selection.startOffset}:${selection.endPageGlobalIndex}:${selection.endParagraph}:${selection.endOffset}` : ''}-${isDraggingHandle ? 'drag' : 'idle'}-${activeWord ? `${activeWord.pageGlobalIndex}:${activeWord.start}` : ''}-${wordMenu ? `${wordMenu.page.globalIndex}:${wordMenu.start}` : ''}-${translation ? `${translation.pageGlobalIndex}:${translation.status}` : ''}`}
+        extraData={`${readingFontSizePx}-${readingLineHeight}-${pageWidth}-${pageHeight}-${savedWordSet.size}-${selection ? `${selection.startPageGlobalIndex}:${selection.startParagraph}:${selection.startOffset}:${selection.endPageGlobalIndex}:${selection.endParagraph}:${selection.endOffset}` : ''}-${isDraggingHandle ? 'drag' : 'idle'}-${activeWord ? `${activeWord.pageGlobalIndex}:${activeWord.start}` : ''}-${wordMenu ? `${wordMenu.page.globalIndex}:${wordMenu.start}` : ''}-${translation ? `${translation.pageGlobalIndex}:${translation.status}` : ''}`}
         // Detach off-screen pages' native view trees on iOS; disabled on Android
         // where ClippingReactViewGroup detaches active pages during reflow, causing
         // blank screens.
@@ -1738,38 +1926,20 @@ export default function ReaderScreen() {
         pointerEvents={chromeVisible ? 'auto' : 'none'}
         style={[styles.topBar, chromeStyle, { height: insets.top + 64 }]}
       >
-        <Animated.View style={[StyleSheet.absoluteFill, dayChromeFadeStyle]} pointerEvents="none">
-          <Svg width={pageWidth} height={insets.top + 64} style={StyleSheet.absoluteFill}>
-            <Defs>
-              <LinearGradient id="chromeFadeDay" x1="0" y1="0" x2="0" y2="1">
-                <Stop offset="0%" stopColor={READING_BG_LIGHT} stopOpacity={0.96} />
-                <Stop offset="70%" stopColor={READING_BG_LIGHT} stopOpacity={0.78} />
-                <Stop offset="100%" stopColor={READING_BG_LIGHT} stopOpacity={0} />
-              </LinearGradient>
-            </Defs>
-            <Rect x={0} y={0} width={pageWidth} height={insets.top + 64} fill="url(#chromeFadeDay)" />
-          </Svg>
-        </Animated.View>
-        <Animated.View style={[StyleSheet.absoluteFill, nightChromeFadeStyle]} pointerEvents="none">
-          <Svg width={pageWidth} height={insets.top + 64} style={StyleSheet.absoluteFill}>
-            <Defs>
-              <LinearGradient id="chromeFadeLamp" x1="0" y1="0" x2="0" y2="1">
-                <Stop offset="0%" stopColor={READING_DARK_STOPS[0]} stopOpacity={0.96} />
-                <Stop offset="70%" stopColor={READING_DARK_STOPS[0]} stopOpacity={0.78} />
-                <Stop offset="100%" stopColor={READING_DARK_STOPS[0]} stopOpacity={0} />
-              </LinearGradient>
-            </Defs>
-            <Rect x={0} y={0} width={pageWidth} height={insets.top + 64} fill="url(#chromeFadeLamp)" />
-          </Svg>
-        </Animated.View>
         {/* Percent readout and top-bar centerline */}
         <View style={[styles.topBarRow, { paddingTop: insets.top + 19 }]}>
           {/* Reading progress, centered at the top: which page of how many,
               plus how much reading is left, so a long book has a visible end. */}
           <View style={styles.topBarProgress}>
-            <Text style={[typography.uiRowTitle, { color: chromePercent, fontSize: 13 }]}>
+            <Animated.Text
+              style={[
+                typography.uiRowTitle,
+                { fontSize: 13 },
+                animatedTopBarTextStyle,
+              ]}
+            >
               Page {pageNumber} of {totalPages}
-            </Text>
+            </Animated.Text>
             <Animated.Text
               style={[
                 typography.metadataCaption,
@@ -1794,165 +1964,122 @@ export default function ReaderScreen() {
         />
       </View>
 
-      {/* Reader Guide Button (?) — perfectly aligned with the top-right buttons */}
+      {/* The animated layer owns all taps while the vertical tools menu is open. */}
+      <Animated.View
+        style={[
+          StyleSheet.absoluteFill,
+          styles.chromeMenuLayer,
+          chromeMenuLayerAnimStyle,
+        ]}
+      >
+        <Pressable
+          style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.18)' }]}
+          onPress={() => closeChromeMenu()}
+        />
+        <Animated.View
+          style={[
+            styles.chromeMenuPanel,
+            animatedButtonStyle,
+            chromeMenuPanelStyle,
+            { top: insets.top + 58, borderRadius: radius.card },
+          ]}
+        >
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Page and font style"
+            testID="reader-page-style-button"
+            onPress={() => closeChromeMenu(() => setPageStyleVisible(true))}
+            style={styles.chromeMenuRow}
+          >
+            <Text style={[styles.chromeMenuAa, { color: colors.flameAmber }]}>Aa</Text>
+            <Text style={[typography.uiRowTitle, styles.chromeMenuLabel, { color: isLamp ? READING_TEXT_DARK : READING_TEXT_LIGHT }]}>Page & Font Style</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Translate page"
+            testID="reader-translate-button"
+            onPress={() => closeChromeMenu(toggleTranslation)}
+            style={styles.chromeMenuRow}
+          >
+            <TranslateIcon color={currentTranslation?.status === 'ready' ? colors.flameAmber : isLamp ? READING_TEXT_DARK : READING_TEXT_LIGHT} size={18} />
+            <Text style={[typography.uiRowTitle, styles.chromeMenuLabel, { color: isLamp ? READING_TEXT_DARK : READING_TEXT_LIGHT }]}>Translate Page</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Translation language"
+            testID="reader-language-button"
+            onPress={() => closeChromeMenu(() => setLanguagePickerVisible(true))}
+            style={styles.chromeMenuRow}
+          >
+            <TranslateIcon color={colors.flameAmber} size={18} />
+            <Text style={[typography.uiRowTitle, styles.chromeMenuLabel, { color: isLamp ? READING_TEXT_DARK : READING_TEXT_LIGHT }]}>Change Translation Language</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Listen to nature sounds"
+            testID="reader-ambience-button"
+            onPress={() => closeChromeMenu(() => setAmbienceOpen(true))}
+            style={styles.chromeMenuRow}
+          >
+            <SpeakerIcon color={ambienceTrackId ? colors.flameAmber : isLamp ? READING_TEXT_DARK : READING_TEXT_LIGHT} size={18} />
+            <Text style={[typography.uiRowTitle, styles.chromeMenuLabel, { color: isLamp ? READING_TEXT_DARK : READING_TEXT_LIGHT }]}>Listen to Nature Sounds</Text>
+          </Pressable>
+          <TurnPageSoundMenuRow
+            isLamp={Boolean(isLamp)}
+            playPageTurn={playPageTurn}
+            stopPageTurn={stopPageTurn}
+          />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={isLamp ? 'Switch to day mode' : 'Switch to lamp mode'}
+            testID="reader-mode-toggle-button"
+            onPress={() => {
+              toggleReadingTheme();
+              closeChromeMenu();
+            }}
+            style={styles.chromeMenuRow}
+          >
+            <ModeIcon progress={bgProgress} />
+            <Animated.Text style={[typography.uiRowTitle, styles.chromeMenuLabel, animatedTopBarTextStyle]}>
+              {isLamp ? 'Day Mode' : 'Lamp Mode'}
+            </Animated.Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Reader guide"
+            testID="reader-guide-button"
+            onPress={() => closeChromeMenu(openGuide)}
+            style={styles.chromeMenuRow}
+          >
+            <QuestionIcon color={isLamp ? READING_TEXT_DARK : READING_TEXT_LIGHT} size={18} />
+            <Text style={[typography.uiRowTitle, styles.chromeMenuLabel, { color: isLamp ? READING_TEXT_DARK : READING_TEXT_LIGHT }]}>Reader Guide</Text>
+          </Pressable>
+        </Animated.View>
+      </Animated.View>
+
+      {/* Top Left: Hamburger menu button */}
       <Animated.View
         pointerEvents="box-none"
         style={[
-          styles.guideButton,
+          styles.chromeMenuButton,
           { top: insets.top + 10 },
-          chromeStyle,
         ]}
       >
         <Animated.View style={[styles.chromeButtonSurface, animatedButtonStyle]} pointerEvents="none">
-          <View style={styles.buttonIconContainer}>
+          <Animated.View style={[styles.buttonIconContainer, hamburgerIconAnimStyle]}>
             <Animated.View style={[StyleSheet.absoluteFill, styles.centered, dayChromeFadeStyle]}>
-              <QuestionIcon color={READING_TEXT_LIGHT} size={18} />
+              <MenuIcon color={READING_TEXT_LIGHT} size={19} />
             </Animated.View>
             <Animated.View style={[StyleSheet.absoluteFill, styles.centered, nightChromeFadeStyle]}>
-              <QuestionIcon color={READING_TEXT_DARK} size={18} />
+              <MenuIcon color={READING_TEXT_DARK} size={19} />
             </Animated.View>
-          </View>
+          </Animated.View>
         </Animated.View>
         <ReaderChromeTouchTarget
-          enabled={chromeVisible}
-          onPress={() => {
-            scheduleAutoHide();
-            setGuideVisible(true);
-          }}
-          onLongPress={() => router.back()}
-          delayLongPress={500}
-        />
-      </Animated.View>
-
-      {/* Reading mode toggle */}
-      <Animated.View
-        pointerEvents="box-none"
-        style={[
-          styles.modeCycleButton,
-          { top: insets.top + 10 },
-          chromeStyle,
-        ]}
-      >
-        <Animated.View style={[styles.chromeButtonSurface, animatedButtonStyle]} pointerEvents="none">
-          <ModeIcon progress={bgProgress} />
-        </Animated.View>
-        <ReaderChromeTouchTarget enabled={chromeVisible} onPress={toggleReadingTheme} />
-      </Animated.View>
-
-      {/* Reading ambience sound button */}
-      <Animated.View
-        pointerEvents="box-none"
-        style={[
-          styles.ambienceButton,
-          { top: insets.top + 10 },
-          chromeStyle,
-        ]}
-      >
-        <Animated.View style={[styles.chromeButtonSurface, animatedButtonStyle]} pointerEvents="none">
-          <View style={styles.buttonIconContainer}>
-            <Animated.View style={[StyleSheet.absoluteFill, styles.centered, dayChromeFadeStyle]}>
-              <SpeakerIcon color={ambienceTrackId ? colors.flameAmber : READING_TEXT_LIGHT} size={18} />
-            </Animated.View>
-            <Animated.View style={[StyleSheet.absoluteFill, styles.centered, nightChromeFadeStyle]}>
-              <SpeakerIcon color={ambienceTrackId ? colors.flameAmber : READING_TEXT_DARK} size={18} />
-            </Animated.View>
-          </View>
-        </Animated.View>
-        <ReaderChromeTouchTarget
-          enabled={chromeVisible}
-          onPress={() => {
-            scheduleAutoHide();
-            setAmbienceOpen(true);
-          }}
-        />
-      </Animated.View>
-
-      {/* Page translation button */}
-      <Animated.View
-        pointerEvents="box-none"
-        style={[
-          styles.translateButton,
-          { top: insets.top + 10 },
-          chromeStyle,
-        ]}
-      >
-        <Animated.View style={[styles.chromeButtonSurface, animatedButtonStyle]} pointerEvents="none">
-          {currentTranslation?.status === 'loading' ? (
-            <ActivityIndicator size="small" color={isLamp ? READING_TEXT_DARK : READING_TEXT_LIGHT} />
-          ) : (
-            <View style={styles.buttonIconContainer}>
-              <Animated.View style={[StyleSheet.absoluteFill, styles.centered, dayChromeFadeStyle]}>
-                <TranslateIcon
-                  color={currentTranslation?.status === 'ready' ? colors.flameAmber : READING_TEXT_LIGHT}
-                  size={18}
-                />
-              </Animated.View>
-              <Animated.View style={[StyleSheet.absoluteFill, styles.centered, nightChromeFadeStyle]}>
-                <TranslateIcon
-                  color={currentTranslation?.status === 'ready' ? colors.flameAmber : READING_TEXT_DARK}
-                  size={18}
-                />
-              </Animated.View>
-            </View>
-          )}
-        </Animated.View>
-        <ReaderChromeTouchTarget
-          enabled={chromeVisible}
-          onPress={() => {
-            scheduleAutoHide();
-            toggleTranslation();
-          }}
-          onLongPress={() => {
-            scheduleAutoHide();
-            setLanguagePickerVisible(true);
-          }}
-          delayLongPress={350}
-        />
-      </Animated.View>
-
-      {/* Page & Font Style button */}
-      <Animated.View
-        pointerEvents="box-none"
-        style={[
-          styles.pageStyleButton,
-          { top: insets.top + 10 },
-          chromeStyle,
-        ]}
-      >
-        <Animated.View style={[styles.chromeButtonSurface, animatedButtonStyle]} pointerEvents="none">
-          <View style={styles.buttonIconContainer}>
-            <Animated.View style={[StyleSheet.absoluteFill, styles.centered, dayChromeFadeStyle]}>
-              <Text
-                style={{
-                  fontFamily: isBangla ? pageStyleConfig.banglaFont : pageStyleConfig.englishFont,
-                  color: colors.flameAmber,
-                  fontSize: 15,
-                  fontWeight: '700',
-                }}
-              >
-                Aa
-              </Text>
-            </Animated.View>
-            <Animated.View style={[StyleSheet.absoluteFill, styles.centered, nightChromeFadeStyle]}>
-              <Text
-                style={{
-                  fontFamily: isBangla ? pageStyleConfig.banglaFont : pageStyleConfig.englishFont,
-                  color: colors.flameAmber,
-                  fontSize: 15,
-                  fontWeight: '700',
-                }}
-              >
-                Aa
-              </Text>
-            </Animated.View>
-          </View>
-        </Animated.View>
-        <ReaderChromeTouchTarget
-          enabled={chromeVisible}
-          onPress={() => {
-            scheduleAutoHide();
-            setPageStyleVisible(true);
-          }}
+          enabled
+          onPress={toggleChromeMenu}
+          accessibilityLabel="Reader tools"
+          testID="reader-tools-button"
         />
       </Animated.View>
 
@@ -2184,7 +2311,7 @@ export default function ReaderScreen() {
       />
 
       <ReaderGuideModal
-        visible={guideVisible}
+        progress={guideProgress}
         onClose={handleCloseGuide}
         onOpenLanguagePicker={() => {
           handleCloseGuide();
@@ -2233,45 +2360,63 @@ const styles = StyleSheet.create({
     width: 72,
     height: 72,
   },
-  modeCycleButton: {
+  chromeMenuButton: {
     position: 'absolute',
-    right: 11,
+    left: 11,
     width: 48,
     height: 48,
     alignItems: 'center',
     justifyContent: 'center',
-    zIndex: 20,
-    elevation: 6,
+    zIndex: 50,
+    elevation: 20,
   },
-  ambienceButton: {
-    position: 'absolute',
-    right: 59,
-    width: 48,
-    height: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 20,
-    elevation: 6,
+  chromeMenuLayer: {
+    zIndex: 30,
   },
-  translateButton: {
+  chromeMenuPanel: {
     position: 'absolute',
-    right: 107,
-    width: 48,
-    height: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 20,
-    elevation: 6,
+    left: 11,
+    width: 236,
+    overflow: 'hidden',
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOpacity: 0.22,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
   },
-  pageStyleButton: {
-    position: 'absolute',
-    right: 155,
-    width: 48,
-    height: 48,
+  chromeMenuRow: {
+    minHeight: 48,
+    flexDirection: 'row',
     alignItems: 'center',
+    paddingHorizontal: 16,
+  },
+  chromeMenuAa: {
+    width: 20,
+    textAlign: 'center',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  chromeMenuLabel: {
+    marginLeft: 12,
+    fontSize: 14,
+  },
+  menuToggleTrack: {
+    width: 38,
+    height: 22,
+    borderRadius: 11,
     justifyContent: 'center',
-    zIndex: 20,
-    elevation: 6,
+    paddingHorizontal: 2,
+  },
+  menuToggleThumb: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#FAF5EE',
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
+    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 2,
   },
   topBar: {
     position: 'absolute',
@@ -2287,16 +2432,6 @@ const styles = StyleSheet.create({
   topBarProgress: {
     alignItems: 'center',
     gap: 1,
-  },
-  guideButton: {
-    position: 'absolute',
-    left: 11,
-    width: 48,
-    height: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 20,
-    elevation: 6,
   },
   modeIconContainer: {
     width: 20,

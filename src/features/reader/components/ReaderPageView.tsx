@@ -352,10 +352,14 @@ function renderParagraphRuns(
     children.push(
       <Text
         key={`s${spanKey}`}
-        onPress={(event) => {
-          event.stopPropagation();
-          onTextPress?.();
-        }}
+        onPress={
+          onTextPress
+            ? (event) => {
+                event.stopPropagation();
+                onTextPress();
+              }
+            : undefined
+        }
         onLongPress={(event) =>
           onWordLongPress({
             word: token.word!,
@@ -811,7 +815,9 @@ function ReaderPageViewImpl({
                       y: e.nativeEvent.layout.y,
                       height: e.nativeEvent.layout.height,
                     });
-                    setLayoutVersion((v) => v + 1);
+                    if (selecting) {
+                      setLayoutVersion((v) => v + 1);
+                    }
                   }
                 : undefined
             }
@@ -822,7 +828,9 @@ function ReaderPageViewImpl({
                       paragraphIndex,
                       e.nativeEvent.lines.map((l) => ({ x: l.x, y: l.y, width: l.width, height: l.height, text: l.text })),
                     );
-                    setLayoutVersion((v) => v + 1);
+                    if (selecting) {
+                      setLayoutVersion((v) => v + 1);
+                    }
                   }
                 : undefined
             }
@@ -873,7 +881,9 @@ function ReaderPageViewImpl({
                     y: e.nativeEvent.layout.y,
                     height: e.nativeEvent.layout.height,
                   });
-                  setLayoutVersion((v) => v + 1);
+                  if (selecting) {
+                    setLayoutVersion((v) => v + 1);
+                  }
                 }
               : undefined
           }
@@ -884,7 +894,9 @@ function ReaderPageViewImpl({
                     paragraphIndex,
                     e.nativeEvent.lines.map((l) => ({ x: l.x, y: l.y, width: l.width, height: l.height, text: l.text })),
                   );
-                  setLayoutVersion((v) => v + 1);
+                  if (selecting) {
+                    setLayoutVersion((v) => v + 1);
+                  }
                 }
               : undefined
           }
@@ -917,7 +929,7 @@ function ReaderPageViewImpl({
         styles.container,
         {
           paddingHorizontal: spacing.xl,
-          paddingTop: topInset + spacing.md,
+          paddingTop: topInset + 64,
           // Must match ReaderScreen's contentHeightPx bottom term exactly
           // (insets.bottom + 18) — a mismatch here means pagination budgets
           // for a shorter/taller page than what's actually rendered, so every

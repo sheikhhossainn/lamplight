@@ -1,9 +1,10 @@
 import { useRef } from 'react';
-import { LayoutChangeEvent, Modal, PanResponder, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { LayoutChangeEvent, PanResponder, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 
 import { CloseIcon, SoundWaveIcon } from '@/components/icons';
+import { ReaderOverlay } from '@/features/reader/components/ReaderOverlay';
 import {
   setAmbienceTrackId,
   setAmbienceVolume,
@@ -101,9 +102,8 @@ export function AmbiencePicker({ visible, onClose }: AmbiencePickerProps) {
   ];
 
   return (
-    <Modal visible={visible} transparent animationType="slide" statusBarTranslucent onRequestClose={onClose}>
-      <View style={styles.root}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+    <ReaderOverlay visible={visible} onClosed={onClose} variant="bottomSheet">
+      {({ requestClose }) => (
         <View
           style={[
             styles.sheet,
@@ -120,13 +120,13 @@ export function AmbiencePicker({ visible, onClose }: AmbiencePickerProps) {
           <View style={styles.headerRow}>
             <View style={{ flex: 1, paddingRight: 12 }}>
               <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 18 }]}>
-                Reading Sounds
+                Listen to Nature Sounds
               </Text>
               <Text style={[typography.metadataCaption, { color: colors.fawn, marginTop: 2 }]}>
                 Page swipe audio & background ambience
               </Text>
             </View>
-            <Pressable onPress={onClose} hitSlop={12} style={styles.closeBtn}>
+            <Pressable onPress={requestClose} hitSlop={12} style={styles.closeBtn}>
               <CloseIcon color={colors.fawn} size={16} />
             </Pressable>
           </View>
@@ -248,8 +248,8 @@ export function AmbiencePicker({ visible, onClose }: AmbiencePickerProps) {
             ) : null}
           </ScrollView>
         </View>
-      </View>
-    </Modal>
+      )}
+    </ReaderOverlay>
   );
 }
 

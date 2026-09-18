@@ -1,8 +1,9 @@
 import React from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CheckIcon, CloseIcon } from '@/components/icons';
+import { ReaderOverlay } from '@/features/reader/components/ReaderOverlay';
 import {
   PAGE_STYLE_LIST,
   PageStyleConfig,
@@ -33,15 +34,8 @@ export function PageStyleSelectorModal({
   };
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      statusBarTranslucent
-      onRequestClose={onClose}
-    >
-      <View style={styles.backdrop}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+    <ReaderOverlay visible={visible} onClosed={onClose} variant="bottomSheet">
+      {({ requestClose }) => (
         <View
           style={[
             styles.sheet,
@@ -65,7 +59,7 @@ export function PageStyleSelectorModal({
                 Select your preferred reading typography & page atmosphere
               </Text>
             </View>
-            <Pressable onPress={onClose} hitSlop={12} style={styles.closeBtn}>
+            <Pressable onPress={requestClose} hitSlop={12} style={styles.closeBtn}>
               <CloseIcon color={colors.fawn} size={16} />
             </Pressable>
           </View>
@@ -175,8 +169,8 @@ export function PageStyleSelectorModal({
             })}
           </ScrollView>
         </View>
-      </View>
-    </Modal>
+      )}
+    </ReaderOverlay>
   );
 }
 

@@ -1,5 +1,6 @@
 import { getReadingTheme, setReadingTheme, type ReadingTheme } from './readingTheme';
 import {
+  cancelAnimation,
   Easing,
   makeMutable,
   ReduceMotion,
@@ -16,8 +17,8 @@ type Runner = (next: ReadingTheme) => void;
 
 let runner: Runner | null = null;
 
-export const THEME_TRANSITION_DURATION = 200;
-export const THEME_TRANSITION_EASING = Easing.bezier(0.77, 0, 0.175, 1);
+export const THEME_TRANSITION_DURATION = 360;
+export const THEME_TRANSITION_EASING = Easing.inOut(Easing.cubic);
 export const themeTransitionProgress = makeMutable(getReadingTheme() === 'lamp' ? 1 : 0);
 
 export function registerThemeTransitionRunner(r: Runner | null): void {
@@ -28,6 +29,7 @@ export function requestThemeChange(next: ReadingTheme): void {
   const target = next === 'lamp' ? 1 : 0;
   if (next === getReadingTheme() && Math.abs(themeTransitionProgress.get() - target) < 0.001) return;
 
+  cancelAnimation(themeTransitionProgress);
   themeTransitionProgress.set(withTiming(target, {
     duration: THEME_TRANSITION_DURATION,
     easing: THEME_TRANSITION_EASING,

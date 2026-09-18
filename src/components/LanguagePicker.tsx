@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { FlatList, Keyboard, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { FlatList, Keyboard, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Path } from 'react-native-svg';
 
 import { CloseIcon } from '@/components/icons';
 import { offerSpeechVoiceSetup } from '@/features/audio/pronunciationEngine';
+import { ReaderOverlay } from '@/features/reader/components/ReaderOverlay';
 import { TARGET_LANGUAGES, type TargetLanguage } from '@/features/settings/languagePair';
 import { useTheme } from '@/theme/ThemeProvider';
 
@@ -56,92 +57,95 @@ export function LanguagePicker({ visible, selected, onSelect, onClose }: Languag
   }, [query]);
 
   return (
-    <Modal visible={visible} animationType="slide" statusBarTranslucent onRequestClose={onClose}>
-      <View style={[styles.root, { backgroundColor: colors.parchment, paddingTop: insets.top + 8 }]}>
-        <View style={[styles.header, { paddingHorizontal: spacing.xl }]}>
-          <Text style={[typography.screenTitle, { color: colors.ink }]}>Translate to</Text>
-          <Pressable onPress={onClose} hitSlop={12} style={styles.close}>
-            <CloseIcon color={colors.ink} size={18} />
-          </Pressable>
-        </View>
+    <ReaderOverlay visible={visible} onClosed={onClose} variant="fullscreen">
+      {({ requestClose }) => (
+        <View style={[styles.root, { backgroundColor: colors.parchment, paddingTop: insets.top + 8 }]}>
+          <View style={[styles.header, { paddingHorizontal: spacing.xl }]}>
+            <Text style={[typography.screenTitle, { color: colors.ink }]}>Translate to</Text>
+            <Pressable onPress={requestClose} hitSlop={12} style={styles.close}>
+              <CloseIcon color={colors.ink} size={18} />
+            </Pressable>
+          </View>
 
-        <View
-          style={[
-            styles.searchRow,
-            {
-              backgroundColor: colors.card,
-              borderColor: colors.hairline,
-              borderRadius: radius.pill,
-              marginHorizontal: spacing.xl,
-              marginTop: spacing.md,
-            },
-          ]}
-        >
-          <SearchIcon color={colors.fawn} />
-          <TextInput
-            ref={searchRef}
-            value={query}
-            onChangeText={setQuery}
-            placeholder="Search languages"
-            placeholderTextColor={colors.fawn}
-            autoCorrect={false}
-            autoCapitalize="none"
-            autoFocus
-            style={[typography.uiRowTitle, styles.searchInput, { color: colors.ink }]}
-          />
-        </View>
-
-        {filtered.length === 0 ? (
-          <Text
+          <View
             style={[
-              typography.metadataCaption,
-              { color: colors.fawn, textAlign: 'center', marginTop: spacing.xl, paddingHorizontal: spacing.xl },
+              styles.searchRow,
+              {
+                backgroundColor: colors.card,
+                borderColor: colors.hairline,
+                borderRadius: radius.pill,
+                marginHorizontal: spacing.xl,
+                marginTop: spacing.md,
+              },
             ]}
           >
-            No languages match “{query.trim()}”.
-          </Text>
-        ) : (
-          <FlatList
-            data={filtered}
-            keyExtractor={(item) => item.code}
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="on-drag"
-            style={{ flex: 1, marginTop: spacing.sm }}
-            contentContainerStyle={{ paddingHorizontal: spacing.xl, paddingBottom: insets.bottom + 24 }}
-            renderItem={({ item }) => {
-              const active = item.code === selected;
-              return (
-                <Pressable
-                  onPress={() => {
-                    Keyboard.dismiss();
-                    onSelect(item.code);
-                    void offerSpeechVoiceSetup(item.code, item.name);
-                  }}
-                  style={[
-                    styles.row,
-                    active && { backgroundColor: colors.pairPillBackground, borderRadius: radius.card },
-                  ]}
-                >
-                  <Text
-                    style={[typography.uiRowTitle, { color: active ? colors.pairPillText : colors.ink, fontSize: 15 }]}
+            <SearchIcon color={colors.fawn} />
+            <TextInput
+              ref={searchRef}
+              value={query}
+              onChangeText={setQuery}
+              placeholder="Search languages"
+              placeholderTextColor={colors.fawn}
+              autoCorrect={false}
+              autoCapitalize="none"
+              autoFocus
+              style={[typography.uiRowTitle, styles.searchInput, { color: colors.ink }]}
+            />
+          </View>
+
+          {filtered.length === 0 ? (
+            <Text
+              style={[
+                typography.metadataCaption,
+                { color: colors.fawn, textAlign: 'center', marginTop: spacing.xl, paddingHorizontal: spacing.xl },
+              ]}
+            >
+              No languages match “{query.trim()}”.
+            </Text>
+          ) : (
+            <FlatList
+              data={filtered}
+              keyExtractor={(item) => item.code}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              style={{ flex: 1, marginTop: spacing.sm }}
+              contentContainerStyle={{ paddingHorizontal: spacing.xl, paddingBottom: insets.bottom + 24 }}
+              renderItem={({ item }) => {
+                const active = item.code === selected;
+                return (
+                  <Pressable
+                    onPress={() => {
+                      Keyboard.dismiss();
+                      onSelect(item.code);
+                      void offerSpeechVoiceSetup(item.code, item.name);
+                      requestClose();
+                    }}
+                    style={[
+                      styles.row,
+                      active && { backgroundColor: colors.pairPillBackground, borderRadius: radius.card },
+                    ]}
                   >
-                    {item.name}
-                  </Text>
-                  <View style={styles.rowRight}>
                     <Text
-                      style={[typography.eyebrowLabel, { color: active ? colors.pairPillText : colors.fawn, fontSize: 11 }]}
+                      style={[typography.uiRowTitle, { color: active ? colors.pairPillText : colors.ink, fontSize: 15 }]}
                     >
-                      {item.short}
+                      {item.name}
                     </Text>
-                    {active ? <CheckIcon color={colors.pairPillText} /> : null}
-                  </View>
-                </Pressable>
-              );
-            }}
-          />
-        )}
-      </View>
-    </Modal>
+                    <View style={styles.rowRight}>
+                      <Text
+                        style={[typography.eyebrowLabel, { color: active ? colors.pairPillText : colors.fawn, fontSize: 11 }]}
+                      >
+                        {item.short}
+                      </Text>
+                      {active ? <CheckIcon color={colors.pairPillText} /> : null}
+                    </View>
+                  </Pressable>
+                );
+              }}
+            />
+          )}
+        </View>
+      )}
+    </ReaderOverlay>
   );
 }
 
