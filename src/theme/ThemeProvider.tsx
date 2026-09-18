@@ -2,16 +2,20 @@ import { createContext, use, useMemo, type PropsWithChildren } from 'react';
 
 import { useReadingTheme } from '@/features/settings/readingTheme';
 import { usePageStyle } from '@/features/settings/pageStylePrefs';
+import {
+  isRtlLiteraryTheme,
+  useLiteraryTheme,
+  type LiteraryThemeCode,
+} from '@/features/settings/literaryTheme';
 import { getPageStyleConfig } from '@/features/reader/pageStyles';
 import {
-  LamplightColor,
-  LamplightColorDark,
+  getCultureThemeColors,
   Layout,
   Radius,
   Spacing,
   type LamplightColors,
 } from './tokens';
-import { LamplightTypography } from './typography';
+import { FontFamily, LamplightTypography } from './typography';
 
 type LamplightTheme = {
   colors: LamplightColors;
@@ -29,6 +33,8 @@ type LamplightTheme = {
   radius: typeof Radius;
   layout: typeof Layout;
   scheme: 'day' | 'lamp';
+  cultureTheme: LiteraryThemeCode;
+  isRTL: boolean;
 };
 
 const ThemeContext = createContext<LamplightTheme | null>(null);
@@ -39,25 +45,42 @@ export function LamplightThemeProvider({ children }: PropsWithChildren) {
   // since they all read colors through useTheme() rather than importing tokens.
   const scheme = useReadingTheme();
   const pageStyleId = usePageStyle();
+  const cultureTheme = useLiteraryTheme();
 
   const value = useMemo<LamplightTheme>(() => {
     const styleConfig = getPageStyleConfig(pageStyleId);
+    const colors = getCultureThemeColors(cultureTheme, scheme);
+    const isRTL = isRtlLiteraryTheme(cultureTheme);
+
+    // Japanese culture theme provides generous line-height (+2.5px);
+    // Western culture theme prioritizes editorial Lora serif.
+    const isJapaneseTheme = cultureTheme === 'japanese';
+    const isWesternTheme = cultureTheme === 'western';
+
+    const readingFont = isWesternTheme
+      ? (styleConfig.id === 'modern' ? styleConfig.englishFont : FontFamily.loraRegular)
+      : styleConfig.englishFont;
+
+    const readingLineHeight = isJapaneseTheme
+      ? styleConfig.lineHeight + 2.5
+      : styleConfig.lineHeight;
+
     return {
-      colors: scheme === 'lamp' ? LamplightColorDark : LamplightColor,
+      colors,
       typography: {
         ...LamplightTypography,
         readingBody: {
           ...LamplightTypography.readingBody,
-          fontFamily: styleConfig.englishFont,
+          fontFamily: readingFont,
           fontSize: styleConfig.fontSize,
-          lineHeight: styleConfig.lineHeight,
+          lineHeight: readingLineHeight,
           letterSpacing: styleConfig.letterSpacing,
         },
         banglaReadingBody: {
           ...LamplightTypography.banglaReadingBody,
           fontFamily: styleConfig.banglaFont,
           fontSize: styleConfig.banglaFontSize,
-          lineHeight: styleConfig.banglaLineHeight,
+          lineHeight: isJapaneseTheme ? styleConfig.banglaLineHeight + 2.5 : styleConfig.banglaLineHeight,
           letterSpacing: styleConfig.banglaLetterSpacing,
         },
       },
@@ -65,8 +88,10 @@ export function LamplightThemeProvider({ children }: PropsWithChildren) {
       radius: Radius,
       layout: Layout,
       scheme,
+      cultureTheme,
+      isRTL,
     };
-  }, [scheme, pageStyleId]);
+  }, [scheme, pageStyleId, cultureTheme]);
 
   return <ThemeContext value={value}>{children}</ThemeContext>;
 }

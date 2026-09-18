@@ -67,6 +67,213 @@ export type LamplightColors = {
     : (typeof LamplightColor)[K];
 };
 
+// ---------------------------------------------------------------------------
+// Cultural Reading Theme Palettes
+// ---------------------------------------------------------------------------
+
+// Bengali — secular literary paper, river ink, and quiet editorial greens.
+// Brand charcoal, amber, and parchment stay unchanged.
+export const BengaliColor: LamplightColors = {
+  ...LamplightColor,
+  libraryBackground: '#E9E6DC',
+  card: '#FAF7EF',
+  ink: '#26333A',
+  umber: '#4B5D60',
+  fawn: '#778486',
+  straw: '#B9BEB8',
+  hairline: '#D5DDD8',
+  segmentedTrack: '#E0E5E0',
+  quietOnLight: '#667274',
+};
+
+export const BengaliColorDark: LamplightColors = {
+  ...LamplightColorDark,
+  libraryBackground: '#1A2225',
+  card: '#253035',
+  ink: '#EDF0EA',
+  umber: '#B9C6C4',
+  fawn: '#8D9B9C',
+  straw: '#4E5C5E',
+  hairline: '#303C3F',
+  segmentedTrack: '#253135',
+  quietOnLight: '#8D9B9C',
+};
+
+export const CultureMaterial = {
+  bengali: {
+    day: { rail: '#AA925B', highlight: '#D7C58D', joint: '#715A32', accent: '#2F665E', wash: '#DFE8E1' },
+    lamp: { rail: '#725F38', highlight: '#A9945C', joint: '#493A22', accent: '#7EAAA2', wash: '#243735' },
+  },
+  western: {
+    day: { rail: '#7A593D', highlight: '#B58A62', joint: '#4D3626', accent: '#8A5A32', wash: '#EEE2D2' },
+    lamp: { rail: '#4C3729', highlight: '#74533A', joint: '#2D211A', accent: '#C39467', wash: '#332820' },
+  },
+  korean: {
+    day: { rail: '#A69E8D', highlight: '#D8D3C8', joint: '#676157', accent: '#42566A', wash: '#E5E8EA' },
+    lamp: { rail: '#55534F', highlight: '#77746D', joint: '#353432', accent: '#91A6BA', wash: '#252A2F' },
+  },
+  japanese: {
+    day: { rail: '#9A7655', highlight: '#C7A57F', joint: '#684B35', accent: '#8E4A3B', wash: '#E9DED2' },
+    lamp: { rail: '#5C4434', highlight: '#806048', joint: '#37291F', accent: '#C77B68', wash: '#302622' },
+  },
+  arabic: {
+    day: { rail: '#A88436', highlight: '#D8BE73', joint: '#705718', accent: '#263E63', wash: '#E6E1D5' },
+    lamp: { rail: '#765F2A', highlight: '#A98A44', joint: '#443714', accent: '#D7B96C', wash: '#172440' },
+  },
+} as const;
+
+export function getCultureMaterial(theme: string, scheme: 'day' | 'lamp') {
+  const key = theme === 'bengali' || theme === 'korean' || theme === 'japanese' || theme === 'arabic'
+    ? theme
+    : 'western';
+  return CultureMaterial[key][scheme];
+}
+
+// Korean — Clean minimal, Hanji paper, cool whites
+export const KoreanColor: LamplightColors = {
+  ...LamplightColor,
+  parchment: '#F7F7F5', // Hanji paper
+  libraryBackground: '#EFEFEA',
+  card: '#FFFFFF', // cool white elevated surface
+  ink: '#191A1C', // clean minimal sumi ink
+  umber: '#484A50',
+  fawn: '#787B82',
+  straw: '#B8BAC0',
+  hairline: '#E2E4E8',
+  segmentedTrack: '#E8E9EC',
+  quietOnLight: '#686B72',
+};
+
+export const KoreanColorDark: LamplightColors = {
+  ...LamplightColorDark,
+  parchment: '#141517', // cool obsidian
+  libraryBackground: '#101113',
+  card: '#1B1C1F',
+  ink: '#ECEEF0', // cool white text
+  umber: '#B0B4BC',
+  fawn: '#787B82',
+  straw: '#4C4F56',
+  hairline: '#26282E',
+  segmentedTrack: '#1F2024',
+};
+
+// Arabic — Deep navy, warm gold, RTL-aware
+export const ArabicColor: LamplightColors = {
+  ...LamplightColor,
+  parchment: '#F7F5ED', // warm desert parchment
+  libraryBackground: '#ECE7DA',
+  card: '#FFFFFF',
+  ink: '#0D1B2A', // deep navy ink
+  umber: '#2B3E52', // muted navy body
+  fawn: '#64748B',
+  straw: '#CBD5E1',
+  hairline: '#E2DBCB',
+  segmentedTrack: '#E7DFCF',
+  flameAmber: '#D4AF37', // warm lustrous gold
+  pairPillBackground: '#F6E6C2',
+  pairPillText: '#8D6B18',
+  progressLabel: '#B08823',
+  quietOnLight: '#55657E',
+};
+
+export const ArabicColorDark: LamplightColors = {
+  ...LamplightColorDark,
+  parchment: '#0B132B', // signature deep night navy
+  libraryBackground: '#080E21',
+  card: '#14203D', // elevated rich navy card
+  ink: '#F8FAFC', // luminous ivory text
+  umber: '#CBD5E1', // warm silver-gold
+  fawn: '#94A3B8',
+  straw: '#475569',
+  hairline: '#1E293B',
+  segmentedTrack: '#162344',
+  flameAmber: '#E5B869', // warm glowing Arabian gold
+  lampText: '#F8FAFC',
+  pairPillBackground: 'rgba(229, 184, 105, 0.20)',
+  pairPillText: '#E5B869',
+  progressLabel: '#E5B869',
+};
+
+// Japanese — Washi paper, muted earth tones, generous line-height
+export const JapaneseColor: LamplightColors = {
+  ...LamplightColor,
+  parchment: '#F3EFE6', // fibrous washi paper
+  libraryBackground: '#E8E2D5',
+  card: '#FAF7F0',
+  ink: '#282521', // sumi soot ink
+  umber: '#585147', // cedar / roasted tea umber
+  fawn: '#877C6F', // weathered bamboo
+  straw: '#BFAFA0',
+  hairline: '#DDD5C7',
+  segmentedTrack: '#E4DCCE',
+  flameAmber: '#D0882A', // persimmon warm ember
+  quietOnLight: '#73685C',
+};
+
+export const JapaneseColorDark: LamplightColors = {
+  ...LamplightColorDark,
+  parchment: '#1A1917', // charred cedar sumi
+  libraryBackground: '#161513',
+  card: '#242220',
+  ink: '#EDE6D8', // washi cream text
+  umber: '#BEB5A5',
+  fawn: '#8C8477',
+  straw: '#585249',
+  hairline: '#312E2A',
+  segmentedTrack: '#282622',
+  flameAmber: '#E0983A',
+};
+
+// Western — Editorial cream, Lora serif
+export const WesternColor: LamplightColors = {
+  ...LamplightColor,
+  parchment: '#FBF8F1', // smooth editorial book cream
+  libraryBackground: '#F0ECE2',
+  card: '#FFFFFF',
+  ink: '#1F1E1B', // sharp bookpress black
+  umber: '#4E4942',
+  fawn: '#7C756B',
+  straw: '#BEB5A7',
+  hairline: '#E4DDD2',
+  segmentedTrack: '#ECE5DA',
+  flameAmber: '#C67D15', // vintage amber / book leather
+  quietOnLight: '#6E665C',
+};
+
+export const WesternColorDark: LamplightColors = {
+  ...LamplightColorDark,
+  parchment: '#181716', // antique leatherbound dark
+  libraryBackground: '#151413',
+  card: '#22201E',
+  ink: '#EFECE6', // soft ivory
+  umber: '#BFB8AD',
+  fawn: '#8E867B',
+  straw: '#544E47',
+  hairline: '#2F2C29',
+  segmentedTrack: '#272422',
+  flameAmber: '#D98F28',
+};
+
+export function getCultureThemeColors(
+  theme: string,
+  scheme: 'day' | 'lamp',
+): LamplightColors {
+  switch (theme) {
+    case 'korean':
+      return scheme === 'lamp' ? KoreanColorDark : KoreanColor;
+    case 'arabic':
+      return scheme === 'lamp' ? ArabicColorDark : ArabicColor;
+    case 'japanese':
+      return scheme === 'lamp' ? JapaneseColorDark : JapaneseColor;
+    case 'western':
+      return scheme === 'lamp' ? WesternColorDark : WesternColor;
+    case 'bengali':
+      return scheme === 'lamp' ? BengaliColorDark : BengaliColor;
+    default:
+      return scheme === 'lamp' ? WesternColorDark : WesternColor;
+  }
+}
+
 export type HighlightColorKey = keyof typeof LamplightColor.highlight;
 
 // Spacing scale (px) — base unit 4px

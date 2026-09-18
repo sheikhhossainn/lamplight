@@ -106,6 +106,7 @@ const TONGUE_NAMES: Record<string, string> = {
   bn: 'Bengali (বাংলা)',
   ja: 'Japanese (日本語)',
   ko: 'Korean (한국어)',
+  ar: 'Arabic (العربية)',
   en: 'English',
 };
 

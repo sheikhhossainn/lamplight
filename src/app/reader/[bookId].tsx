@@ -18,6 +18,8 @@ import Animated, {
   FadeIn,
   FadeOut,
   interpolateColor,
+  ReduceMotion,
+  runOnJS,
   type SharedValue,
   useAnimatedScrollHandler,
   useAnimatedStyle,
@@ -29,7 +31,7 @@ import Animated, {
 import Svg, { Circle, Defs, LinearGradient, Path, Rect, Stop } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ChevronLeftIcon, CloseIcon, MoonIcon, QuestionIcon, SoundWaveIcon, SunIcon, TranslateIcon } from '@/components/icons';
+import { ChevronLeftIcon, CloseIcon, MoonIcon, QuestionIcon, SpeakerIcon, SunIcon, TranslateIcon } from '@/components/icons';
 import { AmbiencePicker } from '@/features/ambience/AmbiencePicker';
 import { useAmbienceTrackId } from '@/features/ambience/ambiencePreference';
 import { ambienceTrackById } from '@/features/ambience/tracks';
@@ -93,6 +95,10 @@ const READING_BG_LIGHT = '#F4EBD9';
 const READING_TEXT_LIGHT = '#241D17';
 const READING_TEXT_DARK = '#F0E6D6';
 const READING_DARK_STOPS = ['#1C1B1E', '#201E22', '#26221F'] as const;
+const READER_THEME_DURATION_MS = 280;
+const READER_THEME_EASING = Easing.linear;
+const CHROME_REVEAL_DURATION_MS = 100;
+const CHROME_HIDE_DURATION_MS = 180;
 
 type ReaderMode = 'day' | 'lamp';
 
@@ -127,10 +133,40 @@ function ModeIcon({ progress }: { progress: SharedValue<number> }) {
   );
 }
 
+type ReaderChromeTouchTargetProps = {
+  enabled: boolean;
+  onPress: () => void;
+  onLongPress?: () => void;
+  delayLongPress?: number;
+};
+
+// Android can retain an Animated Pressable's native touch region after its
+// opacity reaches zero. Keep the visual chrome separate and unmount the touch
+// target whenever the toolbar is hidden.
+function ReaderChromeTouchTarget({
+  enabled,
+  onPress,
+  onLongPress,
+  delayLongPress,
+}: ReaderChromeTouchTargetProps) {
+  if (!enabled) return null;
+  return (
+    <Pressable
+      hitSlop={{ top: 12, bottom: 12, left: 6, right: 6 }}
+      style={StyleSheet.absoluteFill}
+      pressRetentionOffset={12}
+      onPress={onPress}
+      onLongPress={onLongPress}
+      delayLongPress={delayLongPress}
+    />
+  );
+}
+
 type ReaderPageFrameProps = {
   children: React.ReactNode;
   pageIndex: number;
   scrollX: SharedValue<number>;
+  themeProgress: SharedValue<number>;
   mode?: ReaderMode;
   pageWidth: number;
   pageHeight: number;
@@ -143,6 +179,7 @@ function ReaderPageFrame({
   children,
   pageIndex,
   scrollX,
+  themeProgress,
   mode = 'day',
   pageWidth,
   pageHeight,
@@ -171,7 +208,7 @@ function ReaderPageFrame({
 
   return (
     <View style={[styles.pageFrame, { width: pageWidth, height: pageHeight }]}>
-      <BookPageFrame mode={mode}>
+      <BookPageFrame themeProgress={themeProgress}>
         {children}
         {/* Dynamic paper flex shading while folding/turning */}
         <Animated.View
@@ -266,6 +303,7 @@ export default function ReaderScreen() {
   const [savedWords, setSavedWords] = useState<SavedWord[]>([]);
 
   const [chromeVisible, setChromeVisible] = useState(true);
+  const chromeVisibleRef = useRef(true);
   const chromeOpacity = useSharedValue(1);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -513,13 +551,7 @@ export default function ReaderScreen() {
   const targetLanguage = useTargetLanguage();
 
   const sharedTheme = useReadingTheme();
-  const [mode, setMode] = useState<ReaderMode>(() => (getReadingTheme() === 'lamp' ? 'lamp' : 'day'));
-
-  // Keep in sync if the theme is changed from Settings while this screen is
-  // already mounted.
-  useEffect(() => {
-    setMode(sharedTheme === 'lamp' ? 'lamp' : 'day');
-  }, [sharedTheme]);
+  const [mode, setMode] = useState<ReaderMode>(() => (sharedTheme === 'lamp' ? 'lamp' : 'day'));
 
   const isLamp = mode === 'lamp';
   const textColor = isLamp ? READING_TEXT_DARK : READING_TEXT_LIGHT;
@@ -530,15 +562,24 @@ export default function ReaderScreen() {
   const savedWordColor = isLamp ? 'rgba(245,166,35,0.14)' : 'rgba(245,166,35,0.35)';
   const savedWordTextColor = isLamp ? '#F5A623' : '#2B2621';
 
-  // Background and chrome transition shared value: 0 = day, 1 = lamp.
-  // 380ms smooth GPU-accelerated bezier transition between paper & obsidian.
+  // One UI-thread clock drives the root, every visible paper layer, chrome,
+  // and text. Keeping the material transition independent from React renders
+  // prevents the staged blank-page -> text -> paper repaint on Android.
   const bgProgress = useSharedValue(isLamp ? 1 : 0);
+  const animatedThemeRef = useRef<ReaderMode>(mode);
+
+  // Keep in sync if the theme is changed externally (e.g. from Settings).
   useEffect(() => {
-    bgProgress.value = withTiming(isLamp ? 1 : 0, {
-      duration: 380,
-      easing: Easing.bezier(0.25, 1, 0.5, 1),
+    const next = sharedTheme === 'lamp' ? 'lamp' : 'day';
+    if (animatedThemeRef.current === next) return;
+    animatedThemeRef.current = next;
+    setMode(next);
+    bgProgress.value = withTiming(next === 'lamp' ? 1 : 0, {
+      duration: READER_THEME_DURATION_MS,
+      easing: READER_THEME_EASING,
+      reduceMotion: ReduceMotion.Never,
     });
-  }, [isLamp, bgProgress]);
+  }, [sharedTheme, bgProgress]);
   const darkBgStyle = useAnimatedStyle(() => ({ opacity: bgProgress.value }));
 
   const dayChromeFadeStyle = useAnimatedStyle(() => ({
@@ -809,14 +850,20 @@ export default function ReaderScreen() {
     [savedWords],
   );
 
+  const hideChrome = useCallback(() => {
+    chromeVisibleRef.current = false;
+    setChromeVisible(false);
+  }, []);
+
   const scheduleAutoHide = useCallback(() => {
     if (hideTimer.current) clearTimeout(hideTimer.current);
     if (translation?.status === 'loading') return;
     hideTimer.current = setTimeout(() => {
-      chromeOpacity.value = withTiming(0, { duration: 220 });
-      setChromeVisible(false);
+      chromeOpacity.value = withTiming(0, { duration: CHROME_HIDE_DURATION_MS, easing: Easing.in(Easing.cubic) }, (finished) => {
+        if (finished) runOnJS(hideChrome)();
+      });
     }, 4500);
-  }, [chromeOpacity, translation?.status]);
+  }, [chromeOpacity, hideChrome, translation?.status]);
 
   useEffect(() => {
     scheduleAutoHide();
@@ -830,18 +877,21 @@ export default function ReaderScreen() {
       clearTimeout(hideTimer.current);
       hideTimer.current = null;
     }
-    setChromeVisible((prev) => {
-      const next = !prev;
-      chromeOpacity.value = withTiming(next ? 1 : 0, { duration: 220 });
-      if (next) {
-        hideTimer.current = setTimeout(() => {
-          chromeOpacity.value = withTiming(0, { duration: 220 });
-          setChromeVisible(false);
-        }, 4500);
-      }
-      return next;
+    if (!chromeVisibleRef.current) {
+      chromeVisibleRef.current = true;
+      setChromeVisible(true);
+      chromeOpacity.set(withTiming(1, { duration: CHROME_REVEAL_DURATION_MS, easing: Easing.out(Easing.cubic) }));
+      hideTimer.current = setTimeout(() => {
+        chromeOpacity.value = withTiming(0, { duration: CHROME_HIDE_DURATION_MS, easing: Easing.in(Easing.cubic) }, (finished) => {
+          if (finished) runOnJS(hideChrome)();
+        });
+      }, 4500);
+      return;
+    }
+    chromeOpacity.value = withTiming(0, { duration: CHROME_HIDE_DURATION_MS, easing: Easing.in(Easing.cubic) }, (finished) => {
+      if (finished) runOnJS(hideChrome)();
     });
-  }, [chromeOpacity]);
+  }, [chromeOpacity, hideChrome]);
 
   const handleScrollBeginDrag = useCallback(() => {
     dismissHint();
@@ -849,14 +899,32 @@ export default function ReaderScreen() {
       clearTimeout(hideTimer.current);
       hideTimer.current = null;
     }
-    setChromeVisible((prev) => {
-      if (prev) {
-        chromeOpacity.value = withTiming(0, { duration: 220 });
-        return false;
-      }
-      return prev;
+    if (!chromeVisibleRef.current) return;
+    chromeOpacity.value = withTiming(0, { duration: CHROME_HIDE_DURATION_MS, easing: Easing.in(Easing.cubic) }, (finished) => {
+      if (finished) runOnJS(hideChrome)();
     });
-  }, [dismissHint, chromeOpacity]);
+  }, [dismissHint, chromeOpacity, hideChrome]);
+
+  const toggleReadingTheme = useCallback(() => {
+    scheduleAutoHide();
+    const nextTheme: ReaderMode = animatedThemeRef.current === 'lamp' ? 'day' : 'lamp';
+    animatedThemeRef.current = nextTheme;
+
+    bgProgress.value = withTiming(
+      nextTheme === 'lamp' ? 1 : 0,
+      {
+        duration: READER_THEME_DURATION_MS,
+        easing: READER_THEME_EASING,
+        reduceMotion: ReduceMotion.Never,
+      },
+      (finished) => {
+        if (finished) {
+          runOnJS(setMode)(nextTheme);
+          runOnJS(setReadingTheme)(nextTheme);
+        }
+      },
+    );
+  }, [bgProgress, scheduleAutoHide]);
 
   const chromeStyle = useAnimatedStyle(() => ({ opacity: chromeOpacity.value }));
 
@@ -948,8 +1016,9 @@ export default function ReaderScreen() {
       clearTimeout(hideTimer.current);
       hideTimer.current = null;
     }
-    setChromeVisible(false);
-    chromeOpacity.value = withTiming(0, { duration: 150 });
+    chromeOpacity.value = withTiming(0, { duration: 150 }, (finished) => {
+      if (finished) runOnJS(hideChrome)();
+    });
 
     const premium = isPremiumUser();
     const cap = await checkTranslationCap(premium);
@@ -1010,7 +1079,7 @@ export default function ReaderScreen() {
       setTranslation({ pageGlobalIndex, status: 'error' });
       scheduleAutoHide();
     }
-  }, [currentPage, translation, targetLanguage, book, bookId, scheduleAutoHide, chromeOpacity]);
+  }, [currentPage, translation, targetLanguage, book, bookId, scheduleAutoHide, chromeOpacity, hideChrome]);
 
   const retryDownload = useCallback(async () => {
     const isBangla =
@@ -1376,6 +1445,7 @@ export default function ReaderScreen() {
         <ReaderPageFrame
           pageIndex={index}
           scrollX={scrollX}
+          themeProgress={bgProgress}
           mode={mode}
           pageWidth={pageWidth}
           pageHeight={pageHeight}
@@ -1386,7 +1456,9 @@ export default function ReaderScreen() {
               mode={mode}
               sourceLanguage={sourceLanguage}
               targetLanguage={targetLanguage}
-              textColor={textColor}
+              dayTextColor={READING_TEXT_LIGHT}
+              lampTextColor={READING_TEXT_DARK}
+              themeProgress={bgProgress}
               topInset={insets.top}
               bottomInset={insets.bottom}
               fontSize={readingFontSizePx}
@@ -1440,7 +1512,7 @@ export default function ReaderScreen() {
       handleRangeEdgeDrag,
       handleRangeEdgeDragEnd,
       toggleChrome,
-      textColor,
+      bgProgress,
       sourceLanguage,
       targetLanguage,
       readingFontSizePx,
@@ -1718,139 +1790,166 @@ export default function ReaderScreen() {
       </View>
 
       {/* Reader Guide Button (?) — perfectly aligned with the top-right buttons */}
-      <AnimatedPressable
-        hitSlop={12}
-        pointerEvents={chromeVisible ? 'auto' : 'none'}
+      <Animated.View
+        pointerEvents="box-none"
         style={[
           styles.guideButton,
           { top: insets.top + 10 },
-          animatedButtonStyle,
           chromeStyle,
         ]}
-        onPress={() => setGuideVisible(true)}
-        onLongPress={() => router.back()}
-        delayLongPress={500}
       >
-        <View style={styles.buttonIconContainer}>
-          <Animated.View style={[StyleSheet.absoluteFill, styles.centered, dayChromeFadeStyle]}>
-            <QuestionIcon color={READING_TEXT_LIGHT} size={18} />
-          </Animated.View>
-          <Animated.View style={[StyleSheet.absoluteFill, styles.centered, nightChromeFadeStyle]}>
-            <QuestionIcon color={READING_TEXT_DARK} size={18} />
-          </Animated.View>
-        </View>
-      </AnimatedPressable>
+        <Animated.View style={[styles.chromeButtonSurface, animatedButtonStyle]} pointerEvents="none">
+          <View style={styles.buttonIconContainer}>
+            <Animated.View style={[StyleSheet.absoluteFill, styles.centered, dayChromeFadeStyle]}>
+              <QuestionIcon color={READING_TEXT_LIGHT} size={18} />
+            </Animated.View>
+            <Animated.View style={[StyleSheet.absoluteFill, styles.centered, nightChromeFadeStyle]}>
+              <QuestionIcon color={READING_TEXT_DARK} size={18} />
+            </Animated.View>
+          </View>
+        </Animated.View>
+        <ReaderChromeTouchTarget
+          enabled={chromeVisible}
+          onPress={() => {
+            scheduleAutoHide();
+            setGuideVisible(true);
+          }}
+          onLongPress={() => router.back()}
+          delayLongPress={500}
+        />
+      </Animated.View>
 
       {/* Reading mode toggle */}
-      <AnimatedPressable
-        hitSlop={12}
-        pointerEvents={chromeVisible ? 'auto' : 'none'}
+      <Animated.View
+        pointerEvents="box-none"
         style={[
           styles.modeCycleButton,
           { top: insets.top + 10 },
-          animatedButtonStyle,
           chromeStyle,
         ]}
-        onPress={() => setReadingTheme(isLamp ? 'day' : 'lamp')}
       >
-        <ModeIcon progress={bgProgress} />
-      </AnimatedPressable>
+        <Animated.View style={[styles.chromeButtonSurface, animatedButtonStyle]} pointerEvents="none">
+          <ModeIcon progress={bgProgress} />
+        </Animated.View>
+        <ReaderChromeTouchTarget enabled={chromeVisible} onPress={toggleReadingTheme} />
+      </Animated.View>
 
       {/* Reading ambience sound button */}
-      <AnimatedPressable
-        hitSlop={12}
-        pointerEvents={chromeVisible ? 'auto' : 'none'}
+      <Animated.View
+        pointerEvents="box-none"
         style={[
           styles.ambienceButton,
           { top: insets.top + 10 },
-          animatedButtonStyle,
           chromeStyle,
         ]}
-        onPress={() => setAmbienceOpen(true)}
       >
-        <View style={styles.buttonIconContainer}>
-          <Animated.View style={[StyleSheet.absoluteFill, styles.centered, dayChromeFadeStyle]}>
-            <SoundWaveIcon color={ambienceTrackId ? colors.flameAmber : READING_TEXT_LIGHT} size={18} />
-          </Animated.View>
-          <Animated.View style={[StyleSheet.absoluteFill, styles.centered, nightChromeFadeStyle]}>
-            <SoundWaveIcon color={ambienceTrackId ? colors.flameAmber : READING_TEXT_DARK} size={18} />
-          </Animated.View>
-        </View>
-      </AnimatedPressable>
+        <Animated.View style={[styles.chromeButtonSurface, animatedButtonStyle]} pointerEvents="none">
+          <View style={styles.buttonIconContainer}>
+            <Animated.View style={[StyleSheet.absoluteFill, styles.centered, dayChromeFadeStyle]}>
+              <SpeakerIcon color={ambienceTrackId ? colors.flameAmber : READING_TEXT_LIGHT} size={18} />
+            </Animated.View>
+            <Animated.View style={[StyleSheet.absoluteFill, styles.centered, nightChromeFadeStyle]}>
+              <SpeakerIcon color={ambienceTrackId ? colors.flameAmber : READING_TEXT_DARK} size={18} />
+            </Animated.View>
+          </View>
+        </Animated.View>
+        <ReaderChromeTouchTarget
+          enabled={chromeVisible}
+          onPress={() => {
+            scheduleAutoHide();
+            setAmbienceOpen(true);
+          }}
+        />
+      </Animated.View>
 
       {/* Page translation button */}
-      <AnimatedPressable
-        hitSlop={12}
-        pointerEvents={chromeVisible ? 'auto' : 'none'}
+      <Animated.View
+        pointerEvents="box-none"
         style={[
           styles.translateButton,
           { top: insets.top + 10 },
-          animatedButtonStyle,
           chromeStyle,
         ]}
-        onPress={toggleTranslation}
-        onLongPress={() => setLanguagePickerVisible(true)}
-        delayLongPress={350}
       >
-        {currentTranslation?.status === 'loading' ? (
-          <ActivityIndicator size="small" color={isLamp ? READING_TEXT_DARK : READING_TEXT_LIGHT} />
-        ) : (
-          <View style={styles.buttonIconContainer}>
-            <Animated.View style={[StyleSheet.absoluteFill, styles.centered, dayChromeFadeStyle]}>
-              <TranslateIcon
-                color={currentTranslation?.status === 'ready' ? colors.flameAmber : READING_TEXT_LIGHT}
-                size={18}
-              />
-            </Animated.View>
-            <Animated.View style={[StyleSheet.absoluteFill, styles.centered, nightChromeFadeStyle]}>
-              <TranslateIcon
-                color={currentTranslation?.status === 'ready' ? colors.flameAmber : READING_TEXT_DARK}
-                size={18}
-              />
-            </Animated.View>
-          </View>
-        )}
-      </AnimatedPressable>
+        <Animated.View style={[styles.chromeButtonSurface, animatedButtonStyle]} pointerEvents="none">
+          {currentTranslation?.status === 'loading' ? (
+            <ActivityIndicator size="small" color={isLamp ? READING_TEXT_DARK : READING_TEXT_LIGHT} />
+          ) : (
+            <View style={styles.buttonIconContainer}>
+              <Animated.View style={[StyleSheet.absoluteFill, styles.centered, dayChromeFadeStyle]}>
+                <TranslateIcon
+                  color={currentTranslation?.status === 'ready' ? colors.flameAmber : READING_TEXT_LIGHT}
+                  size={18}
+                />
+              </Animated.View>
+              <Animated.View style={[StyleSheet.absoluteFill, styles.centered, nightChromeFadeStyle]}>
+                <TranslateIcon
+                  color={currentTranslation?.status === 'ready' ? colors.flameAmber : READING_TEXT_DARK}
+                  size={18}
+                />
+              </Animated.View>
+            </View>
+          )}
+        </Animated.View>
+        <ReaderChromeTouchTarget
+          enabled={chromeVisible}
+          onPress={() => {
+            scheduleAutoHide();
+            toggleTranslation();
+          }}
+          onLongPress={() => {
+            scheduleAutoHide();
+            setLanguagePickerVisible(true);
+          }}
+          delayLongPress={350}
+        />
+      </Animated.View>
 
       {/* Page & Font Style button */}
-      <AnimatedPressable
-        hitSlop={12}
-        pointerEvents={chromeVisible ? 'auto' : 'none'}
+      <Animated.View
+        pointerEvents="box-none"
         style={[
           styles.pageStyleButton,
           { top: insets.top + 10 },
-          animatedButtonStyle,
           chromeStyle,
         ]}
-        onPress={() => setPageStyleVisible(true)}
       >
-        <View style={styles.buttonIconContainer}>
-          <Animated.View style={[StyleSheet.absoluteFill, styles.centered, dayChromeFadeStyle]}>
-            <Text
-              style={{
-                fontFamily: isBangla ? pageStyleConfig.banglaFont : pageStyleConfig.englishFont,
-                color: colors.flameAmber,
-                fontSize: 15,
-                fontWeight: '700',
-              }}
-            >
-              Aa
-            </Text>
-          </Animated.View>
-          <Animated.View style={[StyleSheet.absoluteFill, styles.centered, nightChromeFadeStyle]}>
-            <Text
-              style={{
-                fontFamily: isBangla ? pageStyleConfig.banglaFont : pageStyleConfig.englishFont,
-                color: colors.flameAmber,
-                fontSize: 15,
-                fontWeight: '700',
-              }}
-            >
-              Aa
-            </Text>
-          </Animated.View>
-        </View>
-      </AnimatedPressable>
+        <Animated.View style={[styles.chromeButtonSurface, animatedButtonStyle]} pointerEvents="none">
+          <View style={styles.buttonIconContainer}>
+            <Animated.View style={[StyleSheet.absoluteFill, styles.centered, dayChromeFadeStyle]}>
+              <Text
+                style={{
+                  fontFamily: isBangla ? pageStyleConfig.banglaFont : pageStyleConfig.englishFont,
+                  color: colors.flameAmber,
+                  fontSize: 15,
+                  fontWeight: '700',
+                }}
+              >
+                Aa
+              </Text>
+            </Animated.View>
+            <Animated.View style={[StyleSheet.absoluteFill, styles.centered, nightChromeFadeStyle]}>
+              <Text
+                style={{
+                  fontFamily: isBangla ? pageStyleConfig.banglaFont : pageStyleConfig.englishFont,
+                  color: colors.flameAmber,
+                  fontSize: 15,
+                  fontWeight: '700',
+                }}
+              >
+                Aa
+              </Text>
+            </Animated.View>
+          </View>
+        </Animated.View>
+        <ReaderChromeTouchTarget
+          enabled={chromeVisible}
+          onPress={() => {
+            scheduleAutoHide();
+            setPageStyleVisible(true);
+          }}
+        />
+      </Animated.View>
 
       {/* On-page translating toast with spinner so the reader has immediate feedback */}
       {currentTranslation?.status === 'loading' ? (
@@ -2131,11 +2230,9 @@ const styles = StyleSheet.create({
   },
   modeCycleButton: {
     position: 'absolute',
-    right: 16,
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    borderWidth: 1,
+    right: 11,
+    width: 48,
+    height: 48,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 20,
@@ -2143,11 +2240,9 @@ const styles = StyleSheet.create({
   },
   ambienceButton: {
     position: 'absolute',
-    right: 64,
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    borderWidth: 1,
+    right: 59,
+    width: 48,
+    height: 48,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 20,
@@ -2155,11 +2250,9 @@ const styles = StyleSheet.create({
   },
   translateButton: {
     position: 'absolute',
-    right: 112,
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    borderWidth: 1,
+    right: 107,
+    width: 48,
+    height: 48,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 20,
@@ -2167,11 +2260,9 @@ const styles = StyleSheet.create({
   },
   pageStyleButton: {
     position: 'absolute',
-    right: 160,
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    borderWidth: 1,
+    right: 155,
+    width: 48,
+    height: 48,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 20,
@@ -2194,11 +2285,9 @@ const styles = StyleSheet.create({
   },
   guideButton: {
     position: 'absolute',
-    left: 16,
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    borderWidth: 1,
+    left: 11,
+    width: 48,
+    height: 48,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 20,
@@ -2213,6 +2302,14 @@ const styles = StyleSheet.create({
   buttonIconContainer: {
     width: 20,
     height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chromeButtonSurface: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },

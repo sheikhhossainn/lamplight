@@ -17,7 +17,16 @@ const SPINE_COLOR_BY_BOOK: Record<string, string> = {
   quran: '#1F4A38',
   'bible-ot': '#5C5346',
   'bible-nt': '#6B3A32',
+  torah: '#1E2B3E',
   vedas: '#C05C1F',
+};
+
+const SCRIPTURE_COVERS: Record<string, any> = {
+  quran: require('../../assets/covers/quran.jpg'),
+  'bible-ot': require('../../assets/covers/bible_ot.jpg'),
+  'bible-nt': require('../../assets/covers/bible_nt.jpg'),
+  torah: require('../../assets/covers/torah.jpg'),
+  vedas: require('../../assets/covers/vedas.jpg'),
 };
 
 const FALLBACK_TONES = ['#1C1B1E', '#5C5346', '#8A7F6E', '#C6B896', '#252228'];
@@ -61,9 +70,11 @@ export function BookSpine({
 
   useEffect(() => {
     setCoverFailed(false);
-  }, [coverUrl]);
+  }, [coverUrl, bookId]);
 
-  const showCover = !!coverUrl && !coverFailed;
+  const scriptureCover = SCRIPTURE_COVERS[bookId];
+  const imageSource = scriptureCover ?? (coverUrl ? { uri: coverUrl } : null);
+  const showCover = !!imageSource && !coverFailed;
   const backgroundColor = spineColorForBook(bookId, toneIndex);
   const isDark = isDarkSpineColor(backgroundColor);
   const titleColor = isDark ? colors.lampText : colors.ink;
@@ -98,18 +109,21 @@ export function BookSpine({
         ]}
       >
         {showCover ? (
-          <Image
-            source={{ uri: coverUrl }}
-            style={StyleSheet.absoluteFill}
-            contentFit="cover"
-            transition={180}
-            onLoad={(e) => {
-              if (e.source && (e.source.width <= 2 || e.source.height <= 2)) {
-                setCoverFailed(true);
-              }
-            }}
-            onError={() => setCoverFailed(true)}
-          />
+          <>
+            <Image
+              source={imageSource}
+              style={StyleSheet.absoluteFill}
+              contentFit="cover"
+              transition={180}
+              onLoad={(e) => {
+                if (e.source && (e.source.width <= 2 || e.source.height <= 2)) {
+                  setCoverFailed(true);
+                }
+              }}
+              onError={() => setCoverFailed(true)}
+            />
+            <View style={styles.spineJoint} pointerEvents="none" />
+          </>
         ) : (
           <Text numberOfLines={3} style={[spineTitleStyle, { color: titleColor }]}>
             {title}
@@ -141,5 +155,15 @@ const styles = StyleSheet.create({
     borderBottomWidth: 14,
     borderLeftWidth: 14,
     borderLeftColor: 'transparent',
+  },
+  spineJoint: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 5,
+    backgroundColor: 'rgba(0,0,0,0.18)',
+    borderRightWidth: 1,
+    borderRightColor: 'rgba(255,255,255,0.08)',
   },
 });

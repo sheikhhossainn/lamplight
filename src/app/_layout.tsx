@@ -10,6 +10,7 @@ import {
 import { Manrope_400Regular, Manrope_600SemiBold, Manrope_700Bold } from '@expo-google-fonts/manrope';
 import { useFonts } from 'expo-font';
 import { Stack, usePathname } from 'expo-router';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as SplashScreen from 'expo-splash-screen';
 import * as SystemUI from 'expo-system-ui';
 import { useEffect, useState } from 'react';
@@ -22,6 +23,7 @@ import { hydrateMotherTongue } from '@/features/settings/motherTongue';
 import { seedJapaneseCatalog } from '@/features/content-ingestion/japaneseApi';
 import { seedKoreanCatalog } from '@/features/content-ingestion/koreanApi';
 import { hydrateTargetLanguage } from '@/features/settings/languagePair';
+import { hydrateLiteraryTheme } from '@/features/settings/literaryTheme';
 import { hydrateOnboardingStatus } from '@/features/settings/onboardingStatus';
 import { hydratePageStyle } from '@/features/settings/pageStylePrefs';
 import { LamplightThemeProvider, useTheme } from '@/theme/ThemeProvider';
@@ -60,6 +62,7 @@ export default function RootLayout() {
       hydrateTargetLanguage(),
       hydrateMotherTongue(),
       hydratePageStyle(),
+      hydrateLiteraryTheme(),
       seedJapaneseCatalog(),
       seedKoreanCatalog(),
     ]);
@@ -84,9 +87,11 @@ export default function RootLayout() {
   }
 
   return (
-    <LamplightThemeProvider>
-      <AppShell />
-    </LamplightThemeProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <LamplightThemeProvider>
+        <AppShell />
+      </LamplightThemeProvider>
+    </GestureHandlerRootView>
   );
 }
 
@@ -151,7 +156,11 @@ function AppShell() {
           name="quote-share/[highlightId]"
           options={{ contentStyle: { backgroundColor: colors.primaryDark } }}
         />
-        <Stack.Screen name="reader/[bookId]" options={{ contentStyle: { backgroundColor: colors.parchment } }} />
+        {/* The reader screen manages its own Day↔Lamp background via hardcoded
+            colors and animated overlays (READING_BG_LIGHT + a dark gradient).
+            Pinned to a fixed color so the native container doesn't flash when
+            setReadingTheme fires after the reader's local 280ms transition. */}
+        <Stack.Screen name="reader/[bookId]" options={{ contentStyle: { backgroundColor: '#F4EBD9' } }} />
         <Stack.Screen name="book/[id]" options={{ contentStyle: { backgroundColor: colors.parchment } }} />
         <Stack.Screen name="saved-books" options={{ contentStyle: { backgroundColor: colors.parchment } }} />
         <Stack.Screen name="bible/[bookId]" options={{ contentStyle: { backgroundColor: colors.parchment } }} />

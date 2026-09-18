@@ -1,13 +1,29 @@
+import { useEffect, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import Animated, {
+  Easing,
+  ReduceMotion,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withSequence,
+  withTiming,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { CultureMotif } from '@/components/CultureMotif';
 import { CheckIcon, CloseIcon } from '@/components/icons';
+import {
+  getSuggestedThemeForMotherTongue,
+  type LiteraryThemeCode,
+} from '@/features/settings/literaryTheme';
 import {
   MOTHER_TONGUES,
   type MotherTongueCode,
   type MotherTongueOption,
 } from '@/features/settings/motherTongue';
 import { useTheme } from '@/theme/ThemeProvider';
+import { getNativeUiTextStyle } from '@/theme/typography';
 
 type MotherTonguePickerProps = {
   visible: boolean;
@@ -15,6 +31,43 @@ type MotherTonguePickerProps = {
   onSelect: (code: MotherTongueCode) => void;
   onClose: () => void;
 };
+
+const EASE_OUT = Easing.bezier(0.23, 1, 0.32, 1);
+
+function CultureThemeWash({ theme, onComplete }: { theme: LiteraryThemeCode; onComplete: () => void }) {
+  const { colors } = useTheme();
+  const reducedMotion = useReducedMotion();
+  const opacity = useSharedValue(0);
+  const translateX = useSharedValue(0);
+
+  useEffect(() => {
+    const duration = reducedMotion ? 140 : 280;
+    translateX.set(reducedMotion ? 0 : -8);
+    opacity.set(
+      withSequence(
+        withTiming(0.14, { duration: reducedMotion ? 50 : 80, easing: EASE_OUT, reduceMotion: ReduceMotion.System }),
+        withTiming(0, { duration: reducedMotion ? 90 : 200, easing: EASE_OUT, reduceMotion: ReduceMotion.System }),
+      ),
+    );
+    if (!reducedMotion) {
+      translateX.set(withTiming(0, { duration, easing: EASE_OUT, reduceMotion: ReduceMotion.System }));
+    }
+
+    const timeout = setTimeout(onComplete, duration);
+    return () => clearTimeout(timeout);
+  }, [onComplete, opacity, reducedMotion, translateX]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    opacity: opacity.get(),
+    transform: [{ translateX: translateX.get() }],
+  }));
+
+  return (
+    <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.themeWash, animatedStyle]}>
+      <CultureMotif theme={theme} color={colors.umber} />
+    </Animated.View>
+  );
+}
 
 export function MotherTonguePicker({
   visible,
@@ -24,6 +77,16 @@ export function MotherTonguePicker({
 }: MotherTonguePickerProps) {
   const { colors, typography, spacing, radius } = useTheme();
   const insets = useSafeAreaInsets();
+  const [applyingTheme, setApplyingTheme] = useState<LiteraryThemeCode | null>(null);
+
+  useEffect(() => {
+    if (!visible) setApplyingTheme(null);
+  }, [visible]);
+
+  const handleSelect = (code: MotherTongueCode) => {
+    onSelect(code);
+    setApplyingTheme(getSuggestedThemeForMotherTongue(code));
+  };
 
   return (
     <Modal visible={visible} animationType="slide" statusBarTranslucent onRequestClose={onClose}>
@@ -51,9 +114,9 @@ export function MotherTonguePicker({
             return (
               <Pressable
                 key={opt.code}
+                disabled={applyingTheme != null}
                 onPress={() => {
-                  onSelect(opt.code);
-                  onClose();
+                  handleSelect(opt.code);
                 }}
                 style={({ pressed }) => [
                   styles.optionCard,
@@ -69,7 +132,7 @@ export function MotherTonguePicker({
               >
                 <Text style={styles.flag}>{opt.flag}</Text>
                 <View style={styles.cardInfo}>
-                  <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 16 }]}>
+                  <Text style={[getNativeUiTextStyle(opt.code, 'row'), { color: colors.ink }]}>
                     {opt.nativeName}{' '}
                     <Text style={{ color: colors.fawn, fontSize: 13, fontWeight: '400' }}>
                       ({opt.name})
@@ -77,16 +140,16 @@ export function MotherTonguePicker({
                   </Text>
                   <Text
                     style={[
-                      typography.metadataCaption,
-                      { color: colors.flameAmber, fontSize: 12, marginTop: 2 },
+                      getNativeUiTextStyle(opt.code, 'metadata'),
+                      { color: colors.flameAmber, marginTop: 2 },
                     ]}
                   >
                     {opt.sourceName}
                   </Text>
                   <Text
                     style={[
-                      typography.metadataCaption,
-                      { color: colors.umber, fontSize: 11, marginTop: 2 },
+                      getNativeUiTextStyle(opt.code, 'metadata'),
+                      { color: colors.umber, fontSize: opt.code === 'bn' ? 14 : 12, marginTop: 2 },
                     ]}
                     numberOfLines={1}
                   >
@@ -108,6 +171,7 @@ export function MotherTonguePicker({
             );
           })}
         </View>
+        {applyingTheme ? <CultureThemeWash theme={applyingTheme} onComplete={onClose} /> : null}
       </View>
     </Modal>
   );
@@ -151,5 +215,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 12,
+  },
+  themeWash: {
+    backgroundColor: 'transparent',
   },
 });

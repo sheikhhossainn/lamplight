@@ -76,46 +76,46 @@ export const LamplightTypography = {
     letterSpacing: 0.2,
   },
   banglaScreenTitle: {
-    fontFamily: FontFamily.loraSemiBold,
-    fontSize: 24,
-    lineHeight: 32,
+    fontFamily: FontFamily.atmaSemiBold,
+    fontSize: 27,
+    lineHeight: 38,
     letterSpacing: 0,
   },
   banglaBookCoverTitle: {
-    fontFamily: FontFamily.loraSemiBold,
-    fontSize: 20,
-    lineHeight: 26,
+    fontFamily: FontFamily.atmaSemiBold,
+    fontSize: 22,
+    lineHeight: 31,
     letterSpacing: 0,
   },
   banglaBookSpineTitle: {
-    fontFamily: FontFamily.loraSemiBold,
-    fontSize: 11,
-    lineHeight: 15,
-    letterSpacing: 0,
-  },
-  banglaUiRowTitle: {
-    fontFamily: FontFamily.manropeSemiBold,
-    fontSize: 15,
-    lineHeight: 21,
-    letterSpacing: 0,
-  },
-  banglaButtonLabel: {
-    fontFamily: FontFamily.manropeBold,
-    fontSize: 15,
-    lineHeight: 21,
-    letterSpacing: 0,
-  },
-  banglaMetadataCaption: {
-    fontFamily: FontFamily.manropeRegular,
+    fontFamily: FontFamily.atmaSemiBold,
     fontSize: 13,
     lineHeight: 18,
     letterSpacing: 0,
   },
+  banglaUiRowTitle: {
+    fontFamily: FontFamily.atmaMedium,
+    fontSize: 18,
+    lineHeight: 27,
+    letterSpacing: 0,
+  },
+  banglaButtonLabel: {
+    fontFamily: FontFamily.atmaSemiBold,
+    fontSize: 17,
+    lineHeight: 26,
+    letterSpacing: 0,
+  },
+  banglaMetadataCaption: {
+    fontFamily: FontFamily.atmaRegular,
+    fontSize: 15,
+    lineHeight: 24,
+    letterSpacing: 0,
+  },
   banglaEyebrowLabel: {
-    fontFamily: FontFamily.manropeSemiBold,
-    fontSize: 11,
-    lineHeight: 15,
-    letterSpacing: 0.4,
+    fontFamily: FontFamily.atmaSemiBold,
+    fontSize: 16,
+    lineHeight: 24,
+    letterSpacing: 0,
   },
   quoteShareCard: {
     fontFamily: FontFamily.loraItalicMedium,
@@ -207,6 +207,39 @@ export const LamplightTypography = {
 } as const satisfies Record<string, TextStyle>;
 
 export type LamplightTypographyKey = keyof typeof LamplightTypography;
+
+export type NativeUiRole = 'display' | 'row' | 'metadata';
+
+export function getNativeUiTextStyle(language: string, role: NativeUiRole = 'row'): TextStyle {
+  if (language === 'bn') {
+    if (role === 'display') return LamplightTypography.banglaScreenTitle;
+    if (role === 'metadata') return LamplightTypography.banglaMetadataCaption;
+    return LamplightTypography.banglaUiRowTitle;
+  }
+
+  if (language === 'ar') {
+    return {
+      fontFamily: role === 'display' ? FontFamily.amiriBold : FontFamily.amiriRegular,
+      fontSize: role === 'display' ? 27 : role === 'metadata' ? 16 : 19,
+      lineHeight: role === 'display' ? 42 : role === 'metadata' ? 27 : 31,
+      letterSpacing: 0,
+      writingDirection: 'rtl',
+    };
+  }
+
+  if (language === 'ja' || language === 'ko') {
+    return {
+      fontSize: role === 'display' ? 23 : role === 'metadata' ? 14 : 17,
+      lineHeight: role === 'display' ? 34 : role === 'metadata' ? 23 : 27,
+      fontWeight: role === 'display' ? '700' : role === 'row' ? '600' : '400',
+      letterSpacing: 0,
+    };
+  }
+
+  if (role === 'display') return LamplightTypography.screenTitle;
+  if (role === 'metadata') return LamplightTypography.metadataCaption;
+  return LamplightTypography.uiRowTitle;
+}
 
 export function getReadingTextStyle(language?: string, pageStyle?: 'manuscript' | 'classic' | 'modern'): TextStyle {
   const style = pageStyle ?? 'manuscript';

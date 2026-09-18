@@ -13,12 +13,12 @@ import {
 import Animated, {
   Easing,
   FadeIn,
-  interpolateColor,
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
   withTiming,
+  type SharedValue,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 
@@ -42,7 +42,10 @@ type ReaderPageViewProps = {
   mode?: 'day' | 'lamp';
   sourceLanguage: string;
   targetLanguage: string;
-  textColor: string;
+  textColor?: string;
+  dayTextColor?: string;
+  lampTextColor?: string;
+  themeProgress?: SharedValue<number>;
   topInset: number;
   bottomInset: number;
   fontSize: number;
@@ -317,6 +320,7 @@ function renderParagraphRuns(
   highlightColor: string | undefined,
   paragraphIndex: number,
   page: ReaderPage,
+  onTextPress: ReaderPageViewProps['onPagePress'],
   onWordLongPress: ReaderPageViewProps['onWordLongPress'],
 ): (string | ReactElement)[] {
   const children: (string | ReactElement)[] = [];
@@ -348,6 +352,10 @@ function renderParagraphRuns(
     children.push(
       <Text
         key={`s${spanKey}`}
+        onPress={(event) => {
+          event.stopPropagation();
+          onTextPress?.();
+        }}
         onLongPress={(event) =>
           onWordLongPress({
             word: token.word!,
@@ -431,6 +439,9 @@ function ReaderPageViewImpl({
   sourceLanguage,
   targetLanguage,
   textColor,
+  dayTextColor,
+  lampTextColor,
+  themeProgress,
   topInset,
   bottomInset,
   fontSize,
@@ -462,21 +473,23 @@ function ReaderPageViewImpl({
   const activeSpeechId = useCurrentSpeechId();
 
   const isLamp = mode === 'lamp';
-  const textThemeAnim = useSharedValue(isLamp ? 1 : 0);
-  useEffect(() => {
-    textThemeAnim.value = withTiming(isLamp ? 1 : 0, {
-      duration: 380,
-      easing: Easing.bezier(0.25, 1, 0.5, 1),
-    });
-  }, [isLamp, textThemeAnim]);
+  const resolvedDayColor = dayTextColor ?? textColor ?? '#1C1B1E';
+  const resolvedLampColor = lampTextColor ?? '#F5EDE1';
+  const currentTextColor = isLamp ? resolvedLampColor : resolvedDayColor;
 
-  const animatedBodyColorStyle = useAnimatedStyle(() => ({
-    color: interpolateColor(
-      textThemeAnim.value,
-      [0, 1],
-      [textColor, '#F5EDE1'],
-    ),
-  }));
+  const dayTextFadeStyle = useAnimatedStyle(() => {
+    'worklet';
+    return {
+      opacity: themeProgress ? 1 - themeProgress.value : (isLamp ? 0 : 1),
+    };
+  });
+
+  const nightTextFadeStyle = useAnimatedStyle(() => {
+    'worklet';
+    return {
+      opacity: themeProgress ? themeProgress.value : (isLamp ? 1 : 0),
+    };
+  });
 
   const selecting = selectionRange != null;
 
@@ -752,6 +765,152 @@ function ReaderPageViewImpl({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- layoutVersion is a manual invalidation signal for the refs above, not a value read directly.
   }, [selectionRange, page.paragraphs, layoutVersion, lineHeight, fontSize]);
 
+  const renderParagraphs = (
+    layerTextColor: string,
+    layerSavedWordColor: string,
+    layerSavedWordTextColor: string,
+    layerSelectionTextColor: string,
+    isPrimary: boolean,
+  ) => {
+    return page.paragraphs.map((paragraph, paragraphIndex) => {
+      // Selection mode: highlight the selected char range in this paragraph,
+      // plus the layout/text-layout capture that lets the handles hit-test
+      // this paragraph's real geometry.
+      if (selecting && selectionRange) {
+        const inRange =
+          paragraphIndex >= selectionRange.startParagraph && paragraphIndex <= selectionRange.endParagraph;
+        const selStart = !inRange
+          ? -1
+          : paragraphIndex === selectionRange.startParagraph
+            ? selectionRange.startOffset
+            : 0;
+        const selEnd = !inRange
+          ? -1
+          : paragraphIndex === selectionRange.endParagraph
+            ? selectionRange.endOffset
+            : paragraph.length;
+        return (
+          <Text
+            key={paragraphIndex}
+            style={[
+              typography.readingBody,
+              baseParagraphStyle,
+              {
+                color: layerTextColor,
+                fontFamily: isBengaliText(paragraph) ? pageStyleConfig.banglaFont : pageStyleConfig.englishFont,
+                fontSize: isBengaliText(paragraph) ? pageStyleConfig.banglaFontSize : pageStyleConfig.fontSize,
+                lineHeight: isBengaliText(paragraph) ? pageStyleConfig.banglaLineHeight : pageStyleConfig.lineHeight,
+                letterSpacing: isBengaliText(paragraph) ? pageStyleConfig.banglaLetterSpacing : pageStyleConfig.letterSpacing,
+                marginBottom: paragraphIndex === page.paragraphs.length - 1 ? 0 : spacing.sm,
+              },
+            ]}
+            onLayout={
+              isPrimary
+                ? (e) => {
+                    paragraphLayoutsRef.current.set(paragraphIndex, {
+                      y: e.nativeEvent.layout.y,
+                      height: e.nativeEvent.layout.height,
+                    });
+                    setLayoutVersion((v) => v + 1);
+                  }
+                : undefined
+            }
+            onTextLayout={
+              isPrimary
+                ? (e) => {
+                    paragraphLinesRef.current.set(
+                      paragraphIndex,
+                      e.nativeEvent.lines.map((l) => ({ x: l.x, y: l.y, width: l.width, height: l.height, text: l.text })),
+                    );
+                    setLayoutVersion((v) => v + 1);
+                  }
+                : undefined
+            }
+          >
+            {renderSelectionRuns(paragraph, selStart, selEnd, selectionColor, layerSelectionTextColor)}
+          </Text>
+        );
+      }
+
+      // Native inline word targets keep the reader's own shaping and line
+      // wrapping in charge of long-press selection for every script.
+      const highlightEntry = highlightMap.get(
+        `${page.chapterIndex}-${page.pageIndexInChapter}-${paragraphIndex}`,
+      );
+      // Translucent wash (~35%) of the picker hue instead of the old solid
+      // block + forced dark text: the page background shows through, so the
+      // same marker reads correctly on both the parchment and charcoal pages
+      // and the body text keeps its normal theme color.
+      const highlightWash = highlightEntry ? `${highlightColors[highlightEntry.colorKey]}59` : undefined;
+      // Single-paragraph highlight: mark only the exact saved substring, not
+      // the whole paragraph.
+      let highlightRun: { start: number; end: number } | null = null;
+      if (highlightEntry?.quoteText) {
+        const runStart = paragraph.indexOf(highlightEntry.quoteText);
+        if (runStart !== -1) highlightRun = { start: runStart, end: runStart + highlightEntry.quoteText.length };
+      }
+      return (
+        <Text
+          key={paragraphIndex}
+          style={[
+            typography.readingBody,
+            baseParagraphStyle,
+            {
+              color: layerTextColor,
+              fontFamily: isBengaliText(paragraph) ? pageStyleConfig.banglaFont : pageStyleConfig.englishFont,
+              fontSize: isBengaliText(paragraph) ? pageStyleConfig.banglaFontSize : pageStyleConfig.fontSize,
+              lineHeight: isBengaliText(paragraph) ? pageStyleConfig.banglaLineHeight : pageStyleConfig.lineHeight,
+              letterSpacing: isBengaliText(paragraph) ? pageStyleConfig.banglaLetterSpacing : pageStyleConfig.letterSpacing,
+              marginBottom: paragraphIndex === page.paragraphs.length - 1 ? 0 : spacing.sm,
+              backgroundColor: highlightWash && !highlightRun ? highlightWash : undefined,
+            },
+          ]}
+          onPress={onPagePress}
+          onLayout={
+            isPrimary
+              ? (e) => {
+                  paragraphLayoutsRef.current.set(paragraphIndex, {
+                    y: e.nativeEvent.layout.y,
+                    height: e.nativeEvent.layout.height,
+                  });
+                  setLayoutVersion((v) => v + 1);
+                }
+              : undefined
+          }
+          onTextLayout={
+            isPrimary
+              ? (e) => {
+                  paragraphLinesRef.current.set(
+                    paragraphIndex,
+                    e.nativeEvent.lines.map((l) => ({ x: l.x, y: l.y, width: l.width, height: l.height, text: l.text })),
+                  );
+                  setLayoutVersion((v) => v + 1);
+                }
+              : undefined
+          }
+        >
+          {renderParagraphRuns(
+            paragraphTokens[paragraphIndex],
+            savedWordSet,
+            layerSavedWordColor,
+            layerSavedWordTextColor,
+            displayedActiveWordRange && displayedActiveWordRange.paragraphIndex === paragraphIndex
+              ? { start: displayedActiveWordRange.start, end: displayedActiveWordRange.end }
+              : null,
+            activeWordColor,
+            activeWordTextColor,
+            highlightRun,
+            highlightWash,
+            paragraphIndex,
+            page,
+            onPagePress,
+            handleInlineWordLongPress,
+          )}
+        </Text>
+      );
+    });
+  };
+
   return (
     <View
       style={[
@@ -767,25 +926,45 @@ function ReaderPageViewImpl({
         },
       ]}
     >
+      {onPagePress ? <Pressable style={styles.pageTapSurface} onPress={onPagePress} /> : null}
       {page.isChapterStart ? (
-        <Animated.Text
-          onPress={onPagePress}
-          style={[
-            typography.screenTitle,
-            animatedBodyColorStyle,
-            {
-              fontFamily: isBengaliText(page.chapterTitle)
-                ? pageStyleConfig.banglaBoldFont
-                : pageStyleConfig.id === 'manuscript'
-                ? pageStyleConfig.englishBoldFont
-                : typography.screenTitle.fontFamily,
-              marginTop: spacing.sm,
-              marginBottom: spacing.md,
-            },
-          ]}
-        >
-          {page.chapterTitle}
-        </Animated.Text>
+        <View style={{ marginTop: spacing.sm, marginBottom: spacing.md }}>
+          <Animated.Text
+            onPress={onPagePress}
+            style={[
+              typography.screenTitle,
+              dayTextFadeStyle,
+              {
+                color: resolvedDayColor,
+                fontFamily: isBengaliText(page.chapterTitle)
+                  ? pageStyleConfig.banglaBoldFont
+                  : pageStyleConfig.id === 'manuscript'
+                  ? pageStyleConfig.englishBoldFont
+                  : typography.screenTitle.fontFamily,
+              },
+            ]}
+          >
+            {page.chapterTitle}
+          </Animated.Text>
+          <Animated.Text
+            pointerEvents="none"
+            style={[
+              typography.screenTitle,
+              nightTextFadeStyle,
+              StyleSheet.absoluteFill,
+              {
+                color: resolvedLampColor,
+                fontFamily: isBengaliText(page.chapterTitle)
+                  ? pageStyleConfig.banglaBoldFont
+                  : pageStyleConfig.id === 'manuscript'
+                  ? pageStyleConfig.englishBoldFont
+                  : typography.screenTitle.fontFamily,
+              },
+            ]}
+          >
+            {page.chapterTitle}
+          </Animated.Text>
+        </View>
       ) : null}
 
       {/* Body stack: the original and its translation occupy the SAME box, so
@@ -798,126 +977,18 @@ function ReaderPageViewImpl({
         style={originalFadeStyle}
         pointerEvents={showingTranslation ? 'none' : 'auto'}
       >
-      {page.paragraphs.map((paragraph, paragraphIndex) => {
-        // Selection mode: highlight the selected char range in this paragraph,
-        // plus the layout/text-layout capture that lets the handles hit-test
-        // this paragraph's real geometry.
-        if (selecting && selectionRange) {
-          const inRange =
-            paragraphIndex >= selectionRange.startParagraph && paragraphIndex <= selectionRange.endParagraph;
-          const selStart = !inRange
-            ? -1
-            : paragraphIndex === selectionRange.startParagraph
-              ? selectionRange.startOffset
-              : 0;
-          const selEnd = !inRange
-            ? -1
-            : paragraphIndex === selectionRange.endParagraph
-              ? selectionRange.endOffset
-              : paragraph.length;
-          return (
-            <Animated.Text
-              key={paragraphIndex}
-              style={[
-                typography.readingBody,
-                animatedBodyColorStyle,
-                baseParagraphStyle,
-                {
-                  fontFamily: isBengaliText(paragraph) ? pageStyleConfig.banglaFont : pageStyleConfig.englishFont,
-                  fontSize: isBengaliText(paragraph) ? pageStyleConfig.banglaFontSize : pageStyleConfig.fontSize,
-                  lineHeight: isBengaliText(paragraph) ? pageStyleConfig.banglaLineHeight : pageStyleConfig.lineHeight,
-                  letterSpacing: isBengaliText(paragraph) ? pageStyleConfig.banglaLetterSpacing : pageStyleConfig.letterSpacing,
-                  marginBottom: paragraphIndex === page.paragraphs.length - 1 ? 0 : spacing.sm,
-                },
-              ]}
-              onLayout={(e) => {
-                paragraphLayoutsRef.current.set(paragraphIndex, {
-                  y: e.nativeEvent.layout.y,
-                  height: e.nativeEvent.layout.height,
-                });
-                setLayoutVersion((v) => v + 1);
-              }}
-              onTextLayout={(e) => {
-                paragraphLinesRef.current.set(
-                  paragraphIndex,
-                  e.nativeEvent.lines.map((l) => ({ x: l.x, y: l.y, width: l.width, height: l.height, text: l.text })),
-                );
-                setLayoutVersion((v) => v + 1);
-              }}
-            >
-              {renderSelectionRuns(paragraph, selStart, selEnd, selectionColor, '#2B2621')}
-            </Animated.Text>
-          );
-        }
-
-        // Native inline word targets keep the reader's own shaping and line
-        // wrapping in charge of long-press selection for every script.
-        const highlightEntry = highlightMap.get(
-          `${page.chapterIndex}-${page.pageIndexInChapter}-${paragraphIndex}`,
-        );
-        // Translucent wash (~35%) of the picker hue instead of the old solid
-        // block + forced dark text: the page background shows through, so the
-        // same marker reads correctly on both the parchment and charcoal pages
-        // and the body text keeps its normal theme color.
-        const highlightWash = highlightEntry ? `${highlightColors[highlightEntry.colorKey]}59` : undefined;
-        // Single-paragraph highlight: mark only the exact saved substring, not
-        // the whole paragraph.
-        let highlightRun: { start: number; end: number } | null = null;
-        if (highlightEntry?.quoteText) {
-          const runStart = paragraph.indexOf(highlightEntry.quoteText);
-          if (runStart !== -1) highlightRun = { start: runStart, end: runStart + highlightEntry.quoteText.length };
-        }
-        return (
-          <Animated.Text
-            key={paragraphIndex}
-            style={[
-              typography.readingBody,
-              animatedBodyColorStyle,
-              baseParagraphStyle,
-              {
-                fontFamily: isBengaliText(paragraph) ? pageStyleConfig.banglaFont : pageStyleConfig.englishFont,
-                fontSize: isBengaliText(paragraph) ? pageStyleConfig.banglaFontSize : pageStyleConfig.fontSize,
-                lineHeight: isBengaliText(paragraph) ? pageStyleConfig.banglaLineHeight : pageStyleConfig.lineHeight,
-                letterSpacing: isBengaliText(paragraph) ? pageStyleConfig.banglaLetterSpacing : pageStyleConfig.letterSpacing,
-                marginBottom: paragraphIndex === page.paragraphs.length - 1 ? 0 : spacing.sm,
-                backgroundColor: highlightWash && !highlightRun ? highlightWash : undefined,
-              },
-            ]}
-            onPress={onPagePress}
-            onLayout={(e) => {
-              paragraphLayoutsRef.current.set(paragraphIndex, {
-                y: e.nativeEvent.layout.y,
-                height: e.nativeEvent.layout.height,
-              });
-              setLayoutVersion((v) => v + 1);
-            }}
-            onTextLayout={(e) => {
-              paragraphLinesRef.current.set(
-                paragraphIndex,
-                e.nativeEvent.lines.map((l) => ({ x: l.x, y: l.y, width: l.width, height: l.height, text: l.text })),
-              );
-              setLayoutVersion((v) => v + 1);
-            }}
-          >
-            {renderParagraphRuns(
-              paragraphTokens[paragraphIndex],
-              savedWordSet,
-              savedWordColor,
-              savedWordTextColor,
-              displayedActiveWordRange && displayedActiveWordRange.paragraphIndex === paragraphIndex
-                ? { start: displayedActiveWordRange.start, end: displayedActiveWordRange.end }
-                : null,
-              activeWordColor,
-              activeWordTextColor,
-              highlightRun,
-              highlightWash,
-              paragraphIndex,
-              page,
-              handleInlineWordLongPress,
-            )}
-          </Animated.Text>
-        );
-      })}
+        <Animated.View
+          style={dayTextFadeStyle}
+          pointerEvents={isLamp ? 'none' : 'box-none'}
+        >
+          {renderParagraphs(resolvedDayColor, 'rgba(245,166,35,0.35)', '#2B2621', '#2B2621', true)}
+        </Animated.View>
+        <Animated.View
+          style={[StyleSheet.absoluteFill, nightTextFadeStyle]}
+          pointerEvents={isLamp ? 'box-none' : 'none'}
+        >
+          {renderParagraphs(resolvedLampColor, 'rgba(245,166,35,0.14)', '#F5A623', '#FAF6EF', false)}
+        </Animated.View>
 
       {selecting && handlePositions ? (
         <>
@@ -1100,7 +1171,7 @@ function ReaderPageViewImpl({
                                     style={[
                                       styles.sentenceWordText,
                                       {
-                                        color: textColor,
+                                        color: currentTextColor,
                                         fontFamily: isBengaliText(sent.original)
                                           ? pageStyleConfig.banglaFont
                                           : pageStyleConfig.englishFont,
@@ -1153,7 +1224,7 @@ function ReaderPageViewImpl({
                                           ? colors.flameAmber
                                           : isSaved
                                           ? (isLamp ? colors.flameAmber : '#8A4F00')
-                                          : textColor,
+                                          : currentTextColor,
                                         fontWeight: isWordSpeaking || isSaved ? '700' : '400',
                                         fontFamily: isBengaliText(sent.original)
                                           ? pageStyleConfig.banglaFont
@@ -1251,7 +1322,7 @@ function ReaderPageViewImpl({
                   style={[
                     typography.readingBody,
                     {
-                      color: textColor,
+                      color: currentTextColor,
                       fontFamily: isBengaliText(paragraph)
                         ? pageStyleConfig.banglaFont
                         : pageStyleConfig.englishFont,
@@ -1288,6 +1359,13 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     overflow: 'hidden',
+  },
+  pageTapSurface: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
   },
   bodyStack: {
     flex: 1,

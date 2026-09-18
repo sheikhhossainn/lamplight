@@ -12,6 +12,8 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BookSpine } from '@/components/BookSpine';
+import { CultureEditionBanner } from '@/components/CultureEditionBanner';
+import { CultureMotif } from '@/components/CultureMotif';
 import { WordsIllustration } from '@/components/NotebookIllustrations';
 import { ChevronRightIcon, QuestionIcon } from '@/components/icons';
 import { getBook, listBanglaBooks, type BookRow } from '@/db/repositories/books';
@@ -26,11 +28,12 @@ import {
 } from '@/features/content-ingestion/banglaApi';
 import { AOZORA_JAPANESE_BOOKS } from '@/features/content-ingestion/japaneseApi';
 import { GONGU_KOREAN_BOOKS } from '@/features/content-ingestion/koreanApi';
-import { getMotherTongueOption, useMotherTongue } from '@/features/settings/motherTongue';
+import { getMotherTongueOption, getScriptureLabels, useMotherTongue } from '@/features/settings/motherTongue';
 import { targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
-import { isBengaliText, isJapaneseText, isKoreanText } from '@/theme/typography';
+import { getNativeUiTextStyle, isBengaliText, isJapaneseText, isKoreanText } from '@/theme/typography';
 import { hapticOpenInquiry } from '@/lib/haptics';
 import { useTheme } from '@/theme/ThemeProvider';
+import Animated, { Easing, FadeIn, ReduceMotion } from 'react-native-reanimated';
 import {
   getStoredCalibrationData,
   getCalibratedStartingBook,
@@ -40,6 +43,7 @@ import { getTargetReadingLanguage } from '@/features/settings/targetReadingLangu
 import { getLiteraryTheme } from '@/features/settings/literaryTheme';
 
 const { width: screenWidth } = Dimensions.get('window');
+const EASE_OUT = Easing.bezier(0.23, 1, 0.32, 1);
 
 function getEnglishGenre(genre?: string): string {
   if (!genre) return 'Classic Literature';
@@ -186,11 +190,12 @@ function getGreeting(): { title: string; subtitle: string } {
 }
 
 export default function Homescreen() {
-  const { colors, typography, spacing, radius, layout } = useTheme();
+  const { colors, cultureTheme, typography, spacing, radius, layout } = useTheme();
   const insets = useSafeAreaInsets();
   const targetLanguage = useTargetLanguage();
   const motherTongue = useMotherTongue();
   const motherTongueOption = getMotherTongueOption(motherTongue);
+  const scriptureLabels = getScriptureLabels(motherTongue);
 
   const [loading, setLoading] = useState(true);
   const [latestBook, setLatestBook] = useState<BookRow | null>(null);
@@ -410,6 +415,7 @@ export default function Homescreen() {
           <Text style={[typography.metadataCaption, { color: colors.fawn, marginTop: 4 }]}>
             {greeting.subtitle}
           </Text>
+          <CultureEditionBanner />
         </View>
 
         {/* Active Reader / Welcome State */}
@@ -456,13 +462,13 @@ export default function Homescreen() {
                 />
                 <View style={styles.featuredInfo}>
                   <Text
-                    style={[typography.uiRowTitle, { color: colors.ink, fontSize: 18 }]}
+                    style={[getNativeUiTextStyle(latestBook.sourceLanguage, 'row'), { color: colors.ink }]}
                     numberOfLines={2}
                   >
                     {latestBook.title}
                   </Text>
                   <Text
-                    style={[typography.metadataCaption, { color: colors.umber, marginTop: 4 }]}
+                    style={[getNativeUiTextStyle(latestBook.sourceLanguage, 'metadata'), { color: colors.umber, marginTop: 4 }]}
                     numberOfLines={1}
                   >
                     {latestBook.author} · {latestBook.sourceLanguage.toUpperCase()} → {targetLanguageLabel(targetLanguage)}
@@ -575,13 +581,13 @@ export default function Homescreen() {
                 />
                 <View style={styles.featuredInfo}>
                   <Text
-                    style={[typography.uiRowTitle, { color: colors.ink, fontSize: 18 }]}
+                    style={[getNativeUiTextStyle(readyBook.sourceLanguage, 'row'), { color: colors.ink }]}
                     numberOfLines={2}
                   >
                     {readyBook.title}
                   </Text>
                   <Text
-                    style={[typography.metadataCaption, { color: colors.umber, marginTop: 4 }]}
+                    style={[getNativeUiTextStyle(readyBook.sourceLanguage, 'metadata'), { color: colors.umber, marginTop: 4 }]}
                     numberOfLines={1}
                   >
                     {readyBook.author ? `${readyBook.author} · ` : ''}{readyBook.sourceLanguage === 'bn' ? 'বাংলা সাহিত্য' : 'Classic Edition'}
@@ -955,9 +961,11 @@ export default function Homescreen() {
               borderRadius: radius.card,
               marginTop: spacing.xl,
               padding: spacing.md,
+              overflow: 'hidden',
             },
           ]}
         >
+          <CultureMotif theme={cultureTheme} color={colors.umber} opacity={0.72} />
           <View style={styles.sparkHeader}>
             <View style={styles.sparkTagRow}>
               <Text style={[typography.eyebrowLabel, { color: colors.flameAmber, fontSize: 12 }]}>
@@ -978,50 +986,56 @@ export default function Homescreen() {
             </Pressable>
           </View>
 
-          <Text
-            style={[
-              typography.readingBody,
-              {
-                color: colors.ink,
-                fontSize: 16,
-                lineHeight: 26,
-                fontStyle: 'italic',
-                marginVertical: spacing.sm,
-              },
-            ]}
+          <Animated.View
+            key={`${motherTongue}-${sparkIndex}`}
+            entering={FadeIn.duration(180).easing(EASE_OUT).reduceMotion(ReduceMotion.System)}
           >
-            {activeSpark.quote}
-          </Text>
-
-          <View style={styles.sparkFooter}>
             <Text
               style={[
-                isBengaliText(activeSpark.author)
-                  ? typography.banglaMetadataCaption
-                  : typography.metadataCaption,
-                { color: colors.umber, fontSize: 13, flex: 1 },
+                isBengaliText(activeSpark.quote)
+                  ? typography.banglaReadingBody
+                  : typography.readingBody,
+                {
+                  color: colors.ink,
+                  fontSize: isBengaliText(activeSpark.quote) ? 20 : 17,
+                  lineHeight: isBengaliText(activeSpark.quote) ? 34 : 30,
+                  fontStyle: isBengaliText(activeSpark.quote) ? 'normal' : 'italic',
+                  marginVertical: spacing.sm,
+                },
               ]}
-              numberOfLines={1}
             >
-              — {activeSpark.author}
-              {activeSpark.source ? ` (${activeSpark.source})` : ''}
+              {activeSpark.quote}
             </Text>
-            {activeSpark.slug ? (
-              <Pressable
-                onPress={() =>
-                  router.push({
-                    pathname: '/bangla/[slug]',
-                    params: { slug: activeSpark.slug! },
-                  })
-                }
-                hitSlop={8}
+            <View style={styles.sparkFooter}>
+              <Text
+                style={[
+                  isBengaliText(activeSpark.author)
+                    ? typography.banglaMetadataCaption
+                    : typography.metadataCaption,
+                  { color: colors.umber, fontSize: isBengaliText(activeSpark.author) ? 15 : 13, flex: 1 },
+                ]}
+                numberOfLines={1}
               >
-                <Text style={[typography.buttonLabel, { color: colors.flameAmber, fontSize: 13, fontWeight: '600' }]}>
-                  Read →
-                </Text>
-              </Pressable>
-            ) : null}
-          </View>
+                — {activeSpark.author}
+                {activeSpark.source ? ` (${activeSpark.source})` : ''}
+              </Text>
+              {activeSpark.slug ? (
+                <Pressable
+                  onPress={() =>
+                    router.push({
+                      pathname: '/bangla/[slug]',
+                      params: { slug: activeSpark.slug! },
+                    })
+                  }
+                  hitSlop={8}
+                >
+                  <Text style={[typography.buttonLabel, { color: colors.flameAmber, fontSize: 13, fontWeight: '600' }]}>
+                    Read →
+                  </Text>
+                </Pressable>
+              ) : null}
+            </View>
+          </Animated.View>
         </View>
 
         {/* Comparative Scripture Inquiry Card */}
@@ -1047,27 +1061,25 @@ export default function Homescreen() {
                 <QuestionIcon color={colors.flameAmber} size={20} />
               </View>
               <View style={{ flex: 1, marginLeft: 12 }}>
-                <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 17 }]}>
-                  Comparative Scriptures
+                <Text style={[getNativeUiTextStyle(motherTongue, 'row'), { color: colors.ink }]}>
+                  {scriptureLabels.comparativeTitle}
                 </Text>
-                <Text style={[typography.metadataCaption, { color: colors.fawn, marginTop: 2, fontSize: 13 }]}>
-                  Learn & ask about major religions
+                <Text style={[getNativeUiTextStyle(motherTongue, 'metadata'), { color: colors.fawn, marginTop: 2 }]}>
+                  {scriptureLabels.comparativeSubtitle}
                 </Text>
               </View>
             </View>
 
             <Text
               style={[
-                typography.readingBody,
+                getNativeUiTextStyle(motherTongue, 'metadata'),
                 {
                   color: colors.umber,
-                  fontSize: 14,
-                  lineHeight: 22,
                   marginTop: spacing.md,
                 },
               ]}
             >
-              Ask questions on women, justice, peace, and spiritual ethics. Explore verified commentary and primary verses across the Quran, Bible, Torah, and Vedas.
+              {scriptureLabels.comparativeBody}
             </Text>
 
             <View
@@ -1082,8 +1094,8 @@ export default function Homescreen() {
                 },
               ]}
             >
-              <Text style={[typography.buttonLabel, { color: colors.flameAmber, fontSize: 13 }]}>
-                Ask Scriptures ➔
+              <Text style={[getNativeUiTextStyle(motherTongue, 'metadata'), { color: colors.flameAmber }]}>
+                {scriptureLabels.askLabel.replace('✦', '➔')}
               </Text>
             </View>
           </Pressable>
@@ -1249,10 +1261,10 @@ export default function Homescreen() {
             ]}
           >
             <View style={{ flex: 1 }}>
-              <Text style={[typography.banglaUiRowTitle, { color: colors.ink, fontSize: 17 }]}>
+              <Text style={[typography.banglaUiRowTitle, { color: colors.ink }]}>
                 বাংলা সাহিত্য (Bengali Classics)
               </Text>
-              <Text style={[typography.banglaMetadataCaption, { color: colors.fawn, marginTop: 2, fontSize: 13 }]}>
+              <Text style={[typography.banglaMetadataCaption, { color: colors.fawn, marginTop: 2 }]}>
                 বঙ্কিমচন্দ্র, রবীন্দ্রনাথ, শরৎচন্দ্র, বিভূতিভূষণ
               </Text>
             </View>
@@ -1277,11 +1289,11 @@ export default function Homescreen() {
             ]}
           >
             <View style={{ flex: 1 }}>
-              <Text style={[typography.uiRowTitle, { color: colors.ink }]}>
-                Sacred Scriptures
+              <Text style={[getNativeUiTextStyle(motherTongue, 'row'), { color: colors.ink }]}>
+                {scriptureLabels.sacredTitle}
               </Text>
               <Text style={[typography.metadataCaption, { color: colors.fawn, marginTop: 2 }]}>
-                Quran, Bible (OT/NT), Torah, Vedas
+                {scriptureLabels.quran}, {scriptureLabels.oldTestament}/{scriptureLabels.newTestament}, {scriptureLabels.torah}, {scriptureLabels.vedas}
               </Text>
             </View>
             <ChevronRightIcon color={colors.fawn} size={16} />

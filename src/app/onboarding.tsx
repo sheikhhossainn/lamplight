@@ -19,6 +19,7 @@ import { logEvent } from '@/features/analytics/analytics';
 import {
   LITERARY_THEMES,
   getLiteraryTheme,
+  getSuggestedThemeForMotherTongue,
   setLiteraryTheme,
   type LiteraryThemeCode,
 } from '@/features/settings/literaryTheme';
@@ -90,9 +91,9 @@ const SLIDES: Slide[] = [
   },
   {
     key: 'theme',
-    headline: 'Choose a starting shelf.',
+    headline: 'Choose a reading theme.',
     subtext:
-      'Pick the stories you want to enter first. You can always change this later.',
+      'Culture-matched palettes crafted for calm, original-language reading. Suggested based on your native language.',
   },
   {
     key: 'calibration',
@@ -358,6 +359,12 @@ export default function OnboardingScreen() {
     listRef.current?.scrollToIndex({ index: 3, animated: true });
   }, []);
 
+  // Update mother tongue and automatically suggest matching cultural theme
+  const handleSelectMotherTongue = useCallback((code: MotherTongueCode) => {
+    setSelectedMotherTongue(code);
+    setSelectedTheme(getSuggestedThemeForMotherTongue(code));
+  }, []);
+
   // Update target language and sync calibration words
   const handleSelectTargetLanguage = useCallback((code: TargetReadingLanguageCode) => {
     setSelectedTargetLanguage(code);
@@ -506,7 +513,7 @@ export default function OnboardingScreen() {
                   return (
                     <Pressable
                       key={opt.code}
-                      onPress={() => setSelectedMotherTongue(opt.code)}
+                      onPress={() => handleSelectMotherTongue(opt.code)}
                       style={({ pressed }) => [
                         styles.languageCard,
                         {
@@ -697,6 +704,7 @@ export default function OnboardingScreen() {
               >
                 {LITERARY_THEMES.map((opt) => {
                   const isSelected = selectedTheme === opt.code;
+                  const isSuggested = opt.code === getSuggestedThemeForMotherTongue(selectedMotherTongue);
                   return (
                     <Pressable
                       key={opt.code}
@@ -723,6 +731,28 @@ export default function OnboardingScreen() {
                           >
                             {opt.title}
                           </Text>
+                          {isSuggested ? (
+                            <View
+                              style={{
+                                backgroundColor: 'rgba(245, 166, 35, 0.16)',
+                                borderColor: 'rgba(245, 166, 35, 0.45)',
+                                borderWidth: 1,
+                                borderRadius: radius.pill,
+                                paddingHorizontal: 7,
+                                paddingVertical: 1.5,
+                                marginLeft: 8,
+                              }}
+                            >
+                              <Text
+                                style={[
+                                  typography.eyebrowLabel,
+                                  { color: colors.flameAmber, fontSize: 9, letterSpacing: 0.5 },
+                                ]}
+                              >
+                                SUGGESTED
+                              </Text>
+                            </View>
+                          ) : null}
                         </View>
                         <Text
                           style={[
@@ -731,7 +761,7 @@ export default function OnboardingScreen() {
                           ]}
                           numberOfLines={1}
                         >
-                          {opt.subtitle}
+                          {opt.paletteLabel ? `${opt.paletteLabel} · ` : ''}{opt.subtitle}
                         </Text>
                         <Text
                           style={[

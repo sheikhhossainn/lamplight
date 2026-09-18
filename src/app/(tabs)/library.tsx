@@ -15,9 +15,10 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
+import Svg, { Path, Rect } from 'react-native-svg';
 
 import { BookSpine } from '@/components/BookSpine';
+import { CultureEditionBanner } from '@/components/CultureEditionBanner';
 import { CloseIcon, FilterIcon, SearchIcon } from '@/components/icons';
 import { logEvent } from '@/features/analytics/analytics';
 import { BOOK_CATEGORIES, categoriesForBook } from '@/features/content-ingestion/bookCategories';
@@ -29,7 +30,8 @@ import {
 } from '@/features/content-ingestion/banglaApi';
 import { AOZORA_JAPANESE_BOOKS } from '@/features/content-ingestion/japaneseApi';
 import { GONGU_KOREAN_BOOKS } from '@/features/content-ingestion/koreanApi';
-import { getMotherTongueOption, useMotherTongue } from '@/features/settings/motherTongue';
+import { getMotherTongueOption, getScriptureLabels, useMotherTongue } from '@/features/settings/motherTongue';
+import { getLiteraryThemeOption } from '@/features/settings/literaryTheme';
 import { ShelfEditorModal, type ShelfDraft } from '@/components/ShelfEditorModal';
 import { VocabReviewPrompt } from '@/components/VocabReviewPrompt';
 import { checkVocabReviewPrompt, markVocabReviewPrompted } from '@/features/vocabulary/reviewPrompt';
@@ -57,6 +59,8 @@ import { importEpubFromFile } from '@/features/content-ingestion/epubImporter';
 import { targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
 import { hapticOpenInquiry } from '@/lib/haptics';
 import { useTheme } from '@/theme/ThemeProvider';
+import { getCultureMaterial } from '@/theme/tokens';
+import { getNativeUiTextStyle } from '@/theme/typography';
 
 const { width: screenWidth } = Dimensions.get('window');
 // Small deterministic per-slot tilt so the shelf reads as covers leaning
@@ -79,16 +83,41 @@ function getShelfSubtitle(): string {
 }
 
 function WoodenPlank({ width }: { width: number }) {
+  const { cultureTheme, scheme } = useTheme();
+  const profile = getLiteraryThemeOption(cultureTheme);
+  const material = getCultureMaterial(cultureTheme, scheme);
+
   return (
-    <Svg width={width} height={14} style={{ borderRadius: 2 }}>
-      <Defs>
-        <LinearGradient id="plank" x1="0" y1="0" x2="0" y2="1">
-          <Stop offset="0%" stopColor="#C9A25E" />
-          <Stop offset="55%" stopColor="#8A6A3A" />
-          <Stop offset="100%" stopColor="#6B4F28" />
-        </LinearGradient>
-      </Defs>
-      <Rect x={0} y={0} width={width} height={14} rx={2} fill="url(#plank)" />
+    <Svg width={width} height={16} style={{ borderRadius: 3 }}>
+      <Rect x={0} y={0} width={width} height={16} rx={3} fill={material.rail} />
+      <Rect x={2} y={2} width={width - 4} height={2} rx={1} fill={material.highlight} opacity={0.68} />
+      {profile.shelfMaterial === 'bamboo'
+        ? [0.18, 0.52, 0.82].map((position) => (
+            <Rect key={position} x={width * position} y={0} width={5} height={16} rx={1} fill={material.joint} opacity={0.76} />
+          ))
+        : null}
+      {profile.shelfMaterial === 'walnut' ? (
+        <>
+          <Path d={`M10 8 C${width * 0.22} 4 ${width * 0.34} 12 ${width * 0.55} 7 S${width * 0.82} 5 ${width - 10} 9`} fill="none" stroke={material.joint} strokeOpacity={0.42} />
+          <Path d={`M32 12 C${width * 0.3} 9 ${width * 0.48} 15 ${width * 0.72} 11`} fill="none" stroke={material.highlight} strokeOpacity={0.3} />
+        </>
+      ) : null}
+      {profile.shelfMaterial === 'ash' ? (
+        [0.25, 0.5, 0.75].map((position) => (
+          <Rect key={position} x={width * position} y={1} width={1} height={14} fill={material.joint} opacity={0.32} />
+        ))
+      ) : null}
+      {profile.shelfMaterial === 'cedar' ? (
+        <Path d={`M8 11 C${width * 0.2} 6 ${width * 0.38} 13 ${width * 0.58} 8 S${width * 0.86} 7 ${width - 8} 10`} fill="none" stroke={material.joint} strokeOpacity={0.44} />
+      ) : null}
+      {profile.shelfMaterial === 'brass' ? (
+        <>
+          <Rect x={8} y={5} width={width - 16} height={6} rx={2} fill="none" stroke={material.highlight} strokeOpacity={0.62} />
+          {[0.2, 0.5, 0.8].map((position) => (
+            <Rect key={position} x={width * position} y={4} width={7} height={7} rx={2} fill={material.joint} opacity={0.62} />
+          ))}
+        </>
+      ) : null}
     </Svg>
   );
 }
@@ -128,6 +157,7 @@ export default function LibraryScreen() {
   const targetLanguage = useTargetLanguage();
   const motherTongue = useMotherTongue();
   const motherTongueOption = getMotherTongueOption(motherTongue);
+  const scriptureLabels = getScriptureLabels(motherTongue);
   const [books, setBooks] = useState<BookRow[]>([]);
   const [positions, setPositions] = useState<ReadingPosition[]>([]);
   const [shelves, setShelves] = useState<Shelf[]>([]);
@@ -531,6 +561,7 @@ export default function LibraryScreen() {
           </View>
         </Pressable>
       </View>
+      <CultureEditionBanner />
 
       <View
         style={[
@@ -608,7 +639,7 @@ export default function LibraryScreen() {
                 height={80}
               />
               <View style={{ flex: 1, marginLeft: spacing.md }}>
-                <Text style={[typography.uiRowTitle, { color: colors.ink }]} numberOfLines={1}>
+                <Text style={[getNativeUiTextStyle(book.sourceLanguage, 'row'), { color: colors.ink }]} numberOfLines={1}>
                   {book.title}
                 </Text>
                 <Text style={[typography.metadataCaption, { color: colors.umber, marginTop: 2 }]} numberOfLines={1}>
@@ -657,8 +688,8 @@ export default function LibraryScreen() {
           hitSlop={8}
           style={styles.filterHeader}
         >
-          <Text style={[typography.eyebrowLabel, { color: activeCategory ? colors.progressLabel : colors.fawn }]}>
-            Browse
+          <Text style={[getNativeUiTextStyle(motherTongue, 'row'), { color: activeCategory ? colors.progressLabel : colors.fawn }]}>
+            {motherTongueOption.libraryLabel}
           </Text>
           <FilterIcon color={activeCategory ? colors.flameAmber : colors.fawn} size={14} />
         </Pressable>
@@ -728,7 +759,7 @@ export default function LibraryScreen() {
       {motherTongue !== 'en' ? (
         <View>
           <View style={[styles.shelfHeader, { marginBottom: spacing.md }]}>
-            <Text style={[typography.eyebrowLabel, { color: colors.fawn }]}>
+            <Text style={[getNativeUiTextStyle(motherTongue, 'row'), { color: colors.fawn }]}>
               {motherTongue === 'bn'
                 ? activeCategory === 'history'
                   ? 'বাংলা ইতিহাস'
@@ -764,7 +795,7 @@ export default function LibraryScreen() {
                 hitSlop={8}
                 style={styles.filterHeader}
               >
-                <Text style={[typography.uiRowTitle, { color: colors.progressLabel, fontSize: 12 }]}>
+                <Text style={[getNativeUiTextStyle(motherTongue, 'metadata'), { color: colors.progressLabel }]}>
                   {motherTongueOption.allBooksLabel}
                 </Text>
               </Pressable>
@@ -776,7 +807,7 @@ export default function LibraryScreen() {
                 hitSlop={8}
                 style={styles.filterHeader}
               >
-                <Text style={[typography.uiRowTitle, { color: colors.progressLabel, fontSize: 12 }]}>
+                <Text style={[getNativeUiTextStyle(motherTongue, 'metadata'), { color: colors.progressLabel }]}>
                   {motherTongueOption.allBooksLabel}
                 </Text>
               </Pressable>
@@ -788,7 +819,7 @@ export default function LibraryScreen() {
                 hitSlop={8}
                 style={styles.filterHeader}
               >
-                <Text style={[typography.uiRowTitle, { color: colors.progressLabel, fontSize: 12 }]}>
+                <Text style={[getNativeUiTextStyle(motherTongue, 'metadata'), { color: colors.progressLabel }]}>
                   {motherTongueOption.allBooksLabel}
                 </Text>
               </Pressable>
@@ -853,7 +884,7 @@ export default function LibraryScreen() {
           right when the real "All books" shelf also popped in. */}
       <View>
         <View style={[styles.shelfHeader, { marginBottom: spacing.md }]}>
-          <Text style={[typography.eyebrowLabel, { color: colors.fawn }]}>Scriptures</Text>
+          <Text style={[getNativeUiTextStyle(motherTongue, 'row'), { color: colors.fawn }]}>{scriptureLabels.sectionTitle}</Text>
           <Pressable
             onPress={() => {
               void hapticOpenInquiry();
@@ -862,7 +893,7 @@ export default function LibraryScreen() {
             hitSlop={8}
             style={styles.filterHeader}
           >
-            <Text style={[typography.uiRowTitle, { color: colors.flameAmber, fontSize: 12 }]}>Ask Scriptures ✦</Text>
+            <Text style={[getNativeUiTextStyle(motherTongue, 'metadata'), { color: colors.flameAmber }]}>{scriptureLabels.askLabel}</Text>
           </Pressable>
         </View>
         <ScrollView
@@ -874,7 +905,7 @@ export default function LibraryScreen() {
           <View style={{ marginRight: spacing.md }}>
             <BookSpine
               bookId="quran"
-              title="Quran"
+              title={scriptureLabels.quran}
               toneIndex={0}
               onPress={() => router.push({ pathname: '/quran' })}
             />
@@ -882,7 +913,7 @@ export default function LibraryScreen() {
           <View style={{ marginRight: spacing.md }}>
             <BookSpine
               bookId="bible-ot"
-              title="Bible — Old Testament"
+              title={motherTongue === 'en' ? `Bible — ${scriptureLabels.oldTestament}` : scriptureLabels.oldTestament}
               toneIndex={0}
               onPress={() => router.push({ pathname: '/bible' })}
             />
@@ -890,7 +921,7 @@ export default function LibraryScreen() {
           <View style={{ marginRight: spacing.md }}>
             <BookSpine
               bookId="bible-nt"
-              title="Bible — New Testament"
+              title={motherTongue === 'en' ? `Bible — ${scriptureLabels.newTestament}` : scriptureLabels.newTestament}
               toneIndex={0}
               onPress={() => router.push({ pathname: '/bible-nt' })}
             />
@@ -898,7 +929,7 @@ export default function LibraryScreen() {
           <View style={{ marginRight: spacing.md }}>
             <BookSpine
               bookId="torah"
-              title="Torah"
+              title={scriptureLabels.torah}
               toneIndex={0}
               onPress={() => router.push({ pathname: '/torah' })}
             />
@@ -906,7 +937,7 @@ export default function LibraryScreen() {
           <View style={{ marginRight: spacing.md }}>
             <BookSpine
               bookId="vedas"
-              title="Vedas"
+              title={scriptureLabels.vedas}
               toneIndex={0}
               onPress={() => router.push({ pathname: '/vedas' })}
             />

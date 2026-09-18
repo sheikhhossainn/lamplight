@@ -9,7 +9,7 @@ Welcome to Lamplight. We are building a universal language learning platform bui
 | Handle | Role | Primary Area |
 |---|---|---|
 | **sheikhhossainn** | Lead — Features | SRS / Vocabulary, Translation, Language Pairs, Bug Fixes |
-| **mahihasan909-gif** | Features | Scripture Q&A, Reader Features, Social & Sharing |
+| **mahihasan909-gif** | Features | Quote Sharing Cards, Reader Features & Social |
 | **mahim** | UI/UX | Visual polish, themes, cultural design system, share cards |
 
 ---
@@ -54,31 +54,41 @@ Query `saved_words` grouped by `DATE(created_at / 1000, 'unixepoch')`. Plot a si
 
 ---
 
-## 2. mahihasan909-gif — Scripture Q&A, Reader Features & Sharing
+## 2. mahihasan909-gif — Quote Sharing Cards, Reader Features & Social
 
-### 2-A. Build: In-Reader Scripture Cross-Reference Button
-**Files:** Scripture reader components (quran, bible, torah, vedas routes)
-Add a contextual "Ask across scriptures" button on each verse. It should open `ScriptureInquiryModal` with the question pre-filled based on the verse's theme. The modal and AI engine already exist in `src/features/scripture-qa/`.
+### 2-A. Build: Quote Card Shows Translation Below the Quote
+**Files:** `src/features/reader/components/ShareCardScreen.tsx`, `src/app/quote-share/[highlightId].tsx`
+The share card shows only the source quote. Add an optional `translation` prop. When provided, render it in a smaller, elegant secondary font below the quote text — so a reader sharing a foreign-language quote also displays the translated meaning on the card. Wire it through from saved highlight translations.
 
-### 2-B. Fix: Word Spoken Even on Translation Error
+### 2-B. Fix: lineHeight Clips Non-Latin Scripts in Share Cards
+**File:** `src/features/reader/components/ShareCardScreen.tsx` > `quoteFontStyle()`
+`lineHeight` is `fontSize * 1.45` for all languages. For non-Latin scripts with tall ascenders/descenders (`bn`, `ar`, `hi`, `ur`), scale line-height to `1.6x` to prevent diacritics and ligatures from clipping.
+
+### 2-C. Build: Culturally-Matched & Premium Quote Card Variants
+**File:** `src/features/reader/components/ShareCardScreen.tsx`
+Expand card visual aesthetics beyond the default 3 styles to provide culturally-matched variants:
+- `'parchment'` / `'bengali'`: warm parchment, literary serif, subtle corner fold
+- `'korean'`: clean minimal ink-on-white, subtle geometric accent
+- `'arabic'`: deep navy, warm gold accent, RTL-aware alignment
+- `'japanese'`: washi texture aesthetic, ink motif
+- `'gradient'`: dark flame amber glow
+- `'foldSplit'`: modern diagonal split
+Support smooth swipe pagination and indicator dots between styles.
+
+### 2-D. Build: Share Card Customization & Attribution Branding
+**File:** `src/features/reader/components/ShareCardScreen.tsx`
+Enhance quote card attribution and brand identity:
+- Clearly format book title and author with refined typographic hierarchy.
+- Include the Lamplight flame mark and "Shared from Lamplight" credit tag at the foot of each card variant.
+- Adapt quote sizing dynamically based on length so long quotes never bleed into the credit footer.
+
+### 2-E. Fix: Share Card Image Capture & Export Reliability
+**File:** `src/features/reader/components/ShareCardScreen.tsx`
+Ensure `captureRef` from `react-native-view-shot` reliably produces pixel-crisp PNG outputs across both Android and iOS without rendering artifacts, clipped text, or missing font glyphs before invoking `expo-sharing`.
+
+### 2-F. Fix: Word Spoken Even on Translation Error
 **File:** `src/features/reader/components/WordTranslationPopup.tsx` line 113
 `speakWord` is called at the start of translation (even on error). Move it inside the `status: 'ready'` branch so the word is spoken only after translation succeeds.
-
-### 2-C. Build: Quote Card Shows Translation Below the Quote
-**File:** `src/features/reader/components/ShareCardScreen.tsx`
-The share card shows only the source quote. Add an optional `translation` prop. When provided, render it in a smaller font below the quote text — so a Bengali user sharing an English quote also shows the Bangla translation on the card.
-
-### 2-D. Build: Mood -> Verse Feature Audit & Completion
-**File:** `src/app/mood-verses/`
-Audit and verify the full implementation of the mood-to-verse semantic search. Confirm the Supabase edge function is connected, results are rendering correctly, and the UI matches the design system.
-
-### 2-E. Fix: lineHeight Clips Non-Latin Scripts in Share Cards
-**File:** `src/features/reader/components/ShareCardScreen.tsx` > `quoteFontStyle()`
-`lineHeight` is `fontSize * 1.45` for all languages. For bn, ar, hi, ur, ascenders/descenders are taller — use 1.6x to prevent clipping.
-
-### 2-F. Build: "Compare Across Scriptures" from Prose Book Reader
-**Files:** `src/features/reader/components/ReaderPageView.tsx`, `src/features/scripture-qa/ScriptureInquiryModal.tsx`
-If a passage references a theme (justice, forgiveness, etc.), offer an inline shortcut to compare that theme across all five scriptures via the existing inquiry modal.
 
 ### 2-G. Fix: Translation Cache is Unbounded
 **File:** `src/features/translation/cloudTranslationProvider.ts`
@@ -88,16 +98,16 @@ The in-session Map cache grows indefinitely. Cap it at 500 entries with a simple
 
 ## 3. mahim — UI/UX Polish & Cultural Design System
 
-### 3-A. Culture-Matched Reading Themes
+### 3-A. Culture-Matched Reading Themes — 🟢 Completed
 **Files:** `src/features/settings/literaryTheme.ts`, `src/theme/tokens.ts`
-Current themes are genre-based (Gothic, Romance, etc.). Add culture-based themes suggested during onboarding based on the user's native language:
-- Bengali -> Parchment & Flame (already the default)
+Culture-based themes implemented with dedicated palette tokens (day & lamp) and suggested during onboarding based on native language:
+- Bengali -> Parchment & Flame (canonical default)
 - Korean -> Clean minimal, Hanji paper, cool whites
 - Arabic -> Deep navy, warm gold, RTL-aware
 - Japanese -> Washi paper, muted earth tones, generous line-height
 - Western -> Editorial cream, Lora serif
 
-Each theme = a new token set. No new components needed.
+Each theme = dedicated token set in `tokens.ts`, cascaded via `ThemeProvider.tsx`.
 
 ### 3-B. Culturally-Matched Share Card Variants
 **File:** `src/features/reader/components/ShareCardScreen.tsx`
@@ -139,7 +149,7 @@ Once sheikhhossainn lands the context sentence (1-B) and growth graph (1-H), int
 |---|---|
 | `main` | Protected — PRs only |
 | `feature/srs-vocabulary` | sheikhhossainn |
-| `feature/scripture-sharing` | mahihasan909-gif |
+| `feature/quote-sharing` | mahihasan909-gif |
 | `feature/ui-cultural-themes` | mahim |
 
 ### PR Definition of Done

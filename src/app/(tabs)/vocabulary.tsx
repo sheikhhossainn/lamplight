@@ -19,6 +19,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { CultureEditionBanner } from '@/components/CultureEditionBanner';
 import { ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, SpeakerIcon, TrashIcon } from '@/components/icons';
 import {
   FlashcardsIllustration,
@@ -64,9 +65,10 @@ import { ClozeResultScreen } from '@/features/vocabulary/ClozeResultScreen';
 import { generateClozeQuestion, generateWordCluster } from '@/features/vocabulary/clozeEngine';
 import { VocabularyGrowthChart } from '@/features/vocabulary/VocabularyGrowthChart';
 import { speakWord, warmUpSpeechEngine } from '@/features/audio/pronunciationEngine';
-import { getMotherTongue } from '@/features/settings/motherTongue';
+import { getMotherTongue, getScriptureLabels, useMotherTongue, type ScriptureLabels } from '@/features/settings/motherTongue';
 import { hapticFlashcardAction } from '@/lib/haptics';
 import { useTheme } from '@/theme/ThemeProvider';
+import { getNativeUiTextStyle } from '@/theme/typography';
 
 type Tab = 'list' | 'flashcards' | 'quotes' | 'verses';
 
@@ -108,14 +110,14 @@ type SavedVerseEntry = {
   onRemove: () => Promise<void>;
 };
 
-function buildQuranVerseEntries(highlights: QuranHighlight[]): SavedVerseEntry[] {
+function buildQuranVerseEntries(highlights: QuranHighlight[], labels: ScriptureLabels): SavedVerseEntry[] {
   return highlights.map((h) => {
     const meta = getSurahMeta(h.surahNumber);
     const verse = getSurahVerses(h.surahNumber).find((v) => v.number === h.verseNumber);
     return {
       id: h.id,
-      groupTitle: meta ? `${meta.nameEnglish} · Quran` : 'Quran',
-      reference: `Verse ${h.verseNumber}`,
+      groupTitle: meta ? `${meta.nameEnglish} · ${labels.quran}` : labels.quran,
+      reference: `${labels.verse} ${h.verseNumber}`,
       snippet: verse?.textEnglish ?? '',
       createdAt: h.createdAt,
       onOpen: () =>
@@ -128,7 +130,7 @@ function buildQuranVerseEntries(highlights: QuranHighlight[]): SavedVerseEntry[]
   });
 }
 
-function buildBibleVerseEntries(highlights: BibleHighlight[]): SavedVerseEntry[] {
+function buildBibleVerseEntries(highlights: BibleHighlight[], labels: ScriptureLabels): SavedVerseEntry[] {
   return highlights.map((h) => {
     const otMeta = getBibleOtBookMeta(h.bookId);
     const isNt = !otMeta;
@@ -138,7 +140,7 @@ function buildBibleVerseEntries(highlights: BibleHighlight[]): SavedVerseEntry[]
     const bookName = meta?.name ?? h.bookId;
     return {
       id: h.id,
-      groupTitle: `${bookName} · ${isNt ? 'New Testament' : 'Old Testament'}`,
+      groupTitle: `${bookName} · ${isNt ? labels.newTestament : labels.oldTestament}`,
       reference: `${bookName} ${h.chapter}:${h.verse}`,
       snippet: verse?.verse.text ?? '',
       createdAt: h.createdAt,
@@ -154,6 +156,8 @@ function buildBibleVerseEntries(highlights: BibleHighlight[]): SavedVerseEntry[]
 
 export default function VocabularyScreen() {
   const { colors, typography, spacing, radius, scheme } = useTheme();
+  const motherTongue = useMotherTongue();
+  const scriptureLabels = getScriptureLabels(motherTongue);
   const isLamp = scheme === 'lamp';
   const insets = useSafeAreaInsets();
   const [words, setWords] = useState<SavedWord[]>([]);
@@ -293,10 +297,10 @@ export default function VocabularyScreen() {
   }, {});
   const verses = useMemo(
     () =>
-      [...buildQuranVerseEntries(quranHighlights), ...buildBibleVerseEntries(bibleHighlights)].sort(
+      [...buildQuranVerseEntries(quranHighlights, scriptureLabels), ...buildBibleVerseEntries(bibleHighlights, scriptureLabels)].sort(
         (a, b) => b.createdAt - a.createdAt,
       ),
-    [quranHighlights, bibleHighlights],
+    [quranHighlights, bibleHighlights, scriptureLabels],
   );
   const verseGroups = verses.reduce<Record<string, SavedVerseEntry[]>>((acc, entry) => {
     (acc[entry.groupTitle] ??= []).push(entry);
@@ -348,9 +352,19 @@ export default function VocabularyScreen() {
               : `${words.length} ${words.length === 1 ? 'word' : 'words'}`}
         </Text>
       </View>
+      <CultureEditionBanner compact />
 
       <View
-        style={[styles.segmented, { backgroundColor: colors.segmentedTrack, borderRadius: radius.pill, position: 'relative' }]}
+        style={[
+          styles.segmented,
+          {
+            backgroundColor: colors.segmentedTrack,
+            borderRadius: radius.pill,
+            position: 'relative',
+            marginTop: spacing.sm,
+            marginBottom: spacing.md,
+          },
+        ]}
         onLayout={(e) => {
           const w = e.nativeEvent.layout.width;
           if (w > 0 && Math.abs(w - segmentedWidth) > 1) {
@@ -424,7 +438,7 @@ export default function VocabularyScreen() {
         )
       ) : tab === 'quotes' ? (
         <ScrollView
-          contentContainerStyle={{ paddingBottom: 48 }}
+          contentContainerStyle={{ paddingTop: spacing.sm, paddingBottom: 48 }}
           showsVerticalScrollIndicator={false}
           overScrollMode="never"
         >
@@ -444,8 +458,8 @@ export default function VocabularyScreen() {
                   style={[
                     styles.collectionCard,
                     {
-                      backgroundColor: isLamp ? '#23201D' : '#F7F2E9',
-                      borderColor: isLamp ? '#36312B' : '#E6DDD0',
+                      backgroundColor: colors.card,
+                      borderColor: colors.hairline,
                     },
                   ]}
                 >
@@ -545,7 +559,7 @@ export default function VocabularyScreen() {
         </ScrollView>
       ) : tab === 'verses' ? (
         <ScrollView
-          contentContainerStyle={{ paddingBottom: 48 }}
+          contentContainerStyle={{ paddingTop: spacing.sm, paddingBottom: 48 }}
           showsVerticalScrollIndicator={false}
           overScrollMode="never"
         >
@@ -563,8 +577,8 @@ export default function VocabularyScreen() {
                   style={[
                     styles.collectionCard,
                     {
-                      backgroundColor: isLamp ? '#23201D' : '#F7F2E9',
-                      borderColor: isLamp ? '#36312B' : '#E6DDD0',
+                      backgroundColor: colors.card,
+                      borderColor: colors.hairline,
                     },
                   ]}
                 >
@@ -582,13 +596,13 @@ export default function VocabularyScreen() {
                     </View>
 
                     <View style={styles.headerInfo}>
-                      <Text numberOfLines={1} style={[typography.uiRowTitle, { color: colors.ink, fontSize: 16, fontWeight: '600' }]}>
+                      <Text numberOfLines={1} style={[getNativeUiTextStyle(motherTongue, 'row'), { color: colors.ink }]}>
                         {groupTitle}
                       </Text>
                       <View style={styles.countRow}>
                         <View style={[styles.countDot, { backgroundColor: colors.flameAmber }]} />
-                        <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 12 }]}>
-                          {groupVerses.length} {groupVerses.length === 1 ? 'verse' : 'verses'} saved
+                        <Text style={[getNativeUiTextStyle(motherTongue, 'metadata'), { color: colors.fawn }]}>
+                          {groupVerses.length} {scriptureLabels.verse}
                         </Text>
                       </View>
                     </View>
@@ -619,14 +633,14 @@ export default function VocabularyScreen() {
                             onPress={entry.onOpen}
                             style={styles.verseMainContent}
                           >
-                            <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 14, fontWeight: '600' }]}>
+                            <Text style={[getNativeUiTextStyle(motherTongue, 'metadata'), { color: colors.ink }]}>
                               {entry.reference}
                             </Text>
                             {entry.snippet ? (
                               <Text
                                 numberOfLines={3}
                                 style={[
-                                  typography.metadataCaption,
+                                  getNativeUiTextStyle(motherTongue, 'metadata'),
                                   styles.contextSentenceText,
                                   { color: isLamp ? '#B3A898' : '#736B60', marginTop: 4 },
                                 ]}
@@ -663,7 +677,7 @@ export default function VocabularyScreen() {
         </ScrollView>
       ) : (
         <ScrollView
-          contentContainerStyle={{ paddingBottom: 48 }}
+          contentContainerStyle={{ paddingTop: spacing.sm, paddingBottom: 48 }}
           showsVerticalScrollIndicator={false}
           overScrollMode="never"
         >
@@ -685,8 +699,8 @@ export default function VocabularyScreen() {
                   style={[
                     styles.collectionCard,
                     {
-                      backgroundColor: isLamp ? '#23201D' : '#F7F2E9',
-                      borderColor: isLamp ? '#36312B' : '#E6DDD0',
+                      backgroundColor: colors.card,
+                      borderColor: colors.hairline,
                     },
                   ]}
                 >
@@ -762,7 +776,7 @@ export default function VocabularyScreen() {
                             <View style={styles.wordHeaderLine}>
                               <Text style={[typography.translatedWordInline, { color: colors.ink, fontSize: 15 }]}>
                                 {word.sourceWord}{' '}
-                                <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 13 }]}>
+                                <Text style={[getNativeUiTextStyle(motherTongue, 'row'), { color: colors.fawn }]}>
                                   → {word.translation}
                                 </Text>
                               </Text>
@@ -866,13 +880,13 @@ export default function VocabularyScreen() {
 // Cached in SQLite so it only fetches from Groq once.
 function WordRowCluster({ word }: { word: SavedWord }) {
   const { colors, typography } = useTheme();
+  const motherTongue = useMotherTongue();
   const [cluster, setCluster] = useState<WordCluster | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
 
   const loadData = useCallback(async () => {
-    const mt = getMotherTongue();
-    const cached = await getWordCluster(word.id, mt);
+    const cached = await getWordCluster(word.id, motherTongue);
     if (cached) {
       setCluster(cached);
       setLoading(false);
@@ -882,10 +896,10 @@ function WordRowCluster({ word }: { word: SavedWord }) {
     setLoading(true);
     setError(false);
     try {
-      const gen = await generateWordCluster(word.sourceWord, word.translation, mt);
+      const gen = await generateWordCluster(word.sourceWord, word.translation, motherTongue);
       if (gen) {
         setCluster(gen);
-        await setWordCluster(word.id, mt, gen);
+        await setWordCluster(word.id, motherTongue, gen);
       } else {
         setError(true);
       }
@@ -894,7 +908,7 @@ function WordRowCluster({ word }: { word: SavedWord }) {
     } finally {
       setLoading(false);
     }
-  }, [word.id, word.sourceWord, word.translation]);
+  }, [motherTongue, word.id, word.sourceWord, word.translation]);
 
   useEffect(() => {
     void loadData();
@@ -936,8 +950,8 @@ function WordRowCluster({ word }: { word: SavedWord }) {
           <Text
             numberOfLines={3}
             style={[
-              typography.metadataCaption,
-              { color: colors.fawn, fontSize: 12, lineHeight: 18, fontStyle: 'italic' },
+              getNativeUiTextStyle(motherTongue, 'metadata'),
+              { color: colors.fawn, fontStyle: 'italic' },
             ]}
           >
             {cluster.usageNote}
@@ -947,8 +961,11 @@ function WordRowCluster({ word }: { word: SavedWord }) {
 
       {cluster.synonyms && cluster.synonyms.length > 0 ? (
         <View style={{ marginBottom: 6 }}>
-          <Text style={[typography.eyebrowLabel, { color: colors.straw, fontSize: 9, marginBottom: 3 }]}>
-            SYNONYMS (সমার্থক শব্দ)
+          <Text style={[typography.eyebrowLabel, { color: colors.straw, fontSize: 9, marginBottom: 4 }]}>
+            SYNONYMS{' '}
+            <Text style={[getNativeUiTextStyle('bn', 'metadata'), { color: colors.straw, fontSize: 13 }]}>
+              (সমার্থক শব্দ)
+            </Text>
           </Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
             {cluster.synonyms.map((syn, i) => (
@@ -963,9 +980,11 @@ function WordRowCluster({ word }: { word: SavedWord }) {
                   paddingVertical: 2,
                 }}
               >
-                <Text style={{ fontSize: 11, color: colors.ink }}>
+                <Text style={[typography.metadataCaption, { fontSize: 12, color: colors.ink }]}>
                   <Text style={{ fontWeight: '600' }}>{syn.word}</Text>
-                  {syn.meaning ? ` · ${syn.meaning}` : ''}
+                  {syn.meaning ? (
+                    <Text style={[getNativeUiTextStyle(motherTongue, 'metadata'), { color: colors.ink }]}> · {syn.meaning}</Text>
+                  ) : null}
                 </Text>
               </View>
             ))}
@@ -975,8 +994,11 @@ function WordRowCluster({ word }: { word: SavedWord }) {
 
       {cluster.antonyms && cluster.antonyms.length > 0 ? (
         <View>
-          <Text style={[typography.eyebrowLabel, { color: colors.straw, fontSize: 9, marginBottom: 3 }]}>
-            ANTONYMS (বিপরীত শব্দ)
+          <Text style={[typography.eyebrowLabel, { color: colors.straw, fontSize: 9, marginBottom: 4 }]}>
+            ANTONYMS{' '}
+            <Text style={[getNativeUiTextStyle('bn', 'metadata'), { color: colors.straw, fontSize: 13 }]}>
+              (বিপরীত শব্দ)
+            </Text>
           </Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
             {cluster.antonyms.map((ant, i) => (
@@ -991,9 +1013,11 @@ function WordRowCluster({ word }: { word: SavedWord }) {
                   paddingVertical: 2,
                 }}
               >
-                <Text style={{ fontSize: 11, color: colors.ink }}>
+                <Text style={[typography.metadataCaption, { fontSize: 12, color: colors.ink }]}>
                   <Text style={{ fontWeight: '600' }}>{ant.word}</Text>
-                  {ant.meaning ? ` · ${ant.meaning}` : ''}
+                  {ant.meaning ? (
+                    <Text style={[getNativeUiTextStyle(motherTongue, 'metadata'), { color: colors.ink }]}> · {ant.meaning}</Text>
+                  ) : null}
                 </Text>
               </View>
             ))}
@@ -1636,7 +1660,7 @@ function FlashcardDeck({
             <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 14, textAlign: 'center', lineHeight: 18 }]}>
               What does this word mean?
             </Text>
-            <Text style={[typography.metadataCaption, { color: colors.fawn, marginTop: 2, textAlign: 'center', fontSize: 12, lineHeight: 16 }]}>
+            <Text style={[getNativeUiTextStyle('bn', 'metadata'), { color: colors.fawn, marginTop: 2, textAlign: 'center' }]}>
               অর্থ কী? মনে করার চেষ্টা করুন
             </Text>
 

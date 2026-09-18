@@ -1,6 +1,6 @@
-import { useEffect, type ReactNode } from 'react';
+import { type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
-import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { type SharedValue, useAnimatedStyle } from 'react-native-reanimated';
 import { Image } from 'expo-image';
 import { LamplightColor } from '@/theme/tokens';
 
@@ -8,7 +8,7 @@ const ANTIQUE_PAPER_DAY = require('../../../../assets/images/antique-paper-day.j
 
 type BookPageFrameProps = {
   children: ReactNode;
-  mode?: 'day' | 'lamp';
+  themeProgress: SharedValue<number>;
 };
 
 const DAY_TONES = {
@@ -26,6 +26,7 @@ const DAY_TONES = {
   liftSheen: 'rgba(255, 255, 255, 0.18)',
   shadow1: 'rgba(30, 20, 10, 0.20)',
   shadow2: 'rgba(30, 20, 10, 0.11)',
+
   shadow3: 'rgba(30, 20, 10, 0.05)',
   shadow4: 'rgba(30, 20, 10, 0.02)',
 };
@@ -41,35 +42,17 @@ const NIGHT_TONES = {
   shadow4: 'rgba(0, 0, 0, 0.03)',
 };
 
-export function BookPageFrame({ children, mode = 'day' }: BookPageFrameProps) {
-  const isLamp = mode === 'lamp';
-  const themeAnim = useSharedValue(isLamp ? 1 : 0);
-
-  useEffect(() => {
-    themeAnim.value = withTiming(isLamp ? 1 : 0, {
-      duration: 380,
-      easing: Easing.bezier(0.25, 1, 0.5, 1),
-    });
-  }, [isLamp, themeAnim]);
-
+export function BookPageFrame({ children, themeProgress }: BookPageFrameProps) {
   const dayLayerStyle = useAnimatedStyle(() => ({
-    opacity: 1 - themeAnim.value,
+    opacity: 1 - themeProgress.value,
   }));
 
   const nightLayerStyle = useAnimatedStyle(() => ({
-    opacity: themeAnim.value,
+    opacity: themeProgress.value,
   }));
 
   return (
     <View style={[styles.container, { backgroundColor: LamplightColor.primaryDark }]}>
-      {/* Night Mode Spine Gutter */}
-      <Animated.View style={[styles.leftSpineShadow, nightLayerStyle]} pointerEvents="none">
-        <View style={[styles.spineBand3, { backgroundColor: NIGHT_TONES.spineBand3 }]} />
-        <View style={[styles.spineBand2, { backgroundColor: NIGHT_TONES.spineBand2 }]} />
-        <View style={[styles.spineBand1, { backgroundColor: NIGHT_TONES.spineBand1 }]} />
-        <View style={[styles.spineCrease, { backgroundColor: NIGHT_TONES.spineCrease }]} />
-      </Animated.View>
-
       {/* Day Mode Layer: Full-bleed authentic 1890s cotton-rag paper texture + Deckle stack + Leather rim */}
       <Animated.View style={[StyleSheet.absoluteFill, dayLayerStyle]} pointerEvents="none">
         <Image
@@ -105,16 +88,33 @@ export function BookPageFrame({ children, mode = 'day' }: BookPageFrameProps) {
         <View style={[styles.turningEdgeCurl, { backgroundColor: DAY_TONES.liftSheen }]} />
       </Animated.View>
 
+      {/* Night Mode Spine Gutter */}
+      <Animated.View style={[styles.leftSpineShadow, styles.nightSpineShadow, nightLayerStyle]} pointerEvents="none">
+        <View style={[styles.spineBand3, { backgroundColor: NIGHT_TONES.spineBand3 }]} />
+        <View style={[styles.spineBand2, { backgroundColor: NIGHT_TONES.spineBand2 }]} />
+        <View style={[styles.spineBand1, { backgroundColor: NIGHT_TONES.spineBand1 }]} />
+        <View style={[styles.spineCrease, { backgroundColor: NIGHT_TONES.spineCrease }]} />
+      </Animated.View>
+
       {/* Page Content Container (Typography, Selection Handles, Word Taps) */}
       <View style={styles.contentWrap}>{children}</View>
 
       {/* Turning Edge Drop Shadow (Casts onto adjacent page during turn) */}
       <View style={styles.turningEdgeShadow} pointerEvents="none">
-        <View style={[styles.edgeHairline, { backgroundColor: isLamp ? NIGHT_TONES.spineCrease : DAY_TONES.spineCrease }]} />
-        <View style={[styles.edgeShadow1, { backgroundColor: isLamp ? NIGHT_TONES.shadow1 : DAY_TONES.shadow1 }]} />
-        <View style={[styles.edgeShadow2, { backgroundColor: isLamp ? NIGHT_TONES.shadow2 : DAY_TONES.shadow2 }]} />
-        <View style={[styles.edgeShadow3, { backgroundColor: isLamp ? NIGHT_TONES.shadow3 : DAY_TONES.shadow3 }]} />
-        <View style={[styles.edgeShadow4, { backgroundColor: isLamp ? NIGHT_TONES.shadow4 : DAY_TONES.shadow4 }]} />
+        <Animated.View style={[StyleSheet.absoluteFill, dayLayerStyle]}>
+          <View style={[styles.edgeHairline, { backgroundColor: DAY_TONES.spineCrease }]} />
+          <View style={[styles.edgeShadow1, { backgroundColor: DAY_TONES.shadow1 }]} />
+          <View style={[styles.edgeShadow2, { backgroundColor: DAY_TONES.shadow2 }]} />
+          <View style={[styles.edgeShadow3, { backgroundColor: DAY_TONES.shadow3 }]} />
+          <View style={[styles.edgeShadow4, { backgroundColor: DAY_TONES.shadow4 }]} />
+        </Animated.View>
+        <Animated.View style={[StyleSheet.absoluteFill, nightLayerStyle]}>
+          <View style={[styles.edgeHairline, { backgroundColor: NIGHT_TONES.spineCrease }]} />
+          <View style={[styles.edgeShadow1, { backgroundColor: NIGHT_TONES.shadow1 }]} />
+          <View style={[styles.edgeShadow2, { backgroundColor: NIGHT_TONES.shadow2 }]} />
+          <View style={[styles.edgeShadow3, { backgroundColor: NIGHT_TONES.shadow3 }]} />
+          <View style={[styles.edgeShadow4, { backgroundColor: NIGHT_TONES.shadow4 }]} />
+        </Animated.View>
       </View>
     </View>
   );
@@ -127,7 +127,7 @@ const styles = StyleSheet.create({
   },
   contentWrap: {
     flex: 1,
-    zIndex: 1,
+    zIndex: 8,
   },
   // Dark leather hardcover rim along right edge
   coverRim: {
@@ -168,6 +168,9 @@ const styles = StyleSheet.create({
     left: 0,
     width: 20,
     zIndex: 4,
+  },
+  nightSpineShadow: {
+    zIndex: 6,
   },
   spineBand4: {
     position: 'absolute',

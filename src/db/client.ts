@@ -92,6 +92,27 @@ async function migrate(db: SQLiteDatabase) {
     await db.execAsync(MIGRATIONS[version]);
     await db.execAsync(`PRAGMA user_version = ${version + 1}`);
   }
+
+  // Some OTA users reached a schema version that included the SRS migration
+  // marker without all of its columns. Keep this repair idempotent so their
+  // existing database can recover without clearing reading data.
+  const columns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(saved_words)');
+  const existingColumns = new Set(columns.map((column) => column.name));
+  const srsColumns = [
+    ['srs_stage', 'INTEGER NOT NULL DEFAULT 0'],
+    ['srs_interval_days', 'REAL NOT NULL DEFAULT 0'],
+    ['srs_ease_factor', 'REAL NOT NULL DEFAULT 2.5'],
+    ['srs_due_date', 'INTEGER NOT NULL DEFAULT 0'],
+    ['srs_reps', 'INTEGER NOT NULL DEFAULT 0'],
+    ['srs_lapses', 'INTEGER NOT NULL DEFAULT 0'],
+    ['phonetic', 'TEXT'],
+  ] as const;
+
+  for (const [name, definition] of srsColumns) {
+    if (!existingColumns.has(name)) {
+      await db.execAsync(`ALTER TABLE saved_words ADD COLUMN ${name} ${definition}`);
+    }
+  }
 }
 
 async function upsertBooks(db: SQLiteDatabase, rows: RemoteBookRow[]) {

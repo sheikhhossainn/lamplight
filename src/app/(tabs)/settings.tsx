@@ -1,6 +1,6 @@
 import Constants from 'expo-constants';
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   Easing,
@@ -18,12 +18,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Line, Path } from 'react-native-svg';
 
 import { ChevronRightIcon } from '@/components/icons';
+import { CultureEditionBanner } from '@/components/CultureEditionBanner';
 import {
   useAppUpdateBanner,
   type AppUpdateStatus,
 } from '@/features/app-update/useAppUpdateBanner';
 import { setTargetLanguage, targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
-import { setReadingTheme, useReadingTheme } from '@/features/settings/readingTheme';
+import { useReadingTheme } from '@/features/settings/readingTheme';
+import { requestThemeChange } from '@/features/settings/themeTransition';
 import { setPageTurnSoundEnabled, usePageTurnSoundEnabled } from '@/features/settings/soundPrefs';
 import { isPremiumUser } from '@/features/subscription/subscriptionState';
 import { checkCachedTranslationCap, checkTranslationCap } from '@/features/translation';
@@ -35,39 +37,16 @@ import {
   setMotherTongue,
   useMotherTongue,
 } from '@/features/settings/motherTongue';
+import { getSuggestedThemeForMotherTongue, setLiteraryTheme } from '@/features/settings/literaryTheme';
 import { useTheme } from '@/theme/ThemeProvider';
-import { LamplightColor, Layout, Spacing } from '@/theme/tokens';
+import { getCultureThemeColors, Layout, Spacing } from '@/theme/tokens';
+import { getNativeUiTextStyle } from '@/theme/typography';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-const DAY_COLORS = {
-  parchment: '#F5EDE1',
-  card: '#F8F1E6',
-  hairline: '#E2D3B8',
-  ink: '#2B2621',
-  fawn: '#8A7F6E',
-  straw: '#C6B896',
-  segmentedTrack: '#E9DEC9',
-  accountBg: '#1C1B1E',
-  accountBorder: '#1C1B1E',
-  accountSubtext: '#B7ADA0',
-} as const;
-
-const LAMP_COLORS = {
-  parchment: '#1C1B1E',
-  card: '#26232A',
-  hairline: '#332F2B',
-  ink: '#F0E6D6',
-  fawn: '#9C9186',
-  straw: '#6B6255',
-  segmentedTrack: '#2A2723',
-  accountBg: '#26232A',
-  accountBorder: '#332F2B',
-  accountSubtext: '#9C9186',
-} as const;
-
-// Calm, slow, butter-smooth glide for theme switching
-const GLIDE_DURATION = 420;
+// Theme is an occasional state change, not a cinematic transition. Keep every
+// Settings surface on one short UI-thread clock so text never trails a card.
+const GLIDE_DURATION = 200;
 const GLIDE_EASING = Easing.bezier(0.25, 1, 0.5, 1);
 
 // Clear the tab bar so the last row isn't half-hidden behind it.
@@ -89,11 +68,11 @@ function SunIcon({ color }: { color: string }) {
   );
 }
 
-function LampDropIcon({ color }: { color: string }) {
+function MoonIcon({ color }: { color: string }) {
   return (
-    <Svg width={12} height={14} viewBox="0 0 20 20">
+    <Svg width={14} height={14} viewBox="0 0 20 20">
       <Path
-        d="M10 3c-3 3.5-4.5 6-3 8.5 1-1 2-1.8 3-2.2 1 0.4 2 1.2 3 2.2 1.5-2.5 0-5-3-8.5z"
+        d="M14.8 14.1A6.7 6.7 0 0 1 5.9 5.2a7.1 7.1 0 1 0 8.9 8.9Z"
         fill={color}
       />
     </Svg>
@@ -109,13 +88,13 @@ function ThemeSegmentedSwitch({
   themeAnim: SharedValue<number>;
   onThemeChange: (next: 'day' | 'lamp') => void;
 }) {
-  const { colors, radius, typography } = useTheme();
+  const { colors, cultureTheme, radius, typography } = useTheme();
+  const dayColors = getCultureThemeColors(cultureTheme, 'day');
+  const lampColors = getCultureThemeColors(cultureTheme, 'lamp');
 
   // Progress: 0 = day, 1 = lamp
   const progress = useSharedValue(theme === 'lamp' ? 1 : 0);
   const segWidth = useSharedValue(0);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   // Sync if external theme changes
   useEffect(() => {
     const target = theme === 'lamp' ? 1 : 0;
@@ -127,15 +106,8 @@ function ThemeSegmentedSwitch({
     }
   }, [theme, progress]);
 
-  useEffect(() => {
-    return () => {
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    };
-  }, []);
-
   const handleSelect = (target: 'day' | 'lamp') => {
     if (theme === target) return;
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
 
     const targetVal = target === 'lamp' ? 1 : 0;
 
@@ -151,10 +123,9 @@ function ThemeSegmentedSwitch({
       easing: GLIDE_EASING,
     });
 
-    // 3. Commit theme store change once the slow glide completes
-    timeoutRef.current = setTimeout(() => {
-      onThemeChange(target);
-    }, GLIDE_DURATION);
+    // Commit globally now. The root overlay keeps the crossfade coherent while
+    // the navigator receives its new tab-bar colours in the same transition.
+    onThemeChange(target);
   };
 
   const pillAnimatedStyle = useAnimatedStyle(() => {
@@ -211,7 +182,15 @@ function ThemeSegmentedSwitch({
     backgroundColor: interpolateColor(
       themeAnim.value,
       [0, 1],
-      [DAY_COLORS.segmentedTrack, LAMP_COLORS.segmentedTrack],
+      [dayColors.segmentedTrack, lampColors.segmentedTrack],
+    ),
+  }));
+
+  const animatedSegmentLabelStyle = useAnimatedStyle(() => ({
+    color: interpolateColor(
+      themeAnim.value,
+      [0, 1],
+      [dayColors.lampText, lampColors.lampText],
     ),
   }));
 
@@ -242,21 +221,22 @@ function ThemeSegmentedSwitch({
           <Animated.View style={[styles.segmentIcon, sunAnimatedStyle]}>
             <View style={{ width: 14, height: 14, alignItems: 'center', justifyContent: 'center' }}>
               <Animated.View style={[StyleSheet.absoluteFill, styles.centered, sunActiveStyle]}>
-                <SunIcon color={LamplightColor.flameAmber} />
+                <SunIcon color={colors.flameAmber} />
               </Animated.View>
               <Animated.View style={[StyleSheet.absoluteFill, styles.centered, sunInactiveStyle]}>
-                <SunIcon color={DAY_COLORS.fawn} />
+                <SunIcon color={dayColors.fawn} />
               </Animated.View>
             </View>
           </Animated.View>
-          <Text
+          <Animated.Text
             style={[
               typography.uiRowTitle,
-              { fontSize: 12, marginLeft: 6, color: colors.lampText },
+              animatedSegmentLabelStyle,
+              { fontSize: 12, marginLeft: 6 },
             ]}
           >
             Day
-          </Text>
+          </Animated.Text>
         </Animated.View>
       </Pressable>
       <Pressable
@@ -268,21 +248,22 @@ function ThemeSegmentedSwitch({
           <Animated.View style={[styles.segmentIcon, lampAnimatedStyle]}>
             <View style={{ width: 12, height: 14, alignItems: 'center', justifyContent: 'center' }}>
               <Animated.View style={[StyleSheet.absoluteFill, styles.centered, lampActiveStyle]}>
-                <LampDropIcon color={LamplightColor.flameAmber} />
+                <MoonIcon color={colors.flameAmber} />
               </Animated.View>
               <Animated.View style={[StyleSheet.absoluteFill, styles.centered, lampInactiveStyle]}>
-                <LampDropIcon color={DAY_COLORS.fawn} />
+                <MoonIcon color={dayColors.fawn} />
               </Animated.View>
             </View>
           </Animated.View>
-          <Text
+          <Animated.Text
             style={[
               typography.uiRowTitle,
-              { fontSize: 12, marginLeft: 6, color: colors.lampText },
+              animatedSegmentLabelStyle,
+              { fontSize: 12, marginLeft: 6 },
             ]}
           >
-            Lamp
-          </Text>
+            Night
+          </Animated.Text>
         </Animated.View>
       </Pressable>
     </Animated.View>
@@ -298,7 +279,9 @@ function ToggleSwitch({
   onChange: (v: boolean) => void;
   themeAnim?: SharedValue<number>;
 }) {
-  const { colors } = useTheme();
+  const { colors, cultureTheme } = useTheme();
+  const dayColors = getCultureThemeColors(cultureTheme, 'day');
+  const lampColors = getCultureThemeColors(cultureTheme, 'lamp');
   const translateX = useSharedValue(value ? 16 : 0);
 
   useEffect(() => {
@@ -315,10 +298,10 @@ function ToggleSwitch({
 
   const trackAnimatedStyle = useAnimatedStyle(() => {
     if (value) {
-      return { backgroundColor: LamplightColor.flameAmber };
+      return { backgroundColor: colors.flameAmber };
     }
     const hairline = themeAnim
-      ? interpolateColor(themeAnim.value, [0, 1], [DAY_COLORS.hairline, LAMP_COLORS.hairline])
+      ? interpolateColor(themeAnim.value, [0, 1], [dayColors.hairline, lampColors.hairline])
       : colors.hairline;
     return { backgroundColor: hairline };
   });
@@ -361,7 +344,9 @@ function updateStatusLabel(status: AppUpdateStatus, progress: number | undefined
 }
 
 export default function SettingsScreen() {
-  const { colors, typography, spacing, radius } = useTheme();
+  const { colors, cultureTheme, typography, spacing, radius } = useTheme();
+  const dayColors = getCultureThemeColors(cultureTheme, 'day');
+  const lampColors = getCultureThemeColors(cultureTheme, 'lamp');
   const insets = useSafeAreaInsets();
   const { status: updateStatus, downloadProgress, applyUpdate } = useAppUpdateBanner();
 
@@ -391,7 +376,7 @@ export default function SettingsScreen() {
     backgroundColor: interpolateColor(
       themeAnim.value,
       [0, 1],
-      [DAY_COLORS.parchment, LAMP_COLORS.parchment],
+      [dayColors.parchment, lampColors.parchment],
     ),
   }));
 
@@ -399,12 +384,12 @@ export default function SettingsScreen() {
     backgroundColor: interpolateColor(
       themeAnim.value,
       [0, 1],
-      [DAY_COLORS.card, LAMP_COLORS.card],
+      [dayColors.card, lampColors.card],
     ),
     borderColor: interpolateColor(
       themeAnim.value,
       [0, 1],
-      [DAY_COLORS.hairline, LAMP_COLORS.hairline],
+      [dayColors.hairline, lampColors.hairline],
     ),
   }));
 
@@ -412,12 +397,12 @@ export default function SettingsScreen() {
     backgroundColor: interpolateColor(
       themeAnim.value,
       [0, 1],
-      [DAY_COLORS.accountBg, LAMP_COLORS.accountBg],
+      [dayColors.primaryDark, lampColors.card],
     ),
     borderColor: interpolateColor(
       themeAnim.value,
       [0, 1],
-      [DAY_COLORS.accountBorder, LAMP_COLORS.accountBorder],
+      [dayColors.primaryDark, lampColors.hairline],
     ),
   }));
 
@@ -425,7 +410,7 @@ export default function SettingsScreen() {
     color: interpolateColor(
       themeAnim.value,
       [0, 1],
-      [DAY_COLORS.ink, LAMP_COLORS.ink],
+      [dayColors.ink, lampColors.ink],
     ),
   }));
 
@@ -433,7 +418,7 @@ export default function SettingsScreen() {
     color: interpolateColor(
       themeAnim.value,
       [0, 1],
-      [DAY_COLORS.fawn, LAMP_COLORS.fawn],
+      [dayColors.fawn, lampColors.fawn],
     ),
   }));
 
@@ -441,7 +426,31 @@ export default function SettingsScreen() {
     color: interpolateColor(
       themeAnim.value,
       [0, 1],
-      [DAY_COLORS.accountSubtext, LAMP_COLORS.accountSubtext],
+      [dayColors.mutedOnDark, lampColors.fawn],
+    ),
+  }));
+
+  const animatedPairPillStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(
+      themeAnim.value,
+      [0, 1],
+      [dayColors.pairPillBackground, lampColors.pairPillBackground],
+    ),
+  }));
+
+  const animatedPairPillTextStyle = useAnimatedStyle(() => ({
+    color: interpolateColor(
+      themeAnim.value,
+      [0, 1],
+      [dayColors.pairPillText, lampColors.pairPillText],
+    ),
+  }));
+
+  const animatedLampTextStyle = useAnimatedStyle(() => ({
+    color: interpolateColor(
+      themeAnim.value,
+      [0, 1],
+      [dayColors.lampText, lampColors.lampText],
     ),
   }));
 
@@ -506,7 +515,8 @@ export default function SettingsScreen() {
         <Animated.Text style={[typography.uiRowTitle, animatedInkTextStyle, { fontSize: 13, marginBottom: 10 }]}>
           Reading theme
         </Animated.Text>
-        <ThemeSegmentedSwitch theme={theme} themeAnim={themeAnim} onThemeChange={setReadingTheme} />
+        <ThemeSegmentedSwitch theme={theme} themeAnim={themeAnim} onThemeChange={requestThemeChange} />
+        <CultureEditionBanner compact themeProgress={themeAnim} />
       </Animated.View>
 
       <Animated.Text style={[typography.eyebrowLabel, animatedFawnTextStyle, { marginBottom: spacing.sm }]}>
@@ -543,27 +553,27 @@ export default function SettingsScreen() {
           <Animated.Text style={[typography.uiRowTitle, animatedInkTextStyle, { fontSize: 13 }]}>
             Mother tongue
           </Animated.Text>
-          <Pressable
+          <AnimatedPressable
             onPress={() => setMotherTonguePickerVisible(true)}
-            style={[styles.pairPill, { backgroundColor: colors.pairPillBackground, borderRadius: radius.pill }]}
+            style={[styles.pairPill, animatedPairPillStyle, { borderRadius: radius.pill }]}
           >
-            <Text style={[typography.uiRowTitle, { color: colors.pairPillText, fontSize: 12 }]}>
+            <Animated.Text style={[getNativeUiTextStyle(motherTongue, 'metadata'), animatedPairPillTextStyle]}>
               {motherTongueOption.flag} {motherTongueOption.nativeName}
-            </Text>
-          </Pressable>
+            </Animated.Text>
+          </AnimatedPressable>
         </View>
         <View style={styles.settingsRow}>
           <Animated.Text style={[typography.uiRowTitle, animatedInkTextStyle, { fontSize: 13 }]}>
             Default translation pair
           </Animated.Text>
-          <Pressable
+          <AnimatedPressable
             onPress={() => setLanguagePickerVisible(true)}
-            style={[styles.pairPill, { backgroundColor: colors.pairPillBackground, borderRadius: radius.pill }]}
+            style={[styles.pairPill, animatedPairPillStyle, { borderRadius: radius.pill }]}
           >
-            <Text style={[typography.uiRowTitle, { color: colors.pairPillText, fontSize: 12 }]}>
+            <Animated.Text style={[typography.uiRowTitle, animatedPairPillTextStyle, { fontSize: 12 }]}>
               EN → {targetLanguageLabel(targetLanguage)}
-            </Text>
-          </Pressable>
+            </Animated.Text>
+          </AnimatedPressable>
         </View>
       </Animated.View>
 
@@ -582,10 +592,10 @@ export default function SettingsScreen() {
         <Animated.Text style={[typography.uiRowTitle, animatedInkTextStyle, { fontSize: 13 }]}>Saved books</Animated.Text>
         <View style={{ width: 15, height: 15, alignItems: 'center', justifyContent: 'center' }}>
           <Animated.View style={[StyleSheet.absoluteFill, styles.centered, dayChevronStyle]}>
-            <ChevronRightIcon color={DAY_COLORS.straw} size={15} />
+            <ChevronRightIcon color={dayColors.straw} size={15} />
           </Animated.View>
           <Animated.View style={[StyleSheet.absoluteFill, styles.centered, nightChevronStyle]}>
-            <ChevronRightIcon color={LAMP_COLORS.straw} size={15} />
+            <ChevronRightIcon color={lampColors.straw} size={15} />
           </Animated.View>
         </View>
       </AnimatedPressable>
@@ -602,9 +612,9 @@ export default function SettingsScreen() {
         ]}
       >
         <View>
-          <Text style={[typography.uiRowTitle, { color: colors.lampText, fontSize: 13 }]}>
+          <Animated.Text style={[typography.uiRowTitle, animatedLampTextStyle, { fontSize: 13 }]}>
             Free plan
-          </Text>
+          </Animated.Text>
           <Animated.Text
             style={[
               typography.metadataCaption,
@@ -663,7 +673,7 @@ export default function SettingsScreen() {
         selected={motherTongue}
         onSelect={(code) => {
           setMotherTongue(code);
-          setMotherTonguePickerVisible(false);
+          setLiteraryTheme(getSuggestedThemeForMotherTongue(code));
         }}
         onClose={() => setMotherTonguePickerVisible(false)}
       />

@@ -142,7 +142,7 @@ export function getPresetWordIds(
 
 export function getCalibratedStartingBook(
   lang: TargetReadingLanguageCode,
-  theme: LiteraryThemeCode = 'romance',
+  theme: LiteraryThemeCode = 'bengali',
   vocabCount: number = 3500,
 ): CalibratedStartingBook {
   if (lang === 'ja') {
@@ -157,7 +157,7 @@ export function getCalibratedStartingBook(
         reason: 'Matches your taste for Gothic mystery and ~' + vocabCount.toLocaleString() + ' words lexicon.',
       };
     }
-    if (theme === 'philosophy') {
+    if (theme === 'philosophy' || theme === 'japanese') {
       return {
         id: 'aozora-kokoro',
         title: 'こころ (Kokoro)',
@@ -191,7 +191,7 @@ export function getCalibratedStartingBook(
   }
 
   if (lang === 'bn') {
-    if (theme === 'philosophy') {
+    if (theme === 'philosophy' || theme === 'bengali') {
       return {
         id: 'bn-gitanjali',
         title: 'গীতাঞ্জলি (Song Offerings)',
@@ -236,7 +236,7 @@ export function getCalibratedStartingBook(
   }
 
   if (lang === 'ko') {
-    if (theme === 'philosophy') {
+    if (theme === 'philosophy' || theme === 'korean') {
       return {
         id: 'ko-nalgae',
         title: '날개 (Wings)',
@@ -304,7 +304,7 @@ export function getCalibratedStartingBook(
     };
   }
 
-  if (theme === 'philosophy') {
+  if (theme === 'philosophy' || theme === 'arabic') {
     if (vocabCount < 5500) {
       return {
         id: 'crime-and-punishment',
@@ -350,7 +350,7 @@ export function getCalibratedStartingBook(
     };
   }
 
-  // Default: Romance & Social Wit
+  // Default: Western / Romance & Social Wit
   return {
     id: 'pride-and-prejudice',
     title: 'Pride and Prejudice',
@@ -365,7 +365,7 @@ export function getCalibratedStartingBook(
 export function calculateVocabularyEstimate(
   lang: TargetReadingLanguageCode,
   selectedWordIds: Set<string> | string[],
-  theme: LiteraryThemeCode = 'romance',
+  theme: LiteraryThemeCode = 'bengali',
 ): VocabularyEstimate {
   const selectedSet = selectedWordIds instanceof Set ? selectedWordIds : new Set(selectedWordIds);
   const words = CALIBRATION_WORDS[lang] ?? CALIBRATION_WORDS.en;
