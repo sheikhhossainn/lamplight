@@ -19,6 +19,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { BookSpine } from '@/components/BookSpine';
 import { CultureEditionBanner } from '@/components/CultureEditionBanner';
 import { ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, SpeakerIcon, TrashIcon } from '@/components/icons';
 import {
@@ -28,6 +29,7 @@ import {
 } from '@/components/NotebookIllustrations';
 import { SkeletonRows } from '@/components/SkeletonRows';
 import { type BookRow, listBooks } from '@/db/repositories/books';
+import { listActiveReadingPositions } from '@/db/repositories/readingPosition';
 import { deleteSetting, getSetting, setSetting } from '@/db/repositories/appSettings';
 import {
   deleteBibleHighlight,
@@ -42,18 +44,18 @@ import {
 } from '@/db/repositories/quran';
 import {
   deleteSavedWord,
-  listSavedWordCountsByDay,
   listSavedWords,
+  getVocabularyEligibility,
   updateWordSrs,
-  type DailySavedWordCount,
   type SavedWord,
+  type VocabularyEligibility,
 } from '@/db/repositories/savedWords';
-import { getClozeCache, getUsageNoteCache, getWordCluster, setClozeCache, setUsageNoteCache, setWordCluster, type WordCluster, type WordRelated } from '@/db/repositories/wordCache';
+import { getUsageNoteCache, getWordCluster, setUsageNoteCache, setWordCluster, type WordCluster, type WordRelated } from '@/db/repositories/wordCache';
 import { getBookMeta as getBibleOtBookMeta, getBookVerses as getBibleOtVerses } from '@/features/bible-content/bibleData';
 import { getBookMeta as getBibleNtBookMeta, getBookVerses as getBibleNtVerses } from '@/features/bible-content/bibleNtData';
 import { getSurahMeta, getSurahVerses } from '@/features/quran-content/quranData';
 import { sentenceContaining } from '@/features/reader/engine/words';
-import { MIN_DECK_SIZE } from '@/features/vocabulary/reviewPrompt';
+import { MIN_REVIEW_WORDS } from '@/features/vocabulary/reviewPrompt';
 import {
   calculateNextSrsState,
   getStageLabel,
@@ -62,25 +64,27 @@ import {
 } from '@/features/vocabulary/srsAlgorithm';
 import { ClozeChallenge } from '@/features/vocabulary/ClozeChallenge';
 import { ClozeResultScreen } from '@/features/vocabulary/ClozeResultScreen';
-import { generateClozeQuestion, generateWordCluster } from '@/features/vocabulary/clozeEngine';
-import { VocabularyGrowthChart } from '@/features/vocabulary/VocabularyGrowthChart';
+import { generateWordCluster } from '@/features/vocabulary/clozeEngine';
 import { speakWord, warmUpSpeechEngine } from '@/features/audio/pronunciationEngine';
 import { getMotherTongue, getScriptureLabels, useMotherTongue, type ScriptureLabels } from '@/features/settings/motherTongue';
 import { hapticFlashcardAction } from '@/lib/haptics';
+import { logEvent } from '@/features/analytics/analytics';
 import { useTheme } from '@/theme/ThemeProvider';
 import { getNativeUiTextStyle } from '@/theme/typography';
 
-type Tab = 'list' | 'flashcards' | 'quotes' | 'verses';
+type Tab = 'list' | 'flashcards' | 'quiz' | 'quotes' | 'verses';
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'list', label: 'Words' },
-  { key: 'flashcards', label: 'Flashcards' },
+  { key: 'flashcards', label: 'Review' },
+  { key: 'quiz', label: 'Quiz' },
   { key: 'quotes', label: 'Quotes' },
   { key: 'verses', label: 'Verses' },
 ];
-const TAB_KEYS: Tab[] = ['list', 'flashcards', 'quotes', 'verses'];
+const TAB_KEYS: Tab[] = ['list', 'flashcards', 'quiz', 'quotes', 'verses'];
 const SRS_REVIEW_BATCH_SIZE = 20;
 const QUIZ_QUESTION_LIMIT = 5;
+const MIN_QUIZ_WORDS_PER_BOOK = 5;
 const DAILY_REVIEW_CHECKPOINT_KEY = 'vocabulary.daily_review_checkpoint';
 
 type DailyReviewCheckpoint = {
@@ -161,7 +165,8 @@ export default function VocabularyScreen() {
   const isLamp = scheme === 'lamp';
   const insets = useSafeAreaInsets();
   const [words, setWords] = useState<SavedWord[]>([]);
-  const [growthCounts, setGrowthCounts] = useState<DailySavedWordCount[]>([]);
+  const [eligibility, setEligibility] = useState<VocabularyEligibility | null>(null);
+  const [recentBookId, setRecentBookId] = useState<string | null>(null);
   const [books, setBooks] = useState<BookRow[]>([]);
   const [quotes, setQuotes] = useState<Highlight[]>([]);
   const [quranHighlights, setQuranHighlights] = useState<QuranHighlight[]>([]);
@@ -173,7 +178,7 @@ export default function VocabularyScreen() {
   const toggleWordBook = (bookId: string) => {
     void Haptics.selectionAsync().catch(() => {});
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setCollapsedWordBooks((prev) => ({ ...prev, [bookId]: !prev[bookId] }));
+    setCollapsedWordBooks((prev) => ({ ...prev, [bookId]: !(prev[bookId] ?? true) }));
   };
 
   const toggleQuoteBook = (bookId: string) => {
@@ -190,7 +195,9 @@ export default function VocabularyScreen() {
   // The daily review prompt lands here with tab=flashcards, so it opens on the
   // deck rather than dropping the reader on the word list to find it.
   const params = useLocalSearchParams<{ tab?: string }>();
-  const [tab, setTab] = useState<Tab>(params.tab === 'flashcards' ? 'flashcards' : 'list');
+  const [tab, setTab] = useState<Tab>(
+    params.tab === 'flashcards' || params.tab === 'review' ? 'flashcards' : params.tab === 'quiz' ? 'quiz' : 'list',
+  );
   const [studyingSynonymsForQuiz, setStudyingSynonymsForQuiz] = useState<SavedWord[] | null>(null);
   const [flashcardInit, setFlashcardInit] = useState<{ phase: 'challenge'; mode: 'synonyms' } | null>(null);
 
@@ -219,10 +226,12 @@ export default function VocabularyScreen() {
       listAllHighlights(),
       listAllQuranHighlights(),
       listAllBibleHighlights(),
-      listSavedWordCountsByDay().catch(() => []),
-    ]).then(([w, b, q, qv, bv, growth]) => {
+      getVocabularyEligibility(),
+      listActiveReadingPositions(),
+    ]).then(([w, b, q, qv, bv, nextEligibility, positions]) => {
       setWords(w);
-      setGrowthCounts(growth);
+      setEligibility(nextEligibility);
+      setRecentBookId(positions[0]?.bookId ?? null);
       setBooks(b);
       setQuotes(q);
       setQuranHighlights(qv);
@@ -240,8 +249,18 @@ export default function VocabularyScreen() {
   // The tab screen stays mounted, so the initial state above only covers a cold
   // launch — arriving here from the review prompt has to switch the tab too.
   useEffect(() => {
-    if (params.tab === 'flashcards') setTab('flashcards');
+    if (params.tab === 'flashcards' || params.tab === 'review') setTab('flashcards');
+    if (params.tab === 'quiz') setTab('quiz');
   }, [params.tab]);
+
+  useEffect(() => {
+    if (tab !== 'flashcards' || !eligibility) return;
+    if (eligibility.totalSaved < MIN_REVIEW_WORDS) {
+      logEvent('review_locked_viewed', { total_saved: eligibility.totalSaved, remaining: MIN_REVIEW_WORDS - eligibility.totalSaved });
+    } else {
+      logEvent('review_unlocked', { total_saved: eligibility.totalSaved, trigger: 'notebook' });
+    }
+  }, [eligibility, tab]);
 
   const confirmRemoveWord = useCallback(
     (word: SavedWord) => {
@@ -309,7 +328,7 @@ export default function VocabularyScreen() {
 
   const [segmentedWidth, setSegmentedWidth] = useState(0);
   const activeTabIndex = TAB_KEYS.indexOf(tab);
-  const tabWidth = segmentedWidth > 0 ? (segmentedWidth - 8) / 4 : 0;
+  const tabWidth = segmentedWidth > 0 ? (segmentedWidth - 8) / TABS.length : 0;
   const indicatorX = useSharedValue(activeTabIndex * tabWidth);
   const isFirstMount = useRef(true);
 
@@ -354,22 +373,17 @@ export default function VocabularyScreen() {
       </View>
       <CultureEditionBanner compact />
 
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ paddingRight: spacing.sm, alignItems: 'flex-start' }}
+        style={[styles.segmentedScroll, { marginTop: spacing.sm, marginBottom: spacing.md }]}
+      >
       <View
-        style={[
-          styles.segmented,
-          {
-            backgroundColor: colors.segmentedTrack,
-            borderRadius: radius.pill,
-            position: 'relative',
-            marginTop: spacing.sm,
-            marginBottom: spacing.md,
-          },
-        ]}
+        style={[styles.segmented, { backgroundColor: colors.segmentedTrack, borderRadius: radius.pill, position: 'relative' }]}
         onLayout={(e) => {
           const w = e.nativeEvent.layout.width;
-          if (w > 0 && Math.abs(w - segmentedWidth) > 1) {
-            setSegmentedWidth(w);
-          }
+          if (w > 0 && Math.abs(w - segmentedWidth) > 1) setSegmentedWidth(w);
         }}
       >
         {tabWidth > 0 ? (
@@ -419,23 +433,27 @@ export default function VocabularyScreen() {
           );
         })}
       </View>
+      </ScrollView>
 
       <View style={{ flex: 1 }}>
         {tab === 'flashcards' ? (
         !loaded ? (
           <SkeletonRows />
-        ) : words.length === 0 ? (
-          <EmptyPrompt variant="flashcards" message="Save words while reading to build your flashcard deck." />
+        ) : (eligibility?.totalSaved ?? 0) < MIN_REVIEW_WORDS ? (
+          <LockedReview totalSaved={eligibility?.totalSaved ?? 0} recentBookId={recentBookId} />
         ) : (
           <FlashcardDeck
             words={words}
             books={books}
+            dueCount={eligibility?.dueCount ?? 0}
             onWordUpdated={reload}
             onNavigateToStudySynonyms={handleNavigateToStudySynonyms}
             initialConfig={flashcardInit}
             onClearInitialConfig={() => setFlashcardInit(null)}
           />
         )
+      ) : tab === 'quiz' ? (
+        !loaded || !eligibility ? <SkeletonRows /> : <QuizTab eligibility={eligibility} books={books} words={words} />
       ) : tab === 'quotes' ? (
         <ScrollView
           contentContainerStyle={{ paddingTop: spacing.sm, paddingBottom: 48 }}
@@ -685,13 +703,12 @@ export default function VocabularyScreen() {
             <SkeletonRows />
           ) : (
             <>
-              <VocabularyGrowthChart counts={growthCounts} totalWords={words.length} />
               {words.length === 0 ? (
                 <EmptyPrompt variant="list" message="Words you save while reading will appear here." />
               ) : Object.entries(groups).map(([bookId, groupWords]) => {
               const book = getBook(bookId);
               const title = book?.title ?? bookId;
-              const isCollapsed = Boolean(collapsedWordBooks[bookId]);
+              const isCollapsed = collapsedWordBooks[bookId] ?? true;
 
               return (
                 <View
@@ -876,14 +893,13 @@ export default function VocabularyScreen() {
   );
 }
 
-// Displays the usage note ("when and why used") + synonyms and antonyms in mother tongue.
-// Cached in SQLite so it only fetches from Groq once.
 function WordRowCluster({ word }: { word: SavedWord }) {
   const { colors, typography } = useTheme();
   const motherTongue = useMotherTongue();
   const [cluster, setCluster] = useState<WordCluster | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
+  const [expanded, setExpanded] = useState(false);
 
   const loadData = useCallback(async () => {
     const cached = await getWordCluster(word.id, motherTongue);
@@ -910,9 +926,18 @@ function WordRowCluster({ word }: { word: SavedWord }) {
     }
   }, [motherTongue, word.id, word.sourceWord, word.translation]);
 
-  useEffect(() => {
-    void loadData();
-  }, [loadData]);
+  const showDetails = () => {
+    setExpanded(true);
+    if (!cluster) void loadData();
+  };
+
+  if (!expanded) {
+    return (
+      <Pressable onPress={showDetails} style={{ marginTop: 8 }}>
+        <Text style={[typography.metadataCaption, { color: colors.flameAmber, fontSize: 11 }]}>Usage & related words</Text>
+      </Pressable>
+    );
+  }
 
   if (loading && !cluster) {
     return (
@@ -1078,9 +1103,206 @@ function srsSorted(words: SavedWord[], dueOnly: boolean = true): SavedWord[] {
   };
 
   if (dueOnly && due.length > 0) {
-    return shuffleArray(due).slice(0, SRS_REVIEW_BATCH_SIZE);
+    const dueGroups = new Map<number, SavedWord[]>();
+    due.forEach((word) => {
+      const key = word.srsDueDate || 0;
+      dueGroups.set(key, [...(dueGroups.get(key) ?? []), word]);
+    });
+    return [...dueGroups.entries()]
+      .sort(([firstDue], [secondDue]) => firstDue - secondDue)
+      .flatMap(([, group]) => shuffleArray(group))
+      .slice(0, SRS_REVIEW_BATCH_SIZE);
   }
-  return [...shuffleArray(due), ...shuffleArray(future)];
+  return shuffleArray([...due, ...future]).slice(0, Math.min(10, words.length));
+}
+
+function LockedReview({ totalSaved, recentBookId }: { totalSaved: number; recentBookId: string | null }) {
+  const { colors, typography, spacing, radius } = useTheme();
+  const remaining = MIN_REVIEW_WORDS - totalSaved;
+  const destination = recentBookId
+    ? { pathname: '/reader/[bookId]' as const, params: { bookId: recentBookId } }
+    : '/library';
+  return (
+    <View style={[styles.emptyState, { marginTop: spacing.lg }]}>
+      <Text style={[typography.translatedWordPopup, { color: colors.ink, textAlign: 'center' }]}>Build your first review set</Text>
+      <Text style={[typography.metadataCaption, { color: colors.fawn, textAlign: 'center', marginTop: spacing.sm }]}>
+        {totalSaved} of {MIN_REVIEW_WORDS} words saved
+      </Text>
+      <View accessibilityLabel={`${totalSaved} of ${MIN_REVIEW_WORDS} words saved`} style={[styles.unlockSteps, { marginTop: spacing.md }]}>
+        {Array.from({ length: MIN_REVIEW_WORDS }, (_, index) => (
+          <View key={index} style={[styles.unlockStep, { backgroundColor: index < totalSaved ? colors.flameAmber : colors.segmentedTrack }]} />
+        ))}
+      </View>
+      <Text style={[typography.metadataCaption, { color: colors.umber, textAlign: 'center', marginTop: spacing.md }]}>
+        Save {remaining} more {remaining === 1 ? 'word' : 'words'} while reading to start reviewing.
+      </Text>
+      <Pressable
+        accessibilityRole="button"
+        onPress={() => router.push(destination)}
+        style={[styles.emptyCta, { backgroundColor: colors.flameAmber, borderRadius: radius.pill, marginTop: spacing.lg }]}
+      >
+        <Text style={[typography.buttonLabel, { color: colors.primaryDark }]}>{recentBookId ? 'Continue reading' : 'Browse books'}</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+type QuizState = 'NO_ELIGIBLE_BOOKS' | 'BOOK_PICKER' | 'MODE_PICKER' | 'IN_QUIZ' | 'RESULT';
+type QuizMode = 'normal' | 'fresh' | 'synonyms';
+
+function weekKey(nowMs: number = Date.now()): string {
+  const date = new Date(nowMs);
+  const day = (date.getDay() + 6) % 7;
+  date.setDate(date.getDate() - day);
+  return localDateKey(date.getTime());
+}
+
+function QuizTab({ eligibility, books, words }: { eligibility: VocabularyEligibility; books: BookRow[]; words: SavedWord[] }) {
+  const { colors, typography, spacing, radius } = useTheme();
+  const eligibleBooks = useMemo(
+    () => eligibility.perBook.filter((entry) => entry.savedCount >= MIN_QUIZ_WORDS_PER_BOOK),
+    [eligibility.perBook],
+  );
+  const [state, setState] = useState<QuizState>(eligibleBooks.length > 0 ? 'BOOK_PICKER' : 'NO_ELIGIBLE_BOOKS');
+  const [selectedBookId, setSelectedBookId] = useState<string | null>(null);
+  const [mode, setMode] = useState<QuizMode>('normal');
+  const [quizWords, setQuizWords] = useState<SavedWord[]>([]);
+  const [results, setResults] = useState<{ word: SavedWord; correct: boolean }[]>([]);
+  const [accessMessage, setAccessMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (state === 'NO_ELIGIBLE_BOOKS' && eligibleBooks.length > 0) setState('BOOK_PICKER');
+    if (eligibleBooks.length === 0 && state !== 'IN_QUIZ' && state !== 'RESULT') setState('NO_ELIGIBLE_BOOKS');
+  }, [eligibleBooks.length, state]);
+
+  useEffect(() => {
+    if (state === 'BOOK_PICKER') logEvent('quiz_book_picker_viewed', { eligible_book_count: eligibleBooks.length });
+  }, [eligibleBooks.length, state]);
+
+  const wordsForSelectedBook = useMemo(
+    () => words.filter((word) => word.bookId === selectedBookId),
+    [selectedBookId, words],
+  );
+  const bookForId = (bookId: string) => books.find((book) => book.id === bookId);
+  const shuffledBookWords = (bookWords: SavedWord[]) => [...bookWords]
+    .sort(() => Math.random() - 0.5)
+    .slice(0, QUIZ_QUESTION_LIMIT);
+
+  const startMode = async (nextMode: QuizMode) => {
+    const scopedWords = shuffledBookWords(wordsForSelectedBook);
+    if (scopedWords.length === 0) return;
+    setAccessMessage(null);
+    let compatibleWords = scopedWords;
+    if (nextMode === 'synonyms') {
+      compatibleWords = (
+        await Promise.all(scopedWords.map(async (word) => {
+          const cluster = await getWordCluster(word.id, getMotherTongue());
+          const optionCount = (cluster?.synonyms.length ?? 0) + (cluster?.antonyms.length ?? 0);
+          return optionCount >= 2 ? word : null;
+        }))
+      ).filter((word): word is SavedWord => word != null);
+      if (compatibleWords.length === 0) {
+        setAccessMessage('Similar-word data is not ready for this book yet. Try From the book instead.');
+        return;
+      }
+    }
+    if (nextMode !== 'normal') {
+      const sampleKey = `vocabulary.advanced_quiz_sample.${weekKey()}`;
+      if (await getSetting(sampleKey)) {
+        logEvent('paywall_viewed', { trigger: 'advanced_quiz_sample_used', feature: nextMode });
+        router.push('/paywall');
+        return;
+      }
+      await setSetting(sampleKey, '1');
+      logEvent('premium_sample_used', { feature: nextMode });
+    }
+    setQuizWords(compatibleWords);
+    setMode(nextMode);
+    setState('IN_QUIZ');
+    logEvent('quiz_started', { book_id: selectedBookId ?? 'unknown', mode: nextMode, question_count: compatibleWords.length, entitlement_source: nextMode === 'normal' ? 'free' : 'sample' });
+  };
+
+  const openBook = (entry: VocabularyEligibility['perBook'][number], latestWord?: SavedWord) => {
+    if (entry.savedCount >= MIN_QUIZ_WORDS_PER_BOOK) {
+      setSelectedBookId(entry.bookId);
+      setState('MODE_PICKER');
+      logEvent('quiz_book_selected', { book_id: entry.bookId, saved_count: entry.savedCount });
+    } else if (latestWord) {
+      router.push({ pathname: '/reader/[bookId]', params: { bookId: latestWord.bookId, jumpChapter: String(latestWord.chapterIndex), jumpPage: String(latestWord.pageIndex) } });
+    }
+  };
+
+  const bookRows = (entries: VocabularyEligibility['perBook']) => entries.map((entry, index) => {
+    const book = bookForId(entry.bookId);
+    const latestWord = words.filter((word) => word.bookId === entry.bookId).sort((a, b) => b.createdAt - a.createdAt)[0];
+    return (
+      <Pressable
+        key={entry.bookId}
+        accessibilityRole="button"
+        onPress={() => openBook(entry, latestWord)}
+        style={[styles.quizBookRow, { backgroundColor: colors.card, borderColor: colors.hairline, borderRadius: radius.card }]}
+      >
+        <BookSpine bookId={entry.bookId} title={book?.title ?? 'Unknown book'} toneIndex={index} onPress={() => openBook(entry, latestWord)} coverUrl={book?.coverUrl} width={42} height={62} />
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text numberOfLines={1} style={[typography.uiRowTitle, { color: colors.ink, fontSize: 15 }]}>{book?.title ?? 'Unknown book'}</Text>
+          {book ? <Text numberOfLines={1} style={[typography.metadataCaption, { color: colors.fawn, marginTop: 2 }]}>{book.author}</Text> : null}
+          <Text style={[typography.metadataCaption, { color: colors.fawn, marginTop: 3 }]}>
+            {entry.savedCount >= MIN_QUIZ_WORDS_PER_BOOK
+              ? `${entry.savedCount} saved words${entry.dueCount > 0 ? ` · ${entry.dueCount} due` : ''}`
+              : `${entry.savedCount}/5 words · save ${MIN_QUIZ_WORDS_PER_BOOK - entry.savedCount} more`}
+          </Text>
+        </View>
+      </Pressable>
+    );
+  });
+
+  if (state === 'IN_QUIZ') {
+    return <ClozeChallenge words={quizWords} mode={mode} maxQuestions={QUIZ_QUESTION_LIMIT} onDone={(nextResults) => { setResults(nextResults); setState('RESULT'); }} />;
+  }
+  if (state === 'RESULT') {
+    return <ClozeResultScreen results={results} onRetakeWithRelatedWords={() => setState('MODE_PICKER')} onDone={() => setState('MODE_PICKER')} />;
+  }
+  if (state === 'NO_ELIGIBLE_BOOKS') {
+    const progressBooks = [...eligibility.perBook]
+      .filter((entry) => entry.savedCount > 0 && entry.savedCount < MIN_QUIZ_WORDS_PER_BOOK)
+      .sort((first, second) => second.savedCount - first.savedCount || second.latestSavedAt - first.latestSavedAt);
+    return (
+      <ScrollView contentContainerStyle={{ paddingTop: spacing.sm, paddingBottom: 48 }} showsVerticalScrollIndicator={false}>
+        <Text style={[typography.translatedWordPopup, { color: colors.ink }]}>Book Quiz</Text>
+        <Text style={[typography.metadataCaption, { color: colors.fawn, marginTop: spacing.xs, marginBottom: spacing.lg }]}>Save 5 words from one book to unlock its quiz.</Text>
+        {progressBooks.length > 0 ? bookRows(progressBooks) : <EmptyPrompt variant="quiz" message="Words you save from a book will build its quiz here." />}
+      </ScrollView>
+    );
+  }
+  if (state === 'BOOK_PICKER') {
+    return (
+      <ScrollView contentContainerStyle={{ paddingTop: spacing.sm, paddingBottom: 48 }} showsVerticalScrollIndicator={false}>
+        <Text style={[typography.translatedWordPopup, { color: colors.ink }]}>Choose a book</Text>
+        <Text style={[typography.metadataCaption, { color: colors.fawn, marginTop: spacing.xs, marginBottom: spacing.lg }]}>Each quiz draws from one book only.</Text>
+        {bookRows(eligibleBooks)}
+      </ScrollView>
+    );
+  }
+
+  const selectedBook = selectedBookId ? bookForId(selectedBookId) : null;
+  return (
+    <ScrollView contentContainerStyle={{ paddingTop: spacing.sm, paddingBottom: 48 }} showsVerticalScrollIndicator={false}>
+      <Pressable onPress={() => setState('BOOK_PICKER')}><Text style={[typography.metadataCaption, { color: colors.flameAmber }]}>← Change book</Text></Pressable>
+      <Text style={[typography.translatedWordPopup, { color: colors.ink, marginTop: spacing.md }]}>{selectedBook?.title ?? 'Book Quiz'}</Text>
+      <Text style={[typography.metadataCaption, { color: colors.fawn, marginTop: spacing.xs, marginBottom: spacing.lg }]}>Choose how you want to practice.</Text>
+      {([
+        ['normal', 'From the book', 'Original context cloze · Free'],
+        ['fresh', 'New sentence', 'A fresh context · one free session each week'],
+        ['synonyms', 'Similar words', 'Synonym and antonym choices · one free session each week'],
+      ] as const).map(([nextMode, label, detail]) => (
+        <Pressable key={nextMode} onPress={() => void startMode(nextMode)} style={[styles.quizMode, { backgroundColor: colors.card, borderColor: colors.hairline, borderRadius: radius.card }]}>
+          <Text style={[typography.uiRowTitle, { color: colors.ink }]}>{label}</Text>
+          <Text style={[typography.metadataCaption, { color: colors.fawn, marginTop: 4 }]}>{detail}</Text>
+        </Pressable>
+      ))}
+      {accessMessage ? <Text accessibilityLiveRegion="polite" style={[typography.metadataCaption, { color: colors.umber, textAlign: 'center', marginTop: spacing.md }]}>{accessMessage}</Text> : null}
+    </ScrollView>
+  );
 }
 
 function selectQuizWords(completedWords: SavedWord[], difficultWords: SavedWord[]): SavedWord[] {
@@ -1099,6 +1321,7 @@ function selectQuizWords(completedWords: SavedWord[], difficultWords: SavedWord[
 function FlashcardDeck({
   words,
   books,
+  dueCount,
   onWordUpdated,
   onNavigateToStudySynonyms,
   initialConfig,
@@ -1106,6 +1329,7 @@ function FlashcardDeck({
 }: {
   words: SavedWord[];
   books: BookRow[];
+  dueCount: number;
   onWordUpdated?: () => void;
   onNavigateToStudySynonyms?: (wordsToStudy: SavedWord[]) => void;
   initialConfig?: { phase: 'challenge'; mode: 'synonyms' } | null;
@@ -1163,6 +1387,7 @@ function FlashcardDeck({
   const [quizWords, setQuizWords] = useState<SavedWord[]>([]);
   const [quizCompleted, setQuizCompleted] = useState(false);
   const [isCheckpointLoaded, setIsCheckpointLoaded] = useState(false);
+  const [isPracticeSession, setIsPracticeSession] = useState(false);
   const ratingLock = useRef(false);
 
   // Active recall session queue.
@@ -1200,6 +1425,7 @@ function FlashcardDeck({
     setDifficultWords([]);
     setQuizWords([]);
     setQuizCompleted(false);
+    setIsPracticeSession(false);
     flipAnim.value = 0;
     progressAnim.value = 0;
     setFlipped(false);
@@ -1293,30 +1519,6 @@ function FlashcardDeck({
     }
   }, [initialConfig, onClearInitialConfig]);
 
-  // Background Groq generation: cache cloze and clusters for session words
-  const generationFired = useRef(false);
-  useEffect(() => {
-    if (generationFired.current || words.length === 0) return;
-    generationFired.current = true;
-    const eligible = words.slice(0, 10);
-    const mt = getMotherTongue();
-    void (async () => {
-      for (const w of eligible) {
-        const existingCloze = await getClozeCache(w.id);
-        if (!existingCloze) {
-          const sentence = sentenceContaining(w.contextSentence, w.sourceWord) || w.contextSentence;
-          const q = await generateClozeQuestion(w.sourceWord, sentence);
-          if (q) await setClozeCache(w.id, q);
-        }
-        const existingCluster = await getWordCluster(w.id, mt);
-        if (!existingCluster) {
-          const cluster = await generateWordCluster(w.sourceWord, w.translation, mt);
-          if (cluster) await setWordCluster(w.id, mt, cluster);
-        }
-      }
-    })();
-  }, [words]);
-
   // Remaining due count decrements as due cards are graduated in this session
   const remainingDueCount = useMemo(() => {
     return sessionQueue.filter((w) => (w.srsDueDate || 0) <= sessionStartTime).length;
@@ -1379,6 +1581,11 @@ function FlashcardDeck({
       if (nextQueue.length === 0) {
         setIsSessionComplete(true);
         setPhase('prompt');
+        logEvent('review_completed', {
+          reviewed: newCompleted,
+          difficult: difficultWords.length + (rating === 'hard' ? 1 : 0),
+          duration_ms: Date.now() - sessionStartTime,
+        });
       }
     }
     ratingLock.current = false;
@@ -1390,7 +1597,7 @@ function FlashcardDeck({
     return () => clearTimeout(timeout);
   }, [ratingFeedback]);
 
-  const startReviewSession = (reviewWords: SavedWord[]) => {
+  const startReviewSession = (reviewWords: SavedWord[], practice: boolean = false) => {
     if (reviewWords.length === 0) return;
     const startTime = Date.now();
     setSessionStartTime(startTime);
@@ -1401,6 +1608,8 @@ function FlashcardDeck({
     setQuizWords([]);
     setQuizCompleted(false);
     setIsSessionComplete(false);
+    setIsPracticeSession(practice);
+    logEvent('review_started', { source: practice ? 'practice' : 'notebook', due_count: dueCount, batch_size: reviewWords.length });
     void deleteSetting(DAILY_REVIEW_CHECKPOINT_KEY);
     flipAnim.value = 0;
     progressAnim.value = 0;
@@ -1421,6 +1630,29 @@ function FlashcardDeck({
     return (
       <View style={[styles.deckWrap, { alignItems: 'center', justifyContent: 'center', minHeight: 320 }]}>
         <ActivityIndicator color={colors.flameAmber} />
+      </View>
+    );
+  }
+
+  if (phase === 'review' && !isSessionComplete && dueCount === 0 && !isPracticeSession) {
+    const nextDue = words
+      .map((word) => word.srsDueDate)
+      .filter((dueDate) => dueDate > Date.now())
+      .sort((first, second) => first - second)[0];
+    return (
+      <View style={[styles.deckWrap, { paddingHorizontal: spacing.md, alignItems: 'center' }]}>
+        <Text style={[typography.translatedWordPopup, { color: colors.ink, textAlign: 'center' }]}>You’re caught up</Text>
+        <Text style={[typography.metadataCaption, { color: colors.fawn, textAlign: 'center', marginTop: spacing.sm }]}>
+          {nextDue ? `Your next card is due ${new Date(nextDue).toLocaleString()}.` : 'No cards are scheduled yet.'}
+        </Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Practice vocabulary anyway"
+          onPress={() => startReviewSession(srsSorted(words, false), true)}
+          style={[styles.emptyCta, { backgroundColor: colors.flameAmber, borderRadius: radius.pill, marginTop: spacing.lg }]}
+        >
+          <Text style={[typography.buttonLabel, { color: colors.primaryDark }]}>Practice anyway</Text>
+        </Pressable>
       </View>
     );
   }
@@ -1965,10 +2197,14 @@ const styles = StyleSheet.create({
   segmented: {
     flexDirection: 'row',
     padding: 4,
-    marginBottom: 18,
+  },
+  segmentedScroll: {
+    alignSelf: 'stretch',
+    flexGrow: 0,
+    flexShrink: 0,
   },
   segment: {
-    flex: 1,
+    width: 68,
     alignItems: 'center',
     paddingVertical: 8,
   },
@@ -2118,6 +2354,29 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  unlockSteps: {
+    flexDirection: 'row',
+    gap: 8,
+    width: '100%',
+  },
+  unlockStep: {
+    flex: 1,
+    height: 8,
+    borderRadius: 4,
+  },
+  quizBookRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderWidth: 1,
+    padding: 10,
+    marginBottom: 10,
+  },
+  quizMode: {
+    borderWidth: 1,
+    padding: 16,
+    marginBottom: 10,
   },
   deckWrap: {
     marginTop: 18,

@@ -95,10 +95,11 @@ const READING_BG_LIGHT = '#F4EBD9';
 const READING_TEXT_LIGHT = '#241D17';
 const READING_TEXT_DARK = '#F0E6D6';
 const READING_DARK_STOPS = ['#1C1B1E', '#201E22', '#26221F'] as const;
-const READER_THEME_DURATION_MS = 280;
-const READER_THEME_EASING = Easing.linear;
-const CHROME_REVEAL_DURATION_MS = 100;
+const READER_THEME_DURATION_MS = 200;
+const READER_THEME_EASING = Easing.bezier(0.77, 0, 0.175, 1);
+const CHROME_REVEAL_DURATION_MS = 180;
 const CHROME_HIDE_DURATION_MS = 180;
+const CHROME_EASING = Easing.bezier(0.23, 1, 0.32, 1);
 
 type ReaderMode = 'day' | 'lamp';
 
@@ -574,11 +575,11 @@ export default function ReaderScreen() {
     if (animatedThemeRef.current === next) return;
     animatedThemeRef.current = next;
     setMode(next);
-    bgProgress.value = withTiming(next === 'lamp' ? 1 : 0, {
+    bgProgress.set(withTiming(next === 'lamp' ? 1 : 0, {
       duration: READER_THEME_DURATION_MS,
       easing: READER_THEME_EASING,
-      reduceMotion: ReduceMotion.Never,
-    });
+      reduceMotion: ReduceMotion.System,
+    }));
   }, [sharedTheme, bgProgress]);
   const darkBgStyle = useAnimatedStyle(() => ({ opacity: bgProgress.value }));
 
@@ -859,9 +860,9 @@ export default function ReaderScreen() {
     if (hideTimer.current) clearTimeout(hideTimer.current);
     if (translation?.status === 'loading') return;
     hideTimer.current = setTimeout(() => {
-      chromeOpacity.value = withTiming(0, { duration: CHROME_HIDE_DURATION_MS, easing: Easing.in(Easing.cubic) }, (finished) => {
+      chromeOpacity.set(withTiming(0, { duration: CHROME_HIDE_DURATION_MS, easing: CHROME_EASING, reduceMotion: ReduceMotion.System }, (finished) => {
         if (finished) runOnJS(hideChrome)();
-      });
+      }));
     }, 4500);
   }, [chromeOpacity, hideChrome, translation?.status]);
 
@@ -878,19 +879,19 @@ export default function ReaderScreen() {
       hideTimer.current = null;
     }
     if (!chromeVisibleRef.current) {
+      chromeOpacity.set(withTiming(1, { duration: CHROME_REVEAL_DURATION_MS, easing: CHROME_EASING, reduceMotion: ReduceMotion.System }));
       chromeVisibleRef.current = true;
       setChromeVisible(true);
-      chromeOpacity.set(withTiming(1, { duration: CHROME_REVEAL_DURATION_MS, easing: Easing.out(Easing.cubic) }));
       hideTimer.current = setTimeout(() => {
-        chromeOpacity.value = withTiming(0, { duration: CHROME_HIDE_DURATION_MS, easing: Easing.in(Easing.cubic) }, (finished) => {
+        chromeOpacity.set(withTiming(0, { duration: CHROME_HIDE_DURATION_MS, easing: CHROME_EASING, reduceMotion: ReduceMotion.System }, (finished) => {
           if (finished) runOnJS(hideChrome)();
-        });
+        }));
       }, 4500);
       return;
     }
-    chromeOpacity.value = withTiming(0, { duration: CHROME_HIDE_DURATION_MS, easing: Easing.in(Easing.cubic) }, (finished) => {
+    chromeOpacity.set(withTiming(0, { duration: CHROME_HIDE_DURATION_MS, easing: CHROME_EASING, reduceMotion: ReduceMotion.System }, (finished) => {
       if (finished) runOnJS(hideChrome)();
-    });
+    }));
   }, [chromeOpacity, hideChrome]);
 
   const handleScrollBeginDrag = useCallback(() => {
@@ -900,33 +901,37 @@ export default function ReaderScreen() {
       hideTimer.current = null;
     }
     if (!chromeVisibleRef.current) return;
-    chromeOpacity.value = withTiming(0, { duration: CHROME_HIDE_DURATION_MS, easing: Easing.in(Easing.cubic) }, (finished) => {
+    chromeOpacity.set(withTiming(0, { duration: CHROME_HIDE_DURATION_MS, easing: CHROME_EASING, reduceMotion: ReduceMotion.System }, (finished) => {
       if (finished) runOnJS(hideChrome)();
-    });
+    }));
   }, [dismissHint, chromeOpacity, hideChrome]);
+
+  const commitReaderTheme = useCallback((nextTheme: ReaderMode) => {
+    setMode(nextTheme);
+    setReadingTheme(nextTheme);
+  }, []);
 
   const toggleReadingTheme = useCallback(() => {
     scheduleAutoHide();
     const nextTheme: ReaderMode = animatedThemeRef.current === 'lamp' ? 'day' : 'lamp';
     animatedThemeRef.current = nextTheme;
 
-    bgProgress.value = withTiming(
+    bgProgress.set(withTiming(
       nextTheme === 'lamp' ? 1 : 0,
       {
         duration: READER_THEME_DURATION_MS,
         easing: READER_THEME_EASING,
-        reduceMotion: ReduceMotion.Never,
+        reduceMotion: ReduceMotion.System,
       },
       (finished) => {
         if (finished) {
-          runOnJS(setMode)(nextTheme);
-          runOnJS(setReadingTheme)(nextTheme);
+          runOnJS(commitReaderTheme)(nextTheme);
         }
       },
-    );
-  }, [bgProgress, scheduleAutoHide]);
+    ));
+  }, [bgProgress, commitReaderTheme, scheduleAutoHide]);
 
-  const chromeStyle = useAnimatedStyle(() => ({ opacity: chromeOpacity.value }));
+  const chromeStyle = useAnimatedStyle(() => ({ opacity: chromeOpacity.get() }));
 
   // FlatList requires onViewableItemsChanged to keep the same identity across
   // renders (it warns/throws if it changes), so the callback itself must be

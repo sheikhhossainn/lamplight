@@ -3,7 +3,6 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, {
-  Easing,
   Extrapolation,
   interpolate,
   interpolateColor,
@@ -15,9 +14,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Circle, Line, Path } from 'react-native-svg';
-
-import { ChevronRightIcon } from '@/components/icons';
+import { ChevronRightIcon, MoonIcon as ThemeMoonIcon, SunIcon as ThemeSunIcon } from '@/components/icons';
 import { CultureEditionBanner } from '@/components/CultureEditionBanner';
 import {
   useAppUpdateBanner,
@@ -25,7 +22,7 @@ import {
 } from '@/features/app-update/useAppUpdateBanner';
 import { setTargetLanguage, targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
 import { useReadingTheme } from '@/features/settings/readingTheme';
-import { requestThemeChange } from '@/features/settings/themeTransition';
+import { requestThemeChange, themeTransitionProgress } from '@/features/settings/themeTransition';
 import { setPageTurnSoundEnabled, usePageTurnSoundEnabled } from '@/features/settings/soundPrefs';
 import { isPremiumUser } from '@/features/subscription/subscriptionState';
 import { checkCachedTranslationCap, checkTranslationCap } from '@/features/translation';
@@ -44,40 +41,8 @@ import { getNativeUiTextStyle } from '@/theme/typography';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-// Theme is an occasional state change, not a cinematic transition. Keep every
-// Settings surface on one short UI-thread clock so text never trails a card.
-const GLIDE_DURATION = 200;
-const GLIDE_EASING = Easing.bezier(0.25, 1, 0.5, 1);
-
 // Clear the tab bar so the last row isn't half-hidden behind it.
 const TAB_BAR_CLEARANCE = Layout.tabBarHeight + Spacing.xl;
-
-function SunIcon({ color }: { color: string }) {
-  return (
-    <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
-      <Circle cx="12" cy="12" r="4.5" stroke={color} strokeWidth={2} />
-      <Line x1="12" y1="2.5" x2="12" y2="5" stroke={color} strokeWidth={2} strokeLinecap="round" />
-      <Line x1="12" y1="19" x2="12" y2="21.5" stroke={color} strokeWidth={2} strokeLinecap="round" />
-      <Line x1="2.5" y1="12" x2="5" y2="12" stroke={color} strokeWidth={2} strokeLinecap="round" />
-      <Line x1="19" y1="12" x2="21.5" y2="12" stroke={color} strokeWidth={2} strokeLinecap="round" />
-      <Line x1="5.3" y1="5.3" x2="7.1" y2="7.1" stroke={color} strokeWidth={2} strokeLinecap="round" />
-      <Line x1="16.9" y1="16.9" x2="18.7" y2="18.7" stroke={color} strokeWidth={2} strokeLinecap="round" />
-      <Line x1="5.3" y1="18.7" x2="7.1" y2="16.9" stroke={color} strokeWidth={2} strokeLinecap="round" />
-      <Line x1="16.9" y1="7.1" x2="18.7" y2="5.3" stroke={color} strokeWidth={2} strokeLinecap="round" />
-    </Svg>
-  );
-}
-
-function MoonIcon({ color }: { color: string }) {
-  return (
-    <Svg width={14} height={14} viewBox="0 0 20 20">
-      <Path
-        d="M14.8 14.1A6.7 6.7 0 0 1 5.9 5.2a7.1 7.1 0 1 0 8.9 8.9Z"
-        fill={color}
-      />
-    </Svg>
-  );
-}
 
 function ThemeSegmentedSwitch({
   theme,
@@ -92,39 +57,11 @@ function ThemeSegmentedSwitch({
   const dayColors = getCultureThemeColors(cultureTheme, 'day');
   const lampColors = getCultureThemeColors(cultureTheme, 'lamp');
 
-  // Progress: 0 = day, 1 = lamp
-  const progress = useSharedValue(theme === 'lamp' ? 1 : 0);
   const segWidth = useSharedValue(0);
-  // Sync if external theme changes
-  useEffect(() => {
-    const target = theme === 'lamp' ? 1 : 0;
-    if (Math.round(progress.value) !== target) {
-      progress.value = withTiming(target, {
-        duration: GLIDE_DURATION,
-        easing: GLIDE_EASING,
-      });
-    }
-  }, [theme, progress]);
 
   const handleSelect = (target: 'day' | 'lamp') => {
-    if (theme === target) return;
-
     const targetVal = target === 'lamp' ? 1 : 0;
-
-    // 1. Slow, butter-smooth glide for the sliding pill across left and right
-    progress.value = withTiming(targetVal, {
-      duration: GLIDE_DURATION,
-      easing: GLIDE_EASING,
-    });
-
-    // 2. Coordinated smooth bezier transition across the whole Settings screen
-    themeAnim.value = withTiming(targetVal, {
-      duration: GLIDE_DURATION,
-      easing: GLIDE_EASING,
-    });
-
-    // Commit globally now. The root overlay keeps the crossfade coherent while
-    // the navigator receives its new tab-bar colours in the same transition.
+    if (theme === target && Math.abs(themeAnim.get() - targetVal) < 0.001) return;
     onThemeChange(target);
   };
 
@@ -132,12 +69,12 @@ function ThemeSegmentedSwitch({
     const w = segWidth.value;
     return {
       width: w > 0 ? w : '50%',
-      transform: [{ translateX: progress.value * w }],
+      transform: [{ translateX: themeAnim.get() * w }],
     };
   });
 
   const sunAnimatedStyle = useAnimatedStyle(() => {
-    const p = progress.value;
+    const p = themeAnim.get();
     const rotate = interpolate(p, [0, 1], [0, 45], Extrapolation.CLAMP);
     const scale = interpolate(p, [0, 1], [1, 0.88], Extrapolation.CLAMP);
     return {
@@ -146,7 +83,7 @@ function ThemeSegmentedSwitch({
   });
 
   const lampAnimatedStyle = useAnimatedStyle(() => {
-    const p = progress.value;
+    const p = themeAnim.get();
     const rotate = interpolate(p, [0, 1], [-15, 0], Extrapolation.CLAMP);
     const scale = interpolate(p, [0, 1], [0.88, 1], Extrapolation.CLAMP);
     return {
@@ -155,27 +92,27 @@ function ThemeSegmentedSwitch({
   });
 
   const sunActiveStyle = useAnimatedStyle(() => ({
-    opacity: 1 - progress.value,
+    opacity: 1 - themeAnim.get(),
   }));
   const sunInactiveStyle = useAnimatedStyle(() => ({
-    opacity: progress.value,
+    opacity: themeAnim.get(),
   }));
 
   const lampActiveStyle = useAnimatedStyle(() => ({
-    opacity: progress.value,
+    opacity: themeAnim.get(),
   }));
   const lampInactiveStyle = useAnimatedStyle(() => ({
-    opacity: 1 - progress.value,
+    opacity: 1 - themeAnim.get(),
   }));
 
   const dayContentStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(progress.value, [0, 1], [1, 0.55], Extrapolation.CLAMP),
-    transform: [{ scale: interpolate(progress.value, [0, 1], [1, 0.96], Extrapolation.CLAMP) }],
+    opacity: interpolate(themeAnim.get(), [0, 1], [1, 0.55], Extrapolation.CLAMP),
+    transform: [{ scale: interpolate(themeAnim.get(), [0, 1], [1, 0.96], Extrapolation.CLAMP) }],
   }));
 
   const lampContentStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(progress.value, [0, 1], [0.55, 1], Extrapolation.CLAMP),
-    transform: [{ scale: interpolate(progress.value, [0, 1], [0.96, 1], Extrapolation.CLAMP) }],
+    opacity: interpolate(themeAnim.get(), [0, 1], [0.55, 1], Extrapolation.CLAMP),
+    transform: [{ scale: interpolate(themeAnim.get(), [0, 1], [0.96, 1], Extrapolation.CLAMP) }],
   }));
 
   const animatedTrackStyle = useAnimatedStyle(() => ({
@@ -188,7 +125,7 @@ function ThemeSegmentedSwitch({
 
   const animatedSegmentLabelStyle = useAnimatedStyle(() => ({
     color: interpolateColor(
-      themeAnim.value,
+      themeAnim.get(),
       [0, 1],
       [dayColors.lampText, lampColors.lampText],
     ),
@@ -221,10 +158,10 @@ function ThemeSegmentedSwitch({
           <Animated.View style={[styles.segmentIcon, sunAnimatedStyle]}>
             <View style={{ width: 14, height: 14, alignItems: 'center', justifyContent: 'center' }}>
               <Animated.View style={[StyleSheet.absoluteFill, styles.centered, sunActiveStyle]}>
-                <SunIcon color={colors.flameAmber} />
+                <ThemeSunIcon color={colors.flameAmber} size={14} />
               </Animated.View>
               <Animated.View style={[StyleSheet.absoluteFill, styles.centered, sunInactiveStyle]}>
-                <SunIcon color={dayColors.fawn} />
+                <ThemeSunIcon color={dayColors.fawn} size={14} />
               </Animated.View>
             </View>
           </Animated.View>
@@ -248,10 +185,10 @@ function ThemeSegmentedSwitch({
           <Animated.View style={[styles.segmentIcon, lampAnimatedStyle]}>
             <View style={{ width: 12, height: 14, alignItems: 'center', justifyContent: 'center' }}>
               <Animated.View style={[StyleSheet.absoluteFill, styles.centered, lampActiveStyle]}>
-                <MoonIcon color={colors.flameAmber} />
+                <ThemeMoonIcon color={colors.flameAmber} size={14} />
               </Animated.View>
               <Animated.View style={[StyleSheet.absoluteFill, styles.centered, lampInactiveStyle]}>
-                <MoonIcon color={dayColors.fawn} />
+                <ThemeMoonIcon color={dayColors.fawn} size={14} />
               </Animated.View>
             </View>
           </Animated.View>
@@ -301,7 +238,7 @@ function ToggleSwitch({
       return { backgroundColor: colors.flameAmber };
     }
     const hairline = themeAnim
-      ? interpolateColor(themeAnim.value, [0, 1], [dayColors.hairline, lampColors.hairline])
+      ? interpolateColor(themeAnim.get(), [0, 1], [dayColors.hairline, lampColors.hairline])
       : colors.hairline;
     return { backgroundColor: hairline };
   });
@@ -362,15 +299,7 @@ export default function SettingsScreen() {
   const [languagePickerVisible, setLanguagePickerVisible] = useState(false);
   const [motherTonguePickerVisible, setMotherTonguePickerVisible] = useState(false);
 
-  const isLamp = theme === 'lamp';
-  const themeAnim = useSharedValue(isLamp ? 1 : 0);
-
-  useEffect(() => {
-    themeAnim.value = withTiming(isLamp ? 1 : 0, {
-      duration: GLIDE_DURATION,
-      easing: GLIDE_EASING,
-    });
-  }, [isLamp, themeAnim]);
+  const themeAnim = themeTransitionProgress;
 
   const animatedContainerStyle = useAnimatedStyle(() => ({
     backgroundColor: interpolateColor(
@@ -432,7 +361,7 @@ export default function SettingsScreen() {
 
   const animatedPairPillStyle = useAnimatedStyle(() => ({
     backgroundColor: interpolateColor(
-      themeAnim.value,
+      themeAnim.get(),
       [0, 1],
       [dayColors.pairPillBackground, lampColors.pairPillBackground],
     ),

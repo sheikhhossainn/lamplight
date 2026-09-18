@@ -1004,7 +1004,6 @@ export default function LibraryScreen() {
         visible={reviewPrompt != null}
         wordCount={reviewPrompt?.wordCount ?? 0}
         onReview={() => {
-          void markVocabReviewPrompted();
           setReviewPrompt(null);
           router.push({ pathname: '/vocabulary', params: { tab: 'flashcards' } });
         }}
