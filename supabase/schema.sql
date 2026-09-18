@@ -605,7 +605,7 @@ create or replace function public.redeem_promo(p_code text)
 returns jsonb
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   v_owner_id uuid := auth.uid();
@@ -627,8 +627,8 @@ begin
     return jsonb_build_object('success', false, 'error', 'Invalid promo code format.');
   end if;
 
-  -- Hash code with SHA-256 via pgcrypto
-  v_code_hash := encode(digest(v_normalized_code, 'sha256'), 'hex');
+  -- Hash code with SHA-256 via pgcrypto / extensions.digest
+  v_code_hash := encode(extensions.digest(v_normalized_code::bytea, 'sha256'), 'hex');
 
   -- Lock campaign row
   select * into v_campaign

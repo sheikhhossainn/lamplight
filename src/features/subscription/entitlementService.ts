@@ -239,6 +239,14 @@ export async function refreshEntitlements(reason: string = 'manual'): Promise<En
       updateSnapshot(snapshot);
       return snapshot;
     } else {
+      // If we already hold an unexpired active grant locally, retain it
+      if (
+        currentSnapshot.status === 'premium' &&
+        currentSnapshot.expiresAt &&
+        now <= currentSnapshot.expiresAt
+      ) {
+        return currentSnapshot;
+      }
       const snapshot: EntitlementSnapshot = {
         status: 'free',
         features: ALL_FEATURES_OFF,
@@ -283,7 +291,18 @@ export async function redeemPromoCode(
 
     const data = await res.json();
     if (res.ok && data?.success) {
-      const snapshot = await refreshEntitlements('promo_redemption');
+      const now = Date.now();
+      const endsAt = data.ends_at ? new Date(data.ends_at).getTime() : now + 30 * 24 * 60 * 60 * 1000;
+      const snapshot: EntitlementSnapshot = {
+        status: 'premium',
+        features: ALL_FEATURES_ON,
+        source: 'promo',
+        startsAt: now,
+        expiresAt: endsAt,
+        lastVerifiedAt: now,
+      };
+      updateSnapshot(snapshot);
+      refreshEntitlements('promo_redemption').catch(() => {});
       return { success: true, message: data.message || 'Promo code redeemed successfully!', snapshot };
     } else {
       return { success: false, message: data?.message || data?.error || 'Invalid or expired promo code.' };

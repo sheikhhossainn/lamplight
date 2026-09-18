@@ -30,7 +30,12 @@ import { setTargetLanguage, targetLanguageLabel, useTargetLanguage } from '@/fea
 import { useReadingTheme } from '@/features/settings/readingTheme';
 import { requestThemeChange } from '@/features/settings/themeTransition';
 import { setPageTurnSoundEnabled, usePageTurnSoundEnabled } from '@/features/settings/soundPrefs';
-import { isPremiumUser } from '@/features/subscription/subscriptionState';
+import {
+  isPremiumUser,
+  getEntitlementSnapshot,
+  subscribeToEntitlements,
+  type EntitlementSnapshot,
+} from '@/features/subscription/subscriptionState';
 import { checkCachedTranslationCap, checkTranslationCap } from '@/features/translation';
 import type { CapCheck } from '@/features/translation/capPolicy';
 import { LanguagePicker } from '@/components/LanguagePicker';
@@ -382,6 +387,13 @@ export default function SettingsScreen() {
   const [storageUsage, setStorageUsage] = useState<StorageUsage | null>(null);
   const [clearingCache, setClearingCache] = useState(false);
   const [promoModalVisible, setPromoModalVisible] = useState(false);
+  const [entitlement, setEntitlement] = useState<EntitlementSnapshot>(getEntitlementSnapshot());
+
+  useEffect(() => {
+    return subscribeToEntitlements(setEntitlement);
+  }, []);
+
+  const isPremium = entitlement.status === 'premium' || entitlement.status === 'trial' || entitlement.status === 'grace';
 
   const loadStorage = useCallback(() => {
     getStorageUsage().then(setStorageUsage).catch(() => {});
@@ -693,7 +705,7 @@ export default function SettingsScreen() {
         <View style={styles.settingsRow}>
           <View>
             <Animated.Text style={[typography.uiRowTitle, animatedLampTextStyle, { fontSize: 13 }]}>
-              Free plan
+              {isPremium ? (entitlement.source === 'promo' ? 'Promo Pass' : 'Premium Plan') : 'Free Plan'}
             </Animated.Text>
             <Animated.Text
               style={[
@@ -702,19 +714,35 @@ export default function SettingsScreen() {
                 { fontSize: 11, marginTop: 2 },
               ]}
             >
-              {translationsLeft === undefined
-                ? 'Checking translations left…'
-                : translationsLeft === null
-                  ? 'Unlimited translations'
+              {isPremium
+                ? 'Unlimited translations'
+                : translationsLeft === undefined
+                  ? 'Checking translations left…'
                   : `${translationsLeft} translations left today`}
             </Animated.Text>
           </View>
-          <Pressable
-            onPress={() => router.push('/paywall')}
-            style={[styles.upgradeButton, { backgroundColor: colors.flameAmber, borderRadius: radius.pill }]}
-          >
-            <Text style={[typography.uiRowTitle, { color: colors.primaryDark, fontSize: 12 }]}>Upgrade</Text>
-          </Pressable>
+          {isPremium ? (
+            <View
+              style={[
+                styles.upgradeButton,
+                {
+                  backgroundColor: isLamp ? '#3A342D' : '#E5DAC8',
+                  borderRadius: radius.pill,
+                  paddingHorizontal: 12,
+                  paddingVertical: 6,
+                },
+              ]}
+            >
+              <Text style={[typography.uiRowTitle, { color: colors.flameAmber, fontSize: 12 }]}>Active</Text>
+            </View>
+          ) : (
+            <Pressable
+              onPress={() => router.push('/paywall')}
+              style={[styles.upgradeButton, { backgroundColor: colors.flameAmber, borderRadius: radius.pill }]}
+            >
+              <Text style={[typography.uiRowTitle, { color: colors.primaryDark, fontSize: 12 }]}>Upgrade</Text>
+            </Pressable>
+          )}
         </View>
 
         <View style={[styles.itemDivider, { borderBottomColor: '#2B2621' }]} />
