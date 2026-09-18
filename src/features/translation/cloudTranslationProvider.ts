@@ -1,3 +1,4 @@
+import { getCachedTranslation, setCachedTranslation } from '@/db/repositories/translationCache';
 import type { LanguageCode, TranslationProvider, TranslationResult } from './TranslationProvider';
 
 // Thin wrapper around the unofficial (but widely used, key-free) Google Translate
@@ -6,8 +7,7 @@ import type { LanguageCode, TranslationProvider, TranslationResult } from './Tra
 // any caller changes — see TranslationProvider.ts.
 const ENDPOINT = 'https://translate.googleapis.com/translate_a/single';
 
-// A word/pair translated once never needs re-fetching — Austen's vocabulary
-// doesn't change mid-session.
+// In-memory fast L1 cache
 const cache = new Map<string, TranslationResult>();
 
 function cacheKey(text: string, from: LanguageCode, to: LanguageCode): string {
@@ -20,9 +20,23 @@ async function fetchTranslation(
   to: LanguageCode,
 ): Promise<TranslationResult> {
   const key = cacheKey(text, from, to);
-  const cached = cache.get(key);
-  if (cached) return cached;
+  
+  // 1. Check in-memory L1 cache
+  const cachedL1 = cache.get(key);
+  if (cachedL1) return cachedL1;
 
+  // 2. Check persistent SQLite L2 cache
+  try {
+    const cachedL2 = await getCachedTranslation(text, from, to);
+    if (cachedL2) {
+      cache.set(key, cachedL2);
+      return cachedL2;
+    }
+  } catch (err) {
+    console.warn('[translation] Persistent cache read error:', err);
+  }
+
+  // 3. Network fetch
   const url = `${ENDPOINT}?client=gtx&sl=${from}&tl=${to}&dt=t&q=${encodeURIComponent(text)}`;
   const response = await fetch(url);
   if (!response.ok) {
@@ -32,7 +46,12 @@ async function fetchTranslation(
   const data = (await response.json()) as unknown;
   const translatedText = extractTranslatedText(data);
   const result: TranslationResult = { sourceText: text, translatedText };
+  
   cache.set(key, result);
+  void setCachedTranslation(text, translatedText, from, to).catch((err) =>
+    console.warn('[translation] Persistent cache write error:', err),
+  );
+
   return result;
 }
 

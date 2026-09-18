@@ -252,4 +252,115 @@ export const MIGRATIONS: string[] = [
     PRIMARY KEY (word_id, mother_tongue)
   );
   `,
+  // v16 — Local-first sync, offline lookups, persistent cache, review events, and quiz attempts
+  `
+  CREATE TABLE IF NOT EXISTS sync_outbox (
+    id TEXT PRIMARY KEY,
+    entity_type TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    operation TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL UNIQUE,
+    created_at INTEGER NOT NULL,
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at INTEGER,
+    last_error_code TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS sync_cursor (
+    entity_type TEXT PRIMARY KEY,
+    last_server_revision INTEGER NOT NULL DEFAULT 0,
+    last_synced_at INTEGER NOT NULL DEFAULT 0
+  );
+
+  CREATE TABLE IF NOT EXISTS cloud_library_map (
+    local_book_id TEXT PRIMARY KEY,
+    library_item_id TEXT NOT NULL,
+    content_fingerprint TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS sync_merge_journal (
+    id TEXT PRIMARY KEY,
+    started_at INTEGER NOT NULL,
+    prior_account_id TEXT,
+    target_account_id TEXT NOT NULL,
+    state TEXT NOT NULL,
+    backup_reference TEXT,
+    completed_at INTEGER
+  );
+
+  CREATE TABLE IF NOT EXISTS review_events (
+    id TEXT PRIMARY KEY,
+    saved_word_id TEXT NOT NULL,
+    grade INTEGER NOT NULL,
+    reviewed_at INTEGER NOT NULL,
+    prior_state_json TEXT NOT NULL,
+    resulting_state_json TEXT NOT NULL,
+    device_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS quiz_attempts (
+    id TEXT PRIMARY KEY,
+    book_id TEXT NOT NULL,
+    mode TEXT NOT NULL,
+    started_at INTEGER NOT NULL,
+    completed_at INTEGER,
+    correct_count INTEGER NOT NULL,
+    question_count INTEGER NOT NULL,
+    answers_json TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    deleted_at INTEGER
+  );
+
+  CREATE TABLE IF NOT EXISTS pending_word_lookups (
+    id TEXT PRIMARY KEY,
+    book_id TEXT NOT NULL,
+    source_word TEXT NOT NULL,
+    source_lang TEXT NOT NULL,
+    target_lang TEXT NOT NULL,
+    context_sentence TEXT NOT NULL,
+    chapter_index INTEGER NOT NULL,
+    page_index INTEGER NOT NULL,
+    paragraph_index INTEGER NOT NULL,
+    requested_at INTEGER NOT NULL,
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at INTEGER,
+    last_error_code TEXT,
+    status TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS cache_entries (
+    key TEXT PRIMARY KEY,
+    cache_type TEXT NOT NULL,
+    owner_scope TEXT,
+    schema_version INTEGER NOT NULL,
+    provider_version TEXT,
+    content_hash TEXT,
+    byte_size INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    last_accessed_at INTEGER NOT NULL,
+    soft_expires_at INTEGER,
+    hard_expires_at INTEGER,
+    state TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS persistent_translation_cache (
+    key TEXT PRIMARY KEY,
+    source_text TEXT NOT NULL,
+    source_lang TEXT NOT NULL,
+    target_lang TEXT NOT NULL,
+    translated_text TEXT NOT NULL,
+    context_sentence TEXT,
+    provider TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    last_accessed_at INTEGER NOT NULL,
+    soft_expires_at INTEGER,
+    hard_expires_at INTEGER
+  );
+  `,
 ];
+

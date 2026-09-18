@@ -1,6 +1,7 @@
 import type { HighlightColorKey } from '@/theme/tokens';
 import { getDb } from '@/db/client';
 import { generateId } from '@/lib/id';
+import { enqueueMutation } from './syncOutbox';
 
 export type Highlight = {
   id: string;
@@ -93,10 +94,37 @@ export async function createHighlight(input: Omit<Highlight, 'id' | 'createdAt'>
       createdAt,
     ],
   );
-  return { ...input, id, createdAt };
+  const result: Highlight = { ...input, id, createdAt };
+  try {
+    await enqueueMutation(
+      {
+        entityType: 'highlight',
+        entityId: id,
+        operation: 'upsert',
+        payload: result,
+      },
+      db,
+    );
+  } catch (err) {
+    console.warn('[highlights] Failed to enqueue mutation:', err);
+  }
+  return result;
 }
 
 export async function deleteHighlight(id: string): Promise<void> {
   const db = await getDb();
   await db.runAsync('DELETE FROM highlights WHERE id = ?', [id]);
+  try {
+    await enqueueMutation(
+      {
+        entityType: 'highlight',
+        entityId: id,
+        operation: 'delete',
+        payload: { id },
+      },
+      db,
+    );
+  } catch (err) {
+    console.warn('[highlights] Failed to enqueue delete mutation:', err);
+  }
 }

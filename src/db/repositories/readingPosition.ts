@@ -1,4 +1,5 @@
 import { getDb } from '@/db/client';
+import { enqueueMutation } from './syncOutbox';
 
 export type ReadingPosition = {
   bookId: string;
@@ -37,6 +38,7 @@ export async function getReadingPosition(bookId: string): Promise<ReadingPositio
 
 export async function upsertReadingPosition(position: Omit<ReadingPosition, 'updatedAt'>) {
   const db = await getDb();
+  const now = Date.now();
   await db.runAsync(
     `INSERT INTO reading_positions (book_id, chapter_index, page_index, percent_complete, updated_at, continue_hidden)
      VALUES (?, ?, ?, ?, ?, 0)
@@ -56,9 +58,29 @@ export async function upsertReadingPosition(position: Omit<ReadingPosition, 'upd
       position.chapterIndex,
       position.pageIndex,
       position.percentComplete,
-      Date.now(),
+      now,
     ],
   );
+
+  try {
+    await enqueueMutation(
+      {
+        entityType: 'reading_position',
+        entityId: position.bookId,
+        operation: 'upsert',
+        payload: {
+          bookId: position.bookId,
+          chapterIndex: position.chapterIndex,
+          pageIndex: position.pageIndex,
+          percentComplete: position.percentComplete,
+          updatedAt: now,
+        },
+      },
+      db,
+    );
+  } catch (err) {
+    console.warn('[readingPosition] Failed to enqueue mutation:', err);
+  }
 }
 
 export async function deleteReadingPosition(bookId: string): Promise<void> {

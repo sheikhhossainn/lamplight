@@ -60,10 +60,12 @@ import { sentenceAtOffset } from '@/features/reader/engine/words';
 import { getBookText, isBookCached } from '@/features/content-ingestion/bookDownloader';
 import { logEvent } from '@/features/analytics/analytics';
 import { BookFormatError, type IngestedBook } from '@/features/content-ingestion/textParser';
+import { triggerSync } from '@/features/sync/syncWorker';
 import { getBook, updateBookTotalChapters, type BookRow } from '@/db/repositories/books';
 import { createHighlight, listHighlightsForBook, type Highlight } from '@/db/repositories/highlights';
 import { getReadingPosition, upsertReadingPosition } from '@/db/repositories/readingPosition';
 import { listSavedWordsForBook, saveWord, type SavedWord } from '@/db/repositories/savedWords';
+import { createPendingLookup } from '@/db/repositories/pendingLookups';
 import { getSetting, setSetting } from '@/db/repositories/appSettings';
 import { LanguagePicker } from '@/components/LanguagePicker';
 import { PageStyleSelectorModal } from '@/features/reader/components/PageStyleSelectorModal';
@@ -504,6 +506,13 @@ export default function ReaderScreen() {
       if (hideTimer) clearTimeout(hideTimer);
     };
   }, [book, pages.length, initialIndex, guideVisible, hintOpacity, hintTranslateY, swipeArrowX, dismissHint]);
+
+  // Trigger sync on reader exit for immediate position update
+  useEffect(() => {
+    return () => {
+      void triggerSync();
+    };
+  }, []);
 
   const hintAnimatedStyle = useAnimatedStyle(() => ({
     opacity: hintOpacity.value,
@@ -1348,6 +1357,25 @@ export default function ReaderScreen() {
     [book, activeWord, pages, currentIndex, sourceLanguage, targetLanguage],
   );
 
+  const handleSaveForLater = useCallback(async () => {
+    if (!book || !activeWord) return;
+    void hapticSaveWord();
+    const page = pages[currentIndex];
+    const paragraph = page ? (page.paragraphs[activeWord.paragraphIndex] ?? '') : '';
+    await createPendingLookup({
+      bookId: book.id,
+      sourceWord: activeWord.word,
+      sourceLang: sourceLanguage,
+      targetLang: targetLanguage,
+      contextSentence: activeWord.contextSentence || sentenceAtOffset(paragraph, activeWord.start),
+      chapterIndex: page?.chapterIndex ?? 0,
+      pageIndex: page?.pageIndexInChapter ?? 0,
+      paragraphIndex: activeWord.paragraphIndex,
+    });
+    setActiveWord(null);
+    logEvent('pending_lookup_created', { book_id: book.id, target_lang: targetLanguage });
+  }, [book, activeWord, pages, currentIndex, sourceLanguage, targetLanguage]);
+
   // Save the current selection as a quote across all spanned pages.
   // Highlights are always the app's single amber accent — no color picker.
   const handleSaveQuote = useCallback(async () => {
@@ -2155,6 +2183,7 @@ export default function ReaderScreen() {
         sourceLangLabel={sourceLanguage.toUpperCase()}
         onClose={() => setActiveWord(null)}
         onSave={handleSaveWord}
+        onSaveForLater={handleSaveForLater}
         onChangeLanguage={() => {
           setActiveWord(null);
           setLanguagePickerVisible(true);

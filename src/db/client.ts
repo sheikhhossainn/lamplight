@@ -113,6 +113,47 @@ async function migrate(db: SQLiteDatabase) {
       await db.execAsync(`ALTER TABLE saved_words ADD COLUMN ${name} ${definition}`);
     }
   }
+
+  // Idempotent column additions for sync metadata (updated_at, deleted_at)
+  const syncColumnTables = [
+    {
+      table: 'saved_words',
+      columns: [
+        ['updated_at', 'INTEGER'],
+        ['deleted_at', 'INTEGER'],
+      ],
+    },
+    {
+      table: 'highlights',
+      columns: [
+        ['updated_at', 'INTEGER'],
+        ['deleted_at', 'INTEGER'],
+      ],
+    },
+    {
+      table: 'shelves',
+      columns: [
+        ['updated_at', 'INTEGER'],
+        ['deleted_at', 'INTEGER'],
+      ],
+    },
+    {
+      table: 'reading_positions',
+      columns: [
+        ['deleted_at', 'INTEGER'],
+      ],
+    },
+  ];
+
+  for (const item of syncColumnTables) {
+    const tableCols = await db.getAllAsync<{ name: string }>(`PRAGMA table_info(${item.table})`);
+    const colSet = new Set(tableCols.map((c) => c.name));
+    for (const [colName, colDef] of item.columns) {
+      if (!colSet.has(colName)) {
+        await db.execAsync(`ALTER TABLE ${item.table} ADD COLUMN ${colName} ${colDef}`);
+      }
+    }
+  }
 }
 
 async function upsertBooks(db: SQLiteDatabase, rows: RemoteBookRow[]) {

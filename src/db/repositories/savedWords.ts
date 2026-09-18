@@ -1,5 +1,6 @@
 import { getDb } from '@/db/client';
 import { generateId } from '@/lib/id';
+import { enqueueMutation } from './syncOutbox';
 
 import { nextLocalMidnight, type SrsCardState, type SrsStage } from '@/features/vocabulary/srsAlgorithm';
 
@@ -165,7 +166,7 @@ export async function saveWord(
     ],
   );
 
-  return {
+  const result: SavedWord = {
     ...input,
     id,
     createdAt,
@@ -177,6 +178,22 @@ export async function saveWord(
     srsLapses,
     phonetic,
   };
+
+  try {
+    await enqueueMutation(
+      {
+        entityType: 'saved_word',
+        entityId: id,
+        operation: 'upsert',
+        payload: result,
+      },
+      db,
+    );
+  } catch (err) {
+    console.warn('[savedWords] Failed to enqueue mutation:', err);
+  }
+
+  return result;
 }
 
 export async function listDueWords(nowMs: number = Date.now()): Promise<SavedWord[]> {
@@ -218,6 +235,23 @@ export async function updateWordSrs(id: string, srs: SrsCardState): Promise<void
      WHERE id = ?`,
     [srs.stage, srs.intervalDays, srs.easeFactor, srs.dueDate, srs.reps, srs.lapses, id],
   );
+
+  const updatedWord = await db.getFirstAsync<SavedWordSqlRow>('SELECT * FROM saved_words WHERE id = ?', [id]);
+  if (updatedWord) {
+    try {
+      await enqueueMutation(
+        {
+          entityType: 'saved_word',
+          entityId: id,
+          operation: 'upsert',
+          payload: fromSqlRow(updatedWord),
+        },
+        db,
+      );
+    } catch (err) {
+      console.warn('[savedWords] Failed to enqueue update mutation:', err);
+    }
+  }
 }
 
 export async function getSrsMetrics(): Promise<{
@@ -254,5 +288,18 @@ export async function getSrsMetrics(): Promise<{
 export async function deleteSavedWord(id: string): Promise<void> {
   const db = await getDb();
   await db.runAsync('DELETE FROM saved_words WHERE id = ?', [id]);
+  try {
+    await enqueueMutation(
+      {
+        entityType: 'saved_word',
+        entityId: id,
+        operation: 'delete',
+        payload: { id },
+      },
+      db,
+    );
+  } catch (err) {
+    console.warn('[savedWords] Failed to enqueue delete mutation:', err);
+  }
 }
 

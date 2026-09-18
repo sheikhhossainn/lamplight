@@ -103,6 +103,30 @@ create trigger set_profiles_updated_at
   before update on public.profiles
   for each row execute function public.set_updated_at();
 
+-- Premium and beta authority must not be client-writable.
+create or replace function public.protect_profile_plan_key()
+returns trigger
+language plpgsql
+security definer
+as $$
+begin
+  if (current_user != 'service_role') and (auth.role() = 'authenticated' or auth.role() = 'anon') then
+    if new.plan_key is distinct from old.plan_key then
+      raise exception 'plan_key is server-authoritative and cannot be modified directly';
+    end if;
+    if new.is_beta_tester is distinct from old.is_beta_tester then
+      raise exception 'is_beta_tester is server-authoritative and cannot be modified directly';
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists protect_profile_plan_key_trigger on public.profiles;
+create trigger protect_profile_plan_key_trigger
+  before update on public.profiles
+  for each row execute function public.protect_profile_plan_key();
+
 -- Auto-create a profile row for every new auth user (anonymous or not) —
 -- the app never needs its own "create profile" API call.
 create or replace function public.handle_new_user()
@@ -247,8 +271,15 @@ create table if not exists public.shelves (
   owner_id    uuid not null references auth.users(id) on delete cascade,
   name        text not null,
   sort_order  integer not null default 0,
-  created_at  timestamptz not null default now()
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now(),
+  deleted_at  timestamptz
 );
+
+drop trigger if exists set_shelves_updated_at on public.shelves;
+create trigger set_shelves_updated_at
+  before update on public.shelves
+  for each row execute function public.set_updated_at();
 
 create table if not exists public.shelf_items (
   shelf_id         uuid not null references public.shelves(id) on delete cascade,
@@ -298,8 +329,15 @@ create table if not exists public.saved_words (
   srs_next_review_at  timestamptz,
   srs_last_reviewed_at timestamptz,
   srs_review_count     integer not null default 0,
-  created_at        timestamptz not null default now()
+  created_at        timestamptz not null default now(),
+  updated_at        timestamptz not null default now(),
+  deleted_at        timestamptz
 );
+
+drop trigger if exists set_saved_words_updated_at on public.saved_words;
+create trigger set_saved_words_updated_at
+  before update on public.saved_words
+  for each row execute function public.set_updated_at();
 
 create index if not exists saved_words_owner_book_idx on public.saved_words (owner_id, library_item_id);
 create index if not exists saved_words_srs_due_idx on public.saved_words (owner_id, srs_next_review_at) where srs_next_review_at is not null;
@@ -317,8 +355,15 @@ create table if not exists public.highlights (
   -- Which of the (3 free / more Premium) quote-card themes was used the last
   -- time this quote was shared — remembered so re-sharing doesn't reset it.
   quote_card_theme  text,
-  created_at        timestamptz not null default now()
+  created_at        timestamptz not null default now(),
+  updated_at        timestamptz not null default now(),
+  deleted_at        timestamptz
 );
+
+drop trigger if exists set_highlights_updated_at on public.highlights;
+create trigger set_highlights_updated_at
+  before update on public.highlights
+  for each row execute function public.set_updated_at();
 
 create index if not exists highlights_owner_book_idx on public.highlights (owner_id, library_item_id);
 
@@ -413,6 +458,42 @@ create table if not exists public.weekly_quizzes (
   unique (owner_id, week_start, quiz_type)
 );
 
+create table if not exists public.review_events (
+  id              uuid primary key default gen_random_uuid(),
+  owner_id        uuid not null references auth.users(id) on delete cascade,
+  saved_word_id   text not null,
+  grade           integer not null,
+  reviewed_at     timestamptz not null,
+  prior_state     text not null,
+  resulting_state text not null,
+  device_id       text not null,
+  created_at      timestamptz not null default now()
+);
+
+create index if not exists review_events_owner_time_idx on public.review_events (owner_id, reviewed_at desc);
+
+create table if not exists public.quiz_attempts (
+  id              uuid primary key default gen_random_uuid(),
+  owner_id        uuid not null references auth.users(id) on delete cascade,
+  book_id         text not null,
+  mode            text not null,
+  started_at      timestamptz not null,
+  completed_at    timestamptz,
+  correct_count   integer not null,
+  question_count  integer not null,
+  answers         jsonb not null default '[]',
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now(),
+  deleted_at      timestamptz
+);
+
+drop trigger if exists set_quiz_attempts_updated_at on public.quiz_attempts;
+create trigger set_quiz_attempts_updated_at
+  before update on public.quiz_attempts
+  for each row execute function public.set_updated_at();
+
+create index if not exists quiz_attempts_owner_book_idx on public.quiz_attempts (owner_id, book_id, completed_at desc);
+
 -- ============================================================================
 -- 8. Analytics — the two tables the 10-15-friend beta actually runs on.
 -- ============================================================================
@@ -474,6 +555,152 @@ create trigger set_subscriptions_updated_at
   for each row execute function public.set_updated_at();
 
 create index if not exists subscriptions_owner_idx on public.subscriptions (owner_id);
+
+-- ============================================================================
+-- 9b. Entitlement grants & promo architecture (server-authoritative)
+-- ============================================================================
+create table if not exists public.entitlement_grants (
+  id             uuid primary key default gen_random_uuid(),
+  owner_id       uuid not null references auth.users(id) on delete cascade,
+  feature_bundle text not null,
+  source_type    text not null, -- 'beta' | 'promo' | 'support' | 'admin' | 'store_trial'
+  source_id      uuid,
+  starts_at      timestamptz not null default now(),
+  ends_at        timestamptz,
+  revoked_at     timestamptz,
+  metadata       jsonb not null default '{}',
+  created_at     timestamptz not null default now()
+);
+
+create index if not exists entitlement_grants_owner_idx on public.entitlement_grants (owner_id, ends_at desc);
+
+create table if not exists public.promo_campaigns (
+  id               uuid primary key default gen_random_uuid(),
+  code_hash        text unique not null,
+  label            text not null,
+  feature_bundle   text not null,
+  duration_days    integer not null,
+  starts_at        timestamptz not null default now(),
+  redeem_by        timestamptz not null,
+  max_redemptions  integer not null,
+  per_user_limit   integer not null default 1,
+  eligible_audience jsonb,
+  disabled_at      timestamptz,
+  created_at       timestamptz not null default now()
+);
+
+create table if not exists public.promo_redemptions (
+  id           uuid primary key default gen_random_uuid(),
+  campaign_id  uuid not null references public.promo_campaigns(id) on delete cascade,
+  owner_id     uuid not null references auth.users(id) on delete cascade,
+  redeemed_at  timestamptz not null default now(),
+  grant_id     uuid not null references public.entitlement_grants(id) on delete cascade,
+  unique (campaign_id, owner_id)
+);
+
+create index if not exists promo_redemptions_owner_idx on public.promo_redemptions (owner_id);
+
+-- Idempotent promo redemption RPC
+create or replace function public.redeem_promo(p_code text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_owner_id uuid := auth.uid();
+  v_normalized_code text;
+  v_code_hash text;
+  v_campaign record;
+  v_user_redemptions integer;
+  v_total_redemptions integer;
+  v_grant_id uuid;
+  v_existing_grant record;
+  v_ends_at timestamptz;
+begin
+  if v_owner_id is null then
+    return jsonb_build_object('success', false, 'error', 'Authentication required.');
+  end if;
+
+  v_normalized_code := upper(trim(p_code));
+  if length(v_normalized_code) < 3 then
+    return jsonb_build_object('success', false, 'error', 'Invalid promo code format.');
+  end if;
+
+  -- Hash code with SHA-256 via pgcrypto
+  v_code_hash := encode(digest(v_normalized_code, 'sha256'), 'hex');
+
+  -- Lock campaign row
+  select * into v_campaign
+  from public.promo_campaigns
+  where code_hash = v_code_hash
+  for update;
+
+  if not found then
+    return jsonb_build_object('success', false, 'error', 'Promo code not found or expired.');
+  end if;
+
+  if v_campaign.disabled_at is not null then
+    return jsonb_build_object('success', false, 'error', 'This promotion is no longer active.');
+  end if;
+
+  if now() < v_campaign.starts_at or now() > v_campaign.redeem_by then
+    return jsonb_build_object('success', false, 'error', 'This promo code is not valid at this time.');
+  end if;
+
+  -- Check if user already redeemed this campaign (idempotency rule: return existing grant)
+  select eg.* into v_existing_grant
+  from public.promo_redemptions pr
+  join public.entitlement_grants eg on eg.id = pr.grant_id
+  where pr.campaign_id = v_campaign.id and pr.owner_id = v_owner_id;
+
+  if found then
+    return jsonb_build_object(
+      'success', true,
+      'message', 'You have already redeemed this promotion.',
+      'grant_id', v_existing_grant.id,
+      'ends_at', v_existing_grant.ends_at
+    );
+  end if;
+
+  -- Check campaign max redemptions
+  select count(*) into v_total_redemptions
+  from public.promo_redemptions
+  where campaign_id = v_campaign.id;
+
+  if v_total_redemptions >= v_campaign.max_redemptions then
+    return jsonb_build_object('success', false, 'error', 'This promo code has reached its maximum redemption limit.');
+  end if;
+
+  -- Calculate grant ends_at
+  v_ends_at := now() + (v_campaign.duration_days || ' days')::interval;
+
+  -- Create grant
+  insert into public.entitlement_grants (
+    owner_id, feature_bundle, source_type, source_id, starts_at, ends_at, metadata
+  ) values (
+    v_owner_id, v_campaign.feature_bundle, 'promo', v_campaign.id, now(), v_ends_at,
+    jsonb_build_object('campaign_label', v_campaign.label)
+  ) returning id into v_grant_id;
+
+  -- Record redemption
+  insert into public.promo_redemptions (
+    campaign_id, owner_id, grant_id
+  ) values (
+    v_campaign.id, v_owner_id, v_grant_id
+  );
+
+  return jsonb_build_object(
+    'success', true,
+    'message', 'Promo code redeemed successfully! Enjoy your Premium access.',
+    'grant_id', v_grant_id,
+    'ends_at', v_ends_at
+  );
+end;
+$$;
+
+revoke all on function public.redeem_promo(text) from public;
+grant execute on function public.redeem_promo(text) to authenticated;
 
 -- ============================================================================
 -- 10. Cross-device preferences — schema exists for the future "sync between
@@ -575,6 +802,11 @@ alter table public.user_preferences enable row level security;
 alter table public.feedback enable row level security;
 alter table public.app_config enable row level security;
 alter table public.sync_state enable row level security;
+alter table public.review_events enable row level security;
+alter table public.quiz_attempts enable row level security;
+alter table public.entitlement_grants enable row level security;
+alter table public.promo_campaigns enable row level security;
+alter table public.promo_redemptions enable row level security;
 
 -- CREATE POLICY has no IF NOT EXISTS / OR REPLACE in Postgres — DROP IF
 -- EXISTS first is the idempotent pattern, same as the triggers above.
@@ -644,6 +876,22 @@ create policy "manage own preferences" on public.user_preferences for all
 drop policy if exists "manage own feedback" on public.feedback;
 create policy "manage own feedback" on public.feedback for all
   using (auth.uid() = owner_id) with check (auth.uid() = owner_id);
+
+drop policy if exists "manage own review events" on public.review_events;
+create policy "manage own review events" on public.review_events for all
+  using (auth.uid() = owner_id) with check (auth.uid() = owner_id);
+
+drop policy if exists "manage own quiz attempts" on public.quiz_attempts;
+create policy "manage own quiz attempts" on public.quiz_attempts for all
+  using (auth.uid() = owner_id) with check (auth.uid() = owner_id);
+
+drop policy if exists "read own entitlement grants" on public.entitlement_grants;
+create policy "read own entitlement grants" on public.entitlement_grants for select
+  using (auth.uid() = owner_id);
+
+drop policy if exists "read own promo redemptions" on public.promo_redemptions;
+create policy "read own promo redemptions" on public.promo_redemptions for select
+  using (auth.uid() = owner_id);
 
 -- ============================================================================
 -- 14. Scripture verses — pgvector-backed verse store for mood flashcards and
