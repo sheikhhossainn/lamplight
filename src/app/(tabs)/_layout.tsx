@@ -3,11 +3,16 @@ import { StyleSheet, View } from 'react-native';
 import Animated, {
   interpolateColor,
   useAnimatedStyle,
+  withTiming,
 } from 'react-native-reanimated';
 import { Tabs } from 'expo-router';
 
 import { HomeIcon, LibraryIcon, SettingsIcon, VocabularyIcon } from '@/components/icons';
-import { themeTransitionProgress } from '@/features/settings/themeTransition';
+import {
+  THEME_TRANSITION_DURATION,
+  THEME_TRANSITION_EASING,
+  themeTransitionProgress,
+} from '@/features/settings/themeTransition';
 import { useTheme } from '@/theme/ThemeProvider';
 import { getCultureThemeColors } from '@/theme/tokens';
 
@@ -22,8 +27,8 @@ function ThemeAwareTabIcon({ focused, Icon }: ThemeAwareTabVisualProps) {
   const { cultureTheme } = useTheme();
   const dayColors = getCultureThemeColors(cultureTheme, 'day');
   const lampColors = getCultureThemeColors(cultureTheme, 'lamp');
-  const dayStyle = useAnimatedStyle(() => ({ opacity: 1 - themeTransitionProgress.get() }));
-  const lampStyle = useAnimatedStyle(() => ({ opacity: themeTransitionProgress.get() }));
+  const dayStyle = useAnimatedStyle(() => ({ opacity: 1 - themeTransitionProgress.value }));
+  const lampStyle = useAnimatedStyle(() => ({ opacity: themeTransitionProgress.value }));
 
   return (
     <View style={styles.tabIcon}>
@@ -46,8 +51,8 @@ function ThemeAwareTabLabel({ focused, label }: ThemeAwareTabLabelProps) {
   const { cultureTheme, typography } = useTheme();
   const dayColors = getCultureThemeColors(cultureTheme, 'day');
   const lampColors = getCultureThemeColors(cultureTheme, 'lamp');
-  const dayStyle = useAnimatedStyle(() => ({ opacity: 1 - themeTransitionProgress.get() }));
-  const lampStyle = useAnimatedStyle(() => ({ opacity: themeTransitionProgress.get() }));
+  const dayStyle = useAnimatedStyle(() => ({ opacity: 1 - themeTransitionProgress.value }));
+  const lampStyle = useAnimatedStyle(() => ({ opacity: themeTransitionProgress.value }));
   const textStyle = {
     fontFamily: typography.eyebrowLabel.fontFamily,
     fontSize: 11,
@@ -71,19 +76,22 @@ function ThemeAwareTabBarBackground() {
   const lampColors = getCultureThemeColors(cultureTheme, 'lamp');
   useEffect(() => {
     const target = scheme === 'lamp' ? 1 : 0;
-    if (Math.abs(themeTransitionProgress.get() - target) > 0.001) {
-      themeTransitionProgress.set(target);
+    if (Math.abs(themeTransitionProgress.value - target) > 0.001) {
+      themeTransitionProgress.value = withTiming(target, {
+        duration: THEME_TRANSITION_DURATION,
+        easing: THEME_TRANSITION_EASING,
+      });
     }
   }, [scheme]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     backgroundColor: interpolateColor(
-      themeTransitionProgress.get(),
+      themeTransitionProgress.value,
       [0, 1],
       [dayColors.parchment, lampColors.parchment],
     ),
     borderTopColor: interpolateColor(
-      themeTransitionProgress.get(),
+      themeTransitionProgress.value,
       [0, 1],
       [dayColors.hairline, lampColors.hairline],
     ),

@@ -17,8 +17,8 @@ type Runner = (next: ReadingTheme) => void;
 
 let runner: Runner | null = null;
 
-export const THEME_TRANSITION_DURATION = 360;
-export const THEME_TRANSITION_EASING = Easing.inOut(Easing.cubic);
+export const THEME_TRANSITION_DURATION = 200;
+export const THEME_TRANSITION_EASING = Easing.bezier(0.25, 1, 0.5, 1);
 export const themeTransitionProgress = makeMutable(getReadingTheme() === 'lamp' ? 1 : 0);
 
 export function registerThemeTransitionRunner(r: Runner | null): void {
@@ -27,14 +27,14 @@ export function registerThemeTransitionRunner(r: Runner | null): void {
 
 export function requestThemeChange(next: ReadingTheme): void {
   const target = next === 'lamp' ? 1 : 0;
-  if (next === getReadingTheme() && Math.abs(themeTransitionProgress.get() - target) < 0.001) return;
+  if (next === getReadingTheme() && Math.abs(themeTransitionProgress.value - target) < 0.001) return;
 
   cancelAnimation(themeTransitionProgress);
-  themeTransitionProgress.set(withTiming(target, {
+  themeTransitionProgress.value = withTiming(target, {
     duration: THEME_TRANSITION_DURATION,
     easing: THEME_TRANSITION_EASING,
     reduceMotion: ReduceMotion.System,
   }, (finished) => {
     if (finished) scheduleOnRN(setReadingTheme, next);
-  }));
+  });
 }

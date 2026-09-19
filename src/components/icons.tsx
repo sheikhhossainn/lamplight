@@ -436,5 +436,142 @@ export function ReloadIcon({ color, size = 18 }: IconProps) {
   );
 }
 
+// Professional Literary Theme Icons matching Lamplight's 1.7px stroke aesthetic
+export function BengaliThemeIcon({ color, size = 20 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      {/* Fountain pen nib & river ink flow */}
+      <Path
+        d="M12 2.5L6 9C6 11.5 7.5 13.5 9 15L10 21.5H14L15 15C16.5 13.5 18 11.5 18 9L12 2.5Z"
+        stroke={color}
+        strokeWidth={1.7}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Line x1="12" y1="2.5" x2="12" y2="10.5" stroke={color} strokeWidth={1.5} strokeLinecap="round" />
+      <Circle cx="12" cy="10.5" r="1.2" fill={color} />
+      <Path d="M9.5 15H14.5" stroke={color} strokeWidth={1.5} strokeLinecap="round" />
+    </Svg>
+  );
+}
 
+export function KoreanThemeIcon({ color, size = 20 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      {/* Traditional Hanji scroll & manuscript roll */}
+      <Path
+        d="M6 4.5C6 3.67 6.67 3 7.5 3H18.5C19.33 3 20 3.67 20 4.5C20 5.33 19.33 6 18.5 6H7.5C6.67 6 6 5.33 6 4.5Z"
+        stroke={color}
+        strokeWidth={1.7}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path
+        d="M4 19.5C4 18.67 4.67 18 5.5 18H16.5C17.33 18 18 18.67 18 19.5C18 20.33 17.33 21 16.5 21H5.5C4.67 21 4 20.33 4 19.5Z"
+        stroke={color}
+        strokeWidth={1.7}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path
+        d="M6 5.5V18M18 5.5V18.5"
+        stroke={color}
+        strokeWidth={1.7}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Line x1="9" y1="10" x2="15" y2="10" stroke={color} strokeWidth={1.5} strokeLinecap="round" />
+      <Line x1="9" y1="14" x2="13.5" y2="14" stroke={color} strokeWidth={1.5} strokeLinecap="round" />
+    </Svg>
+  );
+}
 
+export function ArabicThemeIcon({ color, size = 20 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      {/* Moorish pointed archway & crescent */}
+      <Path
+        d="M4 21V12.5C4 7.2 8 3.5 12 3.5C16 3.5 20 7.2 20 12.5V21"
+        stroke={color}
+        strokeWidth={1.7}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path
+        d="M7.5 21V13.8C7.5 10 9.8 7 12 6.2C14.2 7 16.5 10 16.5 13.8V21"
+        stroke={color}
+        strokeWidth={1.5}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Circle cx="12" cy="11.5" r="1.4" fill={color} />
+      <Line x1="3" y1="21" x2="21" y2="21" stroke={color} strokeWidth={1.7} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+export function JapaneseThemeIcon({ color, size = 20 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      {/* Torii Gate sanctuary motif */}
+      <Path
+        d="M2.5 5.5C6.5 4.5 17.5 4.5 21.5 5.5"
+        stroke={color}
+        strokeWidth={2}
+        strokeLinecap="round"
+      />
+      <Line x1="4.5" y1="8.8" x2="19.5" y2="8.8" stroke={color} strokeWidth={1.6} strokeLinecap="round" />
+      <Line x1="7.5" y1="5.5" x2="7" y2="20.5" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+      <Line x1="16.5" y1="5.5" x2="17" y2="20.5" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+      <Line x1="12" y1="5.5" x2="12" y2="8.8" stroke={color} strokeWidth={1.6} />
+    </Svg>
+  );
+}
+
+export function WesternThemeIcon({ color, size = 20 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      {/* Classic hardcover open book with bookmark ribbon */}
+      <Path
+        d="M3 6C3 6 6.5 4.5 12 6C17.5 4.5 21 6 21 6V19C21 19 17.5 17.5 12 19C6.5 17.5 3 19 3 19V6Z"
+        stroke={color}
+        strokeWidth={1.7}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Line x1="12" y1="6" x2="12" y2="19" stroke={color} strokeWidth={1.7} strokeLinecap="round" />
+      <Path
+        d="M12 6V13L14 11.5L16 13V6"
+        fill={color}
+        opacity={0.35}
+        stroke={color}
+        strokeWidth={1.2}
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
+export function LiteraryThemeIcon({
+  theme,
+  color,
+  size = 20,
+}: {
+  theme: string;
+  color: string;
+  size?: number;
+}) {
+  switch (theme) {
+    case 'bengali':
+      return <BengaliThemeIcon color={color} size={size} />;
+    case 'korean':
+      return <KoreanThemeIcon color={color} size={size} />;
+    case 'arabic':
+      return <ArabicThemeIcon color={color} size={size} />;
+    case 'japanese':
+      return <JapaneseThemeIcon color={color} size={size} />;
+    case 'western':
+    default:
+      return <WesternThemeIcon color={color} size={size} />;
+  }
+}

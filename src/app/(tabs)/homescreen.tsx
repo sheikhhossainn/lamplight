@@ -17,7 +17,7 @@ import { CultureMotif } from '@/components/CultureMotif';
 import { HomeGuideModal } from '@/components/HomeGuideModal';
 import { WordsIllustration } from '@/components/NotebookIllustrations';
 import { ChevronRightIcon, QuestionIcon } from '@/components/icons';
-import { getBook, listBanglaBooks, type BookRow } from '@/db/repositories/books';
+import { getBook, listBanglaBooks, listBooks, type BookRow } from '@/db/repositories/books';
 import { getSrsMetrics } from '@/db/repositories/savedWords';
 import { getSetting, setSetting } from '@/db/repositories/appSettings';
 import {
@@ -41,7 +41,10 @@ import {
   getCalibratedStartingBook,
   type CalibratedStartingBook,
 } from '@/features/vocabulary/calibration';
-import { getTargetReadingLanguage } from '@/features/settings/targetReadingLanguage';
+import {
+  getTargetReadingLanguage,
+  useTargetReadingLanguage,
+} from '@/features/settings/targetReadingLanguage';
 import { getLiteraryTheme } from '@/features/settings/literaryTheme';
 
 const { width: screenWidth } = Dimensions.get('window');
@@ -199,6 +202,7 @@ export default function Homescreen() {
   const { colors, cultureTheme, typography, spacing, radius, layout } = useTheme();
   const insets = useSafeAreaInsets();
   const targetLanguage = useTargetLanguage();
+  const targetReadingLanguage = useTargetReadingLanguage();
   const motherTongue = useMotherTongue();
   const motherTongueOption = getMotherTongueOption(motherTongue);
   const scriptureLabels = getScriptureLabels(motherTongue);
@@ -229,7 +233,7 @@ export default function Homescreen() {
 
   const loadSpotlight = useCallback(async () => {
     try {
-      if (motherTongue === 'bn') {
+      if (targetReadingLanguage === 'bn') {
         const { books } = await fetchBanglaBooks({ limit: 12 });
         if (books.length > 0) {
           const b =
@@ -248,7 +252,7 @@ export default function Homescreen() {
             onAllPress: () => router.push({ pathname: '/bangla' } as any),
           });
         }
-      } else if (motherTongue === 'ja') {
+      } else if (targetReadingLanguage === 'ja') {
         const b = AOZORA_JAPANESE_BOOKS[0];
         setSpotlight({
           id: b.id,
@@ -262,7 +266,7 @@ export default function Homescreen() {
           onPress: () => router.push({ pathname: '/book/[id]', params: { id: b.id } }),
           onAllPress: () => router.push('/(tabs)/library' as any),
         });
-      } else if (motherTongue === 'ko') {
+      } else if (targetReadingLanguage === 'ko') {
         const b = GONGU_KOREAN_BOOKS[0];
         setSpotlight({
           id: b.id,
@@ -298,7 +302,7 @@ export default function Homescreen() {
     } catch {
       // Non-fatal fallback
     }
-  }, [motherTongue]);
+  }, [targetReadingLanguage]);
 
   useEffect(() => {
     void loadSpotlight();
@@ -338,8 +342,15 @@ export default function Homescreen() {
       }
 
       // Check if user has downloaded any books ready to read
-      const banglaBooks = await listBanglaBooks();
-      const downloaded = banglaBooks.find((b) => b.isAvailable);
+      let downloaded: BookRow | undefined;
+      if (targetReadingLanguage === 'bn') {
+        const banglaBooks = await listBanglaBooks();
+        downloaded = banglaBooks.find((b) => b.isAvailable);
+      } else {
+        const allBooks = await listBooks();
+        downloaded = allBooks.find((b) => b.isAvailable && b.sourceLanguage === targetReadingLanguage);
+      }
+
       if (downloaded) {
         setReadyBook(downloaded);
         setLatestBook(null);
@@ -351,10 +362,9 @@ export default function Homescreen() {
 
         // Load calibrated starting book for new users
         const calib = await getStoredCalibrationData();
-        const targetLang = getTargetReadingLanguage();
         const theme = getLiteraryTheme();
         const startingRec = getCalibratedStartingBook(
-          targetLang,
+          targetReadingLanguage,
           theme,
           calib?.estimatedWords ?? 3500,
         );
@@ -365,7 +375,7 @@ export default function Homescreen() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [targetReadingLanguage]);
 
   const [guideVisible, setGuideVisible] = useState(false);
   const guideDismissedInSessionRef = useRef(false);
@@ -466,7 +476,7 @@ export default function Homescreen() {
               </View>
             </Pressable>
           </View>
-          <CultureEditionBanner />
+          <CultureEditionBanner targetReadingLanguage={targetReadingLanguage} />
         </View>
 
         {/* Active Reader / Welcome State */}

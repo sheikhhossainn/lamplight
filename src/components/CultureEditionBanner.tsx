@@ -3,35 +3,44 @@ import { StyleSheet, Text, View } from 'react-native';
 import Animated, { interpolateColor, type SharedValue, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { CultureMotif } from '@/components/CultureMotif';
-import { getLiteraryThemeOption } from '@/features/settings/literaryTheme';
+import {
+  getLiteraryThemeOption,
+  getModularThemePresentation,
+} from '@/features/settings/literaryTheme';
+import { useMotherTongue, type MotherTongueCode } from '@/features/settings/motherTongue';
+import {
+  useTargetReadingLanguage,
+  type TargetReadingLanguageCode,
+} from '@/features/settings/targetReadingLanguage';
 import { useTheme } from '@/theme/ThemeProvider';
 import { getCultureMaterial, getCultureThemeColors } from '@/theme/tokens';
 import { getNativeUiTextStyle } from '@/theme/typography';
 
-const LANGUAGE_BY_THEME = {
-  bengali: 'bn',
-  korean: 'ko',
-  japanese: 'ja',
-  arabic: 'ar',
-  western: 'en',
-} as const;
-
 export function CultureEditionBanner({
   compact = false,
   themeProgress,
+  motherTongue: overrideMotherTongue,
+  targetReadingLanguage: overrideTargetReadingLanguage,
 }: {
   compact?: boolean;
   themeProgress?: SharedValue<number>;
+  motherTongue?: MotherTongueCode;
+  targetReadingLanguage?: TargetReadingLanguageCode;
 }) {
-  const { colors, cultureTheme, scheme, spacing, radius, typography } = useTheme();
+  const { cultureTheme, scheme, spacing, radius, typography } = useTheme();
+  const currentMotherTongue = useMotherTongue();
+  const currentTargetReadingLanguage = useTargetReadingLanguage();
+  const motherTongue = overrideMotherTongue ?? currentMotherTongue;
+  const targetReadingLanguage = overrideTargetReadingLanguage ?? currentTargetReadingLanguage;
   const profile = getLiteraryThemeOption(cultureTheme);
+  const presentation = getModularThemePresentation(cultureTheme, motherTongue, targetReadingLanguage);
   const material = getCultureMaterial(cultureTheme, scheme);
   const dayMaterial = getCultureMaterial(cultureTheme, 'day');
   const lampMaterial = getCultureMaterial(cultureTheme, 'lamp');
   const dayColors = getCultureThemeColors(cultureTheme, 'day');
   const lampColors = getCultureThemeColors(cultureTheme, 'lamp');
-  const language = LANGUAGE_BY_THEME[cultureTheme as keyof typeof LANGUAGE_BY_THEME] ?? 'en';
-  const isRTL = cultureTheme === 'arabic';
+  const language = presentation.displayLanguage;
+  const isRTL = language === 'ar';
   const localProgress = useSharedValue(scheme === 'lamp' ? 1 : 0);
   const progress = themeProgress ?? localProgress;
 
@@ -86,12 +95,12 @@ export function CultureEditionBanner({
           flexDirection: isRTL ? 'row-reverse' : 'row',
         },
       ]}
-      accessibilityLabel={`${profile.title} reading theme. ${profile.nativeTitle}`}
+      accessibilityLabel={`${presentation.title} reading theme. ${presentation.nativeTitle}`}
     >
       <CultureMotif theme={cultureTheme} color={material.accent} />
       <Animated.View style={[styles.monogram, compact && styles.monogramCompact, animatedMonogramStyle]}>
         <Animated.Text style={[getNativeUiTextStyle(language, 'display'), styles.monogramText, animatedAccentTextStyle]}>
-          {profile.monogram}
+          {presentation.monogram}
         </Animated.Text>
       </Animated.View>
       <View style={[styles.copy, { marginLeft: isRTL ? 0 : spacing.xsm, marginRight: isRTL ? spacing.xsm : 0 }]}>
@@ -104,7 +113,7 @@ export function CultureEditionBanner({
           ]}
           numberOfLines={1}
         >
-          {profile.nativeTitle}
+          {presentation.nativeTitle}
         </Animated.Text>
         <Animated.Text
           style={[
@@ -115,10 +124,10 @@ export function CultureEditionBanner({
           ]}
           numberOfLines={1}
         >
-          {profile.nativeSubtitle}
+          {presentation.nativeSubtitle}
         </Animated.Text>
         <Animated.Text style={[typography.eyebrowLabel, styles.edition, animatedAccentTextStyle, { textAlign: isRTL ? 'right' : 'left' }]}>
-          {profile.editionLabel}
+          {presentation.editionLabel}
         </Animated.Text>
       </View>
     </Animated.View>

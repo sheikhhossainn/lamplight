@@ -31,6 +31,10 @@ import {
 import { AOZORA_JAPANESE_BOOKS } from '@/features/content-ingestion/japaneseApi';
 import { GONGU_KOREAN_BOOKS } from '@/features/content-ingestion/koreanApi';
 import { getMotherTongueOption, getScriptureLabels, useMotherTongue } from '@/features/settings/motherTongue';
+import {
+  getTargetReadingLanguageOption,
+  useTargetReadingLanguage,
+} from '@/features/settings/targetReadingLanguage';
 import { getLiteraryThemeOption } from '@/features/settings/literaryTheme';
 import { ShelfEditorModal, type ShelfDraft } from '@/components/ShelfEditorModal';
 import { VocabReviewPrompt } from '@/components/VocabReviewPrompt';
@@ -151,6 +155,8 @@ export default function LibraryScreen() {
   const { colors, typography, spacing, radius } = useTheme();
   const insets = useSafeAreaInsets();
   const targetLanguage = useTargetLanguage();
+  const targetReadingLanguage = useTargetReadingLanguage();
+  const targetReadingOption = getTargetReadingLanguageOption(targetReadingLanguage);
   const motherTongue = useMotherTongue();
   const motherTongueOption = getMotherTongueOption(motherTongue);
   const scriptureLabels = getScriptureLabels(motherTongue);
@@ -522,7 +528,7 @@ export default function LibraryScreen() {
           </Text>
         </View>
       </View>
-      <CultureEditionBanner />
+      <CultureEditionBanner targetReadingLanguage={targetReadingLanguage} />
 
       <View
         style={[
@@ -642,15 +648,16 @@ export default function LibraryScreen() {
       ) : null}
 
       <View style={[styles.shelfHeader, { marginTop: spacing.xl, marginBottom: spacing.md }]}>
-        {/* "All books" doubles as the category filter — funnel icon beside it,
-            amber while a category is active. */}
+        {/* Primary shelf doubles as the category filter when English catalog */}
         <Pressable
           onPress={() => setFilterOpen((v) => !v)}
           hitSlop={8}
           style={styles.filterHeader}
         >
           <Text style={[getNativeUiTextStyle(motherTongue, 'row'), { color: activeCategory ? colors.progressLabel : colors.fawn }]}>
-            {motherTongueOption.libraryLabel}
+            {targetReadingLanguage === 'en'
+              ? motherTongueOption.libraryLabel
+              : targetReadingOption.shelfTitle}
           </Text>
           <FilterIcon color={activeCategory ? colors.flameAmber : colors.fawn} size={14} />
         </Pressable>
@@ -699,7 +706,82 @@ export default function LibraryScreen() {
         </ScrollView>
       ) : null}
 
-      {!loaded ? (
+      {targetReadingLanguage === 'bn' ? (
+        <>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            overScrollMode="never"
+            contentContainerStyle={[styles.shelfRow, { marginBottom: spacing.sm }]}
+          >
+            {banglaBooks.map((b, i) => (
+              <View key={b.id} style={{ marginRight: spacing.md }}>
+                <BookSpine
+                  bookId={b.id}
+                  title={b.title}
+                  coverUrl={b.coverUrl}
+                  toneIndex={i}
+                  rotateDeg={ROW_ROTATIONS[i % ROW_ROTATIONS.length]}
+                  onPress={() => router.push({ pathname: '/bangla/[slug]', params: { slug: b.slug } } as any)}
+                />
+              </View>
+            ))}
+          </ScrollView>
+          <View style={{ marginBottom: spacing.xl }}>
+            <WoodenPlank width={screenWidth - spacing.xl * 2} />
+          </View>
+        </>
+      ) : targetReadingLanguage === 'ja' ? (
+        <>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            overScrollMode="never"
+            contentContainerStyle={[styles.shelfRow, { marginBottom: spacing.sm }]}
+          >
+            {AOZORA_JAPANESE_BOOKS.map((b, i) => (
+              <View key={b.id} style={{ marginRight: spacing.md }}>
+                <BookSpine
+                  bookId={b.id}
+                  title={b.title}
+                  coverUrl={b.coverUrl}
+                  toneIndex={i}
+                  rotateDeg={ROW_ROTATIONS[i % ROW_ROTATIONS.length]}
+                  onPress={() => router.push({ pathname: '/book/[id]', params: { id: b.id } })}
+                />
+              </View>
+            ))}
+          </ScrollView>
+          <View style={{ marginBottom: spacing.xl }}>
+            <WoodenPlank width={screenWidth - spacing.xl * 2} />
+          </View>
+        </>
+      ) : targetReadingLanguage === 'ko' ? (
+        <>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            overScrollMode="never"
+            contentContainerStyle={[styles.shelfRow, { marginBottom: spacing.sm }]}
+          >
+            {GONGU_KOREAN_BOOKS.map((b, i) => (
+              <View key={b.id} style={{ marginRight: spacing.md }}>
+                <BookSpine
+                  bookId={b.id}
+                  title={b.title}
+                  coverUrl={b.coverUrl}
+                  toneIndex={i}
+                  rotateDeg={ROW_ROTATIONS[i % ROW_ROTATIONS.length]}
+                  onPress={() => router.push({ pathname: '/book/[id]', params: { id: b.id } })}
+                />
+              </View>
+            ))}
+          </ScrollView>
+          <View style={{ marginBottom: spacing.xl }}>
+            <WoodenPlank width={screenWidth - spacing.xl * 2} />
+          </View>
+        </>
+      ) : !loaded ? (
         <SkeletonShelf />
       ) : shelfBooks.length > 0 ? (
         renderShelf(shelfBooks, 'all')
@@ -716,8 +798,8 @@ export default function LibraryScreen() {
         </Text>
       )}
 
-      {/* Native Literature shelf — dedicated shelf for the user's selected mother tongue */}
-      {motherTongue !== 'en' ? (
+      {/* Native Literature shelf — dedicated shelf for the user's selected mother tongue if distinct from target reading language */}
+      {motherTongue !== targetReadingLanguage && motherTongue !== 'en' ? (
         <View>
           <View style={[styles.shelfHeader, { marginBottom: spacing.md }]}>
             <Text style={[getNativeUiTextStyle(motherTongue, 'row'), { color: colors.fawn }]}>

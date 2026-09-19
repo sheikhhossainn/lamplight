@@ -181,3 +181,45 @@ export async function clearTemporaryCache(): Promise<void> {
     console.warn('[StorageManager] Error clearing temporary cache:', err);
   }
 }
+
+export type UnsyncedSafetyStatus = {
+  canSafelyClear: boolean;
+  pendingCount: number;
+  pendingMutations: number;
+  pendingLookups: number;
+  isOffline: boolean;
+};
+
+/**
+ * Checks whether any un-synced outbox mutations or pending word lookups exist.
+ * Prevents accidental cache or data deletion before syncing to cloud.
+ */
+export async function getUnsyncedSafetyStatus(): Promise<UnsyncedSafetyStatus> {
+  const { getPendingMutationCount } = await import('@/db/repositories/syncOutbox');
+  const { countPendingLookups } = await import('@/db/repositories/pendingLookups');
+  const { getSession } = await import('@/lib/supabaseAuth');
+
+  const [pendingMutations, pendingLookups] = await Promise.all([
+    getPendingMutationCount().catch(() => 0),
+    countPendingLookups().catch(() => 0),
+  ]);
+  const totalPending = pendingMutations + pendingLookups;
+  let isOffline = false;
+
+  if (totalPending > 0) {
+    try {
+      await getSession();
+    } catch {
+      isOffline = true;
+    }
+  }
+
+  return {
+    canSafelyClear: totalPending === 0,
+    pendingCount: totalPending,
+    pendingMutations,
+    pendingLookups,
+    isOffline,
+  };
+}
+

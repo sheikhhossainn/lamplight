@@ -3,6 +3,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, {
+  Easing,
   Extrapolation,
   interpolate,
   interpolateColor,
@@ -20,12 +21,13 @@ import {
   useAppUpdateBanner,
   type AppUpdateStatus,
 } from '@/features/app-update/useAppUpdateBanner';
-import { triggerSync, useSyncStatus, type SyncStatus } from '@/features/sync/syncWorker';
-import { getStorageUsage, clearTemporaryCache, type StorageUsage } from '@/features/storage/storageManager';
+import { refreshSyncStatus, triggerSync, useSyncStatus, type SyncStatus } from '@/features/sync/syncWorker';
+import { getStorageUsage, clearTemporaryCache, getUnsyncedSafetyStatus, type StorageUsage } from '@/features/storage/storageManager';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { RedeemPromoModal } from '@/components/RedeemPromoModal';
 import { setTargetLanguage, targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
 import { useReadingTheme } from '@/features/settings/readingTheme';
-import { requestThemeChange, themeTransitionProgress } from '@/features/settings/themeTransition';
+import { requestThemeChange } from '@/features/settings/themeTransition';
 import { setPageTurnSoundEnabled, usePageTurnSoundEnabled } from '@/features/settings/soundPrefs';
 import {
   isPremiumUser,
@@ -33,20 +35,35 @@ import {
   subscribeToEntitlements,
   type EntitlementSnapshot,
 } from '@/features/subscription/subscriptionState';
-import { checkCachedTranslationCap, checkTranslationCap } from '@/features/translation';
+import {
+  checkCachedTranslationCap,
+  checkTranslationCap,
+  FREE_DAILY_TRANSLATION_LIMIT,
+} from '@/features/translation';
 import type { CapCheck } from '@/features/translation/capPolicy';
 import { LanguagePicker } from '@/components/LanguagePicker';
 import { MotherTonguePicker } from '@/components/MotherTonguePicker';
+import { LiteraryThemePicker } from '@/components/LiteraryThemePicker';
+import { LanguageBadge } from '@/components/LanguageBadge';
 import {
   getMotherTongueOption,
   setMotherTongue,
   useMotherTongue,
 } from '@/features/settings/motherTongue';
-import { getSuggestedThemeForMotherTongue, setLiteraryTheme } from '@/features/settings/literaryTheme';
+import {
+  getLiteraryThemeOption,
+  setLiteraryTheme,
+  useLiteraryTheme,
+} from '@/features/settings/literaryTheme';
 import { useTheme } from '@/theme/ThemeProvider';
 import { getCultureThemeColors, Layout, Spacing } from '@/theme/tokens';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
+// Theme is an occasional state change, not a cinematic transition. Keep every
+// Settings surface on one short UI-thread clock so text never trails a card.
+const GLIDE_DURATION = 200;
+const GLIDE_EASING = Easing.bezier(0.25, 1, 0.5, 1);
 
 // Clear the tab bar so the last row isn't half-hidden behind it.
 const TAB_BAR_CLEARANCE = Layout.tabBarHeight + Spacing.xl;
@@ -64,11 +81,40 @@ function ThemeSegmentedSwitch({
   const dayColors = getCultureThemeColors(cultureTheme, 'day');
   const lampColors = getCultureThemeColors(cultureTheme, 'lamp');
 
+  // Progress: 0 = day, 1 = lamp
+  const progress = useSharedValue(theme === 'lamp' ? 1 : 0);
   const segWidth = useSharedValue(0);
 
+  // Sync if external theme changes
+  useEffect(() => {
+    const target = theme === 'lamp' ? 1 : 0;
+    if (Math.round(progress.value) !== target) {
+      progress.value = withTiming(target, {
+        duration: GLIDE_DURATION,
+        easing: GLIDE_EASING,
+      });
+    }
+  }, [theme, progress]);
+
   const handleSelect = (target: 'day' | 'lamp') => {
+    if (theme === target) return;
+
     const targetVal = target === 'lamp' ? 1 : 0;
-    if (theme === target && Math.abs(themeAnim.get() - targetVal) < 0.001) return;
+
+    // 1. Slow, butter-smooth glide for the sliding pill across left and right
+    progress.value = withTiming(targetVal, {
+      duration: GLIDE_DURATION,
+      easing: GLIDE_EASING,
+    });
+
+    // 2. Coordinated smooth bezier transition across the whole Settings screen
+    themeAnim.value = withTiming(targetVal, {
+      duration: GLIDE_DURATION,
+      easing: GLIDE_EASING,
+    });
+
+    // Commit globally now. The root overlay keeps the crossfade coherent while
+    // the navigator receives its new tab-bar colours in the same transition.
     onThemeChange(target);
   };
 
@@ -76,12 +122,12 @@ function ThemeSegmentedSwitch({
     const w = segWidth.value;
     return {
       width: w > 0 ? w : '50%',
-      transform: [{ translateX: themeAnim.get() * w }],
+      transform: [{ translateX: progress.value * w }],
     };
   });
 
   const sunAnimatedStyle = useAnimatedStyle(() => {
-    const p = themeAnim.get();
+    const p = progress.value;
     const rotate = interpolate(p, [0, 1], [0, 45], Extrapolation.CLAMP);
     const scale = interpolate(p, [0, 1], [1, 0.88], Extrapolation.CLAMP);
     return {
@@ -90,7 +136,7 @@ function ThemeSegmentedSwitch({
   });
 
   const lampAnimatedStyle = useAnimatedStyle(() => {
-    const p = themeAnim.get();
+    const p = progress.value;
     const rotate = interpolate(p, [0, 1], [-15, 0], Extrapolation.CLAMP);
     const scale = interpolate(p, [0, 1], [0.88, 1], Extrapolation.CLAMP);
     return {
@@ -99,27 +145,27 @@ function ThemeSegmentedSwitch({
   });
 
   const sunActiveStyle = useAnimatedStyle(() => ({
-    opacity: 1 - themeAnim.get(),
+    opacity: 1 - progress.value,
   }));
   const sunInactiveStyle = useAnimatedStyle(() => ({
-    opacity: themeAnim.get(),
+    opacity: progress.value,
   }));
 
   const lampActiveStyle = useAnimatedStyle(() => ({
-    opacity: themeAnim.get(),
+    opacity: progress.value,
   }));
   const lampInactiveStyle = useAnimatedStyle(() => ({
-    opacity: 1 - themeAnim.get(),
+    opacity: 1 - progress.value,
   }));
 
   const dayContentStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(themeAnim.get(), [0, 1], [1, 0.55], Extrapolation.CLAMP),
-    transform: [{ scale: interpolate(themeAnim.get(), [0, 1], [1, 0.96], Extrapolation.CLAMP) }],
+    opacity: interpolate(progress.value, [0, 1], [1, 0.55], Extrapolation.CLAMP),
+    transform: [{ scale: interpolate(progress.value, [0, 1], [1, 0.96], Extrapolation.CLAMP) }],
   }));
 
   const lampContentStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(themeAnim.get(), [0, 1], [0.55, 1], Extrapolation.CLAMP),
-    transform: [{ scale: interpolate(themeAnim.get(), [0, 1], [0.96, 1], Extrapolation.CLAMP) }],
+    opacity: interpolate(progress.value, [0, 1], [0.55, 1], Extrapolation.CLAMP),
+    transform: [{ scale: interpolate(progress.value, [0, 1], [0.96, 1], Extrapolation.CLAMP) }],
   }));
 
   const animatedTrackStyle = useAnimatedStyle(() => ({
@@ -132,7 +178,7 @@ function ThemeSegmentedSwitch({
 
   const animatedSegmentLabelStyle = useAnimatedStyle(() => ({
     color: interpolateColor(
-      themeAnim.get(),
+      themeAnim.value,
       [0, 1],
       [dayColors.lampText, lampColors.lampText],
     ),
@@ -245,7 +291,7 @@ function ToggleSwitch({
       return { backgroundColor: colors.flameAmber };
     }
     const hairline = themeAnim
-      ? interpolateColor(themeAnim.get(), [0, 1], [dayColors.hairline, lampColors.hairline])
+      ? interpolateColor(themeAnim.value, [0, 1], [dayColors.hairline, lampColors.hairline])
       : colors.hairline;
     return { backgroundColor: hairline };
   });
@@ -287,17 +333,19 @@ function updateStatusLabel(status: AppUpdateStatus, progress: number | undefined
   }
 }
 
-function syncStatusLabel(status: SyncStatus): string {
+function syncSubtitle(status: SyncStatus): string {
   switch (status) {
+    case 'guest':
+      return 'Log in to sync';
     case 'syncing':
-      return 'Syncing…';
+      return 'Syncing reading progress…';
     case 'offline_saved':
-      return 'Offline — changes saved';
+      return 'Connection problem · Offline';
     case 'needs_attention':
-      return 'Needs attention';
+      return 'Syncing problem · Tap to retry';
     case 'synced':
     default:
-      return 'Synced';
+      return 'Up to date · Synced just now';
   }
 }
 
@@ -314,14 +362,23 @@ export default function SettingsScreen() {
   const motherTongue = useMotherTongue();
   const motherTongueOption = getMotherTongueOption(motherTongue);
   const pageTurnSound = usePageTurnSoundEnabled();
-  // undefined = not known yet, null = unlimited (premium). Collapsing those two
-  // into null made the row flash "Unlimited translations" on every focus while
-  // the server round-trip was still in flight.
-  const [translationsLeft, setTranslationsLeft] = useState<number | null | undefined>(undefined);
+  // undefined = not known yet, null = unlimited (premium). We default to the
+  // full daily limit so the screen paints immediately without an infinite
+  // "Checking translations left…" hang, which cached/server reads then refine.
+  const [translationsLeft, setTranslationsLeft] = useState<number | null | undefined>(
+    isPremiumUser() ? null : FREE_DAILY_TRANSLATION_LIMIT,
+  );
   const [languagePickerVisible, setLanguagePickerVisible] = useState(false);
   const [motherTonguePickerVisible, setMotherTonguePickerVisible] = useState(false);
+  const literaryTheme = useLiteraryTheme();
+  const literaryThemeOption = getLiteraryThemeOption(literaryTheme);
+  const [literaryThemePickerVisible, setLiteraryThemePickerVisible] = useState(false);
   const [storageUsage, setStorageUsage] = useState<StorageUsage | null>(null);
   const [clearingCache, setClearingCache] = useState(false);
+  const [syncAndClearDialogVisible, setSyncAndClearDialogVisible] = useState(false);
+  const [offlineBlockedDialogVisible, setOfflineBlockedDialogVisible] = useState(false);
+  const [unsyncedCount, setUnsyncedCount] = useState(0);
+  const [accountProtectionDialogVisible, setAccountProtectionDialogVisible] = useState(false);
   const [promoModalVisible, setPromoModalVisible] = useState(false);
   const [entitlement, setEntitlement] = useState<EntitlementSnapshot>(getEntitlementSnapshot());
 
@@ -336,13 +393,52 @@ export default function SettingsScreen() {
   }, []);
 
   const handleClearCache = async () => {
+    if (clearingCache) return;
     setClearingCache(true);
-    await clearTemporaryCache();
-    loadStorage();
-    setClearingCache(false);
+    try {
+      const safety = await getUnsyncedSafetyStatus();
+      if (!safety.canSafelyClear) {
+        setUnsyncedCount(safety.pendingCount);
+        if (safety.isOffline) {
+          setOfflineBlockedDialogVisible(true);
+        } else {
+          setSyncAndClearDialogVisible(true);
+        }
+        return;
+      }
+
+      await clearTemporaryCache();
+      loadStorage();
+    } catch (err) {
+      console.warn('[Settings] Error clearing cache:', err);
+    } finally {
+      setClearingCache(false);
+    }
   };
 
-  const themeAnim = themeTransitionProgress;
+  const handleConfirmSyncAndClear = async () => {
+    setSyncAndClearDialogVisible(false);
+    setClearingCache(true);
+    try {
+      await triggerSync({ forceImmediate: true });
+      await clearTemporaryCache();
+      loadStorage();
+    } catch (err) {
+      console.warn('[Settings] Error during sync and clear:', err);
+    } finally {
+      setClearingCache(false);
+    }
+  };
+
+  const isLamp = theme === 'lamp';
+  const themeAnim = useSharedValue(isLamp ? 1 : 0);
+
+  useEffect(() => {
+    themeAnim.value = withTiming(isLamp ? 1 : 0, {
+      duration: GLIDE_DURATION,
+      easing: GLIDE_EASING,
+    });
+  }, [isLamp, themeAnim]);
 
   const animatedContainerStyle = useAnimatedStyle(() => ({
     backgroundColor: interpolateColor(
@@ -404,7 +500,7 @@ export default function SettingsScreen() {
 
   const animatedPairPillStyle = useAnimatedStyle(() => ({
     backgroundColor: interpolateColor(
-      themeAnim.get(),
+      themeAnim.value,
       [0, 1],
       [dayColors.pairPillBackground, lampColors.pairPillBackground],
     ),
@@ -412,7 +508,7 @@ export default function SettingsScreen() {
 
   const animatedPairPillTextStyle = useAnimatedStyle(() => ({
     color: interpolateColor(
-      themeAnim.get(),
+      themeAnim.value,
       [0, 1],
       [dayColors.pairPillText, lampColors.pairPillText],
     ),
@@ -435,7 +531,7 @@ export default function SettingsScreen() {
 
   const animatedDividerStyle = useAnimatedStyle(() => ({
     borderBottomColor: interpolateColor(
-      themeAnim.get(),
+      themeAnim.value,
       [0, 1],
       [dayColors.hairline, lampColors.hairline],
     ),
@@ -443,7 +539,7 @@ export default function SettingsScreen() {
 
   const animatedAccountDividerStyle = useAnimatedStyle(() => ({
     borderBottomColor: interpolateColor(
-      themeAnim.get(),
+      themeAnim.value,
       [0, 1],
       ['#2B2621', lampColors.hairline],
     ),
@@ -451,7 +547,7 @@ export default function SettingsScreen() {
 
   const animatedSecondaryButtonStyle = useAnimatedStyle(() => ({
     backgroundColor: interpolateColor(
-      themeAnim.get(),
+      themeAnim.value,
       [0, 1],
       [dayColors.segmentedTrack, '#3A342D'],
     ),
@@ -466,16 +562,20 @@ export default function SettingsScreen() {
       };
 
       // Local cache first (no network) so the real count paints immediately;
-      // the server read below overwrites it once it lands. Only fills a still-
-      // unknown value, so a slow cache read can't clobber a fresher server one.
+      // the server read below overwrites it once it lands.
       checkCachedTranslationCap(isPremium).then((cap) => {
         if (!cap || cancelled) return;
-        setTranslationsLeft((prev) =>
-          prev === undefined ? (cap.remaining === Infinity ? null : cap.remaining) : prev,
-        );
+        setTranslationsLeft(cap.remaining === Infinity ? null : cap.remaining);
       });
-      checkTranslationCap(isPremium).then(apply);
+      checkTranslationCap(isPremium)
+        .then(apply)
+        .catch(() => {
+          if (!cancelled) {
+            setTranslationsLeft((prev) => prev ?? FREE_DAILY_TRANSLATION_LIMIT);
+          }
+        });
       loadStorage();
+      void refreshSyncStatus();
 
       return () => {
         cancelled = true;
@@ -514,6 +614,34 @@ export default function SettingsScreen() {
         </Animated.Text>
         <ThemeSegmentedSwitch theme={theme} themeAnim={themeAnim} onThemeChange={requestThemeChange} />
         <CultureEditionBanner compact themeProgress={themeAnim} />
+
+        <Animated.View style={[styles.itemDivider, animatedDividerStyle, { marginVertical: 12 }]} />
+        <View style={styles.settingsRow}>
+          <View style={{ flex: 1, minWidth: 0, paddingRight: spacing.sm }}>
+            <Animated.Text style={[typography.uiRowTitle, animatedInkTextStyle, { fontSize: 13 }]}>
+              Change themes
+            </Animated.Text>
+            <Animated.Text style={[typography.metadataCaption, animatedFawnTextStyle, { fontSize: 11, marginTop: 2 }]}>
+              {literaryThemeOption.title} · {literaryThemeOption.paletteLabel ?? literaryThemeOption.subtitle}
+            </Animated.Text>
+          </View>
+          <AnimatedPressable
+            onPress={() => setLiteraryThemePickerVisible(true)}
+            style={[styles.pairPill, animatedPairPillStyle, { borderRadius: radius.pill }]}
+          >
+            <Animated.Text style={[typography.uiRowTitle, animatedPairPillTextStyle, { fontSize: 12 }]}>
+              {literaryThemeOption.title}
+            </Animated.Text>
+            <View style={{ width: 14, height: 14, alignItems: 'center', justifyContent: 'center', marginLeft: 4 }}>
+              <Animated.View style={[StyleSheet.absoluteFill, styles.centered, dayChevronStyle]}>
+                <ChevronRightIcon color={dayColors.straw} size={14} />
+              </Animated.View>
+              <Animated.View style={[StyleSheet.absoluteFill, styles.centered, nightChevronStyle]}>
+                <ChevronRightIcon color={lampColors.straw} size={14} />
+              </Animated.View>
+            </View>
+          </AnimatedPressable>
+        </View>
       </Animated.View>
 
       <Animated.Text style={[typography.eyebrowLabel, animatedFawnTextStyle, { marginBottom: spacing.sm }]}>
@@ -554,7 +682,7 @@ export default function SettingsScreen() {
             onPress={() => setMotherTonguePickerVisible(true)}
             style={[styles.pairPill, animatedPairPillStyle, { borderRadius: radius.pill }]}
           >
-            <Text style={styles.flagIcon}>{motherTongueOption.flag}</Text>
+            <LanguageBadge code={motherTongueOption.code} size={20} isSelected />
             <Animated.Text style={[typography.uiRowTitle, animatedPairPillTextStyle, { fontSize: 12 }]}>
               {motherTongueOption.nativeName}
             </Animated.Text>
@@ -726,37 +854,61 @@ export default function SettingsScreen() {
       >
         <View style={{ flex: 1, minWidth: 0 }}>
           <Animated.Text style={[typography.uiRowTitle, animatedInkTextStyle, { fontSize: 13 }]}>
-            {syncStatusLabel(syncStatus)}
+            Cloud Sync
           </Animated.Text>
           <Animated.Text style={[typography.metadataCaption, animatedFawnTextStyle, { fontSize: 11, marginTop: 2 }]}>
-            {syncStatus === 'syncing'
-              ? 'Backing up words and progress…'
-              : syncStatus === 'offline_saved'
-              ? 'Changes saved locally on device'
-              : syncStatus === 'needs_attention'
-              ? 'Sync requires attention'
-              : 'All words and reading progress synced'}
+            {syncSubtitle(syncStatus)}
           </Animated.Text>
         </View>
         <Pressable
-          onPress={() => void triggerSync({ forceImmediate: true })}
+          onPress={() => {
+            if (syncStatus === 'guest') {
+              setAccountProtectionDialogVisible(true);
+            } else {
+              void triggerSync({ forceImmediate: true });
+            }
+          }}
           disabled={syncStatus === 'syncing'}
           style={[
             styles.upgradeButton,
             {
-              backgroundColor: syncStatus === 'syncing' ? colors.fawn : colors.flameAmber,
+              backgroundColor:
+                syncStatus === 'syncing'
+                  ? colors.fawn
+                  : syncStatus === 'guest'
+                  ? colors.flameAmber
+                  : syncStatus === 'offline_saved' || syncStatus === 'needs_attention'
+                  ? colors.flameAmber
+                  : (isLamp ? 'rgba(245, 237, 225, 0.08)' : 'rgba(28, 27, 30, 0.06)'),
               borderRadius: radius.pill,
-              minWidth: 72,
+              minWidth: 78,
               alignItems: 'center',
               justifyContent: 'center',
+              paddingHorizontal: 12,
+              paddingVertical: 6,
             },
           ]}
         >
           {syncStatus === 'syncing' ? (
             <ActivityIndicator size="small" color={colors.primaryDark} />
           ) : (
-            <Text style={[typography.uiRowTitle, { color: colors.primaryDark, fontSize: 12 }]}>
-              Sync now
+            <Text
+              style={[
+                typography.uiRowTitle,
+                {
+                  color:
+                    syncStatus === 'guest' || syncStatus === 'offline_saved' || syncStatus === 'needs_attention'
+                      ? colors.primaryDark
+                      : colors.fawn,
+                  fontSize: 12,
+                },
+              ]}
+            >
+              {syncStatus === 'guest'
+                ? 'Log in'
+                : syncStatus === 'offline_saved' || syncStatus === 'needs_attention'
+                ? 'Retry'
+                : 'Sync now'}
             </Text>
           )}
         </Pressable>
@@ -798,9 +950,19 @@ export default function SettingsScreen() {
         selected={motherTongue}
         onSelect={(code) => {
           setMotherTongue(code);
-          setLiteraryTheme(getSuggestedThemeForMotherTongue(code));
+          setMotherTonguePickerVisible(false);
         }}
         onClose={() => setMotherTonguePickerVisible(false)}
+      />
+
+      <LiteraryThemePicker
+        visible={literaryThemePickerVisible}
+        selected={literaryTheme}
+        onSelect={(code) => {
+          setLiteraryTheme(code);
+          setLiteraryThemePickerVisible(false);
+        }}
+        onClose={() => setLiteraryThemePickerVisible(false)}
       />
 
       <LanguagePicker
@@ -819,6 +981,36 @@ export default function SettingsScreen() {
         onSuccess={() => {
           loadStorage();
         }}
+      />
+
+      <ConfirmDialog
+        visible={syncAndClearDialogVisible}
+        title="Unsynced Changes Detected"
+        message={`You have ${unsyncedCount} offline ${unsyncedCount === 1 ? 'change' : 'changes'} waiting to back up to the cloud. Would you like to sync your reading progress first, then clear the cache?`}
+        confirmLabel="Sync & Clear Cache"
+        cancelLabel="Cancel"
+        onConfirm={handleConfirmSyncAndClear}
+        onCancel={() => setSyncAndClearDialogVisible(false)}
+      />
+
+      <ConfirmDialog
+        visible={offlineBlockedDialogVisible}
+        title="Cannot Clear Cache Offline"
+        message={`You have ${unsyncedCount} offline ${unsyncedCount === 1 ? 'change' : 'changes'} saved on this device. Reconnect to the internet and sync before clearing cache to prevent losing your progress.`}
+        confirmLabel="OK"
+        cancelLabel="Close"
+        onConfirm={() => setOfflineBlockedDialogVisible(false)}
+        onCancel={() => setOfflineBlockedDialogVisible(false)}
+      />
+
+      <ConfirmDialog
+        visible={accountProtectionDialogVisible}
+        title="Log In to Sync"
+        message="Cloud Sync requires an authenticated account to back up and sync your reading progress, vocabulary, and highlights across devices. All your data is safely saved on this device."
+        confirmLabel="Understood"
+        cancelLabel="Close"
+        onConfirm={() => setAccountProtectionDialogVisible(false)}
+        onCancel={() => setAccountProtectionDialogVisible(false)}
       />
     </Animated.ScrollView>
   );

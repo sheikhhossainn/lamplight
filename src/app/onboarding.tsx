@@ -1,12 +1,15 @@
 import { router } from 'expo-router';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  BackHandler,
   Dimensions,
   FlatList,
+  Keyboard,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
   type ViewToken,
 } from 'react-native';
@@ -14,11 +17,20 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { Easing, FadeIn, FadeInUp, ReduceMotion } from 'react-native-reanimated';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
-import { CheckIcon, ChevronRightIcon } from '@/components/icons';
+import {
+  CheckIcon,
+  ChevronRightIcon,
+  CloseIcon,
+  LiteraryThemeIcon,
+  SearchIcon,
+  TranslateIcon,
+} from '@/components/icons';
+import { LanguageBadge } from '@/components/LanguageBadge';
 import { logEvent } from '@/features/analytics/analytics';
 import {
   LITERARY_THEMES,
   getLiteraryTheme,
+  getModularThemePresentation,
   getSuggestedThemeForMotherTongue,
   setLiteraryTheme,
   type LiteraryThemeCode,
@@ -311,12 +323,872 @@ function MemoryIllustration() {
   );
 }
 
+function MotherTongueSlide({
+  selectedCode,
+  onSelect,
+  headline,
+  subtext,
+}: {
+  selectedCode: MotherTongueCode;
+  onSelect: (code: MotherTongueCode) => void;
+  headline: string;
+  subtext: string;
+}) {
+  const { colors, typography, radius } = useTheme();
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const filtered = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return MOTHER_TONGUES;
+    return MOTHER_TONGUES.filter((opt) => {
+      const matchName = opt.name.toLowerCase().includes(q);
+      const matchNative = opt.nativeName.toLowerCase().includes(q);
+      const matchSource = opt.sourceName.toLowerCase().includes(q);
+      const matchAuthors = opt.sampleAuthors.toLowerCase().includes(q);
+      const matchCode = opt.code.toLowerCase().includes(q);
+      const synonyms: Record<string, string[]> = {
+        bn: ['bangla', 'bengali', 'bengal', 'বাংলা', 'রবীন্দ্রনাথ', 'tagore', 'nazrul'],
+        ja: ['japanese', 'japan', 'nihon', 'nihongo', '日本語', '和風', 'soseki', 'dazai'],
+        ko: ['korean', 'korea', 'hangul', '한국', '한국어', '조선', 'yi sang'],
+        ar: ['arabic', 'arab', 'arabi', 'عربي', 'العربية', 'islamic', 'quran', 'mahfouz'],
+        en: ['english', 'other', 'latin', 'british', 'american', 'global', 'gutenberg'],
+      };
+      const extraMatches = (synonyms[opt.code] ?? []).some((s) => s.includes(q) || q.includes(s));
+      return matchName || matchNative || matchSource || matchAuthors || matchCode || extraMatches;
+    });
+  }, [searchQuery]);
+
+  return (
+    <View style={styles.motherTongueSection}>
+      <Animated.View
+        entering={FadeIn.delay(60).duration(260).easing(EASE_OUT).reduceMotion(ReduceMotion.System)}
+        style={[styles.copy, { marginBottom: 10 }]}
+      >
+        <Text
+          style={[
+            typography.onboardingHeadline,
+            { color: colors.lampText, textAlign: 'center', fontSize: 23 },
+          ]}
+        >
+          {headline}
+        </Text>
+        <Text
+          style={[
+            typography.metadataCaption,
+            { color: colors.mutedOnDark, textAlign: 'center', marginTop: 4, fontSize: 12 },
+          ]}
+        >
+          {subtext}
+        </Text>
+      </Animated.View>
+
+      {/* Mother Tongue Search Bar */}
+      <Animated.View
+        entering={FadeIn.delay(90).duration(260).easing(EASE_OUT).reduceMotion(ReduceMotion.System)}
+        style={styles.searchBarWrap}
+      >
+        <View
+          style={[
+            styles.searchBarContainer,
+            {
+              backgroundColor: 'rgba(255, 255, 255, 0.05)',
+              borderColor: 'rgba(255, 255, 255, 0.1)',
+              borderRadius: radius.card,
+            },
+          ]}
+        >
+          <SearchIcon color={colors.mutedOnDark} size={16} />
+          <TextInput
+            style={[
+              styles.searchInput,
+              typography.uiRowTitle,
+              {
+                color: colors.lampText,
+                fontSize: 13,
+              },
+            ]}
+            placeholder="Search mother tongue, language, or script..."
+            placeholderTextColor={colors.mutedOnDark}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            autoCapitalize="none"
+            autoCorrect={false}
+            clearButtonMode="while-editing"
+            returnKeyType="done"
+            blurOnSubmit={true}
+            onSubmitEditing={() => Keyboard.dismiss()}
+          />
+          {searchQuery.length > 0 ? (
+            <Pressable
+              onPress={() => {
+                setSearchQuery('');
+                Keyboard.dismiss();
+              }}
+              hitSlop={8}
+              style={styles.searchClearBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Clear mother tongue search"
+            >
+              <CloseIcon color={colors.mutedOnDark} size={14} />
+            </Pressable>
+          ) : null}
+        </View>
+      </Animated.View>
+
+      {/* Mother Tongue Dynamic Content */}
+      <View style={styles.motherTongueContentArea}>
+        {filtered.length > 0 ? (
+          <>
+            <View style={styles.motherTongueOptionsList}>
+              {filtered.map((opt) => {
+                const isSelected = selectedCode === opt.code;
+                return (
+                  <Pressable
+                    key={opt.code}
+                    onPress={() => onSelect(opt.code)}
+                    style={({ pressed }) => [
+                      styles.motherTongueLanguageCard,
+                      {
+                        backgroundColor: isSelected ? 'rgba(245, 166, 35, 0.08)' : colors.ember,
+                        borderColor: isSelected ? colors.flameAmber : colors.dotInactive,
+                        borderWidth: isSelected ? 1.5 : 1,
+                        borderRadius: radius.card,
+                        opacity: pressed ? 0.9 : 1,
+                      },
+                    ]}
+                  >
+                    <LanguageBadge code={opt.code} size={36} isSelected={isSelected} />
+                    <View style={styles.languageInfo}>
+                      <View style={styles.languageTitleRow}>
+                        <Text
+                          style={[
+                            typography.uiRowTitle,
+                            { color: colors.lampText, fontSize: 15 },
+                          ]}
+                        >
+                          {opt.nativeName}{' '}
+                          <Text style={{ color: colors.fawn, fontSize: 12.5, fontWeight: '400' }}>
+                            ({opt.name})
+                          </Text>
+                        </Text>
+                      </View>
+                      <Text
+                        style={[
+                          typography.metadataCaption,
+                          { color: colors.flameAmber, fontSize: 11, marginTop: 1 },
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {opt.sourceName}
+                      </Text>
+                      <Text
+                        style={[
+                          typography.metadataCaption,
+                          { color: colors.mutedOnDark, fontSize: 10.5, marginTop: 1 },
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {opt.sampleAuthors}
+                      </Text>
+                    </View>
+
+                    <View
+                      style={[
+                        styles.radioIndicator,
+                        {
+                          borderColor: isSelected ? colors.flameAmber : colors.dotInactive,
+                          backgroundColor: isSelected ? colors.flameAmber : 'transparent',
+                        },
+                      ]}
+                    >
+                      {isSelected ? <CheckIcon color={colors.primaryDark} size={11} /> : null}
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            {/* More Languages Coming Soon Footer */}
+            <View
+              style={[
+                styles.comingSoonCard,
+                {
+                  backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                  borderColor: 'rgba(255, 255, 255, 0.07)',
+                  borderRadius: radius.card,
+                },
+              ]}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                <Text style={{ color: colors.flameAmber, fontSize: 11 }}>✦</Text>
+                <Text
+                  style={[
+                    typography.eyebrowLabel,
+                    { color: colors.flameAmber, fontSize: 9.5, letterSpacing: 0.6 },
+                  ]}
+                >
+                  MORE LANGUAGES ARE COMING SOON
+                </Text>
+              </View>
+              <Text
+                style={[
+                  typography.metadataCaption,
+                  { color: colors.mutedOnDark, fontSize: 10.5, marginTop: 2, textAlign: 'center' },
+                ]}
+              >
+                More languages are coming soon. Persian, Sanskrit, French, German, Urdu & Russian in progress.
+              </Text>
+            </View>
+          </>
+        ) : (
+          <View
+            style={[
+              styles.emptySearchCard,
+              {
+                backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                borderColor: 'rgba(255, 255, 255, 0.08)',
+                borderRadius: radius.card,
+              },
+            ]}
+          >
+            <View
+              style={[
+                styles.emptySearchIconWrap,
+                {
+                  backgroundColor: 'rgba(245, 166, 35, 0.1)',
+                  borderColor: 'rgba(245, 166, 35, 0.25)',
+                },
+              ]}
+            >
+              <SearchIcon color={colors.flameAmber} size={20} />
+            </View>
+            <Text
+              style={[
+                typography.uiRowTitle,
+                { color: colors.lampText, fontSize: 15, marginTop: 12, textAlign: 'center' },
+              ]}
+            >
+              No language found for &ldquo;{searchQuery.trim()}&rdquo;
+            </Text>
+            <Text
+              style={[
+                typography.metadataCaption,
+                { color: colors.mutedOnDark, fontSize: 11.5, marginTop: 5, textAlign: 'center', maxWidth: 260 },
+              ]}
+            >
+              More languages are coming soon. Persian, Sanskrit, French, German, Urdu & Russian in progress.
+            </Text>
+            <Pressable
+              onPress={() => {
+                setSearchQuery('');
+                Keyboard.dismiss();
+              }}
+              style={[
+                styles.resetSearchChip,
+                {
+                  borderColor: colors.flameAmber,
+                  backgroundColor: 'rgba(245, 166, 35, 0.12)',
+                },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Reset language search"
+            >
+              <Text
+                style={[
+                  typography.eyebrowLabel,
+                  { color: colors.flameAmber, fontSize: 11, letterSpacing: 0.5 },
+                ]}
+              >
+                Clear search
+              </Text>
+            </Pressable>
+          </View>
+        )}
+      </View>
+    </View>
+  );
+}
+
+function TargetLanguageSlide({
+  selectedCode,
+  onSelect,
+  headline,
+  subtext,
+}: {
+  selectedCode: TargetReadingLanguageCode;
+  onSelect: (code: TargetReadingLanguageCode) => void;
+  headline: string;
+  subtext: string;
+}) {
+  const { colors, typography, radius } = useTheme();
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const filtered = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return TARGET_READING_LANGUAGES;
+    return TARGET_READING_LANGUAGES.filter((opt) => {
+      const matchName = opt.name.toLowerCase().includes(q);
+      const matchNative = opt.nativeName.toLowerCase().includes(q);
+      const matchSource = opt.sourceName.toLowerCase().includes(q);
+      const matchAuthors = opt.sampleAuthors.toLowerCase().includes(q);
+      const matchCode = opt.code.toLowerCase().includes(q);
+      const synonyms: Record<string, string[]> = {
+        en: ['english', 'latin', 'british', 'american', 'gutenberg', 'ইংরেজি', 'পাশ্চাত্য', 'victorian'],
+        ja: ['japanese', 'japan', 'nihon', 'nihongo', '日本語', 'aozora', 'জাপানি'],
+        bn: ['bangla', 'bengali', 'বাংলা', 'রবীন্দ্রনাথ', 'tagore', 'nazrul'],
+        ko: ['korean', 'korea', 'hangul', '한국', '한국어', 'gongu', 'কোরীয়'],
+      };
+      const extraMatches = (synonyms[opt.code] ?? []).some((s) => s.includes(q) || q.includes(s));
+      return matchName || matchNative || matchSource || matchAuthors || matchCode || extraMatches;
+    });
+  }, [searchQuery]);
+
+  return (
+    <View style={styles.motherTongueSection}>
+      <Animated.View
+        entering={FadeIn.delay(60).duration(260).easing(EASE_OUT).reduceMotion(ReduceMotion.System)}
+        style={[styles.copy, { marginBottom: 10 }]}
+      >
+        <Text
+          style={[
+            typography.onboardingHeadline,
+            { color: colors.lampText, textAlign: 'center', fontSize: 23 },
+          ]}
+        >
+          {headline}
+        </Text>
+        <Text
+          style={[
+            typography.metadataCaption,
+            { color: colors.mutedOnDark, textAlign: 'center', marginTop: 4, fontSize: 12 },
+          ]}
+        >
+          {subtext}
+        </Text>
+      </Animated.View>
+
+      {/* Target Reading Language Search Bar */}
+      <Animated.View
+        entering={FadeIn.delay(90).duration(260).easing(EASE_OUT).reduceMotion(ReduceMotion.System)}
+        style={styles.searchBarWrap}
+      >
+        <View
+          style={[
+            styles.searchBarContainer,
+            {
+              backgroundColor: 'rgba(255, 255, 255, 0.05)',
+              borderColor: 'rgba(255, 255, 255, 0.1)',
+              borderRadius: radius.card,
+            },
+          ]}
+        >
+          <SearchIcon color={colors.mutedOnDark} size={16} />
+          <TextInput
+            style={[
+              styles.searchInput,
+              typography.uiRowTitle,
+              {
+                color: colors.lampText,
+                fontSize: 13,
+              },
+            ]}
+            placeholder="Search reading language, script, or author..."
+            placeholderTextColor={colors.mutedOnDark}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            autoCapitalize="none"
+            autoCorrect={false}
+            clearButtonMode="while-editing"
+            returnKeyType="done"
+            blurOnSubmit={true}
+            onSubmitEditing={() => Keyboard.dismiss()}
+          />
+          {searchQuery.length > 0 ? (
+            <Pressable
+              onPress={() => {
+                setSearchQuery('');
+                Keyboard.dismiss();
+              }}
+              hitSlop={8}
+              style={styles.searchClearBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Clear reading language search"
+            >
+              <CloseIcon color={colors.mutedOnDark} size={14} />
+            </Pressable>
+          ) : null}
+        </View>
+      </Animated.View>
+
+      {/* Dynamic Content */}
+      <View style={styles.motherTongueContentArea}>
+        {filtered.length > 0 ? (
+          <View style={styles.motherTongueOptionsList}>
+            {filtered.map((opt) => {
+              const isSelected = selectedCode === opt.code;
+              return (
+                <Pressable
+                  key={opt.code}
+                  onPress={() => onSelect(opt.code)}
+                  style={({ pressed }) => [
+                    styles.motherTongueLanguageCard,
+                    {
+                      backgroundColor: isSelected ? 'rgba(245, 166, 35, 0.08)' : colors.ember,
+                      borderColor: isSelected ? colors.flameAmber : colors.dotInactive,
+                      borderWidth: isSelected ? 1.5 : 1,
+                      borderRadius: radius.card,
+                      opacity: pressed ? 0.9 : 1,
+                    },
+                  ]}
+                >
+                  <LanguageBadge code={opt.code} size={36} isSelected={isSelected} />
+                  <View style={styles.languageInfo}>
+                    <View style={styles.languageTitleRow}>
+                      <Text
+                        style={[
+                          typography.uiRowTitle,
+                          { color: colors.lampText, fontSize: 15 },
+                        ]}
+                      >
+                        {opt.name}{' '}
+                        <Text style={{ color: colors.fawn, fontSize: 12.5, fontWeight: '400' }}>
+                          ({opt.nativeName})
+                        </Text>
+                      </Text>
+                    </View>
+                    <Text
+                      style={[
+                        typography.metadataCaption,
+                        { color: colors.flameAmber, fontSize: 11, marginTop: 1 },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {opt.sourceName}
+                    </Text>
+                    <Text
+                      style={[
+                        typography.metadataCaption,
+                        { color: colors.mutedOnDark, fontSize: 10.5, marginTop: 1 },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {opt.sampleAuthors}
+                    </Text>
+                  </View>
+
+                  <View
+                    style={[
+                      styles.radioIndicator,
+                      {
+                        borderColor: isSelected ? colors.flameAmber : colors.dotInactive,
+                        backgroundColor: isSelected ? colors.flameAmber : 'transparent',
+                      },
+                    ]}
+                  >
+                    {isSelected ? <CheckIcon color={colors.primaryDark} size={11} /> : null}
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
+        ) : (
+          <View
+            style={[
+              styles.emptySearchCard,
+              {
+                backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                borderColor: 'rgba(255, 255, 255, 0.08)',
+                borderRadius: radius.card,
+              },
+            ]}
+          >
+            <View
+              style={[
+                styles.emptySearchIconWrap,
+                {
+                  backgroundColor: 'rgba(245, 166, 35, 0.1)',
+                  borderColor: 'rgba(245, 166, 35, 0.25)',
+                },
+              ]}
+            >
+              <SearchIcon color={colors.flameAmber} size={20} />
+            </View>
+            <Text
+              style={[
+                typography.uiRowTitle,
+                { color: colors.lampText, fontSize: 15, marginTop: 12, textAlign: 'center' },
+              ]}
+            >
+              No reading language found for &ldquo;{searchQuery.trim()}&rdquo;
+            </Text>
+            <Text
+              style={[
+                typography.metadataCaption,
+                { color: colors.mutedOnDark, fontSize: 11.5, marginTop: 5, textAlign: 'center', maxWidth: 260 },
+              ]}
+            >
+              More reading languages are in development. Classic Greek, Latin, Sanskrit & French in progress.
+            </Text>
+            <Pressable
+              onPress={() => {
+                setSearchQuery('');
+                Keyboard.dismiss();
+              }}
+              style={[
+                styles.resetSearchChip,
+                {
+                  borderColor: colors.flameAmber,
+                  backgroundColor: 'rgba(245, 166, 35, 0.12)',
+                },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Reset reading language search"
+            >
+              <Text
+                style={[
+                  typography.eyebrowLabel,
+                  { color: colors.flameAmber, fontSize: 11, letterSpacing: 0.5 },
+                ]}
+              >
+                Clear search
+              </Text>
+            </Pressable>
+          </View>
+        )}
+      </View>
+    </View>
+  );
+}
+
+function ThemeSlide({
+  selectedCode,
+  motherTongue,
+  targetReadingLanguage,
+  onSelect,
+  headline,
+  subtext,
+}: {
+  selectedCode: LiteraryThemeCode;
+  motherTongue: MotherTongueCode;
+  targetReadingLanguage: TargetReadingLanguageCode;
+  onSelect: (code: LiteraryThemeCode) => void;
+  headline: string;
+  subtext: string;
+}) {
+  const { colors, typography, radius } = useTheme();
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const filteredThemes = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return LITERARY_THEMES;
+    return LITERARY_THEMES.filter((t) => {
+      const pres = getModularThemePresentation(t.code, motherTongue, targetReadingLanguage);
+      const matchTitle = t.title.toLowerCase().includes(q);
+      const matchPresTitle = pres.title.toLowerCase().includes(q);
+      const matchNative = t.nativeTitle.toLowerCase().includes(q);
+      const matchPresNative = pres.nativeTitle.toLowerCase().includes(q);
+      const matchSubtitle = t.subtitle.toLowerCase().includes(q);
+      const matchPresSubtitle = pres.subtitle.toLowerCase().includes(q);
+      const matchAuthors = t.sampleAuthors.toLowerCase().includes(q);
+      const matchPresAuthors = pres.sampleAuthors.toLowerCase().includes(q);
+      const matchCode = t.code.toLowerCase().includes(q);
+      const matchPalette = (t.paletteLabel ?? '').toLowerCase().includes(q);
+      const synonyms: Record<string, string[]> = {
+        bengali: ['bangla', 'bengal', 'বাংলা', 'রবীন্দ্রনাথ', 'tagore'],
+        korean: ['hangul', 'korea', '한국', '한국어', '조선', 'কোরীয়'],
+        arabic: ['arab', 'arabi', 'عربي', 'العربية', 'islamic', 'আরবি'],
+        japanese: ['nihon', 'nihongo', 'japan', '日本語', '和風', 'জাপানি'],
+        western: ['english', 'latin', 'classic', 'british', 'american', 'victorian', 'পাশ্চাত্য'],
+      };
+      const extraMatches = (synonyms[t.code] ?? []).some((s) => s.includes(q) || q.includes(s));
+      return (
+        matchTitle ||
+        matchPresTitle ||
+        matchNative ||
+        matchPresNative ||
+        matchSubtitle ||
+        matchPresSubtitle ||
+        matchAuthors ||
+        matchPresAuthors ||
+        matchCode ||
+        matchPalette ||
+        extraMatches
+      );
+    });
+  }, [searchQuery, motherTongue, targetReadingLanguage]);
+
+  return (
+    <View style={styles.themeSection}>
+      <Animated.View
+        entering={FadeIn.delay(60).duration(260).easing(EASE_OUT).reduceMotion(ReduceMotion.System)}
+        style={[styles.copy, { marginBottom: 10 }]}
+      >
+        <Text
+          style={[
+            typography.onboardingHeadline,
+            { color: colors.lampText, textAlign: 'center', fontSize: 23 },
+          ]}
+        >
+          {headline}
+        </Text>
+        <Text
+          style={[
+            typography.metadataCaption,
+            { color: colors.mutedOnDark, textAlign: 'center', marginTop: 4, fontSize: 12 },
+          ]}
+        >
+          {subtext}
+        </Text>
+      </Animated.View>
+
+      {/* Theme Search Bar */}
+      <Animated.View
+        entering={FadeIn.delay(90).duration(260).easing(EASE_OUT).reduceMotion(ReduceMotion.System)}
+        style={styles.searchBarWrap}
+      >
+        <View
+          style={[
+            styles.searchBarContainer,
+            {
+              backgroundColor: 'rgba(255, 255, 255, 0.05)',
+              borderColor: 'rgba(255, 255, 255, 0.1)',
+              borderRadius: radius.card,
+            },
+          ]}
+        >
+          <SearchIcon color={colors.mutedOnDark} size={16} />
+          <TextInput
+            style={[
+              styles.searchInput,
+              typography.uiRowTitle,
+              {
+                color: colors.lampText,
+                fontSize: 13,
+              },
+            ]}
+            placeholder="Search themes, languages, or authors..."
+            placeholderTextColor={colors.mutedOnDark}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            autoCapitalize="none"
+            autoCorrect={false}
+            clearButtonMode="while-editing"
+            returnKeyType="done"
+            blurOnSubmit={true}
+            onSubmitEditing={() => Keyboard.dismiss()}
+          />
+          {searchQuery.length > 0 ? (
+            <Pressable
+              onPress={() => {
+                setSearchQuery('');
+                Keyboard.dismiss();
+              }}
+              hitSlop={8}
+              style={styles.searchClearBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Clear theme search"
+            >
+              <CloseIcon color={colors.mutedOnDark} size={14} />
+            </Pressable>
+          ) : null}
+        </View>
+      </Animated.View>
+
+      {/* Theme Dynamic Content */}
+      <View style={styles.themeContentArea}>
+        {filteredThemes.length > 0 ? (
+          <View style={styles.themeOptionsList}>
+            {filteredThemes.map((opt) => {
+              const isSelected = selectedCode === opt.code;
+              const isSuggested = opt.code === getSuggestedThemeForMotherTongue(motherTongue);
+              const pres = getModularThemePresentation(opt.code, motherTongue, targetReadingLanguage);
+              return (
+                <Pressable
+                  key={opt.code}
+                  onPress={() => onSelect(opt.code)}
+                  style={({ pressed }) => [
+                    styles.themeLanguageCard,
+                    {
+                      backgroundColor: isSelected ? 'rgba(245, 166, 35, 0.08)' : colors.ember,
+                      borderColor: isSelected ? colors.flameAmber : colors.dotInactive,
+                      borderWidth: isSelected ? 1.5 : 1,
+                      borderRadius: radius.card,
+                      opacity: pressed ? 0.9 : 1,
+                    },
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.themeIconBadge,
+                      {
+                        backgroundColor: isSelected ? 'rgba(245, 166, 35, 0.16)' : 'rgba(255, 255, 255, 0.05)',
+                        borderColor: isSelected ? 'rgba(245, 166, 35, 0.35)' : 'rgba(255, 255, 255, 0.08)',
+                      },
+                    ]}
+                  >
+                    <LiteraryThemeIcon
+                      theme={opt.code}
+                      color={isSelected ? colors.flameAmber : colors.fawn}
+                      size={19}
+                    />
+                  </View>
+                  <View style={styles.languageInfo}>
+                    <View style={styles.languageTitleRow}>
+                      <Text
+                        style={[
+                          typography.uiRowTitle,
+                          { color: colors.lampText, fontSize: 15 },
+                        ]}
+                      >
+                        {pres.title !== opt.title ? `${pres.title} ` : opt.title}
+                        {pres.title !== opt.title ? (
+                          <Text style={{ color: colors.fawn, fontSize: 12.5, fontWeight: '400' }}>
+                            ({opt.title})
+                          </Text>
+                        ) : null}
+                      </Text>
+                      {isSuggested ? (
+                        <View
+                          style={{
+                            backgroundColor: 'rgba(245, 166, 35, 0.16)',
+                            borderColor: 'rgba(245, 166, 35, 0.45)',
+                            borderWidth: 1,
+                            borderRadius: radius.pill,
+                            paddingHorizontal: 7,
+                            paddingVertical: 1.5,
+                            marginLeft: 8,
+                          }}
+                        >
+                          <Text
+                            style={[
+                              typography.eyebrowLabel,
+                              { color: colors.flameAmber, fontSize: 9.5, letterSpacing: 0.5 },
+                            ]}
+                          >
+                            Suggested
+                          </Text>
+                        </View>
+                      ) : null}
+                    </View>
+                    <Text
+                      style={[
+                        typography.metadataCaption,
+                        { color: colors.flameAmber, fontSize: 11, marginTop: 1 },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {pres.subtitle}
+                    </Text>
+                    <Text
+                      style={[
+                        typography.metadataCaption,
+                        { color: colors.mutedOnDark, fontSize: 10.5, marginTop: 1 },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {pres.sampleAuthors}
+                    </Text>
+                  </View>
+
+                  <View
+                    style={[
+                      styles.radioIndicator,
+                      {
+                        borderColor: isSelected ? colors.flameAmber : colors.dotInactive,
+                        backgroundColor: isSelected ? colors.flameAmber : 'transparent',
+                      },
+                    ]}
+                  >
+                    {isSelected ? <CheckIcon color={colors.primaryDark} size={11} /> : null}
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
+        ) : (
+          <View
+            style={[
+              styles.emptySearchCard,
+              {
+                backgroundColor: 'rgba(245, 166, 35, 0.05)',
+                borderColor: 'rgba(245, 166, 35, 0.22)',
+                borderRadius: radius.card,
+              },
+            ]}
+          >
+            <View
+              style={[
+                styles.emptySearchIconWrap,
+                {
+                  backgroundColor: 'rgba(245, 166, 35, 0.12)',
+                  borderColor: 'rgba(245, 166, 35, 0.28)',
+                },
+              ]}
+            >
+              <TranslateIcon color={colors.flameAmber} size={22} />
+            </View>
+            <Text
+              style={[
+                typography.uiRowTitle,
+                { color: colors.lampText, fontSize: 15, fontWeight: '600', marginTop: 10 },
+              ]}
+            >
+              More themes are coming soon!
+            </Text>
+            <Text
+              style={[
+                typography.metadataCaption,
+                {
+                  color: colors.mutedOnDark,
+                  fontSize: 12,
+                  textAlign: 'center',
+                  marginTop: 5,
+                  lineHeight: 17,
+                  paddingHorizontal: 12,
+                },
+              ]}
+            >
+              We don&apos;t have &ldquo;{searchQuery}&rdquo; yet, but more themes and editions are in active development.
+            </Text>
+            <Pressable
+              onPress={() => {
+                setSearchQuery('');
+                Keyboard.dismiss();
+              }}
+              style={({ pressed }) => [
+                styles.resetSearchChip,
+                {
+                  backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                  borderColor: 'rgba(255, 255, 255, 0.14)',
+                  opacity: pressed ? 0.7 : 1,
+                },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Reset theme search"
+            >
+              <Text
+                style={[
+                  typography.eyebrowLabel,
+                  { color: colors.lampText, fontSize: 11, letterSpacing: 0.5 },
+                ]}
+              >
+                Clear search
+              </Text>
+            </Pressable>
+          </View>
+        )}
+      </View>
+    </View>
+  );
+}
+
 export default function OnboardingScreen() {
   const { colors, typography, spacing, radius } = useTheme();
   const insets = useSafeAreaInsets();
   const listRef = useRef<FlatList<Slide>>(null);
 
   const [activeIndex, setActiveIndex] = useState(0);
+  const activeIndexRef = useRef(0);
   const [selectedMotherTongue, setSelectedMotherTongue] = useState<MotherTongueCode>(() => getMotherTongue());
   const [selectedTargetLanguage, setSelectedTargetLanguage] = useState<TargetReadingLanguageCode>(() => {
     const current = getTargetReadingLanguage();
@@ -341,22 +1213,43 @@ export default function OnboardingScreen() {
     ({ viewableItems }: { viewableItems: ViewToken[] }) => {
       const first = viewableItems[0];
       if (first?.index != null) {
+        activeIndexRef.current = first.index;
         setActiveIndex(first.index);
       }
     },
   ).current;
 
   const goToNext = useCallback(() => {
-    listRef.current?.scrollToIndex({ index: activeIndex + 1, animated: true });
-  }, [activeIndex]);
-
-  const goToPrevious = useCallback(() => {
-    if (activeIndex > 0) {
-      listRef.current?.scrollToIndex({ index: activeIndex - 1, animated: true });
+    Keyboard.dismiss();
+    const nextIndex = activeIndexRef.current + 1;
+    if (nextIndex < SLIDES.length) {
+      listRef.current?.scrollToIndex({ index: nextIndex, animated: true });
     }
-  }, [activeIndex]);
+  }, []);
+
+  const handleGoBack = useCallback((targetIndex?: number) => {
+    Keyboard.dismiss();
+    const prevIndex = targetIndex != null ? targetIndex : activeIndexRef.current - 1;
+    if (prevIndex >= 0) {
+      listRef.current?.scrollToIndex({ index: prevIndex, animated: true });
+    }
+  }, []);
+
+  useEffect(() => {
+    const onHardwareBack = () => {
+      if (activeIndexRef.current > 0) {
+        handleGoBack();
+        return true;
+      }
+      return false;
+    };
+    const sub = BackHandler.addEventListener('hardwareBackPress', onHardwareBack);
+    return () => sub.remove();
+  }, [handleGoBack]);
 
   const handleSkipToIntroQuestions = useCallback(() => {
+    Keyboard.dismiss();
+    activeIndexRef.current = 3;
     listRef.current?.scrollToIndex({ index: 3, animated: true });
   }, []);
 
@@ -396,33 +1289,59 @@ export default function OnboardingScreen() {
     });
   }, []);
 
-  const handleFinish = useCallback(async () => {
-    setMotherTongue(selectedMotherTongue);
-    setTargetReadingLanguage(selectedTargetLanguage);
-    setLiteraryTheme(selectedTheme);
+  const handleFinish = useCallback(
+    (isSkipping = false) => {
+      Keyboard.dismiss();
 
-    await saveCalibrationData({
-      targetReadingLanguage: selectedTargetLanguage,
-      estimatedWords: vocabEstimate.count,
-      tierLabel: vocabEstimate.tierLabel,
-      selectedWordIds: Array.from(selectedWordIds),
-      recommendedBookId: vocabEstimate.startingBook.id,
-    });
+      // 1. Immediately update in-memory settings and mark onboarding complete
+      try {
+        setMotherTongue(selectedMotherTongue);
+        setTargetReadingLanguage(selectedTargetLanguage);
+        setLiteraryTheme(selectedTheme);
+        markOnboardingComplete();
+      } catch (err) {
+        console.warn('[Onboarding] Error syncing preferences:', err);
+      }
 
-    markOnboardingComplete();
-    logEvent('onboarding_complete', {
-      mother_tongue: selectedMotherTongue,
-      target_reading_language: selectedTargetLanguage,
-      literary_theme: selectedTheme,
-      estimated_words: vocabEstimate.count,
-      recommended_book: vocabEstimate.startingBook.id,
-    });
+      // 2. Persist calibration & analytics in the background (never block navigation)
+      const wordsToSave = isSkipping
+        ? getPresetWordIds(selectedTargetLanguage, 'intermediate')
+        : Array.from(selectedWordIds);
+      const estimateToSave = isSkipping
+        ? calculateVocabularyEstimate(selectedTargetLanguage, wordsToSave, selectedTheme)
+        : vocabEstimate;
 
-    router.replace('/homescreen' as any);
-  }, [selectedMotherTongue, selectedTargetLanguage, selectedTheme, selectedWordIds, vocabEstimate]);
+      saveCalibrationData({
+        targetReadingLanguage: selectedTargetLanguage,
+        estimatedWords: estimateToSave.count,
+        tierLabel: estimateToSave.tierLabel,
+        selectedWordIds: wordsToSave,
+        recommendedBookId: estimateToSave.startingBook.id,
+      }).catch((err) => {
+        console.warn('[Onboarding] Error saving calibration data:', err);
+      });
+
+      logEvent('onboarding_complete', {
+        mother_tongue: selectedMotherTongue,
+        target_reading_language: selectedTargetLanguage,
+        literary_theme: selectedTheme,
+        estimated_words: estimateToSave.count,
+        recommended_book: estimateToSave.startingBook.id,
+        skipped_calibration: isSkipping,
+      });
+
+      // 3. Immediately transition to homescreen
+      try {
+        router.replace('/homescreen' as any);
+      } catch {
+        router.replace('/(tabs)/homescreen' as any);
+      }
+    },
+    [selectedMotherTongue, selectedTargetLanguage, selectedTheme, selectedWordIds, vocabEstimate],
+  );
 
   const renderSlide = useCallback(
-    ({ item }: { item: Slide; index: number }) => {
+    ({ item, index }: { item: Slide; index: number }) => {
       const isMotherTongue = item.key === 'mother_tongue';
       const isTargetLang = item.key === 'target_language';
       const isTheme = item.key === 'theme';
@@ -441,10 +1360,10 @@ export default function OnboardingScreen() {
         >
           {/* Top Header / Skip Button */}
           <View style={styles.topBar}>
-            {activeIndex > 0 ? (
+            {index > 0 ? (
               <Pressable
                 style={({ pressed }) => [styles.skip, pressed && { opacity: 0.7, transform: [{ scale: 0.97 }] }]}
-                onPress={goToPrevious}
+                onPress={() => handleGoBack(index - 1)}
                 hitSlop={14}
                 accessibilityRole="button"
                 accessibilityLabel="Go to previous onboarding step"
@@ -466,11 +1385,13 @@ export default function OnboardingScreen() {
               </Pressable>
             ) : isCalibration ? (
               <Pressable
-                style={({ pressed }) => [styles.skip, pressed && { opacity: 0.7, transform: [{ scale: 0.97 }]}]}
-                onPress={handleFinish}
-                hitSlop={14}
+                style={({ pressed }) => [styles.skip, pressed && { opacity: 0.7, transform: [{ scale: 0.97 }] }]}
+                onPress={() => handleFinish(true)}
+                hitSlop={{ top: 14, bottom: 14, left: 16, right: 16 }}
+                accessibilityRole="button"
+                accessibilityLabel="Skip vocabulary test and begin reading"
               >
-                <Text style={[typography.uiRowTitle, { color: colors.fawn, fontSize: 13 }]}>
+                <Text style={[typography.uiRowTitle, { color: colors.flameAmber, fontSize: 13, fontWeight: '600' }]}>
                   Skip test
                 </Text>
               </Pressable>
@@ -481,316 +1402,28 @@ export default function OnboardingScreen() {
 
           {/* Slide Body Content */}
           {isMotherTongue ? (
-            /* Slide 4: Mother Tongue Question */
-            <View style={styles.questionSection}>
-              <Animated.View
-                entering={FadeIn.delay(60).duration(260).easing(EASE_OUT).reduceMotion(ReduceMotion.System)}
-                style={[styles.copy, { marginBottom: spacing.md }]}
-              >
-                <Text
-                  style={[
-                    typography.onboardingHeadline,
-                    { color: colors.lampText, textAlign: 'center', fontSize: 23 },
-                  ]}
-                >
-                  {item.headline}
-                </Text>
-                <Text
-                  style={[
-                    typography.metadataCaption,
-                    { color: colors.mutedOnDark, textAlign: 'center', marginTop: 6, fontSize: 13 },
-                  ]}
-                >
-                  {item.subtext}
-                </Text>
-              </Animated.View>
-
-              <Animated.View
-                entering={FadeIn.delay(120).duration(260).easing(EASE_OUT).reduceMotion(ReduceMotion.System)}
-                style={styles.optionsList}
-              >
-                {MOTHER_TONGUES.map((opt) => {
-                  const isSelected = selectedMotherTongue === opt.code;
-                  return (
-                    <Pressable
-                      key={opt.code}
-                      onPress={() => handleSelectMotherTongue(opt.code)}
-                      style={({ pressed }) => [
-                        styles.languageCard,
-                        {
-                          backgroundColor: isSelected ? 'rgba(245, 166, 35, 0.08)' : colors.ember,
-                          borderColor: isSelected ? colors.flameAmber : colors.dotInactive,
-                          borderWidth: isSelected ? 1.5 : 1,
-                          borderRadius: radius.card,
-                          opacity: pressed ? 0.9 : 1,
-                        },
-                      ]}
-                    >
-                      <Text style={styles.flagEmoji}>{opt.flag}</Text>
-                      <View style={styles.languageInfo}>
-                        <View style={styles.languageTitleRow}>
-                          <Text
-                            style={[
-                              typography.uiRowTitle,
-                              { color: colors.lampText, fontSize: 16 },
-                            ]}
-                          >
-                            {opt.nativeName}{' '}
-                            <Text style={{ color: colors.fawn, fontSize: 13, fontWeight: '400' }}>
-                              ({opt.name})
-                            </Text>
-                          </Text>
-                        </View>
-                        <Text
-                          style={[
-                            typography.metadataCaption,
-                            { color: colors.flameAmber, fontSize: 12, marginTop: 1 },
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {opt.sourceName}
-                        </Text>
-                        <Text
-                          style={[
-                            typography.metadataCaption,
-                            { color: colors.mutedOnDark, fontSize: 11, marginTop: 1 },
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {opt.sampleAuthors}
-                        </Text>
-                      </View>
-
-                      <View
-                        style={[
-                          styles.radioIndicator,
-                          {
-                            borderColor: isSelected ? colors.flameAmber : colors.dotInactive,
-                            backgroundColor: isSelected ? colors.flameAmber : 'transparent',
-                          },
-                        ]}
-                      >
-                        {isSelected ? <CheckIcon color={colors.primaryDark} size={11} /> : null}
-                      </View>
-                    </Pressable>
-                  );
-                })}
-              </Animated.View>
-            </View>
+            <MotherTongueSlide
+              selectedCode={selectedMotherTongue}
+              onSelect={handleSelectMotherTongue}
+              headline={item.headline}
+              subtext={item.subtext}
+            />
           ) : isTargetLang ? (
-            /* Slide 5: Target Reading Language */
-            <View style={styles.questionSection}>
-              <Animated.View
-                entering={FadeIn.delay(60).duration(260).easing(EASE_OUT).reduceMotion(ReduceMotion.System)}
-                style={[styles.copy, { marginBottom: spacing.md }]}
-              >
-                <Text
-                  style={[
-                    typography.onboardingHeadline,
-                    { color: colors.lampText, textAlign: 'center', fontSize: 23 },
-                  ]}
-                >
-                  {item.headline}
-                </Text>
-                <Text
-                  style={[
-                    typography.metadataCaption,
-                    { color: colors.mutedOnDark, textAlign: 'center', marginTop: 6, fontSize: 13 },
-                  ]}
-                >
-                  {item.subtext}
-                </Text>
-              </Animated.View>
-
-              <Animated.View
-                entering={FadeIn.delay(120).duration(260).easing(EASE_OUT).reduceMotion(ReduceMotion.System)}
-                style={styles.optionsList}
-              >
-                {TARGET_READING_LANGUAGES.map((opt) => {
-                  const isSelected = selectedTargetLanguage === opt.code;
-                  return (
-                    <Pressable
-                      key={opt.code}
-                      onPress={() => handleSelectTargetLanguage(opt.code)}
-                      style={({ pressed }) => [
-                        styles.languageCard,
-                        {
-                          backgroundColor: isSelected ? 'rgba(245, 166, 35, 0.08)' : colors.ember,
-                          borderColor: isSelected ? colors.flameAmber : colors.dotInactive,
-                          borderWidth: isSelected ? 1.5 : 1,
-                          borderRadius: radius.card,
-                          opacity: pressed ? 0.9 : 1,
-                        },
-                      ]}
-                    >
-                      <Text style={styles.flagEmoji}>{opt.flag}</Text>
-                      <View style={styles.languageInfo}>
-                        <View style={styles.languageTitleRow}>
-                          <Text
-                            style={[
-                              typography.uiRowTitle,
-                              { color: colors.lampText, fontSize: 16 },
-                            ]}
-                          >
-                            {opt.name}{' '}
-                            <Text style={{ color: colors.fawn, fontSize: 13, fontWeight: '400' }}>
-                              ({opt.nativeName})
-                            </Text>
-                          </Text>
-                        </View>
-                        <Text
-                          style={[
-                            typography.metadataCaption,
-                            { color: colors.flameAmber, fontSize: 12, marginTop: 1 },
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {opt.sourceName}
-                        </Text>
-                        <Text
-                          style={[
-                            typography.metadataCaption,
-                            { color: colors.mutedOnDark, fontSize: 11, marginTop: 1 },
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {opt.sampleAuthors}
-                        </Text>
-                      </View>
-
-                      <View
-                        style={[
-                          styles.radioIndicator,
-                          {
-                            borderColor: isSelected ? colors.flameAmber : colors.dotInactive,
-                            backgroundColor: isSelected ? colors.flameAmber : 'transparent',
-                          },
-                        ]}
-                      >
-                        {isSelected ? <CheckIcon color={colors.primaryDark} size={11} /> : null}
-                      </View>
-                    </Pressable>
-                  );
-                })}
-              </Animated.View>
-            </View>
+            <TargetLanguageSlide
+              selectedCode={selectedTargetLanguage}
+              onSelect={handleSelectTargetLanguage}
+              headline={item.headline}
+              subtext={item.subtext}
+            />
           ) : isTheme ? (
-            /* Slide 6: Literary Themes Selection */
-            <View style={styles.questionSection}>
-              <Animated.View
-                entering={FadeIn.delay(60).duration(260).easing(EASE_OUT).reduceMotion(ReduceMotion.System)}
-                style={[styles.copy, { marginBottom: spacing.md }]}
-              >
-                <Text
-                  style={[
-                    typography.onboardingHeadline,
-                    { color: colors.lampText, textAlign: 'center', fontSize: 23 },
-                  ]}
-                >
-                  {item.headline}
-                </Text>
-                <Text
-                  style={[
-                    typography.metadataCaption,
-                    { color: colors.mutedOnDark, textAlign: 'center', marginTop: 6, fontSize: 13 },
-                  ]}
-                >
-                  {item.subtext}
-                </Text>
-              </Animated.View>
-
-              <Animated.View
-                entering={FadeIn.delay(120).duration(260).easing(EASE_OUT).reduceMotion(ReduceMotion.System)}
-                style={styles.optionsList}
-              >
-                {LITERARY_THEMES.map((opt) => {
-                  const isSelected = selectedTheme === opt.code;
-                  const isSuggested = opt.code === getSuggestedThemeForMotherTongue(selectedMotherTongue);
-                  return (
-                    <Pressable
-                      key={opt.code}
-                      onPress={() => setSelectedTheme(opt.code)}
-                      style={({ pressed }) => [
-                        styles.languageCard,
-                        {
-                          backgroundColor: isSelected ? 'rgba(245, 166, 35, 0.08)' : colors.ember,
-                          borderColor: isSelected ? colors.flameAmber : colors.dotInactive,
-                          borderWidth: isSelected ? 1.5 : 1,
-                          borderRadius: radius.card,
-                          opacity: pressed ? 0.9 : 1,
-                        },
-                      ]}
-                    >
-                      <Text style={styles.flagEmoji}>{opt.icon}</Text>
-                      <View style={styles.languageInfo}>
-                        <View style={styles.languageTitleRow}>
-                          <Text
-                            style={[
-                              typography.uiRowTitle,
-                              { color: colors.lampText, fontSize: 16 },
-                            ]}
-                          >
-                            {opt.title}
-                          </Text>
-                          {isSuggested ? (
-                            <View
-                              style={{
-                                backgroundColor: 'rgba(245, 166, 35, 0.16)',
-                                borderColor: 'rgba(245, 166, 35, 0.45)',
-                                borderWidth: 1,
-                                borderRadius: radius.pill,
-                                paddingHorizontal: 7,
-                                paddingVertical: 1.5,
-                                marginLeft: 8,
-                              }}
-                            >
-                              <Text
-                                style={[
-                                  typography.eyebrowLabel,
-                                  { color: colors.flameAmber, fontSize: 9, letterSpacing: 0.5 },
-                                ]}
-                              >
-                                SUGGESTED
-                              </Text>
-                            </View>
-                          ) : null}
-                        </View>
-                        <Text
-                          style={[
-                            typography.metadataCaption,
-                            { color: colors.flameAmber, fontSize: 12, marginTop: 1 },
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {opt.paletteLabel ? `${opt.paletteLabel} · ` : ''}{opt.subtitle}
-                        </Text>
-                        <Text
-                          style={[
-                            typography.metadataCaption,
-                            { color: colors.mutedOnDark, fontSize: 11, marginTop: 1 },
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {opt.sampleAuthors}
-                        </Text>
-                      </View>
-
-                      <View
-                        style={[
-                          styles.radioIndicator,
-                          {
-                            borderColor: isSelected ? colors.flameAmber : colors.dotInactive,
-                            backgroundColor: isSelected ? colors.flameAmber : 'transparent',
-                          },
-                        ]}
-                      >
-                        {isSelected ? <CheckIcon color={colors.primaryDark} size={11} /> : null}
-                      </View>
-                    </Pressable>
-                  );
-                })}
-              </Animated.View>
-            </View>
+            <ThemeSlide
+              selectedCode={selectedTheme}
+              motherTongue={selectedMotherTongue}
+              targetReadingLanguage={selectedTargetLanguage}
+              onSelect={setSelectedTheme}
+              headline={item.headline}
+              subtext={item.subtext}
+            />
           ) : isCalibration ? (
             /* Slide 7: Vocabulary Calibration Test */
             <View style={styles.calibrationSection}>
@@ -1032,6 +1665,8 @@ export default function OnboardingScreen() {
       activePreset,
       colors,
       handleFinish,
+      handleGoBack,
+      handleSelectMotherTongue,
       handleSelectPreset,
       handleSelectTargetLanguage,
       handleSkipToIntroQuestions,
@@ -1065,13 +1700,30 @@ export default function OnboardingScreen() {
       <FlatList
         ref={listRef}
         data={SLIDES}
+        extraData={`${selectedMotherTongue}_${selectedTargetLanguage}_${selectedTheme}_${activePreset}_${selectedWordIds.size}`}
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}
         keyExtractor={(item) => item.key}
         renderItem={renderSlide}
         onViewableItemsChanged={onViewableItemsChanged}
-        viewabilityConfig={{ itemVisiblePercentThreshold: 60 }}
+        viewabilityConfig={{ itemVisiblePercentThreshold: 50 }}
+        getItemLayout={(_, index) => ({
+          length: screenWidth,
+          offset: screenWidth * index,
+          index,
+        })}
+        onScrollToIndexFailed={(info) => {
+          listRef.current?.scrollToOffset({
+            offset: info.index * screenWidth,
+            animated: true,
+          });
+        }}
+        initialNumToRender={SLIDES.length}
+        maxToRenderPerBatch={SLIDES.length}
+        windowSize={SLIDES.length}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
         overScrollMode="never"
       />
 
@@ -1118,9 +1770,19 @@ export default function OnboardingScreen() {
                 transform: [{ scale: pressed ? 0.98 : 1 }],
               },
             ]}
-            onPress={handleFinish}
+            onPress={() => handleFinish(false)}
           >
-            <Text style={[typography.buttonLabel, { color: colors.primaryDark, fontSize: 15 }]}>
+            <Text
+              style={[
+                typography.buttonLabel,
+                {
+                  color: colors.primaryDark,
+                  fontSize: 15,
+                  includeFontPadding: false,
+                  textAlignVertical: 'center',
+                },
+              ]}
+            >
               Begin Reading
             </Text>
             <View style={{ marginLeft: 6 }}>
@@ -1139,10 +1801,21 @@ export default function OnboardingScreen() {
             ]}
             onPress={goToNext}
           >
-            <Text style={[typography.buttonLabel, { color: colors.primaryDark, fontSize: 14 }]}>Continue</Text>
-            <View style={{ marginLeft: 8 }}>
-              <ChevronRightIcon color={colors.primaryDark} size={18} />
-            </View>
+            <Text
+              style={[
+                typography.buttonLabel,
+                {
+                  color: colors.primaryDark,
+                  fontSize: 14,
+                  lineHeight: 18,
+                  includeFontPadding: false,
+                  textAlignVertical: 'center',
+                },
+              ]}
+            >
+              Continue
+            </Text>
+            <ChevronRightIcon color={colors.primaryDark} size={16} />
           </Pressable>
         )}
       </Animated.View>
@@ -1161,12 +1834,15 @@ const styles = StyleSheet.create({
   topBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    height: 32,
+    height: 36,
     alignItems: 'center',
+    zIndex: 20,
   },
   skip: {
-    paddingVertical: 6,
-    paddingHorizontal: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   skipPlaceholder: {
     height: 24,
@@ -1196,6 +1872,103 @@ const styles = StyleSheet.create({
   optionsList: {
     gap: 10,
     marginTop: 4,
+  },
+  motherTongueSection: {
+    flex: 1,
+    justifyContent: 'flex-start',
+    paddingTop: 10,
+    paddingBottom: 14,
+  },
+  motherTongueContentArea: {
+    width: '100%',
+  },
+  motherTongueOptionsList: {
+    gap: 7,
+    marginTop: 2,
+  },
+  motherTongueLanguageCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  themeSection: {
+    flex: 1,
+    justifyContent: 'flex-start',
+    paddingTop: 10,
+    paddingBottom: 14,
+  },
+  themeContentArea: {
+    width: '100%',
+  },
+  themeOptionsList: {
+    gap: 7,
+    marginTop: 2,
+  },
+  themeLanguageCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  searchBarWrap: {
+    marginBottom: 8,
+  },
+  searchBarContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 40,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    gap: 8,
+  },
+  searchInput: {
+    flex: 1,
+    height: 38,
+    paddingVertical: 0,
+  },
+  searchClearBtn: {
+    padding: 4,
+  },
+  themeIconBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  comingSoonCard: {
+    marginTop: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptySearchCard: {
+    marginTop: 12,
+    paddingVertical: 22,
+    paddingHorizontal: 20,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptySearchIconWrap: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  resetSearchChip: {
+    marginTop: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 16,
+    borderWidth: 1,
   },
   languageCard: {
     flexDirection: 'row',
@@ -1304,12 +2077,14 @@ const styles = StyleSheet.create({
     borderRadius: 3,
   },
   nextButton: {
-    minWidth: 118,
     height: 48,
+    paddingLeft: 22,
+    paddingRight: 16,
     borderRadius: 24,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 6,
   },
   getStartedButton: {
     width: '100%',

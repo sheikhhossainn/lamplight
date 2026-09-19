@@ -70,8 +70,7 @@ export async function checkCachedTranslationCap(isPremium: boolean): Promise<Cap
     return capFromUsed(usageSnapshot.used);
   }
   const used = await getCachedTodayUsageCount();
-  if (used == null) return null;
-  return capFromUsed(used);
+  return capFromUsed(used ?? 0);
 }
 
 export async function recordTranslationUsage(isPremium: boolean): Promise<void> {

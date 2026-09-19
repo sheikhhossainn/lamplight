@@ -85,3 +85,53 @@ export async function resolveLibraryItemId(
 
   return null;
 }
+
+/**
+ * Resolves local_book_id for a given libraryItemId.
+ * Checks local cache first; if missing and online, queries Supabase library_items.
+ */
+export async function resolveLocalBookId(
+  libraryItemId: string,
+  accessToken?: string,
+  dbHandle?: SQLiteDatabase,
+): Promise<string | null> {
+  const db = dbHandle ?? (await getDb());
+  const row = await db.getFirstAsync<CloudLibraryMapSqlRow>(
+    'SELECT local_book_id FROM cloud_library_map WHERE library_item_id = ?',
+    [libraryItemId],
+  );
+  if (row?.local_book_id) return row.local_book_id;
+
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return null;
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    const token = accessToken ?? SUPABASE_ANON_KEY;
+
+    const response = await fetch(
+      `${SUPABASE_URL}/rest/v1/library_items?id=eq.${encodeURIComponent(libraryItemId)}&select=catalog_book_id`,
+      {
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${token}`,
+        },
+        signal: controller.signal,
+      },
+    ).finally(() => clearTimeout(timeoutId));
+
+    if (response.ok) {
+      const items = (await response.json()) as Array<{ catalog_book_id: string }>;
+      if (items && items.length > 0 && items[0]?.catalog_book_id) {
+        const localBookId = items[0].catalog_book_id;
+        await setLibraryMapping(localBookId, libraryItemId, localBookId, dbHandle);
+        return localBookId;
+      }
+    }
+  } catch {
+    // Offline or network error
+  }
+
+  return null;
+}
+

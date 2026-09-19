@@ -76,7 +76,7 @@ Sand Cloth #C6B896  │ Night Plum   #252228  │ Terracotta   #C05C1F
 │  │  Kokoro  │ │ Azaleas  │ │ P & P    │ │ Al-Fatih │     │
 │  └──────────┘ └──────────┘ └──────────┘ └──────────┘     │
 │                                                          │
-│  [ 🕯️ Home ]    [ 📚 Library ]    [ 🌌 Feelings ]         │
+│  [ 🕯️ Home ]    [ 📚 Library ]    [ 📇 Vocabulary ]    [ ⚙️ Settings ] │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -241,9 +241,10 @@ graph TD
    - Never rely on third-party scrapers (like Open Library or Wikimedia thumbs) at runtime—they fail in Android `expo-image` due to multi-hop redirects and 1×1 blank transparent pixels.
    - All approved hero covers live in `https://dowrzrsaywpgfyhirxlx.supabase.co/storage/v1/object/public/book-covers/{bookId}.jpg`.
    - Every other book cleanly falls back to the painted typographic spine (`coverUrl: null`).
-3. **Mother Tongue & Language Pair System**:
-   - Readers learn literature in target languages (EN, BN, JA, KO, AR, SA).
-   - The dictionary engine dynamically translates tapped words into the user's selected **Mother Tongue** (e.g. English, Bengali, Spanish, French, Urdu, Japanese, Korean) with grammatical parts of speech, phonetic furigana/hangul, and literary context.
+3. **Tri-State Preference Model & Language System**:
+   - `literaryTheme` (Aesthetic Atmosphere): Korean Hanji, Japanese Washi, Bengali River/Ink, Arabic Navy/Gold, Western Cream.
+   - `motherTongue` (UI Support & Lookups): Dynamically localizes banner typography and dictionary definitions without disrupting the chosen visual palette.
+   - `targetReadingLanguage` (Reading Goal): Prioritizes the Homescreen spotlight and primary Library shelves.
 
 ---
 

@@ -19,8 +19,9 @@ unless asked. Ask questions only when genuinely blocked; otherwise implement.
 
 ## Context loading — graphify, scoped
 
-Use `graphify query` (or `path`/`explain`) when: architecture is unknown, the implementation
-location is unknown, dependencies need tracing, or the code is unfamiliar.
+Use `graphify query` (or `path`/`explain`) when: a topic/feature is missing or not properly
+documented in `docs/`, architecture is unknown, implementation location is unknown, dependencies
+need tracing, or the code is unfamiliar.
 
 Skip graphify when the file path is already known: styling tweaks, copy changes, localized bug
 fixes, small edits in already-open files — just read the file.
@@ -47,8 +48,14 @@ Understand request → graphify only if needed → read minimum files → implem
 
 ## Hard constraints
 
-- **Git author & push identity**: all commits and pushes must use the identity
+- **Git author identity**: all commits and pushes must use the identity
   `sheikhhossainn` (`skhossain799@gmail.com`). Never commit or push under any other account.
+- **NEVER push without explicit user permission**: NEVER execute `git push` without the user explicitly
+  and directly commanding you to push. This rule is absolute and strictly enforced across ALL modes —
+  including turbo mode, bypass mode, auto-pilot, or any mode that bypasses terminal confirmations. All
+  work must remain strictly local until the user explicitly requests a push.
+- **NEVER delete protected branches**: NEVER delete the `main` or `dev` branch under any circumstances,
+  locally or remotely.
 - **expo-sqlite (Android)**: every DB call goes through the serializing queue in
   `db/client.ts`. Never bypass it, never call the raw db handle.
 - **SDK pin**: Expo Go on-device must match SDK 57 exactly (fix procedure:
@@ -76,6 +83,13 @@ Everything else: `docs/design.md`.
 | `docs/debugging.md` | Known pitfalls (Router, SQLite, SDK, fetch scripts), debug workflow |
 | `docs/scriptures.md` | Scripture verticals (Quran/Bible/Vedas): sources, recipe |
 | `docs/context-verses.md` | Mood→verse semantic search, embeddings, Edge Function |
-| `docs/feeling-feature.md` | Feeling sanctuary: voice STT, emotion matcher, wild card deck |
 | `docs/APP_VISUAL_BLUEPRINT.md` | Complete visual blueprint, ASCII wireframes, and design context for AI |
 | `ROADMAP.md` | Product phasing, free-tier caps, schema-to-feature map |
+
+### Docs fallback to graphify
+
+If a feature, mechanism, or component is not properly documented in `docs/`:
+1. **Never guess** or run blind directory scans (`grep`/`find`).
+2. Check `graphify-out/GRAPH_REPORT.md` under **Community Hubs** to find the owning community.
+3. Run `graphify explain "<SymbolOrFile>"` or `graphify query "<feature keyword>"` to map dependencies and call flow.
+4. Read only the specific target files identified in that minimal cluster, implement the smallest diff, and verify.

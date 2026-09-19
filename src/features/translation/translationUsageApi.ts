@@ -43,11 +43,16 @@ export async function getCachedTodayUsageCount(): Promise<number | null> {
 // than bricking a brand-new offline session.
 export async function getTodayUsageCount(): Promise<number> {
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return 0;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 4000);
   try {
     const { accessToken, userId } = await getSession();
     const response = await fetch(
       `${SUPABASE_URL}/rest/v1/translation_usage?owner_id=eq.${userId}&usage_date=eq.${todayKey()}&select=count_used`,
-      { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${accessToken}` } },
+      {
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${accessToken}` },
+        signal: controller.signal,
+      },
     );
     if (!response.ok) throw new Error(`Usage fetch failed: ${response.status}`);
     const rows = (await response.json()) as { count_used: number }[];
@@ -57,6 +62,8 @@ export async function getTodayUsageCount(): Promise<number> {
   } catch {
     const cache = await readCache();
     return cache && cache.date === todayKey() ? cache.count : 0;
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
@@ -70,6 +77,8 @@ export async function incrementTodayUsage(): Promise<void> {
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return;
   const cache = await readCache();
   const optimistic = cache && cache.date === todayKey() ? cache.count + 1 : 1;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 4000);
   try {
     const { accessToken, userId } = await getSession();
     const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/increment_translation_usage`, {
@@ -80,11 +89,14 @@ export async function incrementTodayUsage(): Promise<void> {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ p_owner_id: userId, p_date: todayKey() }),
+      signal: controller.signal,
     });
     if (!response.ok) throw new Error(`Increment failed: ${response.status}`);
     const serverCount = (await response.json()) as number;
     await writeCache(serverCount);
   } catch {
     await writeCache(optimistic);
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
