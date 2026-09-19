@@ -45,7 +45,6 @@ import {
 import { getSuggestedThemeForMotherTongue, setLiteraryTheme } from '@/features/settings/literaryTheme';
 import { useTheme } from '@/theme/ThemeProvider';
 import { getCultureThemeColors, Layout, Spacing } from '@/theme/tokens';
-import { getNativeUiTextStyle } from '@/theme/typography';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -555,8 +554,9 @@ export default function SettingsScreen() {
             onPress={() => setMotherTonguePickerVisible(true)}
             style={[styles.pairPill, animatedPairPillStyle, { borderRadius: radius.pill }]}
           >
-            <Animated.Text style={[getNativeUiTextStyle(motherTongue, 'metadata'), animatedPairPillTextStyle]}>
-              {motherTongueOption.flag} {motherTongueOption.nativeName}
+            <Text style={styles.flagIcon}>{motherTongueOption.flag}</Text>
+            <Animated.Text style={[typography.uiRowTitle, animatedPairPillTextStyle, { fontSize: 12 }]}>
+              {motherTongueOption.nativeName}
             </Animated.Text>
           </AnimatedPressable>
         </View>
@@ -894,8 +894,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#F5EDE1',
   },
   pairPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
     paddingHorizontal: 11,
     paddingVertical: 6,
+  },
+  flagIcon: {
+    fontSize: 12,
   },
   upgradeButton: {
     paddingHorizontal: 13,
