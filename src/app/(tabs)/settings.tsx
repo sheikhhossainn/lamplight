@@ -20,11 +20,19 @@ import {
   useAppUpdateBanner,
   type AppUpdateStatus,
 } from '@/features/app-update/useAppUpdateBanner';
+import { triggerSync, useSyncStatus, type SyncStatus } from '@/features/sync/syncWorker';
+import { getStorageUsage, clearTemporaryCache, type StorageUsage } from '@/features/storage/storageManager';
+import { RedeemPromoModal } from '@/components/RedeemPromoModal';
 import { setTargetLanguage, targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
 import { useReadingTheme } from '@/features/settings/readingTheme';
 import { requestThemeChange, themeTransitionProgress } from '@/features/settings/themeTransition';
 import { setPageTurnSoundEnabled, usePageTurnSoundEnabled } from '@/features/settings/soundPrefs';
-import { isPremiumUser } from '@/features/subscription/subscriptionState';
+import {
+  isPremiumUser,
+  getEntitlementSnapshot,
+  subscribeToEntitlements,
+  type EntitlementSnapshot,
+} from '@/features/subscription/subscriptionState';
 import { checkCachedTranslationCap, checkTranslationCap } from '@/features/translation';
 import type { CapCheck } from '@/features/translation/capPolicy';
 import { LanguagePicker } from '@/components/LanguagePicker';
@@ -280,14 +288,30 @@ function updateStatusLabel(status: AppUpdateStatus, progress: number | undefined
   }
 }
 
+function syncStatusLabel(status: SyncStatus): string {
+  switch (status) {
+    case 'syncing':
+      return 'Syncing…';
+    case 'offline_saved':
+      return 'Offline — changes saved';
+    case 'needs_attention':
+      return 'Needs attention';
+    case 'synced':
+    default:
+      return 'Synced';
+  }
+}
+
 export default function SettingsScreen() {
   const { colors, cultureTheme, typography, spacing, radius } = useTheme();
   const dayColors = getCultureThemeColors(cultureTheme, 'day');
   const lampColors = getCultureThemeColors(cultureTheme, 'lamp');
   const insets = useSafeAreaInsets();
   const { status: updateStatus, downloadProgress, applyUpdate } = useAppUpdateBanner();
+  const syncStatus = useSyncStatus();
 
   const theme = useReadingTheme();
+  const isLamp = theme === 'lamp';
   const targetLanguage = useTargetLanguage();
   const motherTongue = useMotherTongue();
   const motherTongueOption = getMotherTongueOption(motherTongue);
@@ -298,6 +322,27 @@ export default function SettingsScreen() {
   const [translationsLeft, setTranslationsLeft] = useState<number | null | undefined>(undefined);
   const [languagePickerVisible, setLanguagePickerVisible] = useState(false);
   const [motherTonguePickerVisible, setMotherTonguePickerVisible] = useState(false);
+  const [storageUsage, setStorageUsage] = useState<StorageUsage | null>(null);
+  const [clearingCache, setClearingCache] = useState(false);
+  const [promoModalVisible, setPromoModalVisible] = useState(false);
+  const [entitlement, setEntitlement] = useState<EntitlementSnapshot>(getEntitlementSnapshot());
+
+  useEffect(() => {
+    return subscribeToEntitlements(setEntitlement);
+  }, []);
+
+  const isPremium = entitlement.status === 'premium' || entitlement.status === 'trial' || entitlement.status === 'grace';
+
+  const loadStorage = useCallback(() => {
+    getStorageUsage().then(setStorageUsage).catch(() => {});
+  }, []);
+
+  const handleClearCache = async () => {
+    setClearingCache(true);
+    await clearTemporaryCache();
+    loadStorage();
+    setClearingCache(false);
+  };
 
   const themeAnim = themeTransitionProgress;
 
@@ -408,11 +453,12 @@ export default function SettingsScreen() {
         );
       });
       checkTranslationCap(isPremium).then(apply);
+      loadStorage();
 
       return () => {
         cancelled = true;
       };
-    }, []),
+    }, [loadStorage]),
   );
 
   return (
@@ -509,25 +555,72 @@ export default function SettingsScreen() {
       <Animated.Text style={[typography.eyebrowLabel, animatedFawnTextStyle, { marginBottom: spacing.sm }]}>
         Storage
       </Animated.Text>
-      <AnimatedPressable
-        onPress={() => router.push('/saved-books')}
+      <Animated.View
         style={[
           styles.card,
-          styles.settingsRow,
           animatedCardStyle,
           { borderRadius: radius.card, marginBottom: spacing.xl },
         ]}
       >
-        <Animated.Text style={[typography.uiRowTitle, animatedInkTextStyle, { fontSize: 13 }]}>Saved books</Animated.Text>
-        <View style={{ width: 15, height: 15, alignItems: 'center', justifyContent: 'center' }}>
-          <Animated.View style={[StyleSheet.absoluteFill, styles.centered, dayChevronStyle]}>
-            <ChevronRightIcon color={dayColors.straw} size={15} />
-          </Animated.View>
-          <Animated.View style={[StyleSheet.absoluteFill, styles.centered, nightChevronStyle]}>
-            <ChevronRightIcon color={lampColors.straw} size={15} />
-          </Animated.View>
+        <Pressable
+          onPress={() => router.push('/saved-books')}
+          style={[styles.settingsRow, { paddingVertical: 10 }]}
+        >
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Animated.Text style={[typography.uiRowTitle, animatedInkTextStyle, { fontSize: 13 }]}>
+              Saved books
+            </Animated.Text>
+            <Animated.Text style={[typography.metadataCaption, animatedFawnTextStyle, { fontSize: 11, marginTop: 2 }]}>
+              {storageUsage
+                ? `${(storageUsage.downloadsBytes / (1024 * 1024)).toFixed(1)} MB (${storageUsage.downloadedBookCount} ${storageUsage.downloadedBookCount === 1 ? 'book' : 'books'})`
+                : 'Downloaded reading'}
+            </Animated.Text>
+          </View>
+          <View style={{ width: 15, height: 15, alignItems: 'center', justifyContent: 'center' }}>
+            <Animated.View style={[StyleSheet.absoluteFill, styles.centered, dayChevronStyle]}>
+              <ChevronRightIcon color={dayColors.straw} size={15} />
+            </Animated.View>
+            <Animated.View style={[StyleSheet.absoluteFill, styles.centered, nightChevronStyle]}>
+              <ChevronRightIcon color={lampColors.straw} size={15} />
+            </Animated.View>
+          </View>
+        </Pressable>
+
+        <View style={[styles.itemDivider, { borderBottomColor: isLamp ? '#332E27' : '#EAE1D3' }]} />
+
+        <View style={[styles.settingsRow, { paddingVertical: 10 }]}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Animated.Text style={[typography.uiRowTitle, animatedInkTextStyle, { fontSize: 13 }]}>
+              Temporary app cache
+            </Animated.Text>
+            <Animated.Text style={[typography.metadataCaption, animatedFawnTextStyle, { fontSize: 11, marginTop: 2 }]}>
+              {storageUsage
+                ? `${(storageUsage.rebuildableCacheBytes / (1024 * 1024)).toFixed(1)} MB (${storageUsage.cacheEntryCount} entries)`
+                : 'Translations & covers'}
+            </Animated.Text>
+          </View>
+          <Pressable
+            onPress={handleClearCache}
+            disabled={clearingCache}
+            style={[
+              styles.upgradeButton,
+              {
+                backgroundColor: isLamp ? '#3A342D' : '#E5DAC8',
+                borderRadius: radius.pill,
+                minWidth: 64,
+                alignItems: 'center',
+                justifyContent: 'center',
+              },
+            ]}
+          >
+            {clearingCache ? (
+              <ActivityIndicator size="small" color={colors.ink} />
+            ) : (
+              <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 11 }]}>Clear</Text>
+            )}
+          </Pressable>
         </View>
-      </AnimatedPressable>
+      </Animated.View>
 
       <Animated.Text style={[typography.eyebrowLabel, animatedFawnTextStyle, { marginBottom: spacing.sm }]}>
         Account
@@ -535,34 +628,114 @@ export default function SettingsScreen() {
       <Animated.View
         style={[
           styles.card,
-          styles.settingsRow,
           animatedAccountCardStyle,
           { borderRadius: radius.card },
         ]}
       >
-        <View>
-          <Animated.Text style={[typography.uiRowTitle, animatedLampTextStyle, { fontSize: 13 }]}>
-            Free plan
-          </Animated.Text>
-          <Animated.Text
-            style={[
-              typography.metadataCaption,
-              animatedAccountSubtextStyle,
-              { fontSize: 11, marginTop: 2 },
-            ]}
-          >
-            {translationsLeft === undefined
-              ? 'Checking translations left…'
-              : translationsLeft === null
+        <View style={styles.settingsRow}>
+          <View>
+            <Animated.Text style={[typography.uiRowTitle, animatedLampTextStyle, { fontSize: 13 }]}>
+              {isPremium ? (entitlement.source === 'promo' ? 'Promo Pass' : 'Premium Plan') : 'Free Plan'}
+            </Animated.Text>
+            <Animated.Text
+              style={[
+                typography.metadataCaption,
+                animatedAccountSubtextStyle,
+                { fontSize: 11, marginTop: 2 },
+              ]}
+            >
+              {isPremium
                 ? 'Unlimited translations'
-                : `${translationsLeft} translations left today`}
+                : translationsLeft === undefined
+                  ? 'Checking translations left…'
+                  : `${translationsLeft} translations left today`}
+            </Animated.Text>
+          </View>
+          {isPremium ? (
+            <View
+              style={[
+                styles.upgradeButton,
+                {
+                  backgroundColor: isLamp ? '#3A342D' : '#E5DAC8',
+                  borderRadius: radius.pill,
+                  paddingHorizontal: 12,
+                  paddingVertical: 6,
+                },
+              ]}
+            >
+              <Text style={[typography.uiRowTitle, { color: colors.flameAmber, fontSize: 12 }]}>Active</Text>
+            </View>
+          ) : (
+            <Pressable
+              onPress={() => router.push('/paywall')}
+              style={[styles.upgradeButton, { backgroundColor: colors.flameAmber, borderRadius: radius.pill }]}
+            >
+              <Text style={[typography.uiRowTitle, { color: colors.primaryDark, fontSize: 12 }]}>Upgrade</Text>
+            </Pressable>
+          )}
+        </View>
+
+        <View style={[styles.itemDivider, { borderBottomColor: '#2B2621' }]} />
+
+        <Pressable
+          onPress={() => setPromoModalVisible(true)}
+          style={[styles.settingsRow, { paddingVertical: 10 }]}
+        >
+          <Animated.Text style={[typography.uiRowTitle, animatedLampTextStyle, { fontSize: 13 }]}>
+            Redeem promo code
+          </Animated.Text>
+          <View style={{ width: 15, height: 15, alignItems: 'center', justifyContent: 'center' }}>
+            <ChevronRightIcon color={colors.flameAmber} size={14} />
+          </View>
+        </Pressable>
+      </Animated.View>
+
+      <Animated.Text style={[typography.eyebrowLabel, animatedFawnTextStyle, { marginTop: spacing.xl, marginBottom: spacing.sm }]}>
+        Cloud Sync
+      </Animated.Text>
+      <Animated.View
+        style={[
+          styles.card,
+          styles.settingsRow,
+          animatedCardStyle,
+          { borderRadius: radius.card },
+        ]}
+      >
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Animated.Text style={[typography.uiRowTitle, animatedInkTextStyle, { fontSize: 13 }]}>
+            {syncStatusLabel(syncStatus)}
+          </Animated.Text>
+          <Animated.Text style={[typography.metadataCaption, animatedFawnTextStyle, { fontSize: 11, marginTop: 2 }]}>
+            {syncStatus === 'syncing'
+              ? 'Backing up words and progress…'
+              : syncStatus === 'offline_saved'
+              ? 'Changes saved locally on device'
+              : syncStatus === 'needs_attention'
+              ? 'Sync requires attention'
+              : 'All words and reading progress synced'}
           </Animated.Text>
         </View>
         <Pressable
-          onPress={() => router.push('/paywall')}
-          style={[styles.upgradeButton, { backgroundColor: colors.flameAmber, borderRadius: radius.pill }]}
+          onPress={() => void triggerSync({ forceImmediate: true })}
+          disabled={syncStatus === 'syncing'}
+          style={[
+            styles.upgradeButton,
+            {
+              backgroundColor: syncStatus === 'syncing' ? colors.fawn : colors.flameAmber,
+              borderRadius: radius.pill,
+              minWidth: 72,
+              alignItems: 'center',
+              justifyContent: 'center',
+            },
+          ]}
         >
-          <Text style={[typography.uiRowTitle, { color: colors.primaryDark, fontSize: 12 }]}>Upgrade</Text>
+          {syncStatus === 'syncing' ? (
+            <ActivityIndicator size="small" color={colors.primaryDark} />
+          ) : (
+            <Text style={[typography.uiRowTitle, { color: colors.primaryDark, fontSize: 12 }]}>
+              Sync now
+            </Text>
+          )}
         </Pressable>
       </Animated.View>
 
@@ -615,6 +788,14 @@ export default function SettingsScreen() {
           setLanguagePickerVisible(false);
         }}
         onClose={() => setLanguagePickerVisible(false)}
+      />
+
+      <RedeemPromoModal
+        visible={promoModalVisible}
+        onClose={() => setPromoModalVisible(false)}
+        onSuccess={() => {
+          loadStorage();
+        }}
       />
     </Animated.ScrollView>
   );
@@ -696,5 +877,9 @@ const styles = StyleSheet.create({
   upgradeButton: {
     paddingHorizontal: 13,
     paddingVertical: 8,
+  },
+  itemDivider: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    marginVertical: 4,
   },
 });

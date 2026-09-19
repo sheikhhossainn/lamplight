@@ -38,6 +38,7 @@ type WordTranslationPopupProps = {
   sourceLangLabel?: string;
   onChangeLanguage?: () => void;
   showPronunciation?: boolean;
+  onSaveForLater?: () => void;
 };
 
 type LoadState =
@@ -72,6 +73,7 @@ export function WordTranslationPopup({
   sourceLangLabel = 'EN',
   onChangeLanguage,
   showPronunciation = true,
+  onSaveForLater,
 }: WordTranslationPopupProps) {
   const { colors, typography, spacing, radius } = useTheme();
   const [state, setState] = useState<LoadState>({ status: 'loading' });
@@ -202,9 +204,25 @@ export function WordTranslationPopup({
             ) : null}
 
             {state.status === 'error' ? (
-              <Text style={[typography.metadataCaption, { color: colors.lampText, marginTop: spacing.sm }]}>
-                Couldn't translate — check your connection and try again.
-              </Text>
+              <>
+                <Text style={[typography.metadataCaption, { color: colors.lampText, marginTop: spacing.sm }]}>
+                  Couldn't translate — check your connection and try again.
+                </Text>
+                {onSaveForLater ? (
+                  <Pressable
+                    style={[styles.actionButton, { backgroundColor: colors.flameAmber, marginTop: 12 }]}
+                    onPress={() => {
+                      onSaveForLater();
+                      onClose();
+                    }}
+                  >
+                    <SaveIcon color={colors.primaryDark} />
+                    <Text style={[typography.uiRowTitle, { color: colors.primaryDark, fontSize: 11 }]}>
+                      Save for later
+                    </Text>
+                  </Pressable>
+                ) : null}
+              </>
             ) : null}
 
             {state.status === 'ready' ? (

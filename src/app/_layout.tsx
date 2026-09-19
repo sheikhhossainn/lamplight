@@ -14,7 +14,9 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as SplashScreen from 'expo-splash-screen';
 import * as SystemUI from 'expo-system-ui';
 import { useEffect, useState } from 'react';
-import { View } from 'react-native';
+import { AppState, View } from 'react-native';
+
+import { triggerSync } from '@/features/sync/syncWorker';
 
 import { AppUpdatePrompt } from '@/components/AppUpdatePrompt';
 import { WhatsNewOverlay } from '@/components/WhatsNewOverlay';
@@ -26,6 +28,8 @@ import { hydrateTargetLanguage } from '@/features/settings/languagePair';
 import { hydrateLiteraryTheme } from '@/features/settings/literaryTheme';
 import { hydrateOnboardingStatus } from '@/features/settings/onboardingStatus';
 import { hydratePageStyle } from '@/features/settings/pageStylePrefs';
+import { cleanupPartialDownloads } from '@/features/storage/storageManager';
+import { hydrateEntitlements } from '@/features/subscription/entitlementService';
 import { LamplightThemeProvider, useTheme } from '@/theme/ThemeProvider';
 import { ThemeTransitionOverlay } from '@/theme/ThemeTransitionOverlay';
 
@@ -63,6 +67,8 @@ export default function RootLayout() {
       hydrateMotherTongue(),
       hydratePageStyle(),
       hydrateLiteraryTheme(),
+      hydrateEntitlements(),
+      cleanupPartialDownloads().catch(() => {}),
       seedJapaneseCatalog(),
       seedKoreanCatalog(),
     ]);
@@ -74,6 +80,21 @@ export default function RootLayout() {
     void Promise.all([hydrateOnboardingStatus(), hydrateWhatsNewStatus()]).then(() =>
       setOnboardingChecked(true),
     );
+  }, []);
+
+  // Trigger local-first sync on launch and when returning to foreground
+  useEffect(() => {
+    void triggerSync();
+
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'active') {
+        void triggerSync();
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
   }, []);
 
   useEffect(() => {

@@ -50,6 +50,12 @@ import {
   type SavedWord,
   type VocabularyEligibility,
 } from '@/db/repositories/savedWords';
+import {
+  deletePendingLookup,
+  listPendingLookups,
+  resolvePendingLookupsBatch,
+  type PendingWordLookup,
+} from '@/db/repositories/pendingLookups';
 import { getUsageNoteCache, getWordCluster, setUsageNoteCache, setWordCluster, type WordCluster, type WordRelated } from '@/db/repositories/wordCache';
 import { getBookMeta as getBibleOtBookMeta, getBookVerses as getBibleOtVerses } from '@/features/bible-content/bibleData';
 import { getBookMeta as getBibleNtBookMeta, getBookVerses as getBibleNtVerses } from '@/features/bible-content/bibleNtData';
@@ -171,6 +177,7 @@ export default function VocabularyScreen() {
   const [quotes, setQuotes] = useState<Highlight[]>([]);
   const [quranHighlights, setQuranHighlights] = useState<QuranHighlight[]>([]);
   const [bibleHighlights, setBibleHighlights] = useState<BibleHighlight[]>([]);
+  const [pendingLookups, setPendingLookups] = useState<PendingWordLookup[]>([]);
   const [collapsedWordBooks, setCollapsedWordBooks] = useState<Record<string, boolean>>({});
   const [collapsedQuoteBooks, setCollapsedQuoteBooks] = useState<Record<string, boolean>>({});
   const [collapsedVerseGroups, setCollapsedVerseGroups] = useState<Record<string, boolean>>({});
@@ -228,7 +235,8 @@ export default function VocabularyScreen() {
       listAllBibleHighlights(),
       getVocabularyEligibility(),
       listActiveReadingPositions(),
-    ]).then(([w, b, q, qv, bv, nextEligibility, positions]) => {
+      listPendingLookups().catch(() => []),
+    ]).then(([w, b, q, qv, bv, nextEligibility, positions, pending]) => {
       setWords(w);
       setEligibility(nextEligibility);
       setRecentBookId(positions[0]?.bookId ?? null);
@@ -236,6 +244,7 @@ export default function VocabularyScreen() {
       setQuotes(q);
       setQuranHighlights(qv);
       setBibleHighlights(bv);
+      setPendingLookups(pending);
       setLoaded(true);
     });
   }, []);
@@ -243,6 +252,11 @@ export default function VocabularyScreen() {
   useFocusEffect(
     useCallback(() => {
       reload();
+      void resolvePendingLookupsBatch()
+        .then((res) => {
+          if (res.resolvedCount > 0) reload();
+        })
+        .catch(() => {});
     }, [reload]),
   );
 
@@ -269,6 +283,20 @@ export default function VocabularyScreen() {
         message: `Remove “${word.sourceWord}” from your vocabulary?`,
         onConfirm: async () => {
           await deleteSavedWord(word.id);
+          reload();
+        },
+      });
+    },
+    [reload],
+  );
+
+  const confirmRemovePendingLookup = useCallback(
+    (lookup: PendingWordLookup) => {
+      setConfirm({
+        title: 'Remove pending word',
+        message: `Remove “${lookup.sourceWord}” from pending translations?`,
+        onConfirm: async () => {
+          await deletePendingLookup(lookup.id);
           reload();
         },
       });
@@ -703,7 +731,89 @@ export default function VocabularyScreen() {
             <SkeletonRows />
           ) : (
             <>
-              {words.length === 0 ? (
+              {pendingLookups.length > 0 ? (
+                <View
+                  style={[
+                    styles.collectionCard,
+                    {
+                      backgroundColor: colors.card,
+                      borderColor: colors.hairline,
+                      marginBottom: spacing.md,
+                    },
+                  ]}
+                >
+                  <View style={styles.cardHeader}>
+                    <View style={styles.coverThumbnailWrapper}>
+                      <View style={[styles.coverFallback, { backgroundColor: isLamp ? '#3A342D' : '#DFD4C2' }]}>
+                        <View style={[styles.coverAccentBar, { backgroundColor: colors.flameAmber }]} />
+                        <Text style={[styles.coverFallbackInitials, { color: colors.flameAmber, fontSize: 13 }]}>
+                          ⏳
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.headerInfo}>
+                      <Text numberOfLines={1} style={[typography.uiRowTitle, { color: colors.ink, fontSize: 16, fontWeight: '600' }]}>
+                        Waiting for translation
+                      </Text>
+                      <View style={styles.countRow}>
+                        <View style={[styles.countDot, { backgroundColor: colors.flameAmber }]} />
+                        <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 12 }]}>
+                          {pendingLookups.length} {pendingLookups.length === 1 ? 'word' : 'words'} offline
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+
+                  <View style={styles.expandedContent}>
+                    {pendingLookups.map((lookup, index) => (
+                      <View
+                        key={lookup.id}
+                        style={[
+                          styles.wordRow,
+                          index < pendingLookups.length - 1 && [
+                            styles.itemDivider,
+                            { borderBottomColor: isLamp ? '#332E27' : '#EAE1D3' },
+                          ],
+                        ]}
+                      >
+                        <View style={styles.wordMainContent}>
+                          <View style={styles.wordHeaderLine}>
+                            <Text style={[typography.translatedWordInline, { color: colors.ink, fontSize: 15 }]}>
+                              {lookup.sourceWord}
+                            </Text>
+                            <Text style={[typography.metadataCaption, { color: colors.straw, fontSize: 11, fontStyle: 'italic' }]}>
+                              {lookup.status === 'resolving' ? 'Translating...' : 'Will resolve online'}
+                            </Text>
+                          </View>
+                          {lookup.contextSentence ? (
+                            <Text
+                              numberOfLines={2}
+                              style={[
+                                typography.metadataCaption,
+                                styles.contextSentenceText,
+                                { color: isLamp ? '#B3A898' : '#736B60', marginTop: 4 },
+                              ]}
+                            >
+                              &ldquo;{lookup.contextSentence}&rdquo;
+                            </Text>
+                          ) : null}
+                        </View>
+                        <View style={styles.itemActions}>
+                          <Pressable
+                            hitSlop={8}
+                            onPress={() => confirmRemovePendingLookup(lookup)}
+                            style={styles.actionIconBtn}
+                          >
+                            <TrashIcon color={colors.straw} size={16} />
+                          </Pressable>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              ) : null}
+              {words.length === 0 && pendingLookups.length === 0 ? (
                 <EmptyPrompt variant="list" message="Words you save while reading will appear here." />
               ) : Object.entries(groups).map(([bookId, groupWords]) => {
               const book = getBook(bookId);
