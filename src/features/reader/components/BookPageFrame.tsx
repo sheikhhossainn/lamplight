@@ -4,6 +4,8 @@ import Animated, { type SharedValue, useAnimatedStyle } from 'react-native-reani
 import { Image } from 'expo-image';
 import { LamplightColor } from '@/theme/tokens';
 
+import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
+
 const ANTIQUE_PAPER_DAY = require('../../../../assets/images/antique-paper-day.jpg');
 
 type BookPageFrameProps = {
@@ -26,20 +28,22 @@ const DAY_TONES = {
   liftSheen: 'rgba(255, 255, 255, 0.18)',
   shadow1: 'rgba(30, 20, 10, 0.20)',
   shadow2: 'rgba(30, 20, 10, 0.11)',
-
   shadow3: 'rgba(30, 20, 10, 0.05)',
   shadow4: 'rgba(30, 20, 10, 0.02)',
 };
 
 const NIGHT_TONES = {
-  spineCrease: 'rgba(0, 0, 0, 0.35)',
-  spineBand1: 'rgba(0, 0, 0, 0.20)',
-  spineBand2: 'rgba(0, 0, 0, 0.10)',
-  spineBand3: 'rgba(0, 0, 0, 0.04)',
-  shadow1: 'rgba(0, 0, 0, 0.40)',
-  shadow2: 'rgba(0, 0, 0, 0.22)',
-  shadow3: 'rgba(0, 0, 0, 0.10)',
-  shadow4: 'rgba(0, 0, 0, 0.03)',
+  spineCrease: 'rgba(0, 0, 0, 0.65)',
+  spineBand1: 'rgba(0, 0, 0, 0.38)',
+  spineBand2: 'rgba(0, 0, 0, 0.20)',
+  spineBand3: 'rgba(0, 0, 0, 0.08)',
+  coverRim: '#12100D',
+  leaf4: '#1A1610',
+  leaf3: '#221D16',
+  leaf2: '#2A241B',
+  leaf1: '#342D22',
+  leafCutEdge: 'rgba(0, 0, 0, 0.50)',
+  liftSheen: 'rgba(245, 166, 35, 0.06)',
 };
 
 export function BookPageFrame({ children, themeProgress }: BookPageFrameProps) {
@@ -88,34 +92,71 @@ export function BookPageFrame({ children, themeProgress }: BookPageFrameProps) {
         <View style={[styles.turningEdgeCurl, { backgroundColor: DAY_TONES.liftSheen }]} />
       </Animated.View>
 
-      {/* Night Mode Spine Gutter */}
-      <Animated.View style={[styles.leftSpineShadow, styles.nightSpineShadow, nightLayerStyle]} pointerEvents="none">
-        <View style={[styles.spineBand3, { backgroundColor: NIGHT_TONES.spineBand3 }]} />
-        <View style={[styles.spineBand2, { backgroundColor: NIGHT_TONES.spineBand2 }]} />
-        <View style={[styles.spineBand1, { backgroundColor: NIGHT_TONES.spineBand1 }]} />
-        <View style={[styles.spineCrease, { backgroundColor: NIGHT_TONES.spineCrease }]} />
+      {/* Night (Lamp) Mode Layer: Same antique paper — read by candlelight */}
+      <Animated.View
+        style={[
+          StyleSheet.absoluteFill,
+          nightLayerStyle,
+          { backgroundColor: '#120F0C' },
+        ]}
+        pointerEvents="none"
+      >
+        {/* Same paper texture as day but barely visible — grain comes through the dark wash */}
+        <Image
+          source={ANTIQUE_PAPER_DAY}
+          style={[StyleSheet.absoluteFill, { opacity: 0.10 }]}
+          contentFit="cover"
+          priority="high"
+          cachePolicy="memory-disk"
+        />
+
+        {/* Deep warm-charcoal dark wash — like the same page held in a dark room */}
+        <View
+          style={[
+            StyleSheet.absoluteFill,
+            { backgroundColor: 'rgba(16, 12, 9, 0.88)' },
+          ]}
+        />
+
+        {/* Soft amber reading-lamp glow at center — warm, never cool */}
+        <Svg width="100%" height="100%" style={StyleSheet.absoluteFill}>
+          <Defs>
+            <RadialGradient id="candleGlow" cx="50%" cy="42%" rx="60%" ry="55%">
+              <Stop offset="0%"  stopColor="#C87820" stopOpacity="0.13" />
+              <Stop offset="45%" stopColor="#8B5010" stopOpacity="0.06" />
+              <Stop offset="100%" stopColor="#120F0C" stopOpacity="0" />
+            </RadialGradient>
+          </Defs>
+          <Rect x="0" y="0" width="100%" height="100%" fill="url(#candleGlow)" />
+        </Svg>
+
+        {/* Outer book cover rim in dark walnut */}
+        <View style={[styles.coverRim, { backgroundColor: NIGHT_TONES.coverRim }]} />
+
+        {/* Stacked paper deckle leaf layers — warm dark walnut tones */}
+        <View style={styles.rightDeckleStack}>
+          <View style={[styles.leafLine, { backgroundColor: NIGHT_TONES.leaf4, right: 0 }]} />
+          <View style={[styles.leafLine, { backgroundColor: NIGHT_TONES.leaf3, right: 1.5 }]} />
+          <View style={[styles.leafLine, { backgroundColor: NIGHT_TONES.leaf2, right: 3 }]} />
+          <View style={[styles.leafLine, { backgroundColor: NIGHT_TONES.leaf1, right: 4.5 }]} />
+          <View style={[styles.leafBorder, { borderColor: NIGHT_TONES.leafCutEdge, right: 5.5 }]} />
+        </View>
+
+        {/* Left Spine Gutter */}
+        <View style={[styles.leftSpineShadow, styles.nightSpineShadow]}>
+          <View style={[styles.spineBand3, { backgroundColor: NIGHT_TONES.spineBand3 }]} />
+          <View style={[styles.spineBand2, { backgroundColor: NIGHT_TONES.spineBand2 }]} />
+          <View style={[styles.spineBand1, { backgroundColor: NIGHT_TONES.spineBand1 }]} />
+          <View style={[styles.spineCrease, { backgroundColor: NIGHT_TONES.spineCrease }]} />
+        </View>
+
+        {/* Turning Edge Lift Sheen in subtle warm amber */}
+        <View style={[styles.turningEdgeCurl, { backgroundColor: NIGHT_TONES.liftSheen }]} />
       </Animated.View>
 
       {/* Page Content Container (Typography, Selection Handles, Word Taps) */}
       <View style={styles.contentWrap}>{children}</View>
 
-      {/* Turning Edge Drop Shadow (Casts onto adjacent page during turn) */}
-      <View style={styles.turningEdgeShadow} pointerEvents="none">
-        <Animated.View style={[StyleSheet.absoluteFill, dayLayerStyle]}>
-          <View style={[styles.edgeHairline, { backgroundColor: DAY_TONES.spineCrease }]} />
-          <View style={[styles.edgeShadow1, { backgroundColor: DAY_TONES.shadow1 }]} />
-          <View style={[styles.edgeShadow2, { backgroundColor: DAY_TONES.shadow2 }]} />
-          <View style={[styles.edgeShadow3, { backgroundColor: DAY_TONES.shadow3 }]} />
-          <View style={[styles.edgeShadow4, { backgroundColor: DAY_TONES.shadow4 }]} />
-        </Animated.View>
-        <Animated.View style={[StyleSheet.absoluteFill, nightLayerStyle]}>
-          <View style={[styles.edgeHairline, { backgroundColor: NIGHT_TONES.spineCrease }]} />
-          <View style={[styles.edgeShadow1, { backgroundColor: NIGHT_TONES.shadow1 }]} />
-          <View style={[styles.edgeShadow2, { backgroundColor: NIGHT_TONES.shadow2 }]} />
-          <View style={[styles.edgeShadow3, { backgroundColor: NIGHT_TONES.shadow3 }]} />
-          <View style={[styles.edgeShadow4, { backgroundColor: NIGHT_TONES.shadow4 }]} />
-        </Animated.View>
-      </View>
     </View>
   );
 }

@@ -13,6 +13,8 @@ import {
   type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
+  type StyleProp,
+  type ViewStyle,
   type ViewToken,
 } from 'react-native';
 import Animated, {
@@ -32,7 +34,7 @@ import Animated, {
   withSequence,
   withTiming,
 } from 'react-native-reanimated';
-import Svg, { Circle, Defs, LinearGradient, Path, Rect, Stop } from 'react-native-svg';
+import Svg, { Circle, Defs, LinearGradient, Path, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 
@@ -299,9 +301,11 @@ type ReaderPageFrameProps = {
   pageHeight: number;
 };
 
-// 1890s antique open-book page frame with paper folding dynamics:
-// As the reader swipes, the turning page flexes with dynamic shading and a
-// trailing edge drop shadow, completely preventing any overlapping text.
+// 1890s antique open-book page frame with realistic 3D paper curl & folding dynamics:
+// As the reader swipes, the turning page lifts in 3D perspective around the left spine binding,
+// casting a physical soft gradient drop-shadow onto the incoming page beneath it.
+// At rest (progress <= 0.002 or progress >= 0.998), every page is 100% full-bleed and neutral,
+// with zero translation, zero rotation, zero shadow, and zero visual artifacts.
 const ReaderPageFrame = memo(function ReaderPageFrame({
   children,
   pageIndex,
@@ -312,19 +316,75 @@ const ReaderPageFrame = memo(function ReaderPageFrame({
   pageHeight,
 }: ReaderPageFrameProps) {
   const isLamp = mode === 'lamp';
+  const halfW = pageWidth / 2;
 
-  const pageFlexStyle = useAnimatedStyle(() => {
+  // 1. 3D page curl & elevation transform:
+  // Strictly active ONLY during an in-flight page turn (0.002 < progress < 0.998).
+  const pageTransformStyle = useAnimatedStyle(() => {
     'worklet';
     const x = scrollX.value;
     const pageStart = pageIndex * pageWidth;
     const offset = x - pageStart;
+    const progress = offset / pageWidth;
 
-    // This page is currently being turned to the left (0 <= offset <= pageWidth):
-    if (offset > 0 && offset < pageWidth) {
-      const progress = offset / pageWidth;
+    if (progress > 0.002 && progress < 0.998) {
+      // Outgoing page lifting off the right page stack:
+      // Realistic parabolic paper arch: peaks at mid-turn (progress = 0.5) and lands flat at 0 and 1.
+      const arch = Math.sin(progress * Math.PI);
+      const curlAngle = -arch * 10; // Gentle 10° lift towards the reader
+
+      return {
+        zIndex: 10,
+        elevation: 8,
+        transform: [
+          { perspective: 1200 },
+          { translateX: halfW },
+          { rotateY: `${curlAngle}deg` },
+          { translateX: -halfW },
+        ],
+      };
+    }
+
+    return {
+      zIndex: 1,
+      elevation: 0,
+      transform: [{ translateX: 0 }],
+    };
+  });
+
+  // 2. Dynamic paper lighting:
+  // Simulates the concave curvature shading of bending antique paper.
+  const paperShadingStyle = useAnimatedStyle(() => {
+    'worklet';
+    const x = scrollX.value;
+    const pageStart = pageIndex * pageWidth;
+    const offset = x - pageStart;
+    const progress = offset / pageWidth;
+
+    if (progress > 0.002 && progress < 0.998) {
       const archIntensity = Math.sin(progress * Math.PI);
       return {
-        opacity: archIntensity * (isLamp ? 0.20 : 0.16),
+        opacity: archIntensity * (isLamp ? 0.18 : 0.12),
+      };
+    }
+
+    return {
+      opacity: 0,
+    };
+  });
+
+  // 3. Trailing edge physical cast shadow (casts onto revealed page during turn)
+  const edgeShadowStyle = useAnimatedStyle(() => {
+    'worklet';
+    const x = scrollX.value;
+    const pageStart = pageIndex * pageWidth;
+    const offset = x - pageStart;
+    const progress = offset / pageWidth;
+
+    if (progress > 0.002 && progress < 0.998) {
+      const arch = Math.sin(progress * Math.PI);
+      return {
+        opacity: arch * (isLamp ? 0.45 : 0.32),
       };
     }
 
@@ -334,20 +394,41 @@ const ReaderPageFrame = memo(function ReaderPageFrame({
   });
 
   return (
-    <View style={[styles.pageFrame, { width: pageWidth, height: pageHeight }]}>
+    <Animated.View
+      style={[
+        styles.pageFrame,
+        { width: pageWidth, height: pageHeight },
+        pageTransformStyle,
+      ]}
+    >
       <BookPageFrame themeProgress={themeProgress}>
         {children}
-        {/* Dynamic paper flex shading while folding/turning */}
-        <Animated.View
-          style={[
-            StyleSheet.absoluteFill,
-            { backgroundColor: isLamp ? '#000000' : '#2A1D12' },
-            pageFlexStyle,
-          ]}
-          pointerEvents="none"
-        />
       </BookPageFrame>
-    </View>
+
+      {/* Dynamic paper shading layer (arch flex lighting) */}
+      <Animated.View
+        style={[
+          StyleSheet.absoluteFill,
+          { backgroundColor: isLamp ? '#000000' : '#2A1D12' },
+          paperShadingStyle,
+        ]}
+        pointerEvents="none"
+      />
+
+      {/* Trailing edge physical drop shadow casting onto revealed page */}
+      <Animated.View
+        style={[
+          styles.trailingEdgeDropShadow,
+          edgeShadowStyle,
+        ]}
+        pointerEvents="none"
+      >
+        <View style={[styles.edgeShadowBand1, { backgroundColor: isLamp ? 'rgba(0,0,0,0.38)' : 'rgba(38,25,14,0.32)' }]} />
+        <View style={[styles.edgeShadowBand2, { backgroundColor: isLamp ? 'rgba(0,0,0,0.24)' : 'rgba(38,25,14,0.20)' }]} />
+        <View style={[styles.edgeShadowBand3, { backgroundColor: isLamp ? 'rgba(0,0,0,0.14)' : 'rgba(38,25,14,0.10)' }]} />
+        <View style={[styles.edgeShadowBand4, { backgroundColor: isLamp ? 'rgba(0,0,0,0.06)' : 'rgba(38,25,14,0.04)' }]} />
+      </Animated.View>
+    </Animated.View>
   );
 });
 
@@ -2213,12 +2294,6 @@ export default function ReaderScreen() {
   const pageNumber = Math.min(currentIndex, pages.length - 1) + 1;
   const totalPages = pages.length;
   const percent = Math.round((pageNumber / totalPages) * 100);
-  // Rough "time left" so a long book doesn't feel bottomless — ~40s a page is
-  // a calm reading pace for this 18px/1.85 body; floored to whole minutes.
-  const pagesLeft = totalPages - pageNumber;
-  const minutesLeft = Math.round((pagesLeft * 40) / 60);
-  const timeLeftLabel =
-    pagesLeft <= 0 ? 'Last page' : minutesLeft < 1 ? 'Almost done' : `${minutesLeft} min left`;
 
   return (
     <View style={styles.container} onLayout={handleContainerLayout}>
@@ -2226,7 +2301,7 @@ export default function ReaderScreen() {
       {/* Animated Day<->Lamp background — the single source of the page tint,
           crossfading whenever `mode` flips. Light uses the authentic antique paper
           texture so any rapid paging cell boundary never flashes white; dark fades in
-          as the exact Splash/Onboarding linear gradient. */}
+          with matching midnight antique paper. */}
       <View style={StyleSheet.absoluteFill} pointerEvents="none">
         <Image
           source={ANTIQUE_PAPER_DAY}
@@ -2236,24 +2311,10 @@ export default function ReaderScreen() {
           cachePolicy="memory-disk"
         />
       </View>
-      {/* Solid dark fill *under* the gradient SVG so the container's right/bottom
-          edges are covered even where the Dimensions-sized SVG stops a pixel
-          short — that gap used to reveal the cream base as a thin edge line. */}
       <Animated.View
-        style={[StyleSheet.absoluteFill, { backgroundColor: READING_DARK_STOPS[0] }, darkBgStyle]}
+        style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(16, 12, 9, 0.92)' }, darkBgStyle]}
         pointerEvents="none"
-      >
-        <Svg width={pageWidth} height={pageHeight} style={StyleSheet.absoluteFill}>
-          <Defs>
-            <LinearGradient id="readerDarkBg" x1="0" y1="0" x2="0" y2="1">
-              <Stop offset="0%" stopColor={READING_DARK_STOPS[0]} />
-              <Stop offset="55%" stopColor={READING_DARK_STOPS[1]} />
-              <Stop offset="100%" stopColor={READING_DARK_STOPS[2]} />
-            </LinearGradient>
-          </Defs>
-          <Rect x={0} y={0} width={pageWidth} height={pageHeight} fill="url(#readerDarkBg)" />
-        </Svg>
-      </Animated.View>
+      />
 
       <Animated.FlatList<ReaderPage>
         ref={listRef}
@@ -2283,6 +2344,9 @@ export default function ReaderScreen() {
         // Lock paging while actively dragging a handle or reading whole-page translation
         scrollEnabled={!isDraggingHandle && currentTranslation == null}
         decelerationRate="fast"
+        snapToInterval={pageWidth}
+        snapToAlignment="start"
+        disableIntervalMomentum={true}
         // Lightweight virtualized window prevents JS thread freezing during rapid paging
         windowSize={5}
         initialNumToRender={2}
@@ -2323,15 +2387,6 @@ export default function ReaderScreen() {
               ]}
             >
               Page {pageNumber} of {totalPages}
-            </Animated.Text>
-            <Animated.Text
-              style={[
-                typography.metadataCaption,
-                { fontSize: 11, opacity: 0.6 },
-                animatedTopBarTextStyle,
-              ]}
-            >
-              {percent}% · {timeLeftLabel}
             </Animated.Text>
           </View>
         </View>
@@ -2730,6 +2785,31 @@ const styles = StyleSheet.create({
     flex: 1,
     height: '100%',
     overflow: 'visible',
+  },
+  trailingEdgeDropShadow: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    right: -28,
+    width: 28,
+    flexDirection: 'row',
+    zIndex: 20,
+  },
+  edgeShadowBand1: {
+    width: 3,
+    height: '100%',
+  },
+  edgeShadowBand2: {
+    width: 6,
+    height: '100%',
+  },
+  edgeShadowBand3: {
+    width: 9,
+    height: '100%',
+  },
+  edgeShadowBand4: {
+    width: 10,
+    height: '100%',
   },
   pageTouchable: {
     flex: 1,
