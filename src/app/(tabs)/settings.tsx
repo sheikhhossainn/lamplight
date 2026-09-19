@@ -412,7 +412,7 @@ export default function SettingsScreen() {
 
   const animatedPairPillTextStyle = useAnimatedStyle(() => ({
     color: interpolateColor(
-      themeAnim.value,
+      themeAnim.get(),
       [0, 1],
       [dayColors.pairPillText, lampColors.pairPillText],
     ),

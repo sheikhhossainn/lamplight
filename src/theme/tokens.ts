@@ -56,6 +56,8 @@ export const LamplightColorDark = {
   hairline: '#332F2B', // borders, dividers, progress track
   segmentedTrack: '#2A2723', // segmented-control track
   quietOnLight: '#9C9186', // reader chrome label (day-mode chrome only)
+  pairPillBackground: 'rgba(245, 166, 35, 0.16)',
+  pairPillText: '#F5A623',
 } as const;
 
 // Widened color-token type so the same shape describes both light and dark
@@ -97,6 +99,8 @@ export const BengaliColorDark: LamplightColors = {
   hairline: '#303C3F',
   segmentedTrack: '#253135',
   quietOnLight: '#8D9B9C',
+  pairPillBackground: 'rgba(126, 170, 162, 0.18)',
+  pairPillText: '#8EBEB5',
 };
 
 export const CultureMaterial = {
@@ -155,6 +159,8 @@ export const KoreanColorDark: LamplightColors = {
   straw: '#4C4F56',
   hairline: '#26282E',
   segmentedTrack: '#1F2024',
+  pairPillBackground: 'rgba(145, 166, 186, 0.16)',
+  pairPillText: '#AEC0D2',
 };
 
 // Arabic — Deep navy, warm gold, RTL-aware
@@ -222,6 +228,8 @@ export const JapaneseColorDark: LamplightColors = {
   hairline: '#312E2A',
   segmentedTrack: '#282622',
   flameAmber: '#E0983A',
+  pairPillBackground: 'rgba(224, 152, 58, 0.16)',
+  pairPillText: '#E0983A',
 };
 
 // Western — Editorial cream, Lora serif
@@ -252,6 +260,8 @@ export const WesternColorDark: LamplightColors = {
   hairline: '#2F2C29',
   segmentedTrack: '#272422',
   flameAmber: '#D98F28',
+  pairPillBackground: 'rgba(217, 143, 40, 0.16)',
+  pairPillText: '#D98F28',
 };
 
 export function getCultureThemeColors(
