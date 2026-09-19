@@ -112,7 +112,7 @@ export function HomeGuideModal({ visible, onClose, onNavigateTab }: HomeGuideMod
               </View>
             </View>
 
-            {/* 3. Settings & Translation Language */}
+            {/* 3. Settings, Themes & Language */}
             <View style={styles.guideItem}>
               <View style={[styles.iconCircle, { backgroundColor: `${colors.flameAmber}18` }]}>
                 <SettingsIcon color={colors.flameAmber} size={20} />
@@ -120,7 +120,7 @@ export function HomeGuideModal({ visible, onClose, onNavigateTab }: HomeGuideMod
               <View style={styles.itemContent}>
                 <View style={styles.itemTitleRow}>
                   <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 14.5 }]}>
-                    Settings & Language
+                    Settings & Themes
                   </Text>
                   {onNavigateTab ? (
                     <Pressable
@@ -135,7 +135,7 @@ export function HomeGuideModal({ visible, onClose, onNavigateTab }: HomeGuideMod
                   ) : null}
                 </View>
                 <Text style={[typography.metadataCaption, { color: colors.umber, fontSize: 11.5, marginTop: 2, lineHeight: 16.5 }]}>
-                  In the <Text style={{ fontWeight: '600', color: colors.ink }}>Settings</Text> tab, choose your default translation language (e.g. Spanish, French, Bengali), toggle <Text style={{ fontWeight: '600', color: colors.ink }}>Day / Lamp</Text> reading modes, or toggle page-turn sounds.
+                  In <Text style={{ fontWeight: '600', color: colors.ink }}>Settings ➔ Appearance</Text>, tap <Text style={{ fontWeight: '600', color: colors.flameAmber }}>Change themes</Text> to switch between Japanese, Bengali, Korean, Arabic, Western, or Classic reading atmospheres. You can also toggle <Text style={{ fontWeight: '600', color: colors.ink }}>Day / Lamp</Text> mode or set your default translation language.
                 </Text>
               </View>
             </View>

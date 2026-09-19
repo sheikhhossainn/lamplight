@@ -552,6 +552,76 @@ export function WesternThemeIcon({ color, size = 20 }: IconProps) {
   );
 }
 
+export function LamplightClassicThemeIcon({
+  color,
+  flameColor,
+  size = 20,
+}: IconProps & { flameColor?: string }) {
+  const actualFlameColor = flameColor ?? color;
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      {/* Hand-drawn 1890s literary oil lamp with organic curves & radiant warmth */}
+      {/* 1. Organic arched carry bail at top */}
+      <Path
+        d="M8.5 4.8C8.5 2.5 15.5 2.5 15.5 4.8"
+        stroke={color}
+        strokeWidth={1.6}
+        strokeLinecap="round"
+      />
+
+      {/* 2. Chimney hood & collar */}
+      <Path
+        d="M8 6.8C9.5 6.0 14.5 6.0 16 6.8"
+        stroke={color}
+        strokeWidth={1.6}
+        strokeLinecap="round"
+      />
+      <Path
+        d="M7.5 8.2C9 7.8 15 7.8 16.5 8.2"
+        stroke={color}
+        strokeWidth={1.5}
+        strokeLinecap="round"
+      />
+
+      {/* 3. Hand-blown glass globe with fluid hourglass curve */}
+      <Path
+        d="M8.2 8.5C6.5 11.8 6.5 13.8 8 16.5C9.5 17 14.5 17 16 16.5C17.5 13.8 17.5 11.8 15.8 8.5"
+        stroke={color}
+        strokeWidth={1.7}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+
+      {/* 4. Living flame with organic calligraphic contour */}
+      <Path
+        d="M12 9.5C10.8 11.2 10.5 12.4 11.2 13.5C11.6 14.1 12.4 14.1 12.8 13.5C13.5 12.4 13.2 11.2 12 9.5Z"
+        fill={actualFlameColor}
+      />
+
+      {/* 5. Delicate hand-drawn radiant light ticks (vintage ink illustration) */}
+      <Path d="M4.2 12.5H2.2" stroke={color} strokeWidth={1.4} strokeLinecap="round" />
+      <Path d="M21.8 12.5H19.8" stroke={color} strokeWidth={1.4} strokeLinecap="round" />
+      <Path d="M4.6 8.5L3.0 7.2" stroke={color} strokeWidth={1.4} strokeLinecap="round" />
+      <Path d="M21.0 7.2L19.4 8.5" stroke={color} strokeWidth={1.4} strokeLinecap="round" />
+
+      {/* 6. Pedestal oil font & grounding foot */}
+      <Path
+        d="M8 16.5C7.2 18.0 6.5 19.4 6.5 20.2C8 20.9 16 20.9 17.5 20.2C17.5 19.4 16.8 18.0 16 16.5"
+        stroke={color}
+        strokeWidth={1.7}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path
+        d="M5.5 21H18.5"
+        stroke={color}
+        strokeWidth={1.7}
+        strokeLinecap="round"
+      />
+    </Svg>
+  );
+}
+
 export function LiteraryThemeIcon({
   theme,
   color,
@@ -571,7 +641,9 @@ export function LiteraryThemeIcon({
     case 'japanese':
       return <JapaneseThemeIcon color={color} size={size} />;
     case 'western':
-    default:
       return <WesternThemeIcon color={color} size={size} />;
+    case 'classic':
+    default:
+      return <LamplightClassicThemeIcon color={color} size={size} />;
   }
 }

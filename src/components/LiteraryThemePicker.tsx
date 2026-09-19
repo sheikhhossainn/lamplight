@@ -6,10 +6,13 @@ import Svg, { Circle, Path } from 'react-native-svg';
 import { CloseIcon, LiteraryThemeIcon } from '@/components/icons';
 import { ReaderOverlay } from '@/features/reader/components/ReaderOverlay';
 import {
+  getModularThemePresentation,
   LITERARY_THEMES,
   type LiteraryThemeCode,
   type LiteraryThemeOption,
 } from '@/features/settings/literaryTheme';
+import { useMotherTongue } from '@/features/settings/motherTongue';
+import { useTargetReadingLanguage } from '@/features/settings/targetReadingLanguage';
 import { useTheme } from '@/theme/ThemeProvider';
 
 export type LiteraryThemePickerProps = {
@@ -57,6 +60,8 @@ export function LiteraryThemePicker({
 }: LiteraryThemePickerProps) {
   const { colors, typography, spacing, radius } = useTheme();
   const insets = useSafeAreaInsets();
+  const motherTongue = useMotherTongue();
+  const targetReadingLanguage = useTargetReadingLanguage();
   const [query, setQuery] = useState('');
   const searchRef = useRef<TextInput>(null);
 
@@ -69,13 +74,17 @@ export function LiteraryThemePicker({
     if (!q) return LITERARY_THEMES;
 
     return LITERARY_THEMES.filter((opt) => {
+      const pres = getModularThemePresentation(opt.code, motherTongue, targetReadingLanguage);
       const codeMatch = opt.code.toLowerCase().includes(q);
       const titleMatch = opt.title.toLowerCase().includes(q);
+      const presTitleMatch = pres.title.toLowerCase().includes(q);
       const subtitleMatch = opt.subtitle.toLowerCase().includes(q);
+      const presSubtitleMatch = pres.subtitle.toLowerCase().includes(q);
       const authorsMatch = opt.sampleAuthors.toLowerCase().includes(q);
+      const presAuthorsMatch = pres.sampleAuthors.toLowerCase().includes(q);
       const paletteMatch = opt.paletteLabel ? opt.paletteLabel.toLowerCase().includes(q) : false;
       const nativeTitleMatch = opt.nativeTitle.toLowerCase().includes(q);
-      const nativeSubtitleMatch = opt.nativeSubtitle.toLowerCase().includes(q);
+      const presNativeTitleMatch = pres.nativeTitle.toLowerCase().includes(q);
 
       // Common natural aliases
       const aliasMatch =
@@ -92,15 +101,18 @@ export function LiteraryThemePicker({
       return (
         codeMatch ||
         titleMatch ||
+        presTitleMatch ||
         subtitleMatch ||
+        presSubtitleMatch ||
         authorsMatch ||
+        presAuthorsMatch ||
         paletteMatch ||
         nativeTitleMatch ||
-        nativeSubtitleMatch ||
+        presNativeTitleMatch ||
         aliasMatch
       );
     });
-  }, [query]);
+  }, [query, motherTongue, targetReadingLanguage]);
 
   return (
     <ReaderOverlay visible={visible} onClosed={onClose} variant="fullscreen">
@@ -236,6 +248,7 @@ export function LiteraryThemePicker({
               }}
               renderItem={({ item }: { item: LiteraryThemeOption }) => {
                 const isSelected = item.code === selected;
+                const pres = getModularThemePresentation(item.code, motherTongue, targetReadingLanguage);
                 return (
                   <Pressable
                     onPress={() => {
@@ -275,10 +288,12 @@ export function LiteraryThemePicker({
                     <View style={styles.cardInfo}>
                       <View style={styles.titleRow}>
                         <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 15 }]}>
-                          {item.title}{' '}
-                          <Text style={{ color: colors.fawn, fontSize: 13, fontWeight: '400' }}>
-                            ({item.nativeTitle})
-                          </Text>
+                          {pres.title !== item.title ? `${pres.title} ` : item.title}
+                          {pres.title !== item.title ? (
+                            <Text style={{ color: colors.fawn, fontSize: 13, fontWeight: '400' }}>
+                              ({item.title})
+                            </Text>
+                          ) : null}
                         </Text>
                       </View>
                       <Text
@@ -287,7 +302,7 @@ export function LiteraryThemePicker({
                           { color: colors.flameAmber, fontSize: 11, marginTop: 2 },
                         ]}
                       >
-                        {item.paletteLabel ?? item.subtitle}
+                        {item.paletteLabel ?? pres.subtitle}
                       </Text>
                       <Text
                         style={[
@@ -296,7 +311,7 @@ export function LiteraryThemePicker({
                         ]}
                         numberOfLines={1}
                       >
-                        {item.sampleAuthors}
+                        {pres.sampleAuthors}
                       </Text>
                     </View>
 

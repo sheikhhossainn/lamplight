@@ -104,6 +104,10 @@ export const BengaliColorDark: LamplightColors = {
 };
 
 export const CultureMaterial = {
+  classic: {
+    day: { rail: '#8A6D3B', highlight: '#C4A86C', joint: '#5C441E', accent: '#9C6208', wash: '#FAF0DE' },
+    lamp: { rail: '#5A4420', highlight: '#8C6C38', joint: '#3A2A10', accent: '#F5A623', wash: '#2C2218' },
+  },
   bengali: {
     day: { rail: '#AA925B', highlight: '#D7C58D', joint: '#715A32', accent: '#2F665E', wash: '#DFE8E1' },
     lamp: { rail: '#725F38', highlight: '#A9945C', joint: '#493A22', accent: '#7EAAA2', wash: '#243735' },
@@ -117,8 +121,8 @@ export const CultureMaterial = {
     lamp: { rail: '#55534F', highlight: '#77746D', joint: '#353432', accent: '#91A6BA', wash: '#252A2F' },
   },
   japanese: {
-    day: { rail: '#9A7655', highlight: '#C7A57F', joint: '#684B35', accent: '#8E4A3B', wash: '#E9DED2' },
-    lamp: { rail: '#5C4434', highlight: '#806048', joint: '#37291F', accent: '#C77B68', wash: '#302622' },
+    day: { rail: '#9A7655', highlight: '#C7A57F', joint: '#684B35', accent: '#C85A32', wash: '#EBE3D3' },
+    lamp: { rail: '#5C4434', highlight: '#806048', joint: '#37291F', accent: '#E27D46', wash: '#221915' },
   },
   arabic: {
     day: { rail: '#A88436', highlight: '#D8BE73', joint: '#705718', accent: '#263E63', wash: '#E6E1D5' },
@@ -127,9 +131,10 @@ export const CultureMaterial = {
 } as const;
 
 export function getCultureMaterial(theme: string, scheme: 'day' | 'lamp') {
-  const key = theme === 'bengali' || theme === 'korean' || theme === 'japanese' || theme === 'arabic'
-    ? theme
-    : 'western';
+  const key =
+    theme === 'bengali' || theme === 'korean' || theme === 'japanese' || theme === 'arabic' || theme === 'western'
+      ? theme
+      : 'classic';
   return CultureMaterial[key][scheme];
 }
 
@@ -203,33 +208,37 @@ export const ArabicColorDark: LamplightColors = {
 // Japanese — Washi paper, muted earth tones, generous line-height
 export const JapaneseColor: LamplightColors = {
   ...LamplightColor,
-  parchment: '#F3EFE6', // fibrous washi paper
-  libraryBackground: '#E8E2D5',
-  card: '#FAF7F0',
-  ink: '#282521', // sumi soot ink
-  umber: '#585147', // cedar / roasted tea umber
-  fawn: '#877C6F', // weathered bamboo
+  parchment: '#F4EFE6', // fibrous unbleached washi paper
+  libraryBackground: '#EBE3D3', // tatami & earthen wall wash
+  card: '#FAF5EC', // elevated warm washi surface
+  ink: '#24211D', // sumi soot ink
+  umber: '#544D42', // cedar / roasted tea umber
+  fawn: '#85796A', // weathered bamboo
   straw: '#BFAFA0',
-  hairline: '#DDD5C7',
-  segmentedTrack: '#E4DCCE',
-  flameAmber: '#D0882A', // persimmon warm ember
+  hairline: '#DDD1BC',
+  segmentedTrack: '#E2D7C3',
+  flameAmber: '#C85A32', // traditional Japanese persimmon / vermilion lacquer (shuiro)
+  pairPillBackground: 'rgba(200, 90, 50, 0.14)',
+  pairPillText: '#C85A32',
+  progressLabel: '#C85A32',
   quietOnLight: '#73685C',
 };
 
 export const JapaneseColorDark: LamplightColors = {
   ...LamplightColorDark,
-  parchment: '#1A1917', // charred cedar sumi
-  libraryBackground: '#161513',
-  card: '#242220',
-  ink: '#EDE6D8', // washi cream text
-  umber: '#BEB5A5',
-  fawn: '#8C8477',
-  straw: '#585249',
-  hairline: '#312E2A',
-  segmentedTrack: '#282622',
-  flameAmber: '#E0983A',
-  pairPillBackground: 'rgba(224, 152, 58, 0.16)',
-  pairPillText: '#E0983A',
+  parchment: '#181715', // charred cedar sumi
+  libraryBackground: '#131210',
+  card: '#22201D',
+  ink: '#EDE5D6', // washi cream text
+  umber: '#BEB4A3',
+  fawn: '#8C8375',
+  straw: '#585147',
+  hairline: '#2E2B26',
+  segmentedTrack: '#262420',
+  flameAmber: '#E27D46', // warm glowing persimmon ember
+  pairPillBackground: 'rgba(226, 125, 70, 0.18)',
+  pairPillText: '#E27D46',
+  progressLabel: '#E27D46',
 };
 
 // Western — Editorial cream, Lora serif
@@ -279,8 +288,9 @@ export function getCultureThemeColors(
       return scheme === 'lamp' ? WesternColorDark : WesternColor;
     case 'bengali':
       return scheme === 'lamp' ? BengaliColorDark : BengaliColor;
+    case 'classic':
     default:
-      return scheme === 'lamp' ? WesternColorDark : WesternColor;
+      return scheme === 'lamp' ? LamplightColorDark : LamplightColor;
   }
 }
 

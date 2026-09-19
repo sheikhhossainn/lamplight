@@ -1,4 +1,4 @@
-﻿import { Platform } from 'react-native';
+import { Platform } from 'react-native';
 import * as Haptics from 'expo-haptics';
 
 /**
@@ -60,5 +60,17 @@ export async function hapticOpenInquiry(): Promise<void> {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   } catch {
     // Fail silently
+  }
+}
+
+/**
+ * Trigger subtle, crisp selection feedback when toggling reading theme (Day <-> Lamp).
+ */
+export async function hapticThemeToggle(): Promise<void> {
+  if (Platform.OS === 'web') return;
+  try {
+    await Haptics.selectionAsync();
+  } catch {
+    // Fail silently if haptics are unsupported on device
   }
 }

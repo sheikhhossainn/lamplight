@@ -25,6 +25,7 @@ import { hydrateMotherTongue } from '@/features/settings/motherTongue';
 import { seedJapaneseCatalog } from '@/features/content-ingestion/japaneseApi';
 import { seedKoreanCatalog } from '@/features/content-ingestion/koreanApi';
 import { hydrateTargetLanguage } from '@/features/settings/languagePair';
+import { hydrateTargetReadingLanguage } from '@/features/settings/targetReadingLanguage';
 import { hydrateLiteraryTheme } from '@/features/settings/literaryTheme';
 import { hydrateOnboardingStatus } from '@/features/settings/onboardingStatus';
 import { hydratePageStyle } from '@/features/settings/pageStylePrefs';
@@ -64,6 +65,7 @@ export default function RootLayout() {
   useEffect(() => {
     void Promise.all([
       hydrateTargetLanguage(),
+      hydrateTargetReadingLanguage(),
       hydrateMotherTongue(),
       hydratePageStyle(),
       hydrateLiteraryTheme(),

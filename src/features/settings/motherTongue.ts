@@ -35,7 +35,7 @@ export type ScriptureLabels = {
 const SCRIPTURE_LABELS: Record<MotherTongueCode, ScriptureLabels> = {
   bn: {
     sectionTitle: 'ধর্মগ্রন্থ',
-    askLabel: 'ধর্মগ্রন্থ জিজ্ঞাসা করুন ✦',
+    askLabel: 'ধর্ম সম্পর্কে জানুন ✦',
     comparativeTitle: 'তুলনামূলক ধর্মগ্রন্থ',
     comparativeSubtitle: 'বিভিন্ন ধর্মের মূল পাঠ জানুন',
     comparativeBody: 'কুরআন, বাইবেল, তাওরাত ও বেদের প্রামাণ্য মূল পাঠ ও ব্যাখ্যা অন্বেষণ করুন।',
@@ -49,7 +49,7 @@ const SCRIPTURE_LABELS: Record<MotherTongueCode, ScriptureLabels> = {
   },
   ja: {
     sectionTitle: '聖典',
-    askLabel: '聖典にたずねる ✦',
+    askLabel: '聖典を知る ✦',
     comparativeTitle: '聖典を読み比べる',
     comparativeSubtitle: '宗教の原典に触れる',
     comparativeBody: 'クルアーン、聖書、トーラー、ヴェーダの原典と信頼できる解説を読みます。',
@@ -63,7 +63,7 @@ const SCRIPTURE_LABELS: Record<MotherTongueCode, ScriptureLabels> = {
   },
   ko: {
     sectionTitle: '경전',
-    askLabel: '경전에 묻기 ✦',
+    askLabel: '경전 알아보기 ✦',
     comparativeTitle: '경전을 함께 읽기',
     comparativeSubtitle: '여러 전통의 원문을 만나다',
     comparativeBody: '꾸란, 성경, 토라, 베다의 원문과 검증된 해설을 살펴봅니다.',
@@ -77,7 +77,7 @@ const SCRIPTURE_LABELS: Record<MotherTongueCode, ScriptureLabels> = {
   },
   ar: {
     sectionTitle: 'الكتب المقدسة',
-    askLabel: 'اسأل الكتب المقدسة ✦',
+    askLabel: 'استكشف الكتب المقدسة ✦',
     comparativeTitle: 'قراءة مقارنة للنصوص',
     comparativeSubtitle: 'تعرّف إلى النصوص الأصلية',
     comparativeBody: 'استكشف النصوص الأصلية والشروح الموثوقة للقرآن والكتاب المقدس والتوراة والفيدا.',
@@ -91,7 +91,7 @@ const SCRIPTURE_LABELS: Record<MotherTongueCode, ScriptureLabels> = {
   },
   en: {
     sectionTitle: 'Scriptures',
-    askLabel: 'Ask Scriptures ✦',
+    askLabel: 'Explore Scriptures ✦',
     comparativeTitle: 'Comparative Scriptures',
     comparativeSubtitle: 'Learn across major traditions',
     comparativeBody: 'Explore primary verses and trusted commentary across the Quran, Bible, Torah, and Vedas.',

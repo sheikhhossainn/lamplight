@@ -27,7 +27,13 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { RedeemPromoModal } from '@/components/RedeemPromoModal';
 import { setTargetLanguage, targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
 import { useReadingTheme } from '@/features/settings/readingTheme';
-import { requestThemeChange } from '@/features/settings/themeTransition';
+import {
+  requestThemeChange,
+  THEME_TRANSITION_DURATION,
+  THEME_TRANSITION_EASING,
+  themeTransitionProgress,
+} from '@/features/settings/themeTransition';
+import { hapticThemeToggle } from '@/lib/haptics';
 import { setPageTurnSoundEnabled, usePageTurnSoundEnabled } from '@/features/settings/soundPrefs';
 import {
   isPremiumUser,
@@ -58,14 +64,6 @@ import {
 import { useTheme } from '@/theme/ThemeProvider';
 import { getCultureThemeColors, Layout, Spacing } from '@/theme/tokens';
 
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
-
-// Theme is an occasional state change, not a cinematic transition. Keep every
-// Settings surface on one short UI-thread clock so text never trails a card.
-const GLIDE_DURATION = 200;
-const GLIDE_EASING = Easing.bezier(0.25, 1, 0.5, 1);
-
-// Clear the tab bar so the last row isn't half-hidden behind it.
 const TAB_BAR_CLEARANCE = Layout.tabBarHeight + Spacing.xl;
 
 function ThemeSegmentedSwitch({
@@ -77,44 +75,15 @@ function ThemeSegmentedSwitch({
   themeAnim: SharedValue<number>;
   onThemeChange: (next: 'day' | 'lamp') => void;
 }) {
-  const { colors, cultureTheme, radius, typography } = useTheme();
+  const { cultureTheme, radius, typography } = useTheme();
   const dayColors = getCultureThemeColors(cultureTheme, 'day');
   const lampColors = getCultureThemeColors(cultureTheme, 'lamp');
 
-  // Progress: 0 = day, 1 = lamp
-  const progress = useSharedValue(theme === 'lamp' ? 1 : 0);
   const segWidth = useSharedValue(0);
-
-  // Sync if external theme changes
-  useEffect(() => {
-    const target = theme === 'lamp' ? 1 : 0;
-    if (Math.round(progress.value) !== target) {
-      progress.value = withTiming(target, {
-        duration: GLIDE_DURATION,
-        easing: GLIDE_EASING,
-      });
-    }
-  }, [theme, progress]);
 
   const handleSelect = (target: 'day' | 'lamp') => {
     if (theme === target) return;
-
-    const targetVal = target === 'lamp' ? 1 : 0;
-
-    // 1. Slow, butter-smooth glide for the sliding pill across left and right
-    progress.value = withTiming(targetVal, {
-      duration: GLIDE_DURATION,
-      easing: GLIDE_EASING,
-    });
-
-    // 2. Coordinated smooth bezier transition across the whole Settings screen
-    themeAnim.value = withTiming(targetVal, {
-      duration: GLIDE_DURATION,
-      easing: GLIDE_EASING,
-    });
-
-    // Commit globally now. The root overlay keeps the crossfade coherent while
-    // the navigator receives its new tab-bar colours in the same transition.
+    void hapticThemeToggle();
     onThemeChange(target);
   };
 
@@ -122,12 +91,12 @@ function ThemeSegmentedSwitch({
     const w = segWidth.value;
     return {
       width: w > 0 ? w : '50%',
-      transform: [{ translateX: progress.value * w }],
+      transform: [{ translateX: themeAnim.value * w }],
     };
   });
 
   const sunAnimatedStyle = useAnimatedStyle(() => {
-    const p = progress.value;
+    const p = themeAnim.value;
     const rotate = interpolate(p, [0, 1], [0, 45], Extrapolation.CLAMP);
     const scale = interpolate(p, [0, 1], [1, 0.88], Extrapolation.CLAMP);
     return {
@@ -136,7 +105,7 @@ function ThemeSegmentedSwitch({
   });
 
   const lampAnimatedStyle = useAnimatedStyle(() => {
-    const p = progress.value;
+    const p = themeAnim.value;
     const rotate = interpolate(p, [0, 1], [-15, 0], Extrapolation.CLAMP);
     const scale = interpolate(p, [0, 1], [0.88, 1], Extrapolation.CLAMP);
     return {
@@ -145,27 +114,27 @@ function ThemeSegmentedSwitch({
   });
 
   const sunActiveStyle = useAnimatedStyle(() => ({
-    opacity: 1 - progress.value,
+    opacity: 1 - themeAnim.value,
   }));
   const sunInactiveStyle = useAnimatedStyle(() => ({
-    opacity: progress.value,
+    opacity: themeAnim.value,
   }));
 
   const lampActiveStyle = useAnimatedStyle(() => ({
-    opacity: progress.value,
+    opacity: themeAnim.value,
   }));
   const lampInactiveStyle = useAnimatedStyle(() => ({
-    opacity: 1 - progress.value,
+    opacity: 1 - themeAnim.value,
   }));
 
   const dayContentStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(progress.value, [0, 1], [1, 0.55], Extrapolation.CLAMP),
-    transform: [{ scale: interpolate(progress.value, [0, 1], [1, 0.96], Extrapolation.CLAMP) }],
+    opacity: interpolate(themeAnim.value, [0, 1], [1, 0.72], Extrapolation.CLAMP),
+    transform: [{ scale: interpolate(themeAnim.value, [0, 1], [1, 0.96], Extrapolation.CLAMP) }],
   }));
 
   const lampContentStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(progress.value, [0, 1], [0.55, 1], Extrapolation.CLAMP),
-    transform: [{ scale: interpolate(progress.value, [0, 1], [0.96, 1], Extrapolation.CLAMP) }],
+    opacity: interpolate(themeAnim.value, [0, 1], [0.72, 1], Extrapolation.CLAMP),
+    transform: [{ scale: interpolate(themeAnim.value, [0, 1], [0.96, 1], Extrapolation.CLAMP) }],
   }));
 
   const animatedTrackStyle = useAnimatedStyle(() => ({
@@ -174,15 +143,39 @@ function ThemeSegmentedSwitch({
       [0, 1],
       [dayColors.segmentedTrack, lampColors.segmentedTrack],
     ),
-  }));
+  }), [dayColors, lampColors]);
 
-  const animatedSegmentLabelStyle = useAnimatedStyle(() => ({
-    color: interpolateColor(
+  const animatedPillColorStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(
       themeAnim.value,
       [0, 1],
-      [dayColors.lampText, lampColors.lampText],
+      [dayColors.primaryDark, lampColors.primaryDark],
     ),
-  }));
+  }), [dayColors, lampColors]);
+
+  const dayLabelStyle = useAnimatedStyle(() => {
+    const activeColor = '#F5EDE1';
+    const inactiveColor = interpolateColor(
+      themeAnim.value,
+      [0, 1],
+      [dayColors.umber, lampColors.fawn],
+    );
+    return {
+      color: interpolateColor(themeAnim.value, [0, 1], [activeColor, inactiveColor]),
+    };
+  }, [dayColors, lampColors]);
+
+  const nightLabelStyle = useAnimatedStyle(() => {
+    const activeColor = '#F5EDE1';
+    const inactiveColor = interpolateColor(
+      themeAnim.value,
+      [0, 1],
+      [dayColors.umber, lampColors.fawn],
+    );
+    return {
+      color: interpolateColor(themeAnim.value, [0, 1], [inactiveColor, activeColor]),
+    };
+  }, [dayColors, lampColors]);
 
   return (
     <Animated.View
@@ -198,7 +191,8 @@ function ThemeSegmentedSwitch({
         pointerEvents="none"
         style={[
           styles.slidingPill,
-          { backgroundColor: colors.primaryDark, borderRadius: radius.pill },
+          animatedPillColorStyle,
+          { borderRadius: radius.pill },
           pillAnimatedStyle,
         ]}
       />
@@ -211,17 +205,17 @@ function ThemeSegmentedSwitch({
           <Animated.View style={[styles.segmentIcon, sunAnimatedStyle]}>
             <View style={{ width: 14, height: 14, alignItems: 'center', justifyContent: 'center' }}>
               <Animated.View style={[StyleSheet.absoluteFill, styles.centered, sunActiveStyle]}>
-                <ThemeSunIcon color={colors.flameAmber} size={14} />
+                <ThemeSunIcon color={dayColors.flameAmber} size={14} />
               </Animated.View>
               <Animated.View style={[StyleSheet.absoluteFill, styles.centered, sunInactiveStyle]}>
-                <ThemeSunIcon color={dayColors.fawn} size={14} />
+                <ThemeSunIcon color={dayColors.umber} size={14} />
               </Animated.View>
             </View>
           </Animated.View>
           <Animated.Text
             style={[
               typography.uiRowTitle,
-              animatedSegmentLabelStyle,
+              dayLabelStyle,
               { fontSize: 12, marginLeft: 6 },
             ]}
           >
@@ -238,17 +232,17 @@ function ThemeSegmentedSwitch({
           <Animated.View style={[styles.segmentIcon, lampAnimatedStyle]}>
             <View style={{ width: 12, height: 14, alignItems: 'center', justifyContent: 'center' }}>
               <Animated.View style={[StyleSheet.absoluteFill, styles.centered, lampActiveStyle]}>
-                <ThemeMoonIcon color={colors.flameAmber} size={14} />
+                <ThemeMoonIcon color={lampColors.flameAmber} size={14} />
               </Animated.View>
               <Animated.View style={[StyleSheet.absoluteFill, styles.centered, lampInactiveStyle]}>
-                <ThemeMoonIcon color={dayColors.fawn} size={14} />
+                <ThemeMoonIcon color={dayColors.umber} size={14} />
               </Animated.View>
             </View>
           </Animated.View>
           <Animated.Text
             style={[
               typography.uiRowTitle,
-              animatedSegmentLabelStyle,
+              nightLabelStyle,
               { fontSize: 12, marginLeft: 6 },
             ]}
           >
@@ -263,15 +257,12 @@ function ThemeSegmentedSwitch({
 function ToggleSwitch({
   value,
   onChange,
-  themeAnim,
 }: {
   value: boolean;
   onChange: (v: boolean) => void;
   themeAnim?: SharedValue<number>;
 }) {
-  const { colors, cultureTheme } = useTheme();
-  const dayColors = getCultureThemeColors(cultureTheme, 'day');
-  const lampColors = getCultureThemeColors(cultureTheme, 'lamp');
+  const { colors } = useTheme();
   const translateX = useSharedValue(value ? 16 : 0);
 
   useEffect(() => {
@@ -286,16 +277,6 @@ function ToggleSwitch({
     transform: [{ translateX: translateX.value }],
   }));
 
-  const trackAnimatedStyle = useAnimatedStyle(() => {
-    if (value) {
-      return { backgroundColor: colors.flameAmber };
-    }
-    const hairline = themeAnim
-      ? interpolateColor(themeAnim.value, [0, 1], [dayColors.hairline, lampColors.hairline])
-      : colors.hairline;
-    return { backgroundColor: hairline };
-  });
-
   const handlePress = () => {
     const next = !value;
     translateX.value = withSpring(next ? 16 : 0, {
@@ -308,9 +289,9 @@ function ToggleSwitch({
 
   return (
     <Pressable hitSlop={8} onPress={handlePress}>
-      <Animated.View style={[styles.toggleTrack, trackAnimatedStyle]}>
+      <View style={[styles.toggleTrack, { backgroundColor: value ? colors.flameAmber : colors.hairline }]}>
         <Animated.View style={[styles.toggleThumb, thumbStyle]} />
-      </Animated.View>
+      </View>
     </Pressable>
   );
 }
@@ -351,8 +332,6 @@ function syncSubtitle(status: SyncStatus): string {
 
 export default function SettingsScreen() {
   const { colors, cultureTheme, typography, spacing, radius } = useTheme();
-  const dayColors = getCultureThemeColors(cultureTheme, 'day');
-  const lampColors = getCultureThemeColors(cultureTheme, 'lamp');
   const insets = useSafeAreaInsets();
   const { status: updateStatus, downloadProgress, applyUpdate } = useAppUpdateBanner();
   const syncStatus = useSyncStatus();
@@ -431,127 +410,7 @@ export default function SettingsScreen() {
   };
 
   const isLamp = theme === 'lamp';
-  const themeAnim = useSharedValue(isLamp ? 1 : 0);
-
-  useEffect(() => {
-    themeAnim.value = withTiming(isLamp ? 1 : 0, {
-      duration: GLIDE_DURATION,
-      easing: GLIDE_EASING,
-    });
-  }, [isLamp, themeAnim]);
-
-  const animatedContainerStyle = useAnimatedStyle(() => ({
-    backgroundColor: interpolateColor(
-      themeAnim.value,
-      [0, 1],
-      [dayColors.parchment, lampColors.parchment],
-    ),
-  }));
-
-  const animatedCardStyle = useAnimatedStyle(() => ({
-    backgroundColor: interpolateColor(
-      themeAnim.value,
-      [0, 1],
-      [dayColors.card, lampColors.card],
-    ),
-    borderColor: interpolateColor(
-      themeAnim.value,
-      [0, 1],
-      [dayColors.hairline, lampColors.hairline],
-    ),
-  }));
-
-  const animatedAccountCardStyle = useAnimatedStyle(() => ({
-    backgroundColor: interpolateColor(
-      themeAnim.value,
-      [0, 1],
-      [dayColors.primaryDark, lampColors.card],
-    ),
-    borderColor: interpolateColor(
-      themeAnim.value,
-      [0, 1],
-      [dayColors.primaryDark, lampColors.hairline],
-    ),
-  }));
-
-  const animatedInkTextStyle = useAnimatedStyle(() => ({
-    color: interpolateColor(
-      themeAnim.value,
-      [0, 1],
-      [dayColors.ink, lampColors.ink],
-    ),
-  }));
-
-  const animatedFawnTextStyle = useAnimatedStyle(() => ({
-    color: interpolateColor(
-      themeAnim.value,
-      [0, 1],
-      [dayColors.fawn, lampColors.fawn],
-    ),
-  }));
-
-  const animatedAccountSubtextStyle = useAnimatedStyle(() => ({
-    color: interpolateColor(
-      themeAnim.value,
-      [0, 1],
-      [dayColors.mutedOnDark, lampColors.fawn],
-    ),
-  }));
-
-  const animatedPairPillStyle = useAnimatedStyle(() => ({
-    backgroundColor: interpolateColor(
-      themeAnim.value,
-      [0, 1],
-      [dayColors.pairPillBackground, lampColors.pairPillBackground],
-    ),
-  }));
-
-  const animatedPairPillTextStyle = useAnimatedStyle(() => ({
-    color: interpolateColor(
-      themeAnim.value,
-      [0, 1],
-      [dayColors.pairPillText, lampColors.pairPillText],
-    ),
-  }));
-
-  const animatedLampTextStyle = useAnimatedStyle(() => ({
-    color: interpolateColor(
-      themeAnim.value,
-      [0, 1],
-      [dayColors.lampText, lampColors.lampText],
-    ),
-  }));
-
-  const dayChevronStyle = useAnimatedStyle(() => ({
-    opacity: 1 - themeAnim.value,
-  }));
-  const nightChevronStyle = useAnimatedStyle(() => ({
-    opacity: themeAnim.value,
-  }));
-
-  const animatedDividerStyle = useAnimatedStyle(() => ({
-    borderBottomColor: interpolateColor(
-      themeAnim.value,
-      [0, 1],
-      [dayColors.hairline, lampColors.hairline],
-    ),
-  }));
-
-  const animatedAccountDividerStyle = useAnimatedStyle(() => ({
-    borderBottomColor: interpolateColor(
-      themeAnim.value,
-      [0, 1],
-      ['#2B2621', lampColors.hairline],
-    ),
-  }));
-
-  const animatedSecondaryButtonStyle = useAnimatedStyle(() => ({
-    backgroundColor: interpolateColor(
-      themeAnim.value,
-      [0, 1],
-      [dayColors.segmentedTrack, '#3A342D'],
-    ),
-  }));
+  const themeAnim = themeTransitionProgress;
 
   useFocusEffect(
     useCallback(() => {
@@ -586,8 +445,8 @@ export default function SettingsScreen() {
   return (
     // Scrolls now that About sits below the plan card — on a short phone the
     // last section would otherwise fall off the bottom with no way to reach it.
-    <Animated.ScrollView
-      style={[styles.container, animatedContainerStyle]}
+    <ScrollView
+      style={[styles.container, { backgroundColor: colors.parchment }]}
       contentContainerStyle={{
         paddingHorizontal: spacing.xl,
         paddingTop: insets.top + 16,
@@ -595,79 +454,63 @@ export default function SettingsScreen() {
       }}
       showsVerticalScrollIndicator={false}
     >
-      <Animated.Text style={[typography.screenTitle, animatedInkTextStyle, { marginBottom: spacing.lg }]}>
+      <Text style={[typography.screenTitle, { color: colors.ink, marginBottom: spacing.lg }]}>
         Settings
-      </Animated.Text>
+      </Text>
 
-      <Animated.Text style={[typography.eyebrowLabel, animatedFawnTextStyle, { marginBottom: spacing.sm }]}>
+      <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginBottom: spacing.sm }]}>
         Appearance
-      </Animated.Text>
-      <Animated.View
+      </Text>
+      <View
         style={[
           styles.card,
-          animatedCardStyle,
-          { borderRadius: radius.card, marginBottom: spacing.xl },
+          {
+            backgroundColor: colors.card,
+            borderColor: colors.hairline,
+            borderRadius: radius.card,
+            marginBottom: spacing.xl,
+          },
         ]}
       >
-        <Animated.Text style={[typography.uiRowTitle, animatedInkTextStyle, { fontSize: 13, marginBottom: 10 }]}>
+        <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13, marginBottom: 10 }]}>
           Reading theme
-        </Animated.Text>
+        </Text>
         <ThemeSegmentedSwitch theme={theme} themeAnim={themeAnim} onThemeChange={requestThemeChange} />
         <CultureEditionBanner compact themeProgress={themeAnim} />
 
-        <Animated.View style={[styles.itemDivider, animatedDividerStyle, { marginVertical: 12 }]} />
+        <View style={[styles.itemDivider, { borderBottomColor: colors.hairline, marginVertical: 12 }]} />
         <View style={styles.settingsRow}>
           <View style={{ flex: 1, minWidth: 0, paddingRight: spacing.sm }}>
-            <Animated.Text style={[typography.uiRowTitle, animatedInkTextStyle, { fontSize: 13 }]}>
+            <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
               Change themes
-            </Animated.Text>
-            <Animated.Text style={[typography.metadataCaption, animatedFawnTextStyle, { fontSize: 11, marginTop: 2 }]}>
+            </Text>
+            <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11, marginTop: 2 }]}>
               {literaryThemeOption.title} · {literaryThemeOption.paletteLabel ?? literaryThemeOption.subtitle}
-            </Animated.Text>
+            </Text>
           </View>
-          <AnimatedPressable
+          <Pressable
             onPress={() => setLiteraryThemePickerVisible(true)}
-            style={[styles.pairPill, animatedPairPillStyle, { borderRadius: radius.pill }]}
+            style={[styles.pairPill, { backgroundColor: colors.pairPillBackground, borderRadius: radius.pill }]}
           >
-            <Animated.Text style={[typography.uiRowTitle, animatedPairPillTextStyle, { fontSize: 12 }]}>
+            <Text style={[typography.uiRowTitle, { color: colors.pairPillText, fontSize: 12 }]}>
               {literaryThemeOption.title}
-            </Animated.Text>
+            </Text>
             <View style={{ width: 14, height: 14, alignItems: 'center', justifyContent: 'center', marginLeft: 4 }}>
-              <Animated.View style={[StyleSheet.absoluteFill, styles.centered, dayChevronStyle]}>
-                <ChevronRightIcon color={dayColors.straw} size={14} />
-              </Animated.View>
-              <Animated.View style={[StyleSheet.absoluteFill, styles.centered, nightChevronStyle]}>
-                <ChevronRightIcon color={lampColors.straw} size={14} />
-              </Animated.View>
+              <ChevronRightIcon color={colors.straw} size={14} />
             </View>
-          </AnimatedPressable>
+          </Pressable>
         </View>
-      </Animated.View>
+      </View>
 
-      <Animated.Text style={[typography.eyebrowLabel, animatedFawnTextStyle, { marginBottom: spacing.sm }]}>
+      <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginBottom: spacing.sm }]}>
         Reading
-      </Animated.Text>
-      <Animated.View
+      </Text>
+      <View
         style={[
           styles.card,
-          animatedCardStyle,
-          { borderRadius: radius.card, marginBottom: spacing.xl, paddingVertical: 4 },
-        ]}
-      >
-        <View style={styles.settingsRow}>
-          <Animated.Text style={[typography.uiRowTitle, animatedInkTextStyle, { fontSize: 13 }]}>Page-turn sound</Animated.Text>
-          <ToggleSwitch value={pageTurnSound} onChange={setPageTurnSoundEnabled} themeAnim={themeAnim} />
-        </View>
-      </Animated.View>
-
-      <Animated.Text style={[typography.eyebrowLabel, animatedFawnTextStyle, { marginBottom: spacing.sm }]}>
-        Language
-      </Animated.Text>
-      <Animated.View
-        style={[
-          styles.card,
-          animatedCardStyle,
           {
+            backgroundColor: colors.card,
+            borderColor: colors.hairline,
             borderRadius: radius.card,
             marginBottom: spacing.xl,
             paddingVertical: 4,
@@ -675,42 +518,67 @@ export default function SettingsScreen() {
         ]}
       >
         <View style={styles.settingsRow}>
-          <Animated.Text style={[typography.uiRowTitle, animatedInkTextStyle, { fontSize: 13 }]}>
-            Mother tongue
-          </Animated.Text>
-          <AnimatedPressable
-            onPress={() => setMotherTonguePickerVisible(true)}
-            style={[styles.pairPill, animatedPairPillStyle, { borderRadius: radius.pill }]}
-          >
-            <LanguageBadge code={motherTongueOption.code} size={20} isSelected />
-            <Animated.Text style={[typography.uiRowTitle, animatedPairPillTextStyle, { fontSize: 12 }]}>
-              {motherTongueOption.nativeName}
-            </Animated.Text>
-          </AnimatedPressable>
+          <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>Page-turn sound</Text>
+          <ToggleSwitch value={pageTurnSound} onChange={setPageTurnSoundEnabled} themeAnim={themeAnim} />
         </View>
-        <View style={styles.settingsRow}>
-          <Animated.Text style={[typography.uiRowTitle, animatedInkTextStyle, { fontSize: 13 }]}>
-            Default translation pair
-          </Animated.Text>
-          <AnimatedPressable
-            onPress={() => setLanguagePickerVisible(true)}
-            style={[styles.pairPill, animatedPairPillStyle, { borderRadius: radius.pill }]}
-          >
-            <Animated.Text style={[typography.uiRowTitle, animatedPairPillTextStyle, { fontSize: 12 }]}>
-              EN → {targetLanguageLabel(targetLanguage)}
-            </Animated.Text>
-          </AnimatedPressable>
-        </View>
-      </Animated.View>
+      </View>
 
-      <Animated.Text style={[typography.eyebrowLabel, animatedFawnTextStyle, { marginBottom: spacing.sm }]}>
-        Storage
-      </Animated.Text>
-      <Animated.View
+      <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginBottom: spacing.sm }]}>
+        Language
+      </Text>
+      <View
         style={[
           styles.card,
-          animatedCardStyle,
-          { borderRadius: radius.card, marginBottom: spacing.xl },
+          {
+            backgroundColor: colors.card,
+            borderColor: colors.hairline,
+            borderRadius: radius.card,
+            marginBottom: spacing.xl,
+            paddingVertical: 4,
+          },
+        ]}
+      >
+        <View style={styles.settingsRow}>
+          <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
+            Mother tongue
+          </Text>
+          <Pressable
+            onPress={() => setMotherTonguePickerVisible(true)}
+            style={[styles.pairPill, { backgroundColor: colors.pairPillBackground, borderRadius: radius.pill }]}
+          >
+            <LanguageBadge code={motherTongueOption.code} size={20} isSelected />
+            <Text style={[typography.uiRowTitle, { color: colors.pairPillText, fontSize: 12 }]}>
+              {motherTongueOption.nativeName}
+            </Text>
+          </Pressable>
+        </View>
+        <View style={styles.settingsRow}>
+          <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
+            Default translation pair
+          </Text>
+          <Pressable
+            onPress={() => setLanguagePickerVisible(true)}
+            style={[styles.pairPill, { backgroundColor: colors.pairPillBackground, borderRadius: radius.pill }]}
+          >
+            <Text style={[typography.uiRowTitle, { color: colors.pairPillText, fontSize: 12 }]}>
+              EN → {targetLanguageLabel(targetLanguage)}
+            </Text>
+          </Pressable>
+        </View>
+      </View>
+
+      <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginBottom: spacing.sm }]}>
+        Storage
+      </Text>
+      <View
+        style={[
+          styles.card,
+          {
+            backgroundColor: colors.card,
+            borderColor: colors.hairline,
+            borderRadius: radius.card,
+            marginBottom: spacing.xl,
+          },
         ]}
       >
         <Pressable
@@ -718,45 +586,40 @@ export default function SettingsScreen() {
           style={[styles.settingsRow, { paddingVertical: 10 }]}
         >
           <View style={{ flex: 1, minWidth: 0 }}>
-            <Animated.Text style={[typography.uiRowTitle, animatedInkTextStyle, { fontSize: 13 }]}>
+            <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
               Saved books
-            </Animated.Text>
-            <Animated.Text style={[typography.metadataCaption, animatedFawnTextStyle, { fontSize: 11, marginTop: 2 }]}>
+            </Text>
+            <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11, marginTop: 2 }]}>
               {storageUsage
                 ? `${(storageUsage.downloadsBytes / (1024 * 1024)).toFixed(1)} MB (${storageUsage.downloadedBookCount} ${storageUsage.downloadedBookCount === 1 ? 'book' : 'books'})`
                 : 'Downloaded reading'}
-            </Animated.Text>
+            </Text>
           </View>
           <View style={{ width: 15, height: 15, alignItems: 'center', justifyContent: 'center' }}>
-            <Animated.View style={[StyleSheet.absoluteFill, styles.centered, dayChevronStyle]}>
-              <ChevronRightIcon color={dayColors.straw} size={15} />
-            </Animated.View>
-            <Animated.View style={[StyleSheet.absoluteFill, styles.centered, nightChevronStyle]}>
-              <ChevronRightIcon color={lampColors.straw} size={15} />
-            </Animated.View>
+            <ChevronRightIcon color={colors.straw} size={15} />
           </View>
         </Pressable>
 
-        <Animated.View style={[styles.itemDivider, animatedDividerStyle]} />
+        <View style={[styles.itemDivider, { borderBottomColor: colors.hairline }]} />
 
         <View style={[styles.settingsRow, { paddingVertical: 10 }]}>
           <View style={{ flex: 1, minWidth: 0 }}>
-            <Animated.Text style={[typography.uiRowTitle, animatedInkTextStyle, { fontSize: 13 }]}>
+            <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
               Temporary app cache
-            </Animated.Text>
-            <Animated.Text style={[typography.metadataCaption, animatedFawnTextStyle, { fontSize: 11, marginTop: 2 }]}>
+            </Text>
+            <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11, marginTop: 2 }]}>
               {storageUsage
                 ? `${(storageUsage.rebuildableCacheBytes / (1024 * 1024)).toFixed(1)} MB (${storageUsage.cacheEntryCount} entries)`
                 : 'Translations & covers'}
-            </Animated.Text>
+            </Text>
           </View>
-          <AnimatedPressable
+          <Pressable
             onPress={handleClearCache}
             disabled={clearingCache}
             style={[
               styles.upgradeButton,
-              animatedSecondaryButtonStyle,
               {
+                backgroundColor: isLamp ? '#3A342D' : colors.segmentedTrack,
                 borderRadius: radius.pill,
                 minWidth: 64,
                 alignItems: 'center',
@@ -767,32 +630,34 @@ export default function SettingsScreen() {
             {clearingCache ? (
               <ActivityIndicator size="small" color={colors.ink} />
             ) : (
-              <Animated.Text style={[typography.uiRowTitle, animatedInkTextStyle, { fontSize: 11 }]}>Clear</Animated.Text>
+              <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 11 }]}>Clear</Text>
             )}
-          </AnimatedPressable>
+          </Pressable>
         </View>
-      </Animated.View>
+      </View>
 
-      <Animated.Text style={[typography.eyebrowLabel, animatedFawnTextStyle, { marginBottom: spacing.sm }]}>
+      <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginBottom: spacing.sm }]}>
         Account
-      </Animated.Text>
-      <Animated.View
+      </Text>
+      <View
         style={[
           styles.card,
-          animatedAccountCardStyle,
-          { borderRadius: radius.card },
+          {
+            backgroundColor: isLamp ? colors.card : colors.primaryDark,
+            borderColor: isLamp ? colors.hairline : colors.primaryDark,
+            borderRadius: radius.card,
+          },
         ]}
       >
         <View style={styles.settingsRow}>
           <View>
-            <Animated.Text style={[typography.uiRowTitle, animatedLampTextStyle, { fontSize: 13 }]}>
+            <Text style={[typography.uiRowTitle, { color: isLamp ? colors.ink : colors.lampText, fontSize: 13 }]}>
               {isPremium ? (entitlement.source === 'promo' ? 'Promo Pass' : 'Premium Plan') : 'Free Plan'}
-            </Animated.Text>
-            <Animated.Text
+            </Text>
+            <Text
               style={[
                 typography.metadataCaption,
-                animatedAccountSubtextStyle,
-                { fontSize: 11, marginTop: 2 },
+                { color: isLamp ? colors.fawn : colors.mutedOnDark, fontSize: 11, marginTop: 2 },
               ]}
             >
               {isPremium
@@ -800,14 +665,14 @@ export default function SettingsScreen() {
                 : translationsLeft === undefined
                   ? 'Checking translations left…'
                   : `${translationsLeft} translations left today`}
-            </Animated.Text>
+            </Text>
           </View>
           {isPremium ? (
-            <Animated.View
+            <View
               style={[
                 styles.upgradeButton,
-                animatedSecondaryButtonStyle,
                 {
+                  backgroundColor: isLamp ? '#3A342D' : colors.segmentedTrack,
                   borderRadius: radius.pill,
                   paddingHorizontal: 12,
                   paddingVertical: 6,
@@ -815,7 +680,7 @@ export default function SettingsScreen() {
               ]}
             >
               <Text style={[typography.uiRowTitle, { color: colors.flameAmber, fontSize: 12 }]}>Active</Text>
-            </Animated.View>
+            </View>
           ) : (
             <Pressable
               onPress={() => router.push('/paywall')}
@@ -826,39 +691,42 @@ export default function SettingsScreen() {
           )}
         </View>
 
-        <Animated.View style={[styles.itemDivider, animatedAccountDividerStyle]} />
+        <View style={[styles.itemDivider, { borderBottomColor: isLamp ? colors.hairline : '#2B2621' }]} />
 
         <Pressable
           onPress={() => setPromoModalVisible(true)}
           style={[styles.settingsRow, { paddingVertical: 10 }]}
         >
-          <Animated.Text style={[typography.uiRowTitle, animatedLampTextStyle, { fontSize: 13 }]}>
+          <Text style={[typography.uiRowTitle, { color: isLamp ? colors.ink : colors.lampText, fontSize: 13 }]}>
             Redeem promo code
-          </Animated.Text>
+          </Text>
           <View style={{ width: 15, height: 15, alignItems: 'center', justifyContent: 'center' }}>
             <ChevronRightIcon color={colors.flameAmber} size={14} />
           </View>
         </Pressable>
-      </Animated.View>
+      </View>
 
-      <Animated.Text style={[typography.eyebrowLabel, animatedFawnTextStyle, { marginTop: spacing.xl, marginBottom: spacing.sm }]}>
+      <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginTop: spacing.xl, marginBottom: spacing.sm }]}>
         Cloud Sync
-      </Animated.Text>
-      <Animated.View
+      </Text>
+      <View
         style={[
           styles.card,
           styles.settingsRow,
-          animatedCardStyle,
-          { borderRadius: radius.card },
+          {
+            backgroundColor: colors.card,
+            borderColor: colors.hairline,
+            borderRadius: radius.card,
+          },
         ]}
       >
         <View style={{ flex: 1, minWidth: 0 }}>
-          <Animated.Text style={[typography.uiRowTitle, animatedInkTextStyle, { fontSize: 13 }]}>
+          <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
             Cloud Sync
-          </Animated.Text>
-          <Animated.Text style={[typography.metadataCaption, animatedFawnTextStyle, { fontSize: 11, marginTop: 2 }]}>
+          </Text>
+          <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11, marginTop: 2 }]}>
             {syncSubtitle(syncStatus)}
-          </Animated.Text>
+          </Text>
         </View>
         <Pressable
           onPress={() => {
@@ -912,26 +780,29 @@ export default function SettingsScreen() {
             </Text>
           )}
         </Pressable>
-      </Animated.View>
+      </View>
 
-      <Animated.Text style={[typography.eyebrowLabel, animatedFawnTextStyle, { marginTop: spacing.xl, marginBottom: spacing.sm }]}>
+      <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginTop: spacing.xl, marginBottom: spacing.sm }]}>
         About
-      </Animated.Text>
-      <Animated.View
+      </Text>
+      <View
         style={[
           styles.card,
           styles.settingsRow,
-          animatedCardStyle,
-          { borderRadius: radius.card },
+          {
+            backgroundColor: colors.card,
+            borderColor: colors.hairline,
+            borderRadius: radius.card,
+          },
         ]}
       >
         <View style={{ flex: 1, minWidth: 0 }}>
-          <Animated.Text style={[typography.uiRowTitle, animatedInkTextStyle, { fontSize: 13 }]}>
+          <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
             Lamplight {Constants.expoConfig?.version ?? ''}
-          </Animated.Text>
-          <Animated.Text style={[typography.metadataCaption, animatedFawnTextStyle, { fontSize: 11, marginTop: 2 }]}>
+          </Text>
+          <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11, marginTop: 2 }]}>
             {updateStatusLabel(updateStatus, downloadProgress)}
-          </Animated.Text>
+          </Text>
         </View>
         {updateStatus === 'checking' || updateStatus === 'downloading' ? (
           <ActivityIndicator size="small" color={colors.flameAmber} />
@@ -943,7 +814,7 @@ export default function SettingsScreen() {
             <Text style={[typography.uiRowTitle, { color: colors.primaryDark, fontSize: 12 }]}>Restart</Text>
           </Pressable>
         ) : null}
-      </Animated.View>
+      </View>
 
       <MotherTonguePicker
         visible={motherTonguePickerVisible}
@@ -1012,7 +883,7 @@ export default function SettingsScreen() {
         onConfirm={() => setAccountProtectionDialogVisible(false)}
         onCancel={() => setAccountProtectionDialogVisible(false)}
       />
-    </Animated.ScrollView>
+    </ScrollView>
   );
 }
 

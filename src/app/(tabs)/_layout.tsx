@@ -1,20 +1,9 @@
-import { type ComponentType, useEffect } from 'react';
-import { StyleSheet, View } from 'react-native';
-import Animated, {
-  interpolateColor,
-  useAnimatedStyle,
-  withTiming,
-} from 'react-native-reanimated';
+import { type ComponentType } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
 import { Tabs } from 'expo-router';
 
 import { HomeIcon, LibraryIcon, SettingsIcon, VocabularyIcon } from '@/components/icons';
-import {
-  THEME_TRANSITION_DURATION,
-  THEME_TRANSITION_EASING,
-  themeTransitionProgress,
-} from '@/features/settings/themeTransition';
 import { useTheme } from '@/theme/ThemeProvider';
-import { getCultureThemeColors } from '@/theme/tokens';
 
 type TabIcon = ComponentType<{ color: string; size?: number }>;
 
@@ -24,20 +13,11 @@ type ThemeAwareTabVisualProps = {
 };
 
 function ThemeAwareTabIcon({ focused, Icon }: ThemeAwareTabVisualProps) {
-  const { cultureTheme } = useTheme();
-  const dayColors = getCultureThemeColors(cultureTheme, 'day');
-  const lampColors = getCultureThemeColors(cultureTheme, 'lamp');
-  const dayStyle = useAnimatedStyle(() => ({ opacity: 1 - themeTransitionProgress.value }));
-  const lampStyle = useAnimatedStyle(() => ({ opacity: themeTransitionProgress.value }));
+  const { colors } = useTheme();
 
   return (
     <View style={styles.tabIcon}>
-      <Animated.View pointerEvents="none" style={[styles.tabIconLayer, dayStyle]}>
-        <Icon color={focused ? dayColors.ink : dayColors.straw} />
-      </Animated.View>
-      <Animated.View pointerEvents="none" style={[styles.tabIconLayer, lampStyle]}>
-        <Icon color={focused ? lampColors.ink : lampColors.straw} />
-      </Animated.View>
+      <Icon color={focused ? colors.ink : colors.straw} />
     </View>
   );
 }
@@ -48,56 +28,43 @@ type ThemeAwareTabLabelProps = {
 };
 
 function ThemeAwareTabLabel({ focused, label }: ThemeAwareTabLabelProps) {
-  const { cultureTheme, typography } = useTheme();
-  const dayColors = getCultureThemeColors(cultureTheme, 'day');
-  const lampColors = getCultureThemeColors(cultureTheme, 'lamp');
-  const dayStyle = useAnimatedStyle(() => ({ opacity: 1 - themeTransitionProgress.value }));
-  const lampStyle = useAnimatedStyle(() => ({ opacity: themeTransitionProgress.value }));
-  const textStyle = {
-    fontFamily: typography.eyebrowLabel.fontFamily,
-    fontSize: 11,
-  };
+  const { colors, typography } = useTheme();
 
   return (
     <View style={styles.tabLabel}>
-      <Animated.Text numberOfLines={1} style={[styles.tabLabelText, textStyle, { color: focused ? dayColors.ink : dayColors.straw }, dayStyle]}>
+      <Text
+        numberOfLines={1}
+        style={[
+          styles.tabLabelText,
+          {
+            fontFamily: typography.eyebrowLabel.fontFamily,
+            fontSize: 11,
+            color: focused ? colors.ink : colors.straw,
+          },
+        ]}
+      >
         {label}
-      </Animated.Text>
-      <Animated.Text numberOfLines={1} style={[styles.tabLabelText, textStyle, { color: focused ? lampColors.ink : lampColors.straw }, lampStyle]}>
-        {label}
-      </Animated.Text>
+      </Text>
     </View>
   );
 }
 
 function ThemeAwareTabBarBackground() {
-  const { cultureTheme, scheme } = useTheme();
-  const dayColors = getCultureThemeColors(cultureTheme, 'day');
-  const lampColors = getCultureThemeColors(cultureTheme, 'lamp');
-  useEffect(() => {
-    const target = scheme === 'lamp' ? 1 : 0;
-    if (Math.abs(themeTransitionProgress.value - target) > 0.001) {
-      themeTransitionProgress.value = withTiming(target, {
-        duration: THEME_TRANSITION_DURATION,
-        easing: THEME_TRANSITION_EASING,
-      });
-    }
-  }, [scheme]);
+  const { colors } = useTheme();
 
-  const animatedStyle = useAnimatedStyle(() => ({
-    backgroundColor: interpolateColor(
-      themeTransitionProgress.value,
-      [0, 1],
-      [dayColors.parchment, lampColors.parchment],
-    ),
-    borderTopColor: interpolateColor(
-      themeTransitionProgress.value,
-      [0, 1],
-      [dayColors.hairline, lampColors.hairline],
-    ),
-  }));
-
-  return <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.tabBarBackground, animatedStyle]} />;
+  return (
+    <View
+      pointerEvents="none"
+      style={[
+        StyleSheet.absoluteFill,
+        styles.tabBarBackground,
+        {
+          backgroundColor: colors.parchment,
+          borderTopColor: colors.hairline,
+        },
+      ]}
+    />
+  );
 }
 
 export default function TabsLayout() {
