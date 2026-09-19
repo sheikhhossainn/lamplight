@@ -311,7 +311,6 @@ export default function SettingsScreen() {
   const syncStatus = useSyncStatus();
 
   const theme = useReadingTheme();
-  const isLamp = theme === 'lamp';
   const targetLanguage = useTargetLanguage();
   const motherTongue = useMotherTongue();
   const motherTongueOption = getMotherTongueOption(motherTongue);
@@ -433,6 +432,30 @@ export default function SettingsScreen() {
   }));
   const nightChevronStyle = useAnimatedStyle(() => ({
     opacity: themeAnim.value,
+  }));
+
+  const animatedDividerStyle = useAnimatedStyle(() => ({
+    borderBottomColor: interpolateColor(
+      themeAnim.get(),
+      [0, 1],
+      [dayColors.hairline, lampColors.hairline],
+    ),
+  }));
+
+  const animatedAccountDividerStyle = useAnimatedStyle(() => ({
+    borderBottomColor: interpolateColor(
+      themeAnim.get(),
+      [0, 1],
+      ['#2B2621', lampColors.hairline],
+    ),
+  }));
+
+  const animatedSecondaryButtonStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(
+      themeAnim.get(),
+      [0, 1],
+      [dayColors.segmentedTrack, '#3A342D'],
+    ),
   }));
 
   useFocusEffect(
@@ -586,7 +609,7 @@ export default function SettingsScreen() {
           </View>
         </Pressable>
 
-        <View style={[styles.itemDivider, { borderBottomColor: isLamp ? '#332E27' : '#EAE1D3' }]} />
+        <Animated.View style={[styles.itemDivider, animatedDividerStyle]} />
 
         <View style={[styles.settingsRow, { paddingVertical: 10 }]}>
           <View style={{ flex: 1, minWidth: 0 }}>
@@ -599,13 +622,13 @@ export default function SettingsScreen() {
                 : 'Translations & covers'}
             </Animated.Text>
           </View>
-          <Pressable
+          <AnimatedPressable
             onPress={handleClearCache}
             disabled={clearingCache}
             style={[
               styles.upgradeButton,
+              animatedSecondaryButtonStyle,
               {
-                backgroundColor: isLamp ? '#3A342D' : '#E5DAC8',
                 borderRadius: radius.pill,
                 minWidth: 64,
                 alignItems: 'center',
@@ -616,9 +639,9 @@ export default function SettingsScreen() {
             {clearingCache ? (
               <ActivityIndicator size="small" color={colors.ink} />
             ) : (
-              <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 11 }]}>Clear</Text>
+              <Animated.Text style={[typography.uiRowTitle, animatedInkTextStyle, { fontSize: 11 }]}>Clear</Animated.Text>
             )}
-          </Pressable>
+          </AnimatedPressable>
         </View>
       </Animated.View>
 
@@ -652,11 +675,11 @@ export default function SettingsScreen() {
             </Animated.Text>
           </View>
           {isPremium ? (
-            <View
+            <Animated.View
               style={[
                 styles.upgradeButton,
+                animatedSecondaryButtonStyle,
                 {
-                  backgroundColor: isLamp ? '#3A342D' : '#E5DAC8',
                   borderRadius: radius.pill,
                   paddingHorizontal: 12,
                   paddingVertical: 6,
@@ -664,7 +687,7 @@ export default function SettingsScreen() {
               ]}
             >
               <Text style={[typography.uiRowTitle, { color: colors.flameAmber, fontSize: 12 }]}>Active</Text>
-            </View>
+            </Animated.View>
           ) : (
             <Pressable
               onPress={() => router.push('/paywall')}
@@ -675,7 +698,7 @@ export default function SettingsScreen() {
           )}
         </View>
 
-        <View style={[styles.itemDivider, { borderBottomColor: '#2B2621' }]} />
+        <Animated.View style={[styles.itemDivider, animatedAccountDividerStyle]} />
 
         <Pressable
           onPress={() => setPromoModalVisible(true)}
