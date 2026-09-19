@@ -175,3 +175,184 @@ export async function verifyEmailOtp(email: string, token: string): Promise<{ su
   }
 }
 
+/**
+ * Initiates linking an email address to the current anonymous guest session.
+ * If the email is already registered to an existing account, returns `requiresMerge: true`.
+ */
+export async function linkEmailToGuest(
+  email: string,
+): Promise<{ success: boolean; requiresMerge?: boolean; message?: string }> {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    return { success: false, message: 'Supabase configuration missing.' };
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+
+  try {
+    const session = await getSession();
+
+    // In Supabase, linking an email to the current authenticated user is done via PUT /auth/v1/user
+    const res = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+      method: 'PUT',
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${session.accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email: normalizedEmail }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      const errorMsg = (
+        err.msg ||
+        err.message ||
+        err.error_description ||
+        ''
+      ).toLowerCase();
+
+      // Check if email already belongs to an existing account
+      if (
+        res.status === 422 ||
+        res.status === 400 ||
+        errorMsg.includes('already exists') ||
+        errorMsg.includes('already registered') ||
+        errorMsg.includes('identity') ||
+        errorMsg.includes('conflict')
+      ) {
+        return {
+          success: false,
+          requiresMerge: true,
+          message: 'This email belongs to an existing account.',
+        };
+      }
+
+      return {
+        success: false,
+        message: err.msg || err.error_description || 'Failed to send verification code.',
+      };
+    }
+
+    return { success: true };
+  } catch (err: unknown) {
+    return {
+      success: false,
+      message: (err as Error)?.message || 'Network error linking email.',
+    };
+  }
+}
+
+/**
+ * Verifies the OTP code for linking an email to the current guest account,
+ * upgrading the session to protected without losing the existing Supabase user ID.
+ */
+export async function verifyGuestEmailLink(
+  email: string,
+  token: string,
+): Promise<{ success: boolean; message?: string }> {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    return { success: false, message: 'Supabase configuration missing.' };
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+  const trimmedToken = token.trim();
+
+  try {
+    const session = await getSession();
+
+    // 1. Try email_change verification with the active user bearer token
+    const res = await fetch(`${SUPABASE_URL}/auth/v1/verify`, {
+      method: 'POST',
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${session.accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        type: 'email_change',
+        email: normalizedEmail,
+        token: trimmedToken,
+      }),
+    });
+
+    if (res.ok) {
+      const auth = (await res.json()) as AuthResponse;
+      auth.user.is_anonymous = false;
+      auth.user.email = normalizedEmail;
+      await persistSession(auth);
+      return { success: true };
+    }
+
+    // 2. Fallback to standard email OTP verify if email_change was not used
+    const fallbackRes = await fetch(`${SUPABASE_URL}/auth/v1/verify`, {
+      method: 'POST',
+      headers: { apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'email',
+        email: normalizedEmail,
+        token: trimmedToken,
+      }),
+    });
+
+    if (!fallbackRes.ok) {
+      const err = await fallbackRes.json().catch(() => ({}));
+      return {
+        success: false,
+        message: err.msg || err.error_description || 'Invalid or expired verification code.',
+      };
+    }
+
+    const auth = (await fallbackRes.json()) as AuthResponse;
+    auth.user.is_anonymous = false;
+    auth.user.email = normalizedEmail;
+    await persistSession(auth);
+    return { success: true };
+  } catch (err: unknown) {
+    return {
+      success: false,
+      message: (err as Error)?.message || 'Network error verifying email link.',
+    };
+  }
+}
+
+/**
+ * Signs out the current account, prompting whether to keep or remove local reading data.
+ */
+export async function signOutUser(keepLocalData: boolean = true): Promise<void> {
+  // 1. Clear session tokens
+  await Promise.all([
+    setSetting(KEY_ACCESS_TOKEN, ''),
+    setSetting(KEY_REFRESH_TOKEN, ''),
+    setSetting(KEY_USER_ID, ''),
+    setSetting(KEY_EXPIRES_AT, ''),
+    setSetting(KEY_IS_ANONYMOUS, 'true'),
+    setSetting(KEY_USER_EMAIL, ''),
+  ]);
+
+  // 2. If user chooses to remove local data from this device, wipe user-owned tables
+  if (!keepLocalData) {
+    const { getDb } = await import('@/db/client');
+    const db = await getDb();
+    await db.withTransactionAsync(async () => {
+      await db.runAsync('DELETE FROM saved_words');
+      await db.runAsync('DELETE FROM highlights');
+      await db.runAsync('DELETE FROM reading_positions');
+      await db.runAsync('DELETE FROM shelves');
+      await db.runAsync('DELETE FROM shelf_items');
+      await db.runAsync('DELETE FROM review_events');
+      await db.runAsync('DELETE FROM quiz_attempts');
+      await db.runAsync('DELETE FROM sync_outbox');
+      await db.runAsync('DELETE FROM sync_cursor');
+      await db.runAsync('DELETE FROM pending_word_lookups');
+    });
+  }
+
+  // 3. Immediately re-initialize a fresh anonymous guest session
+  try {
+    const newAuth = await signInAnonymously();
+    await persistSession(newAuth);
+  } catch (err) {
+    console.warn('[Auth] Failed to initialize new guest session on sign-out:', err);
+  }
+}
+
