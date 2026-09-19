@@ -1,9 +1,10 @@
 import { useRef } from 'react';
-import { LayoutChangeEvent, Modal, PanResponder, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { LayoutChangeEvent, PanResponder, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 
 import { CloseIcon, SoundWaveIcon } from '@/components/icons';
+import { ReaderOverlay } from '@/features/reader/components/ReaderOverlay';
 import {
   setAmbienceTrackId,
   setAmbienceVolume,
@@ -11,10 +12,6 @@ import {
   useAmbienceVolume,
 } from '@/features/ambience/ambiencePreference';
 import { AMBIENCE_TRACKS } from '@/features/ambience/tracks';
-import {
-  setPageTurnSoundEnabled,
-  usePageTurnSoundEnabled,
-} from '@/features/settings/soundPrefs';
 import { hapticFlashcardAction } from '@/lib/haptics';
 import { useTheme } from '@/theme/ThemeProvider';
 
@@ -93,7 +90,6 @@ export function AmbiencePicker({ visible, onClose }: AmbiencePickerProps) {
   const { colors, typography, spacing, radius } = useTheme();
   const insets = useSafeAreaInsets();
   const selectedId = useAmbienceTrackId();
-  const pageTurnSoundEnabled = usePageTurnSoundEnabled();
 
   const rows: { id: string | null; label: string; hint: string }[] = [
     { id: null, label: 'Off', hint: 'Read in silence' },
@@ -101,9 +97,8 @@ export function AmbiencePicker({ visible, onClose }: AmbiencePickerProps) {
   ];
 
   return (
-    <Modal visible={visible} transparent animationType="slide" statusBarTranslucent onRequestClose={onClose}>
-      <View style={styles.root}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+    <ReaderOverlay visible={visible} onClosed={onClose} variant="bottomSheet">
+      {({ requestClose }) => (
         <View
           style={[
             styles.sheet,
@@ -120,13 +115,13 @@ export function AmbiencePicker({ visible, onClose }: AmbiencePickerProps) {
           <View style={styles.headerRow}>
             <View style={{ flex: 1, paddingRight: 12 }}>
               <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 18 }]}>
-                Reading Sounds
+                Listen to Nature Sounds
               </Text>
               <Text style={[typography.metadataCaption, { color: colors.fawn, marginTop: 2 }]}>
-                Page swipe audio & background ambience
+                Soothing soundscapes while you read
               </Text>
             </View>
-            <Pressable onPress={onClose} hitSlop={12} style={styles.closeBtn}>
+            <Pressable onPress={requestClose} hitSlop={12} style={styles.closeBtn}>
               <CloseIcon color={colors.fawn} size={16} />
             </Pressable>
           </View>
@@ -136,52 +131,6 @@ export function AmbiencePicker({ visible, onClose }: AmbiencePickerProps) {
             overScrollMode="never"
             contentContainerStyle={{ paddingBottom: 12 }}
           >
-            {/* Page Audio / Turn Sound Section */}
-            <View style={{ marginBottom: spacing.md, marginTop: 4 }}>
-              <Text
-                style={[
-                  typography.eyebrowLabel,
-                  { color: colors.fawn, marginBottom: spacing.xs, fontSize: 10, letterSpacing: 0.8 },
-                ]}
-              >
-                PAGE AUDIO
-              </Text>
-              <Pressable
-                onPress={() => {
-                  void hapticFlashcardAction('graduate');
-                  setPageTurnSoundEnabled(!pageTurnSoundEnabled);
-                }}
-                style={({ pressed }) => [
-                  styles.pageTurnCard,
-                  {
-                    backgroundColor: pageTurnSoundEnabled ? `${colors.flameAmber}10` : colors.parchment,
-                    borderColor: pageTurnSoundEnabled ? `${colors.flameAmber}55` : colors.hairline,
-                    borderRadius: radius.card,
-                  },
-                  pressed && { opacity: 0.85 },
-                ]}
-              >
-                <View style={{ flex: 1, marginRight: spacing.sm }}>
-                  <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 14 }]}>
-                    Page-turn sound
-                  </Text>
-                  <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11.5, marginTop: 2 }]}>
-                    {pageTurnSoundEnabled ? 'Soft paper rustle on swipe (On)' : 'Silent page turns (Off)'}
-                  </Text>
-                </View>
-                <Switch
-                  trackColor={{ false: colors.hairline, true: colors.flameAmber }}
-                  thumbColor={pageTurnSoundEnabled ? colors.primaryDark : colors.parchment}
-                  ios_backgroundColor={colors.hairline}
-                  onValueChange={(val) => {
-                    void hapticFlashcardAction('graduate');
-                    setPageTurnSoundEnabled(val);
-                  }}
-                  value={pageTurnSoundEnabled}
-                />
-              </Pressable>
-            </View>
-
             {/* Background Ambience / Music Section */}
             <View style={{ marginBottom: spacing.sm }}>
               <Text
@@ -248,8 +197,8 @@ export function AmbiencePicker({ visible, onClose }: AmbiencePickerProps) {
             ) : null}
           </ScrollView>
         </View>
-      </View>
-    </Modal>
+      )}
+    </ReaderOverlay>
   );
 }
 
@@ -283,14 +232,6 @@ const styles = StyleSheet.create({
   closeBtn: {
     padding: 6,
     marginTop: 2,
-  },
-  pageTurnCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderWidth: 1.5,
   },
   row: {
     flexDirection: 'row',

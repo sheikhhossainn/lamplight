@@ -30,6 +30,19 @@ export type DailySavedWordCount = {
   count: number;
 };
 
+export type VocabularyEligibility = {
+  totalSaved: number;
+  dueCount: number;
+  reviewableBeforeTodayCount: number;
+  savedTodayCount: number;
+  perBook: Array<{
+    bookId: string;
+    savedCount: number;
+    dueCount: number;
+    latestSavedAt: number;
+  }>;
+};
+
 type SavedWordSqlRow = {
   id: string;
   book_id: string;
@@ -204,6 +217,56 @@ export async function listDueWords(nowMs: number = Date.now()): Promise<SavedWor
     [nowMs],
   );
   return rows.map(fromSqlRow);
+}
+
+// Counts used to decide whether Review and book Quiz are available. Keep this
+// aggregate-only: callers that need actual cards still use listSavedWords().
+export async function getVocabularyEligibility(nowMs: number = Date.now()): Promise<VocabularyEligibility> {
+  const now = new Date(nowMs);
+  const startOfTodayMs = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const db = await getDb();
+  const totals = await db.getFirstAsync<{
+    total_saved: number;
+    due_count: number;
+    reviewable_before_today_count: number;
+    saved_today_count: number;
+  }>(
+    `SELECT
+       COUNT(*) AS total_saved,
+       COALESCE(SUM(CASE WHEN srs_due_date <= ? OR srs_due_date = 0 THEN 1 ELSE 0 END), 0) AS due_count,
+       COALESCE(SUM(CASE WHEN created_at < ? THEN 1 ELSE 0 END), 0) AS reviewable_before_today_count,
+       COALESCE(SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END), 0) AS saved_today_count
+     FROM saved_words`,
+    [nowMs, startOfTodayMs, startOfTodayMs],
+  );
+  const perBook = await db.getAllAsync<{
+    book_id: string;
+    saved_count: number;
+    due_count: number;
+    latest_saved_at: number;
+  }>(
+    `SELECT
+       book_id,
+       COUNT(*) AS saved_count,
+       COALESCE(SUM(CASE WHEN srs_due_date <= ? OR srs_due_date = 0 THEN 1 ELSE 0 END), 0) AS due_count,
+       MAX(created_at) AS latest_saved_at
+     FROM saved_words
+     GROUP BY book_id`,
+    [nowMs],
+  );
+
+  return {
+    totalSaved: totals?.total_saved ?? 0,
+    dueCount: totals?.due_count ?? 0,
+    reviewableBeforeTodayCount: totals?.reviewable_before_today_count ?? 0,
+    savedTodayCount: totals?.saved_today_count ?? 0,
+    perBook: perBook.map((row) => ({
+      bookId: row.book_id,
+      savedCount: row.saved_count,
+      dueCount: row.due_count,
+      latestSavedAt: row.latest_saved_at,
+    })),
+  };
 }
 
 export async function listSavedWordCountsByDay(days: number = 30, nowMs: number = Date.now()): Promise<DailySavedWordCount[]> {

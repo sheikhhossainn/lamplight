@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
@@ -11,12 +11,18 @@ import {
   useWindowDimensions,
   View,
   type LayoutChangeEvent,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+  type StyleProp,
+  type ViewStyle,
   type ViewToken,
 } from 'react-native';
 import Animated, {
+  cancelAnimation,
   Easing,
   FadeIn,
   FadeOut,
+  interpolate,
   interpolateColor,
   ReduceMotion,
   runOnJS,
@@ -28,15 +34,17 @@ import Animated, {
   withSequence,
   withTiming,
 } from 'react-native-reanimated';
-import Svg, { Circle, Defs, LinearGradient, Path, Rect, Stop } from 'react-native-svg';
+import Svg, { Circle, Defs, LinearGradient, Path, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Image } from 'expo-image';
 
-import { ChevronLeftIcon, CloseIcon, MoonIcon, QuestionIcon, SpeakerIcon, SunIcon, TranslateIcon } from '@/components/icons';
+import { ChevronLeftIcon, CloseIcon, MenuIcon, MoonIcon, QuestionIcon, SoundWaveIcon, SpeakerIcon, SunIcon, TranslateIcon } from '@/components/icons';
 import { AmbiencePicker } from '@/features/ambience/AmbiencePicker';
 import { useAmbienceTrackId } from '@/features/ambience/ambiencePreference';
 import { ambienceTrackById } from '@/features/ambience/tracks';
 import { useAmbiencePlayer } from '@/features/ambience/useAmbiencePlayer';
 import { usePageTurnSound } from '@/features/reader/usePageTurnSound';
+import { getPageTurnSoundEnabled, setPageTurnSoundEnabled, usePageTurnSoundEnabled } from '@/features/settings/soundPrefs';
 import { BookLoadingScreen } from '@/features/reader/components/BookLoadingScreen';
 import { BookPageFrame } from '@/features/reader/components/BookPageFrame';
 import { ReaderPageView } from '@/features/reader/components/ReaderPageView';
@@ -63,7 +71,7 @@ import { BookFormatError, type IngestedBook } from '@/features/content-ingestion
 import { triggerSync } from '@/features/sync/syncWorker';
 import { getBook, updateBookTotalChapters, type BookRow } from '@/db/repositories/books';
 import { createHighlight, listHighlightsForBook, type Highlight } from '@/db/repositories/highlights';
-import { getReadingPosition, upsertReadingPosition } from '@/db/repositories/readingPosition';
+import { getReadingPosition, upsertReadingPosition, type ReadingPosition } from '@/db/repositories/readingPosition';
 import { listSavedWordsForBook, saveWord, type SavedWord } from '@/db/repositories/savedWords';
 import { createPendingLookup } from '@/db/repositories/pendingLookups';
 import { getSetting, setSetting } from '@/db/repositories/appSettings';
@@ -78,8 +86,11 @@ import { getReadingTheme, setReadingTheme, useReadingTheme } from '@/features/se
 import { isPremiumUser } from '@/features/subscription/subscriptionState';
 import { checkTranslationCap, recordTranslationUsage, translationProvider } from '@/features/translation';
 import { batchTranslateSentences, splitSentences } from '@/features/translation/interlinearParser';
-import { LamplightColor, type HighlightColorKey } from '@/theme/tokens';
+import { LamplightColor, Spacing, type HighlightColorKey } from '@/theme/tokens';
+import { LamplightTypography } from '@/theme/typography';
 import { useTheme } from '@/theme/ThemeProvider';
+
+const ANTIQUE_PAPER_DAY = require('../../../assets/images/antique-paper-day.jpg');
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
@@ -87,6 +98,10 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 const READER_GUIDE_SEEN_KEY = 'reader_guide_shown_once';
 const READER_HINT_SETTING_KEY = 'reader_gesture_hint_v4';
+const READER_BACK_HINT_SETTING_KEY = 'reader_back_gesture_hint_v1';
+// Set to true to always show Reader Guide and gesture hints in development / testing.
+const ALWAYS_SHOW_READER_GUIDE_IN_DEV = true;
+const NOOP_RANGE_DRAG = () => {};
 
 // The reading surface is a deliberate reading experience, pinned to fixed
 // literals rather than the (theme-reactive) tokens — so the page stays legible
@@ -97,10 +112,11 @@ const READING_BG_LIGHT = '#F4EBD9';
 const READING_TEXT_LIGHT = '#241D17';
 const READING_TEXT_DARK = '#F0E6D6';
 const READING_DARK_STOPS = ['#1C1B1E', '#201E22', '#26221F'] as const;
-const READER_THEME_DURATION_MS = 280;
-const READER_THEME_EASING = Easing.linear;
-const CHROME_REVEAL_DURATION_MS = 100;
+const READER_THEME_DURATION_MS = 360;
+const READER_THEME_EASING = Easing.inOut(Easing.cubic);
+const CHROME_REVEAL_DURATION_MS = 180;
 const CHROME_HIDE_DURATION_MS = 180;
+const CHROME_EASING = Easing.bezier(0.23, 1, 0.32, 1);
 
 type ReaderMode = 'day' | 'lamp';
 
@@ -140,6 +156,8 @@ type ReaderChromeTouchTargetProps = {
   onPress: () => void;
   onLongPress?: () => void;
   delayLongPress?: number;
+  accessibilityLabel?: string;
+  testID?: string;
 };
 
 // Android can retain an Animated Pressable's native touch region after its
@@ -150,17 +168,128 @@ function ReaderChromeTouchTarget({
   onPress,
   onLongPress,
   delayLongPress,
+  accessibilityLabel,
+  testID,
 }: ReaderChromeTouchTargetProps) {
   if (!enabled) return null;
   return (
     <Pressable
-      hitSlop={{ top: 12, bottom: 12, left: 6, right: 6 }}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      testID={testID}
+      hitSlop={{ top: 8, bottom: 4, left: 8, right: 8 }}
       style={StyleSheet.absoluteFill}
-      pressRetentionOffset={12}
+      pressRetentionOffset={20}
       onPress={onPress}
       onLongPress={onLongPress}
       delayLongPress={delayLongPress}
     />
+  );
+}
+
+type TurnPageSoundMenuRowProps = {
+  isLamp: boolean;
+  playPageTurn: () => void;
+  stopPageTurn: () => void;
+};
+
+function TurnPageSoundMenuRow({ isLamp, playPageTurn, stopPageTurn }: TurnPageSoundMenuRowProps) {
+  const { typography, colors } = useTheme();
+  const enabled = usePageTurnSoundEnabled();
+  const progress = useSharedValue(enabled ? 1 : 0);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    progress.value = withTiming(enabled ? 1 : 0, {
+      duration: 160,
+      easing: Easing.out(Easing.cubic),
+      reduceMotion: ReduceMotion.System,
+    });
+  }, [enabled, progress]);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, []);
+
+  const handleToggle = useCallback(() => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+
+    const next = !getPageTurnSoundEnabled();
+
+    cancelAnimation(progress);
+    progress.value = withTiming(next ? 1 : 0, {
+      duration: 160,
+      easing: Easing.out(Easing.cubic),
+      reduceMotion: ReduceMotion.System,
+    });
+
+    if (next) {
+      timerRef.current = setTimeout(() => {
+        timerRef.current = null;
+        playPageTurn();
+      }, 160);
+    } else {
+      stopPageTurn();
+    }
+
+    setPageTurnSoundEnabled(next);
+  }, [progress, playPageTurn, stopPageTurn]);
+
+  const trackStyle = useAnimatedStyle(() => {
+    const p = progress.value;
+    return {
+      backgroundColor: interpolateColor(
+        p,
+        [0, 1],
+        [isLamp ? 'rgba(255,255,255,0.16)' : 'rgba(0,0,0,0.14)', colors.flameAmber],
+      ),
+    };
+  });
+
+  const thumbStyle = useAnimatedStyle(() => {
+    const p = progress.value;
+    return {
+      transform: [{ translateX: interpolate(p, [0, 1], [0, 16]) }],
+    };
+  });
+
+  const iconColor = enabled
+    ? colors.flameAmber
+    : isLamp
+      ? 'rgba(236,227,212,0.45)'
+      : 'rgba(42,36,30,0.45)';
+
+  return (
+    <Pressable
+      accessibilityRole="switch"
+      accessibilityState={{ checked: enabled }}
+      accessibilityLabel="Turn page sound"
+      testID="reader-turn-sound-button"
+      onPress={handleToggle}
+      style={styles.chromeMenuRow}
+    >
+      <SoundWaveIcon color={iconColor} size={18} />
+      <Text
+        style={[
+          typography.uiRowTitle,
+          styles.chromeMenuLabel,
+          { flex: 1, color: isLamp ? READING_TEXT_DARK : READING_TEXT_LIGHT },
+        ]}
+      >
+        Turn Page Sound
+      </Text>
+      <Animated.View style={[styles.menuToggleTrack, trackStyle]} pointerEvents="none">
+        <Animated.View style={[styles.menuToggleThumb, thumbStyle]} />
+      </Animated.View>
+    </Pressable>
   );
 }
 
@@ -174,10 +303,12 @@ type ReaderPageFrameProps = {
   pageHeight: number;
 };
 
-// 1890s antique open-book page frame with paper folding dynamics:
-// As the reader swipes, the turning page flexes with dynamic shading and a
-// trailing edge drop shadow, completely preventing any overlapping text.
-function ReaderPageFrame({
+// 1890s antique open-book page frame with realistic 3D paper curl & folding dynamics:
+// As the reader swipes, the turning page lifts in 3D perspective around the left spine binding,
+// casting a physical soft gradient drop-shadow onto the incoming page beneath it.
+// At rest (progress <= 0.002 or progress >= 0.998), every page is 100% full-bleed and neutral,
+// with zero translation, zero rotation, zero shadow, and zero visual artifacts.
+const ReaderPageFrame = memo(function ReaderPageFrame({
   children,
   pageIndex,
   scrollX,
@@ -187,19 +318,75 @@ function ReaderPageFrame({
   pageHeight,
 }: ReaderPageFrameProps) {
   const isLamp = mode === 'lamp';
+  const halfW = pageWidth / 2;
 
-  const pageFlexStyle = useAnimatedStyle(() => {
+  // 1. 3D page curl & elevation transform:
+  // Strictly active ONLY during an in-flight page turn (0.002 < progress < 0.998).
+  const pageTransformStyle = useAnimatedStyle(() => {
     'worklet';
     const x = scrollX.value;
     const pageStart = pageIndex * pageWidth;
     const offset = x - pageStart;
+    const progress = offset / pageWidth;
 
-    // This page is currently being turned to the left (0 <= offset <= pageWidth):
-    if (offset > 0 && offset < pageWidth) {
-      const progress = offset / pageWidth;
+    if (progress > 0.002 && progress < 0.998) {
+      // Outgoing page lifting off the right page stack:
+      // Realistic parabolic paper arch: peaks at mid-turn (progress = 0.5) and lands flat at 0 and 1.
+      const arch = Math.sin(progress * Math.PI);
+      const curlAngle = -arch * 10; // Gentle 10° lift towards the reader
+
+      return {
+        zIndex: 10,
+        elevation: 8,
+        transform: [
+          { perspective: 1200 },
+          { translateX: halfW },
+          { rotateY: `${curlAngle}deg` },
+          { translateX: -halfW },
+        ],
+      };
+    }
+
+    return {
+      zIndex: 1,
+      elevation: 0,
+      transform: [{ translateX: 0 }],
+    };
+  });
+
+  // 2. Dynamic paper lighting:
+  // Simulates the concave curvature shading of bending antique paper.
+  const paperShadingStyle = useAnimatedStyle(() => {
+    'worklet';
+    const x = scrollX.value;
+    const pageStart = pageIndex * pageWidth;
+    const offset = x - pageStart;
+    const progress = offset / pageWidth;
+
+    if (progress > 0.002 && progress < 0.998) {
       const archIntensity = Math.sin(progress * Math.PI);
       return {
-        opacity: archIntensity * (isLamp ? 0.20 : 0.16),
+        opacity: archIntensity * (isLamp ? 0.18 : 0.12),
+      };
+    }
+
+    return {
+      opacity: 0,
+    };
+  });
+
+  // 3. Trailing edge physical cast shadow (casts onto revealed page during turn)
+  const edgeShadowStyle = useAnimatedStyle(() => {
+    'worklet';
+    const x = scrollX.value;
+    const pageStart = pageIndex * pageWidth;
+    const offset = x - pageStart;
+    const progress = offset / pageWidth;
+
+    if (progress > 0.002 && progress < 0.998) {
+      const arch = Math.sin(progress * Math.PI);
+      return {
+        opacity: arch * (isLamp ? 0.45 : 0.32),
       };
     }
 
@@ -209,22 +396,217 @@ function ReaderPageFrame({
   });
 
   return (
-    <View style={[styles.pageFrame, { width: pageWidth, height: pageHeight }]}>
+    <Animated.View
+      style={[
+        styles.pageFrame,
+        { width: pageWidth, height: pageHeight },
+        pageTransformStyle,
+      ]}
+    >
       <BookPageFrame themeProgress={themeProgress}>
         {children}
-        {/* Dynamic paper flex shading while folding/turning */}
-        <Animated.View
-          style={[
-            StyleSheet.absoluteFill,
-            { backgroundColor: isLamp ? '#000000' : '#2A1D12' },
-            pageFlexStyle,
-          ]}
-          pointerEvents="none"
-        />
       </BookPageFrame>
-    </View>
+
+      {/* Dynamic paper shading layer (arch flex lighting) */}
+      <Animated.View
+        style={[
+          StyleSheet.absoluteFill,
+          { backgroundColor: isLamp ? '#000000' : '#2A1D12' },
+          paperShadingStyle,
+        ]}
+        pointerEvents="none"
+      />
+
+      {/* Trailing edge physical drop shadow casting onto revealed page */}
+      <Animated.View
+        style={[
+          styles.trailingEdgeDropShadow,
+          edgeShadowStyle,
+        ]}
+        pointerEvents="none"
+      >
+        <View style={[styles.edgeShadowBand1, { backgroundColor: isLamp ? 'rgba(0,0,0,0.38)' : 'rgba(38,25,14,0.32)' }]} />
+        <View style={[styles.edgeShadowBand2, { backgroundColor: isLamp ? 'rgba(0,0,0,0.24)' : 'rgba(38,25,14,0.20)' }]} />
+        <View style={[styles.edgeShadowBand3, { backgroundColor: isLamp ? 'rgba(0,0,0,0.14)' : 'rgba(38,25,14,0.10)' }]} />
+        <View style={[styles.edgeShadowBand4, { backgroundColor: isLamp ? 'rgba(0,0,0,0.06)' : 'rgba(38,25,14,0.04)' }]} />
+      </Animated.View>
+    </Animated.View>
   );
+});
+
+type ReaderPageCellProps = {
+  item: ReaderPage;
+  index: number;
+  scrollX: SharedValue<number>;
+  themeProgress: SharedValue<number>;
+  mode: ReaderMode;
+  pageWidth: number;
+  pageHeight: number;
+  topInset: number;
+  bottomInset: number;
+  fontSize: number;
+  lineHeight: number;
+  sourceLanguage: string;
+  targetLanguage: string;
+  highlightMap: Map<string, { colorKey: HighlightColorKey; quoteText: string | null }>;
+  highlightColors: Record<HighlightColorKey, string>;
+  savedWordSet: Set<string>;
+  savedWordColor: string;
+  savedWordTextColor: string;
+  activeWordRange: { paragraphIndex: number; start: number; end: number } | null;
+  selectionRange: {
+    startParagraph: number;
+    startOffset: number;
+    endParagraph: number;
+    endOffset: number;
+    showStartHandle?: boolean;
+    showEndHandle?: boolean;
+  } | null;
+  translatedParagraphs: string[] | null;
+  bilingualParagraphs: Array<{
+    paragraphIndex: number;
+    sentences: Array<{ id: string; original: string; translated: string }>;
+  }> | null;
+  onWordLongPress: (payload: {
+    word: string;
+    paragraphIndex: number;
+    page: ReaderPage;
+    start: number;
+    end: number;
+    pageX: number;
+    pageY: number;
+  }) => void;
+  onBilingualWordLongPress?: (payload: {
+    word: string;
+    contextSentence: string;
+    paragraphIndex: number;
+    anchor: { x: number; y: number };
+  }) => void;
+  onRangeEdgeDragStart?: (edge: 'start' | 'end') => void;
+  onRangeEdgeDrag: (
+    edge: 'start' | 'end',
+    pos: { paragraphIndex: number; offset: number },
+    direction?: 'prev-page' | 'next-page' | null,
+  ) => void;
+  onRangeEdgeDragEnd?: (edge: 'start' | 'end') => void;
+  onCloseTranslation: () => void;
+};
+
+function areReaderPageCellPropsEqual(prev: ReaderPageCellProps, next: ReaderPageCellProps): boolean {
+  if (prev.item.globalIndex !== next.item.globalIndex) return false;
+  if (prev.pageWidth !== next.pageWidth || prev.pageHeight !== next.pageHeight) return false;
+  if (prev.mode !== next.mode) return false;
+  if (prev.fontSize !== next.fontSize || prev.lineHeight !== next.lineHeight) return false;
+  if (prev.topInset !== next.topInset || prev.bottomInset !== next.bottomInset) return false;
+  if (prev.sourceLanguage !== next.sourceLanguage || prev.targetLanguage !== next.targetLanguage) return false;
+
+  if (prev.activeWordRange !== next.activeWordRange) {
+    if (!prev.activeWordRange || !next.activeWordRange) return false;
+    if (
+      prev.activeWordRange.paragraphIndex !== next.activeWordRange.paragraphIndex ||
+      prev.activeWordRange.start !== next.activeWordRange.start ||
+      prev.activeWordRange.end !== next.activeWordRange.end
+    ) {
+      return false;
+    }
+  }
+
+  if (prev.selectionRange !== next.selectionRange) {
+    if (!prev.selectionRange || !next.selectionRange) return false;
+    if (
+      prev.selectionRange.startParagraph !== next.selectionRange.startParagraph ||
+      prev.selectionRange.startOffset !== next.selectionRange.startOffset ||
+      prev.selectionRange.endParagraph !== next.selectionRange.endParagraph ||
+      prev.selectionRange.endOffset !== next.selectionRange.endOffset
+    ) {
+      return false;
+    }
+  }
+
+  if (prev.translatedParagraphs !== next.translatedParagraphs) return false;
+  if (prev.bilingualParagraphs !== next.bilingualParagraphs) return false;
+  if (prev.savedWordSet !== next.savedWordSet) return false;
+  if (prev.highlightMap !== next.highlightMap) return false;
+
+  return true;
 }
+
+const ReaderPageCell = memo(function ReaderPageCell({
+  item,
+  index,
+  scrollX,
+  themeProgress,
+  mode,
+  pageWidth,
+  pageHeight,
+  topInset,
+  bottomInset,
+  fontSize,
+  lineHeight,
+  sourceLanguage,
+  targetLanguage,
+  highlightMap,
+  highlightColors,
+  savedWordSet,
+  savedWordColor,
+  savedWordTextColor,
+  activeWordRange,
+  selectionRange,
+  translatedParagraphs,
+  bilingualParagraphs,
+  onWordLongPress,
+  onBilingualWordLongPress,
+  onRangeEdgeDragStart,
+  onRangeEdgeDrag,
+  onRangeEdgeDragEnd,
+  onCloseTranslation,
+}: ReaderPageCellProps) {
+  return (
+    <ReaderPageFrame
+      pageIndex={index}
+      scrollX={scrollX}
+      themeProgress={themeProgress}
+      mode={mode}
+      pageWidth={pageWidth}
+      pageHeight={pageHeight}
+    >
+      <View style={styles.pageTouchable}>
+        <ReaderPageView
+          page={item}
+          mode={mode}
+          sourceLanguage={sourceLanguage}
+          targetLanguage={targetLanguage}
+          dayTextColor={READING_TEXT_LIGHT}
+          lampTextColor={READING_TEXT_DARK}
+          themeProgress={themeProgress}
+          topInset={topInset}
+          bottomInset={bottomInset}
+          fontSize={fontSize}
+          lineHeight={lineHeight}
+          highlightMap={highlightMap}
+          highlightColors={highlightColors}
+          savedWordSet={savedWordSet}
+          savedWordColor={savedWordColor}
+          savedWordTextColor={savedWordTextColor}
+          activeWordRange={activeWordRange}
+          activeWordColor={highlightColors.amber}
+          activeWordTextColor="#2B2621"
+          selectionRange={selectionRange}
+          selectionColor={highlightColors.amber}
+          onWordLongPress={onWordLongPress}
+          onBilingualWordLongPress={onBilingualWordLongPress}
+          onRangeEdgeDragStart={onRangeEdgeDragStart}
+          onRangeEdgeDrag={onRangeEdgeDrag}
+          onRangeEdgeDragEnd={onRangeEdgeDragEnd}
+          translatedParagraphs={translatedParagraphs}
+          bilingualParagraphs={bilingualParagraphs}
+          onCloseTranslation={onCloseTranslation}
+          onPagePress={undefined}
+        />
+      </View>
+    </ReaderPageFrame>
+  );
+}, areReaderPageCellPropsEqual);
 
 // The exact selected substring across a word-aligned range spanning one or more
 // pages, joining paragraphs in reading order — used both for the saved quote
@@ -303,6 +685,10 @@ export default function ReaderScreen() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [highlights, setHighlights] = useState<Highlight[]>([]);
   const [savedWords, setSavedWords] = useState<SavedWord[]>([]);
+
+  const chromeMenuOpenRef = useRef(false);
+  const chromeMenuProgress = useSharedValue(0);
+  const closeChromeMenuRef = useRef<(action?: () => void) => void>(() => {});
 
   const [chromeVisible, setChromeVisible] = useState(true);
   const chromeVisibleRef = useRef(true);
@@ -384,12 +770,17 @@ export default function ReaderScreen() {
   // Soft page-turn sound. Stored in a ref so the stable onViewableItemsChanged
   // callback (built once via useRef) can reach the latest play fn — same reason
   // book/pages are mirrored into refs below.
-  const playPageTurn = usePageTurnSound();
+  const { play: playPageTurn, stop: stopPageTurn } = usePageTurnSound();
   const playPageTurnRef = useRef(playPageTurn);
   playPageTurnRef.current = playPageTurn;
   // Null until the first page settles, so opening a book (or jumping to a saved
   // page) never fires the sound — only an actual turn does.
   const lastPageIndexRef = useRef<number | null>(null);
+  const lastSettledPageIndexRef = useRef<number | null>(null);
+  const isSwipingRef = useRef(false);
+  const pendingTurnSoundRef = useRef(false);
+  const swipeSettledTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const suppressViewableSoundIndexRef = useRef<number | null>(null);
 
   // Hold a word -> action menu (Translate / Save as quote). `wordMenu` is the
   // held word while the menu is open; picking Translate promotes it to
@@ -426,10 +817,110 @@ export default function ReaderScreen() {
   } | null>(null);
 
   const [languagePickerVisible, setLanguagePickerVisible] = useState(false);
-  const [guideVisible, setGuideVisible] = useState(false);
+  const [guideModalVisible, setGuideModalVisible] = useState(false);
+  const guideOpenRef = useRef(false);
   const [pageStyleVisible, setPageStyleVisible] = useState(false);
   const guideDismissedRef = useRef(false);
   const readerHintDismissedRef = useRef(false);
+
+  // Smart first-run reader gesture hints (forward and turn-back cues)
+  const [hintVisible, setHintVisible] = useState(false);
+  const [hintType, setHintType] = useState<'forward' | 'backward'>('forward');
+  const hintOpacity = useSharedValue(0);
+  const hintTranslateY = useSharedValue(16);
+  const swipeArrowX = useSharedValue(0);
+  const readerBackHintDismissedRef = useRef(false);
+  const hasShownForwardHintRef = useRef(false);
+  const hasShownBackHintRef = useRef(false);
+  const backHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const backHintScheduledTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const dismissHint = useCallback(() => {
+    readerHintDismissedRef.current = true;
+    hasShownForwardHintRef.current = true;
+    void setSetting(READER_HINT_SETTING_KEY, '1');
+    if (backHintScheduledTimerRef.current) {
+      clearTimeout(backHintScheduledTimerRef.current);
+      backHintScheduledTimerRef.current = null;
+    }
+    if (backHintTimerRef.current) clearTimeout(backHintTimerRef.current);
+    hintOpacity.value = withTiming(0, { duration: 220, easing: Easing.in(Easing.cubic) });
+    hintTranslateY.value = withTiming(16, { duration: 220, easing: Easing.in(Easing.cubic) });
+    setTimeout(() => setHintVisible(false), 220);
+  }, [hintOpacity, hintTranslateY]);
+
+  const dismissBackHint = useCallback(() => {
+    readerBackHintDismissedRef.current = true;
+    hasShownBackHintRef.current = true;
+    void setSetting(READER_BACK_HINT_SETTING_KEY, '1');
+    if (backHintScheduledTimerRef.current) {
+      clearTimeout(backHintScheduledTimerRef.current);
+      backHintScheduledTimerRef.current = null;
+    }
+    if (backHintTimerRef.current) clearTimeout(backHintTimerRef.current);
+    hintOpacity.value = withTiming(0, { duration: 220, easing: Easing.in(Easing.cubic) });
+    hintTranslateY.value = withTiming(16, { duration: 220, easing: Easing.in(Easing.cubic) });
+    setTimeout(() => setHintVisible(false), 220);
+  }, [hintOpacity, hintTranslateY]);
+
+  const triggerForwardHint = useCallback(() => {
+    if (hasShownForwardHintRef.current || readerHintDismissedRef.current || guideOpenRef.current) return;
+    hasShownForwardHintRef.current = true;
+    setHintType('forward');
+    setHintVisible(true);
+    hintOpacity.value = withTiming(1, { duration: 350, easing: Easing.out(Easing.cubic) });
+    hintTranslateY.value = withTiming(0, { duration: 350, easing: Easing.out(Easing.cubic) });
+    cancelAnimation(swipeArrowX);
+    swipeArrowX.value = 0;
+    swipeArrowX.value = withRepeat(
+      withSequence(
+        withTiming(-7, { duration: 550, easing: Easing.out(Easing.quad) }),
+        withTiming(0, { duration: 550, easing: Easing.in(Easing.quad) }),
+      ),
+      -1,
+      true,
+    );
+    setTimeout(dismissHint, 6500);
+  }, [hintOpacity, hintTranslateY, swipeArrowX, dismissHint]);
+
+  const triggerBackHint = useCallback(() => {
+    if (hasShownBackHintRef.current || readerBackHintDismissedRef.current || guideOpenRef.current) return;
+    hasShownBackHintRef.current = true;
+    readerBackHintDismissedRef.current = true;
+    void setSetting(READER_BACK_HINT_SETTING_KEY, '1');
+    setHintType('backward');
+    setHintVisible(true);
+    cancelAnimation(swipeArrowX);
+    swipeArrowX.value = 0;
+    swipeArrowX.value = withRepeat(
+      withSequence(
+        withTiming(7, { duration: 550, easing: Easing.out(Easing.quad) }),
+        withTiming(0, { duration: 550, easing: Easing.in(Easing.quad) }),
+      ),
+      -1,
+      true,
+    );
+    hintOpacity.value = withTiming(1, { duration: 350, easing: Easing.out(Easing.cubic) });
+    hintTranslateY.value = withTiming(0, { duration: 350, easing: Easing.out(Easing.cubic) });
+    if (backHintTimerRef.current) clearTimeout(backHintTimerRef.current);
+    backHintTimerRef.current = setTimeout(dismissBackHint, 5500);
+  }, [hintOpacity, hintTranslateY, swipeArrowX, dismissBackHint]);
+
+  const openGuide = useCallback(() => {
+    closeChromeMenuRef.current();
+    guideOpenRef.current = true;
+    setGuideModalVisible(true);
+  }, []);
+
+  const handleCloseGuide = useCallback(() => {
+    guideDismissedRef.current = true;
+    guideOpenRef.current = false;
+    setGuideModalVisible(false);
+    void setSetting(READER_GUIDE_SEEN_KEY, '1');
+    setTimeout(() => {
+      triggerForwardHint();
+    }, 400);
+  }, [triggerForwardHint]);
 
   // Automatically show the Reader Guide modal once on first open of any book
   useEffect(() => {
@@ -437,41 +928,29 @@ export default function ReaderScreen() {
     void (async () => {
       const seen = await getSetting(READER_GUIDE_SEEN_KEY);
       if (guideDismissedRef.current) return;
-      if (seen === '1') {
+      const shouldShow = (__DEV__ && ALWAYS_SHOW_READER_GUIDE_IN_DEV) || seen !== '1';
+      if (!shouldShow) {
         guideDismissedRef.current = true;
       } else {
-        setGuideVisible(true);
+        openGuide();
       }
     })();
-  }, [initialIndex]);
-
-  const handleCloseGuide = useCallback(() => {
-    guideDismissedRef.current = true;
-    setGuideVisible(false);
-    void setSetting(READER_GUIDE_SEEN_KEY, '1');
-  }, []);
-
-  // Smart first-run reader gesture hint (swipe left arrow + language pill)
-  const [hintVisible, setHintVisible] = useState(false);
-  const hintOpacity = useSharedValue(0);
-  const hintTranslateY = useSharedValue(16);
-  const swipeArrowX = useSharedValue(0);
-
-  const dismissHint = useCallback(() => {
-    readerHintDismissedRef.current = true;
-    void setSetting(READER_HINT_SETTING_KEY, '1');
-    hintOpacity.value = withTiming(0, { duration: 220, easing: Easing.in(Easing.cubic) });
-    hintTranslateY.value = withTiming(16, { duration: 220, easing: Easing.in(Easing.cubic) });
-    setTimeout(() => setHintVisible(false), 220);
-  }, [hintOpacity, hintTranslateY]);
+  }, [initialIndex, openGuide]);
 
   useEffect(() => {
-    if (readerHintDismissedRef.current) return;
     let cancelled = false;
-    void getSetting(READER_HINT_SETTING_KEY).then((seen) => {
+    void Promise.all([
+      getSetting(READER_HINT_SETTING_KEY),
+      getSetting(READER_BACK_HINT_SETTING_KEY),
+    ]).then(([seenForward, seenBack]) => {
       if (cancelled) return;
-      if (seen === '1') {
-        readerHintDismissedRef.current = true;
+      if (!(__DEV__ && ALWAYS_SHOW_READER_GUIDE_IN_DEV)) {
+        if (seenForward === '1') {
+          readerHintDismissedRef.current = true;
+        }
+        if (seenBack === '1') {
+          readerBackHintDismissedRef.current = true;
+        }
       }
     });
     return () => {
@@ -484,28 +963,14 @@ export default function ReaderScreen() {
       return;
     }
 
-    let hideTimer: ReturnType<typeof setTimeout> | null = null;
     const showTimer = setTimeout(() => {
-      if (readerHintDismissedRef.current || guideVisible) return;
-      setHintVisible(true);
-      hintOpacity.value = withTiming(1, { duration: 350, easing: Easing.out(Easing.cubic) });
-      hintTranslateY.value = withTiming(0, { duration: 350, easing: Easing.out(Easing.cubic) });
-      swipeArrowX.value = withRepeat(
-        withSequence(
-          withTiming(-7, { duration: 550, easing: Easing.out(Easing.quad) }),
-          withTiming(0, { duration: 550, easing: Easing.in(Easing.quad) }),
-        ),
-        -1,
-        true,
-      );
-      hideTimer = setTimeout(dismissHint, 6500);
+      triggerForwardHint();
     }, 1000);
 
     return () => {
       clearTimeout(showTimer);
-      if (hideTimer) clearTimeout(hideTimer);
     };
-  }, [book, pages.length, initialIndex, guideVisible, hintOpacity, hintTranslateY, swipeArrowX, dismissHint]);
+  }, [book, pages.length, initialIndex, triggerForwardHint]);
 
   // Trigger sync on reader exit for immediate position update
   useEffect(() => {
@@ -583,11 +1048,12 @@ export default function ReaderScreen() {
     if (animatedThemeRef.current === next) return;
     animatedThemeRef.current = next;
     setMode(next);
-    bgProgress.value = withTiming(next === 'lamp' ? 1 : 0, {
+    cancelAnimation(bgProgress);
+    bgProgress.set(withTiming(next === 'lamp' ? 1 : 0, {
       duration: READER_THEME_DURATION_MS,
       easing: READER_THEME_EASING,
-      reduceMotion: ReduceMotion.Never,
-    });
+      reduceMotion: ReduceMotion.System,
+    }));
   }, [sharedTheme, bgProgress]);
   const darkBgStyle = useAnimatedStyle(() => ({ opacity: bgProgress.value }));
 
@@ -784,9 +1250,9 @@ export default function ReaderScreen() {
   // the real screen size + safe areas + current font settings. Pagination is
   // recomputed against these so pages fit the screen and reflow when the font
   // changes.
-  const contentWidthPx = pageWidth - spacing.xl * 2;
-  const contentHeightPx = pageHeight - (insets.top + spacing.md) - (insets.bottom + 18);
-  const chapterTitleExtraPx = spacing.sm + typography.screenTitle.lineHeight + spacing.md;
+  const contentWidthPx = pageWidth - Spacing.xl * 2;
+  const contentHeightPx = pageHeight - (insets.top + 64) - (insets.bottom + 18);
+  const chapterTitleExtraPx = Spacing.sm + LamplightTypography.screenTitle.lineHeight + Spacing.md;
 
   // Baseline characters-per-line, computed synchronously from geometry and font size
   // so pagination begins immediately without blocking on asynchronous onTextLayout.
@@ -807,6 +1273,20 @@ export default function ReaderScreen() {
     if (bookTextState.status !== 'ready') return;
     const bookText = bookTextState.book;
     let cancelled = false;
+    if (pages.length === 0) {
+      const paginated = paginateBook(bookText, {
+        contentWidthPx,
+        contentHeightPx,
+        fontSizePx: readingFontSizePx,
+        lineHeightPx: readingLineHeight,
+        paragraphGapPx: Spacing.sm,
+        chapterTitleExtraPx,
+        measuredCharsPerLine,
+      });
+      setPages(paginated);
+      return;
+    }
+
     const schedule = typeof requestIdleCallback === 'function'
       ? requestIdleCallback
       : (fn: () => void) => setTimeout(fn, 50);
@@ -821,7 +1301,7 @@ export default function ReaderScreen() {
         contentHeightPx,
         fontSizePx: readingFontSizePx,
         lineHeightPx: readingLineHeight,
-        paragraphGapPx: spacing.sm,
+        paragraphGapPx: Spacing.sm,
         chapterTitleExtraPx,
         measuredCharsPerLine,
       });
@@ -838,7 +1318,6 @@ export default function ReaderScreen() {
     contentWidthPx,
     contentHeightPx,
     chapterTitleExtraPx,
-    spacing.sm,
     measuredCharsPerLine,
   ]);
 
@@ -859,83 +1338,160 @@ export default function ReaderScreen() {
     [savedWords],
   );
 
-  const hideChrome = useCallback(() => {
-    chromeVisibleRef.current = false;
-    setChromeVisible(false);
-  }, []);
+  const CHROME_MENU_DURATION_MS = 180;
 
-  const scheduleAutoHide = useCallback(() => {
-    if (hideTimer.current) clearTimeout(hideTimer.current);
-    if (translation?.status === 'loading') return;
-    hideTimer.current = setTimeout(() => {
-      chromeOpacity.value = withTiming(0, { duration: CHROME_HIDE_DURATION_MS, easing: Easing.in(Easing.cubic) }, (finished) => {
-        if (finished) runOnJS(hideChrome)();
-      });
-    }, 4500);
-  }, [chromeOpacity, hideChrome, translation?.status]);
+  const hideChrome = useCallback(() => {}, []);
+
+  const scheduleAutoHide = useCallback(() => {}, []);
 
   useEffect(() => {
-    scheduleAutoHide();
     return () => {
       if (hideTimer.current) clearTimeout(hideTimer.current);
     };
-  }, [scheduleAutoHide]);
+  }, []);
 
-  const toggleChrome = useCallback(() => {
-    if (hideTimer.current) {
-      clearTimeout(hideTimer.current);
-      hideTimer.current = null;
-    }
-    if (!chromeVisibleRef.current) {
-      chromeVisibleRef.current = true;
-      setChromeVisible(true);
-      chromeOpacity.set(withTiming(1, { duration: CHROME_REVEAL_DURATION_MS, easing: Easing.out(Easing.cubic) }));
-      hideTimer.current = setTimeout(() => {
-        chromeOpacity.value = withTiming(0, { duration: CHROME_HIDE_DURATION_MS, easing: Easing.in(Easing.cubic) }, (finished) => {
-          if (finished) runOnJS(hideChrome)();
-        });
-      }, 4500);
-      return;
-    }
-    chromeOpacity.value = withTiming(0, { duration: CHROME_HIDE_DURATION_MS, easing: Easing.in(Easing.cubic) }, (finished) => {
-      if (finished) runOnJS(hideChrome)();
+  const toggleChrome = useCallback(() => {}, []);
+
+  const closeChromeMenu = useCallback((action?: () => void) => {
+    chromeMenuOpenRef.current = false;
+    cancelAnimation(chromeMenuProgress);
+    chromeMenuProgress.value = withTiming(
+      0,
+      {
+        duration: 150,
+        easing: Easing.out(Easing.cubic),
+        reduceMotion: ReduceMotion.System,
+      },
+      (finished) => {
+        if (finished && action) {
+          runOnJS(action)();
+        }
+      },
+    );
+  }, [chromeMenuProgress]);
+  closeChromeMenuRef.current = closeChromeMenu;
+
+  const openChromeMenu = useCallback(() => {
+    chromeMenuOpenRef.current = true;
+    cancelAnimation(chromeMenuProgress);
+    chromeMenuProgress.value = withTiming(1, {
+      duration: 180,
+      easing: Easing.out(Easing.cubic),
+      reduceMotion: ReduceMotion.System,
     });
-  }, [chromeOpacity, hideChrome]);
+  }, [chromeMenuProgress]);
+
+  const toggleChromeMenu = useCallback(() => {
+    if (chromeMenuOpenRef.current) {
+      closeChromeMenu();
+    } else {
+      openChromeMenu();
+    }
+  }, [closeChromeMenu, openChromeMenu]);
+
+  const triggerSettledSound = useCallback(() => {
+    if (swipeSettledTimerRef.current) {
+      clearTimeout(swipeSettledTimerRef.current);
+      swipeSettledTimerRef.current = null;
+    }
+    isSwipingRef.current = false;
+    if (pendingTurnSoundRef.current) {
+      pendingTurnSoundRef.current = false;
+      if (lastPageIndexRef.current !== lastSettledPageIndexRef.current) {
+        playPageTurnRef.current();
+        lastSettledPageIndexRef.current = lastPageIndexRef.current;
+      }
+    }
+  }, []);
 
   const handleScrollBeginDrag = useCallback(() => {
-    dismissHint();
-    if (hideTimer.current) {
-      clearTimeout(hideTimer.current);
-      hideTimer.current = null;
+    isSwipingRef.current = true;
+    pendingTurnSoundRef.current = false;
+    if (swipeSettledTimerRef.current) {
+      clearTimeout(swipeSettledTimerRef.current);
+      swipeSettledTimerRef.current = null;
     }
-    if (!chromeVisibleRef.current) return;
-    chromeOpacity.value = withTiming(0, { duration: CHROME_HIDE_DURATION_MS, easing: Easing.in(Easing.cubic) }, (finished) => {
-      if (finished) runOnJS(hideChrome)();
-    });
-  }, [dismissHint, chromeOpacity, hideChrome]);
+    if (backHintScheduledTimerRef.current) {
+      clearTimeout(backHintScheduledTimerRef.current);
+      backHintScheduledTimerRef.current = null;
+    }
+    dismissHint();
+    dismissBackHint();
+    if (chromeMenuOpenRef.current) {
+      closeChromeMenuRef.current();
+    }
+  }, [dismissHint, dismissBackHint]);
+
+  const handleScrollEndDrag = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const vx = event.nativeEvent.velocity?.x ?? 0;
+      if (Math.abs(vx) < 0.1) {
+        if (swipeSettledTimerRef.current) {
+          clearTimeout(swipeSettledTimerRef.current);
+        }
+        swipeSettledTimerRef.current = setTimeout(() => {
+          triggerSettledSound();
+        }, 50);
+      }
+    },
+    [triggerSettledSound],
+  );
+
+  const handleMomentumScrollEnd = useCallback(() => {
+    triggerSettledSound();
+  }, [triggerSettledSound]);
+
+  const commitReaderTheme = useCallback((nextTheme: ReaderMode) => {
+    setMode(nextTheme);
+    setReadingTheme(nextTheme);
+  }, []);
 
   const toggleReadingTheme = useCallback(() => {
     scheduleAutoHide();
     const nextTheme: ReaderMode = animatedThemeRef.current === 'lamp' ? 'day' : 'lamp';
     animatedThemeRef.current = nextTheme;
 
-    bgProgress.value = withTiming(
+    cancelAnimation(bgProgress);
+    bgProgress.set(withTiming(
       nextTheme === 'lamp' ? 1 : 0,
       {
         duration: READER_THEME_DURATION_MS,
         easing: READER_THEME_EASING,
-        reduceMotion: ReduceMotion.Never,
+        reduceMotion: ReduceMotion.System,
       },
       (finished) => {
         if (finished) {
-          runOnJS(setMode)(nextTheme);
-          runOnJS(setReadingTheme)(nextTheme);
+          runOnJS(commitReaderTheme)(nextTheme);
         }
       },
-    );
-  }, [bgProgress, scheduleAutoHide]);
+    ));
+  }, [bgProgress, commitReaderTheme, scheduleAutoHide]);
 
-  const chromeStyle = useAnimatedStyle(() => ({ opacity: chromeOpacity.value }));
+  const chromeStyle = useAnimatedStyle(() => ({ opacity: 1 }));
+
+  const chromeMenuLayerAnimStyle = useAnimatedStyle(() => {
+    const progress = chromeMenuProgress.value;
+    return {
+      opacity: progress,
+      display: progress <= 0.001 ? 'none' : 'flex',
+    };
+  });
+
+  const chromeMenuPanelStyle = useAnimatedStyle(() => {
+    const progress = chromeMenuProgress.value;
+    return {
+      opacity: progress,
+      elevation: interpolate(progress, [0, 0.05, 1], [0, 0, 8]),
+      transform: [
+        { translateY: interpolate(progress, [0, 1], [-12, 0]) },
+        { scale: interpolate(progress, [0, 1], [0.94, 1]) },
+      ],
+    };
+  });
+
+  const hamburgerIconAnimStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${chromeMenuProgress.value * 90}deg` }],
+  }));
 
   // FlatList requires onViewableItemsChanged to keep the same identity across
   // renders (it warns/throws if it changes), so the callback itself must be
@@ -950,29 +1506,110 @@ export default function ReaderScreen() {
   pagesRef.current = pages;
   const dismissHintRef = useRef(dismissHint);
   dismissHintRef.current = dismissHint;
+  const dismissBackHintRef = useRef(dismissBackHint);
+  dismissBackHintRef.current = dismissBackHint;
+  const triggerBackHintRef = useRef(triggerBackHint);
+  triggerBackHintRef.current = triggerBackHint;
+
+  const triggerSettledSoundRef = useRef(triggerSettledSound);
+  triggerSettledSoundRef.current = triggerSettledSound;
+
+  const savePositionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingPositionRef = useRef<Omit<ReadingPosition, 'updatedAt'> | null>(null);
+
+  const flushReadingPosition = useCallback(() => {
+    if (savePositionTimerRef.current) {
+      clearTimeout(savePositionTimerRef.current);
+      savePositionTimerRef.current = null;
+    }
+    if (pendingPositionRef.current) {
+      const pos = pendingPositionRef.current;
+      pendingPositionRef.current = null;
+      void upsertReadingPosition(pos);
+    }
+  }, []);
+
+  const flushReadingPositionRef = useRef(flushReadingPosition);
+  flushReadingPositionRef.current = flushReadingPosition;
+
+  useEffect(() => {
+    return () => {
+      if (swipeSettledTimerRef.current) {
+        clearTimeout(swipeSettledTimerRef.current);
+        swipeSettledTimerRef.current = null;
+      }
+      if (savePositionTimerRef.current) {
+        clearTimeout(savePositionTimerRef.current);
+        savePositionTimerRef.current = null;
+      }
+      if (pendingPositionRef.current) {
+        const pos = pendingPositionRef.current;
+        pendingPositionRef.current = null;
+        void upsertReadingPosition(pos);
+      }
+    };
+  }, []);
 
   const onViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: ViewToken[] }) => {
       const first = viewableItems[0];
       if (first?.index == null) return;
       const page = first.item as ReaderPage;
-      // Play the turn sound only on a genuine page change — not the initial
-      // page settling on open, and not a re-emit of the same index.
-      if (lastPageIndexRef.current != null && first.index !== lastPageIndexRef.current) {
-        playPageTurnRef.current();
+
+      if (lastPageIndexRef.current == null) {
+        lastPageIndexRef.current = first.index;
+        lastSettledPageIndexRef.current = first.index;
+        setCurrentIndex(first.index);
+        return;
+      }
+
+      if (first.index !== lastPageIndexRef.current) {
+        if (suppressViewableSoundIndexRef.current === first.index) {
+          suppressViewableSoundIndexRef.current = null;
+        } else if (isSwipingRef.current) {
+          void hapticPageTurn();
+          pendingTurnSoundRef.current = true;
+          if (swipeSettledTimerRef.current) {
+            clearTimeout(swipeSettledTimerRef.current);
+          }
+          swipeSettledTimerRef.current = setTimeout(() => {
+            triggerSettledSoundRef.current();
+          }, 140);
+        } else {
+          playPageTurnRef.current();
+          lastSettledPageIndexRef.current = first.index;
+        }
+
         dismissHintRef.current();
+        if (backHintScheduledTimerRef.current) {
+          clearTimeout(backHintScheduledTimerRef.current);
+          backHintScheduledTimerRef.current = null;
+        }
+        if (first.index > 0 && !hasShownBackHintRef.current && !readerBackHintDismissedRef.current) {
+          backHintScheduledTimerRef.current = setTimeout(() => {
+            triggerBackHintRef.current();
+          }, 600);
+        } else if (first.index === 0) {
+          dismissBackHintRef.current();
+        }
       }
       lastPageIndexRef.current = first.index;
       setCurrentIndex(first.index);
       const currentBook = bookRef.current;
       const currentPages = pagesRef.current;
       if (currentBook) {
-        upsertReadingPosition({
+        pendingPositionRef.current = {
           bookId: currentBook.id,
           chapterIndex: page.chapterIndex,
           pageIndex: page.pageIndexInChapter,
           percentComplete: currentPages.length > 1 ? first.index / (currentPages.length - 1) : 1,
-        });
+        };
+        if (savePositionTimerRef.current) {
+          clearTimeout(savePositionTimerRef.current);
+        }
+        savePositionTimerRef.current = setTimeout(() => {
+          flushReadingPositionRef.current();
+        }, 400);
       }
     },
   ).current;
@@ -999,10 +1636,27 @@ export default function ReaderScreen() {
 
   const goToNextPage = useCallback(() => {
     dismissHint();
+    dismissBackHint();
     if (currentIndex < pages.length - 1) {
-      listRef.current?.scrollToIndex({ index: currentIndex + 1, animated: true });
+      const nextIdx = currentIndex + 1;
+      suppressViewableSoundIndexRef.current = nextIdx;
+      lastSettledPageIndexRef.current = nextIdx;
+      playPageTurnRef.current();
+      listRef.current?.scrollToIndex({ index: nextIdx, animated: true });
     }
-  }, [currentIndex, pages.length, dismissHint]);
+  }, [currentIndex, pages.length, dismissHint, dismissBackHint]);
+
+  const goToPrevPage = useCallback(() => {
+    dismissHint();
+    dismissBackHint();
+    if (currentIndex > 0) {
+      const prevIdx = currentIndex - 1;
+      suppressViewableSoundIndexRef.current = prevIdx;
+      lastSettledPageIndexRef.current = prevIdx;
+      playPageTurnRef.current();
+      listRef.current?.scrollToIndex({ index: prevIdx, animated: true });
+    }
+  }, [currentIndex, dismissHint, dismissBackHint]);
 
   // Each ORIGINAL paragraph is translated independently (parallel requests) —
   // never the whole page joined into one blob — so the translated page keeps
@@ -1470,61 +2124,55 @@ export default function ReaderScreen() {
       const translatedParagraphsForItem = translationForItem?.paragraphs ?? null;
       const bilingualParagraphsForItem = translationForItem?.bilingualParagraphs ?? null;
       return (
-        <ReaderPageFrame
-          pageIndex={index}
+        <ReaderPageCell
+          item={item}
+          index={index}
           scrollX={scrollX}
           themeProgress={bgProgress}
           mode={mode}
           pageWidth={pageWidth}
           pageHeight={pageHeight}
-        >
-          <View style={styles.pageTouchable}>
-            <ReaderPageView
-              page={item}
-              mode={mode}
-              sourceLanguage={sourceLanguage}
-              targetLanguage={targetLanguage}
-              dayTextColor={READING_TEXT_LIGHT}
-              lampTextColor={READING_TEXT_DARK}
-              themeProgress={bgProgress}
-              topInset={insets.top}
-              bottomInset={insets.bottom}
-              fontSize={readingFontSizePx}
-              lineHeight={readingLineHeight}
-              highlightMap={highlightMap}
-              highlightColors={colors.highlight}
-              savedWordSet={savedWordSet}
-              savedWordColor={savedWordColor}
-              savedWordTextColor={savedWordTextColor}
-              activeWordRange={activeWordForItem}
-              activeWordColor={colors.highlight.amber}
-              activeWordTextColor="#2B2621"
-              selectionRange={selectionForItem}
-              selectionColor={colors.highlight.amber}
-              onWordLongPress={handleWordLongPress}
-              onBilingualWordLongPress={(payload) => {
-                setActiveWord({
-                  word: payload.word,
-                  paragraphIndex: payload.paragraphIndex,
-                  pageGlobalIndex: item.globalIndex,
-                  start: 0,
-                  end: payload.word.length,
-                  anchor: payload.anchor,
-                  contextSentence: payload.contextSentence,
-                });
-              }}
-              onRangeEdgeDragStart={handleRangeEdgeDragStart}
-              onRangeEdgeDrag={(edge, pos, direction) =>
-                handleRangeEdgeDrag(item.globalIndex, edge, pos, direction)
-              }
-              onRangeEdgeDragEnd={handleRangeEdgeDragEnd}
-              translatedParagraphs={translatedParagraphsForItem}
-              bilingualParagraphs={bilingualParagraphsForItem}
-              onCloseTranslation={toggleTranslation}
-              onPagePress={selection ? undefined : toggleChrome}
-            />
-          </View>
-        </ReaderPageFrame>
+          topInset={insets.top}
+          bottomInset={insets.bottom}
+          fontSize={readingFontSizePx}
+          lineHeight={readingLineHeight}
+          sourceLanguage={sourceLanguage}
+          targetLanguage={targetLanguage}
+          highlightMap={highlightMap}
+          highlightColors={colors.highlight}
+          savedWordSet={savedWordSet}
+          savedWordColor={savedWordColor}
+          savedWordTextColor={savedWordTextColor}
+          activeWordRange={activeWordForItem}
+          selectionRange={selectionForItem}
+          translatedParagraphs={translatedParagraphsForItem}
+          bilingualParagraphs={bilingualParagraphsForItem}
+          onWordLongPress={handleWordLongPress}
+          onBilingualWordLongPress={
+            bilingualParagraphsForItem
+              ? (payload) => {
+                  setActiveWord({
+                    word: payload.word,
+                    paragraphIndex: payload.paragraphIndex,
+                    pageGlobalIndex: item.globalIndex,
+                    start: 0,
+                    end: payload.word.length,
+                    anchor: payload.anchor,
+                    contextSentence: payload.contextSentence,
+                  });
+                }
+              : undefined
+          }
+          onRangeEdgeDragStart={selectionForItem ? handleRangeEdgeDragStart : undefined}
+          onRangeEdgeDrag={
+            selectionForItem
+              ? (edge, pos, direction) =>
+                  handleRangeEdgeDrag(item.globalIndex, edge, pos, direction)
+              : NOOP_RANGE_DRAG
+          }
+          onRangeEdgeDragEnd={selectionForItem ? handleRangeEdgeDragEnd : undefined}
+          onCloseTranslation={toggleTranslation}
+        />
       );
     },
     [
@@ -1539,7 +2187,6 @@ export default function ReaderScreen() {
       handleRangeEdgeDragStart,
       handleRangeEdgeDrag,
       handleRangeEdgeDragEnd,
-      toggleChrome,
       bgProgress,
       sourceLanguage,
       targetLanguage,
@@ -1578,7 +2225,7 @@ export default function ReaderScreen() {
           if (lines > 0) {
             const measured = Math.round(sampleText.length / lines);
             if (measured > 0) {
-              setMeasuredCharsPerLine(measured);
+              setMeasuredCharsPerLine((prev) => (Math.abs(prev - measured) > 2 ? measured : prev));
             }
           }
         }}
@@ -1675,40 +2322,27 @@ export default function ReaderScreen() {
   const pageNumber = Math.min(currentIndex, pages.length - 1) + 1;
   const totalPages = pages.length;
   const percent = Math.round((pageNumber / totalPages) * 100);
-  // Rough "time left" so a long book doesn't feel bottomless — ~40s a page is
-  // a calm reading pace for this 18px/1.85 body; floored to whole minutes.
-  const pagesLeft = totalPages - pageNumber;
-  const minutesLeft = Math.round((pagesLeft * 40) / 60);
-  const timeLeftLabel =
-    pagesLeft <= 0 ? 'Last page' : minutesLeft < 1 ? 'Almost done' : `${minutesLeft} min left`;
-
-  const chromePercent = LamplightColor.flameAmber;
 
   return (
     <View style={styles.container} onLayout={handleContainerLayout}>
       {measurement}
       {/* Animated Day<->Lamp background — the single source of the page tint,
-          crossfading whenever `mode` flips. Light is a flat fill; dark fades in
-          as the exact Splash/Onboarding linear gradient. */}
-      <View style={[StyleSheet.absoluteFill, { backgroundColor: READING_BG_LIGHT }]} pointerEvents="none" />
-      {/* Solid dark fill *under* the gradient SVG so the container's right/bottom
-          edges are covered even where the Dimensions-sized SVG stops a pixel
-          short — that gap used to reveal the cream base as a thin edge line. */}
+          crossfading whenever `mode` flips. Light uses the authentic antique paper
+          texture so any rapid paging cell boundary never flashes white; dark fades in
+          with matching midnight antique paper. */}
+      <View style={StyleSheet.absoluteFill} pointerEvents="none">
+        <Image
+          source={ANTIQUE_PAPER_DAY}
+          style={StyleSheet.absoluteFill}
+          contentFit="cover"
+          priority="high"
+          cachePolicy="memory-disk"
+        />
+      </View>
       <Animated.View
-        style={[StyleSheet.absoluteFill, { backgroundColor: READING_DARK_STOPS[0] }, darkBgStyle]}
+        style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(10, 14, 26, 0.62)' }, darkBgStyle]}
         pointerEvents="none"
-      >
-        <Svg width={pageWidth} height={pageHeight} style={StyleSheet.absoluteFill}>
-          <Defs>
-            <LinearGradient id="readerDarkBg" x1="0" y1="0" x2="0" y2="1">
-              <Stop offset="0%" stopColor={READING_DARK_STOPS[0]} />
-              <Stop offset="55%" stopColor={READING_DARK_STOPS[1]} />
-              <Stop offset="100%" stopColor={READING_DARK_STOPS[2]} />
-            </LinearGradient>
-          </Defs>
-          <Rect x={0} y={0} width={pageWidth} height={pageHeight} fill="url(#readerDarkBg)" />
-        </Svg>
-      </Animated.View>
+      />
 
       <Animated.FlatList<ReaderPage>
         ref={listRef}
@@ -1722,11 +2356,9 @@ export default function ReaderScreen() {
         initialScrollIndex={initialIndex}
         getItemLayout={(_, index) => ({ length: pageWidth, offset: pageWidth * index, index })}
         renderItem={renderPage}
-        extraData={`${mode}-${readingFontSizePx}-${readingLineHeight}-${pageWidth}-${pageHeight}-${savedWordSet.size}-${selection ? `${selection.startPageGlobalIndex}:${selection.startParagraph}:${selection.startOffset}:${selection.endPageGlobalIndex}:${selection.endParagraph}:${selection.endOffset}` : ''}-${isDraggingHandle ? 'drag' : 'idle'}-${activeWord ? `${activeWord.pageGlobalIndex}:${activeWord.start}` : ''}-${wordMenu ? `${wordMenu.page.globalIndex}:${wordMenu.start}` : ''}-${translation ? `${translation.pageGlobalIndex}:${translation.status}` : ''}`}
-        // Detach off-screen pages' native view trees on iOS; disabled on Android
-        // where ClippingReactViewGroup detaches active pages during reflow, causing
-        // blank screens.
-        removeClippedSubviews={Platform.OS === 'ios'}
+        extraData={`${readingFontSizePx}-${readingLineHeight}-${pageWidth}-${pageHeight}-${savedWordSet.size}-${selection ? `${selection.startPageGlobalIndex}:${selection.startParagraph}:${selection.startOffset}:${selection.endPageGlobalIndex}:${selection.endParagraph}:${selection.endOffset}` : ''}-${isDraggingHandle ? 'drag' : 'idle'}-${activeWord ? `${activeWord.pageGlobalIndex}:${activeWord.start}` : ''}-${wordMenu ? `${wordMenu.page.globalIndex}:${wordMenu.start}` : ''}-${translation ? `${translation.pageGlobalIndex}:${translation.status}` : ''}`}
+        // Keep views attached across both platforms so rapid paging doesn't flash blank screens
+        removeClippedSubviews={false}
         onScrollToIndexFailed={(info) => {
           setTimeout(() => {
             listRef.current?.scrollToIndex({ index: info.index, animated: false });
@@ -1740,67 +2372,49 @@ export default function ReaderScreen() {
         // Lock paging while actively dragging a handle or reading whole-page translation
         scrollEnabled={!isDraggingHandle && currentTranslation == null}
         decelerationRate="fast"
-        // Keep the very first open of a book fast, but render adjacent pages ahead
-        // so swiping doesn't lag.
-        windowSize={7}
+        snapToInterval={pageWidth}
+        snapToAlignment="start"
+        disableIntervalMomentum={true}
+        // Lightweight virtualized window prevents JS thread freezing during rapid paging
+        windowSize={5}
         initialNumToRender={2}
-        maxToRenderPerBatch={3}
-        updateCellsBatchingPeriod={30}
+        maxToRenderPerBatch={2}
+        updateCellsBatchingPeriod={40}
         onScrollBeginDrag={handleScrollBeginDrag}
+        onScrollEndDrag={handleScrollEndDrag}
+        onMomentumScrollEnd={handleMomentumScrollEnd}
         onScroll={scrollHandler}
         scrollEventThrottle={16}
       />
 
-      {/* Corner hot-zone advances the page (fold motif tap-to-turn); tapping elsewhere on
-          the page toggles chrome, wired per-page in renderPage so word/paragraph presses
-          underneath still win. Disabled while selecting lines for a quote. */}
-      {selection ? null : <Pressable style={styles.cornerHotZone} onPress={goToNextPage} />}
+      {/* Corner hot-zones: right advances page, left turns back when index > 0 */}
+      {selection ? null : (
+        <>
+          <Pressable style={styles.cornerHotZone} onPress={goToNextPage} />
+          {currentIndex > 0 ? (
+            <Pressable style={styles.leftCornerHotZone} onPress={goToPrevPage} />
+          ) : null}
+        </>
+      )}
 
       {/* One theme-aware top bar for both modes — back, chapter, progress. */}
       <Animated.View
         pointerEvents={chromeVisible ? 'auto' : 'none'}
         style={[styles.topBar, chromeStyle, { height: insets.top + 64 }]}
       >
-        <Animated.View style={[StyleSheet.absoluteFill, dayChromeFadeStyle]} pointerEvents="none">
-          <Svg width={pageWidth} height={insets.top + 64} style={StyleSheet.absoluteFill}>
-            <Defs>
-              <LinearGradient id="chromeFadeDay" x1="0" y1="0" x2="0" y2="1">
-                <Stop offset="0%" stopColor={READING_BG_LIGHT} stopOpacity={0.96} />
-                <Stop offset="70%" stopColor={READING_BG_LIGHT} stopOpacity={0.78} />
-                <Stop offset="100%" stopColor={READING_BG_LIGHT} stopOpacity={0} />
-              </LinearGradient>
-            </Defs>
-            <Rect x={0} y={0} width={pageWidth} height={insets.top + 64} fill="url(#chromeFadeDay)" />
-          </Svg>
-        </Animated.View>
-        <Animated.View style={[StyleSheet.absoluteFill, nightChromeFadeStyle]} pointerEvents="none">
-          <Svg width={pageWidth} height={insets.top + 64} style={StyleSheet.absoluteFill}>
-            <Defs>
-              <LinearGradient id="chromeFadeLamp" x1="0" y1="0" x2="0" y2="1">
-                <Stop offset="0%" stopColor={READING_DARK_STOPS[0]} stopOpacity={0.96} />
-                <Stop offset="70%" stopColor={READING_DARK_STOPS[0]} stopOpacity={0.78} />
-                <Stop offset="100%" stopColor={READING_DARK_STOPS[0]} stopOpacity={0} />
-              </LinearGradient>
-            </Defs>
-            <Rect x={0} y={0} width={pageWidth} height={insets.top + 64} fill="url(#chromeFadeLamp)" />
-          </Svg>
-        </Animated.View>
         {/* Percent readout and top-bar centerline */}
         <View style={[styles.topBarRow, { paddingTop: insets.top + 19 }]}>
           {/* Reading progress, centered at the top: which page of how many,
               plus how much reading is left, so a long book has a visible end. */}
           <View style={styles.topBarProgress}>
-            <Text style={[typography.uiRowTitle, { color: chromePercent, fontSize: 13 }]}>
-              Page {pageNumber} of {totalPages}
-            </Text>
             <Animated.Text
               style={[
-                typography.metadataCaption,
-                { fontSize: 11, opacity: 0.6 },
+                typography.uiRowTitle,
+                { fontSize: 13 },
                 animatedTopBarTextStyle,
               ]}
             >
-              {percent}% · {timeLeftLabel}
+              Page {pageNumber} of {totalPages}
             </Animated.Text>
           </View>
         </View>
@@ -1817,165 +2431,122 @@ export default function ReaderScreen() {
         />
       </View>
 
-      {/* Reader Guide Button (?) — perfectly aligned with the top-right buttons */}
+      {/* The animated layer owns all taps while the vertical tools menu is open. */}
+      <Animated.View
+        style={[
+          StyleSheet.absoluteFill,
+          styles.chromeMenuLayer,
+          chromeMenuLayerAnimStyle,
+        ]}
+      >
+        <Pressable
+          style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.18)' }]}
+          onPress={() => closeChromeMenu()}
+        />
+        <Animated.View
+          style={[
+            styles.chromeMenuPanel,
+            animatedButtonStyle,
+            chromeMenuPanelStyle,
+            { top: insets.top + 58, borderRadius: radius.card },
+          ]}
+        >
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Page and font style"
+            testID="reader-page-style-button"
+            onPress={() => closeChromeMenu(() => setPageStyleVisible(true))}
+            style={styles.chromeMenuRow}
+          >
+            <Text style={[styles.chromeMenuAa, { color: colors.flameAmber }]}>Aa</Text>
+            <Text style={[typography.uiRowTitle, styles.chromeMenuLabel, { color: isLamp ? READING_TEXT_DARK : READING_TEXT_LIGHT }]}>Page & Font Style</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Translate page"
+            testID="reader-translate-button"
+            onPress={() => closeChromeMenu(toggleTranslation)}
+            style={styles.chromeMenuRow}
+          >
+            <TranslateIcon color={currentTranslation?.status === 'ready' ? colors.flameAmber : isLamp ? READING_TEXT_DARK : READING_TEXT_LIGHT} size={18} />
+            <Text style={[typography.uiRowTitle, styles.chromeMenuLabel, { color: isLamp ? READING_TEXT_DARK : READING_TEXT_LIGHT }]}>Translate Page</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Translation language"
+            testID="reader-language-button"
+            onPress={() => closeChromeMenu(() => setLanguagePickerVisible(true))}
+            style={styles.chromeMenuRow}
+          >
+            <TranslateIcon color={colors.flameAmber} size={18} />
+            <Text style={[typography.uiRowTitle, styles.chromeMenuLabel, { color: isLamp ? READING_TEXT_DARK : READING_TEXT_LIGHT }]}>Change Translation Language</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Listen to nature sounds"
+            testID="reader-ambience-button"
+            onPress={() => closeChromeMenu(() => setAmbienceOpen(true))}
+            style={styles.chromeMenuRow}
+          >
+            <SpeakerIcon color={ambienceTrackId ? colors.flameAmber : isLamp ? READING_TEXT_DARK : READING_TEXT_LIGHT} size={18} />
+            <Text style={[typography.uiRowTitle, styles.chromeMenuLabel, { color: isLamp ? READING_TEXT_DARK : READING_TEXT_LIGHT }]}>Listen to Nature Sounds</Text>
+          </Pressable>
+          <TurnPageSoundMenuRow
+            isLamp={Boolean(isLamp)}
+            playPageTurn={playPageTurn}
+            stopPageTurn={stopPageTurn}
+          />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={isLamp ? 'Switch to day mode' : 'Switch to lamp mode'}
+            testID="reader-mode-toggle-button"
+            onPress={() => {
+              toggleReadingTheme();
+              closeChromeMenu();
+            }}
+            style={styles.chromeMenuRow}
+          >
+            <ModeIcon progress={bgProgress} />
+            <Animated.Text style={[typography.uiRowTitle, styles.chromeMenuLabel, animatedTopBarTextStyle]}>
+              {isLamp ? 'Day Mode' : 'Lamp Mode'}
+            </Animated.Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Reader guide"
+            testID="reader-guide-button"
+            onPress={() => closeChromeMenu(openGuide)}
+            style={styles.chromeMenuRow}
+          >
+            <QuestionIcon color={isLamp ? READING_TEXT_DARK : READING_TEXT_LIGHT} size={18} />
+            <Text style={[typography.uiRowTitle, styles.chromeMenuLabel, { color: isLamp ? READING_TEXT_DARK : READING_TEXT_LIGHT }]}>Reader Guide</Text>
+          </Pressable>
+        </Animated.View>
+      </Animated.View>
+
+      {/* Top Left: Hamburger menu button */}
       <Animated.View
         pointerEvents="box-none"
         style={[
-          styles.guideButton,
+          styles.chromeMenuButton,
           { top: insets.top + 10 },
-          chromeStyle,
         ]}
       >
         <Animated.View style={[styles.chromeButtonSurface, animatedButtonStyle]} pointerEvents="none">
-          <View style={styles.buttonIconContainer}>
+          <Animated.View style={[styles.buttonIconContainer, hamburgerIconAnimStyle]}>
             <Animated.View style={[StyleSheet.absoluteFill, styles.centered, dayChromeFadeStyle]}>
-              <QuestionIcon color={READING_TEXT_LIGHT} size={18} />
+              <MenuIcon color={READING_TEXT_LIGHT} size={19} />
             </Animated.View>
             <Animated.View style={[StyleSheet.absoluteFill, styles.centered, nightChromeFadeStyle]}>
-              <QuestionIcon color={READING_TEXT_DARK} size={18} />
+              <MenuIcon color={READING_TEXT_DARK} size={19} />
             </Animated.View>
-          </View>
+          </Animated.View>
         </Animated.View>
         <ReaderChromeTouchTarget
-          enabled={chromeVisible}
-          onPress={() => {
-            scheduleAutoHide();
-            setGuideVisible(true);
-          }}
-          onLongPress={() => router.back()}
-          delayLongPress={500}
-        />
-      </Animated.View>
-
-      {/* Reading mode toggle */}
-      <Animated.View
-        pointerEvents="box-none"
-        style={[
-          styles.modeCycleButton,
-          { top: insets.top + 10 },
-          chromeStyle,
-        ]}
-      >
-        <Animated.View style={[styles.chromeButtonSurface, animatedButtonStyle]} pointerEvents="none">
-          <ModeIcon progress={bgProgress} />
-        </Animated.View>
-        <ReaderChromeTouchTarget enabled={chromeVisible} onPress={toggleReadingTheme} />
-      </Animated.View>
-
-      {/* Reading ambience sound button */}
-      <Animated.View
-        pointerEvents="box-none"
-        style={[
-          styles.ambienceButton,
-          { top: insets.top + 10 },
-          chromeStyle,
-        ]}
-      >
-        <Animated.View style={[styles.chromeButtonSurface, animatedButtonStyle]} pointerEvents="none">
-          <View style={styles.buttonIconContainer}>
-            <Animated.View style={[StyleSheet.absoluteFill, styles.centered, dayChromeFadeStyle]}>
-              <SpeakerIcon color={ambienceTrackId ? colors.flameAmber : READING_TEXT_LIGHT} size={18} />
-            </Animated.View>
-            <Animated.View style={[StyleSheet.absoluteFill, styles.centered, nightChromeFadeStyle]}>
-              <SpeakerIcon color={ambienceTrackId ? colors.flameAmber : READING_TEXT_DARK} size={18} />
-            </Animated.View>
-          </View>
-        </Animated.View>
-        <ReaderChromeTouchTarget
-          enabled={chromeVisible}
-          onPress={() => {
-            scheduleAutoHide();
-            setAmbienceOpen(true);
-          }}
-        />
-      </Animated.View>
-
-      {/* Page translation button */}
-      <Animated.View
-        pointerEvents="box-none"
-        style={[
-          styles.translateButton,
-          { top: insets.top + 10 },
-          chromeStyle,
-        ]}
-      >
-        <Animated.View style={[styles.chromeButtonSurface, animatedButtonStyle]} pointerEvents="none">
-          {currentTranslation?.status === 'loading' ? (
-            <ActivityIndicator size="small" color={isLamp ? READING_TEXT_DARK : READING_TEXT_LIGHT} />
-          ) : (
-            <View style={styles.buttonIconContainer}>
-              <Animated.View style={[StyleSheet.absoluteFill, styles.centered, dayChromeFadeStyle]}>
-                <TranslateIcon
-                  color={currentTranslation?.status === 'ready' ? colors.flameAmber : READING_TEXT_LIGHT}
-                  size={18}
-                />
-              </Animated.View>
-              <Animated.View style={[StyleSheet.absoluteFill, styles.centered, nightChromeFadeStyle]}>
-                <TranslateIcon
-                  color={currentTranslation?.status === 'ready' ? colors.flameAmber : READING_TEXT_DARK}
-                  size={18}
-                />
-              </Animated.View>
-            </View>
-          )}
-        </Animated.View>
-        <ReaderChromeTouchTarget
-          enabled={chromeVisible}
-          onPress={() => {
-            scheduleAutoHide();
-            toggleTranslation();
-          }}
-          onLongPress={() => {
-            scheduleAutoHide();
-            setLanguagePickerVisible(true);
-          }}
-          delayLongPress={350}
-        />
-      </Animated.View>
-
-      {/* Page & Font Style button */}
-      <Animated.View
-        pointerEvents="box-none"
-        style={[
-          styles.pageStyleButton,
-          { top: insets.top + 10 },
-          chromeStyle,
-        ]}
-      >
-        <Animated.View style={[styles.chromeButtonSurface, animatedButtonStyle]} pointerEvents="none">
-          <View style={styles.buttonIconContainer}>
-            <Animated.View style={[StyleSheet.absoluteFill, styles.centered, dayChromeFadeStyle]}>
-              <Text
-                style={{
-                  fontFamily: isBangla ? pageStyleConfig.banglaFont : pageStyleConfig.englishFont,
-                  color: colors.flameAmber,
-                  fontSize: 15,
-                  fontWeight: '700',
-                }}
-              >
-                Aa
-              </Text>
-            </Animated.View>
-            <Animated.View style={[StyleSheet.absoluteFill, styles.centered, nightChromeFadeStyle]}>
-              <Text
-                style={{
-                  fontFamily: isBangla ? pageStyleConfig.banglaFont : pageStyleConfig.englishFont,
-                  color: colors.flameAmber,
-                  fontSize: 15,
-                  fontWeight: '700',
-                }}
-              >
-                Aa
-              </Text>
-            </Animated.View>
-          </View>
-        </Animated.View>
-        <ReaderChromeTouchTarget
-          enabled={chromeVisible}
-          onPress={() => {
-            scheduleAutoHide();
-            setPageStyleVisible(true);
-          }}
+          enabled
+          onPress={toggleChromeMenu}
+          accessibilityLabel="Reader tools"
+          testID="reader-tools-button"
         />
       </Animated.View>
 
@@ -2039,7 +2610,7 @@ export default function ReaderScreen() {
 
       <AmbiencePicker visible={ambienceOpen} onClose={() => setAmbienceOpen(false)} />
 
-      {/* Smart first-run reader guide — teaches page turns (swipe left) and translation language */}
+      {/* Smart first-run reader guide — teaches page turns (forward & back) and translation language */}
       {hintVisible && !selection ? (
         <Animated.View
           style={[
@@ -2056,24 +2627,38 @@ export default function ReaderScreen() {
           <View style={styles.hintRow}>
             <Animated.View style={[styles.hintIconWrap, arrowAnimatedStyle]}>
               <Svg width={19} height={19} viewBox="0 0 24 24" fill="none">
-                <Path
-                  d="M19 12H5M5 12L11 6M5 12L11 18"
-                  stroke={colors.flameAmber}
-                  strokeWidth={2}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
+                {hintType === 'forward' ? (
+                  <Path
+                    d="M19 12H5M5 12L11 6M5 12L11 18"
+                    stroke={colors.flameAmber}
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                ) : (
+                  <Path
+                    d="M5 12H19M19 12L13 6M19 12L13 18"
+                    stroke={colors.flameAmber}
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                )}
               </Svg>
             </Animated.View>
             <View style={styles.hintTextCol}>
               <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
-                Swipe left to turn page
+                {hintType === 'forward' ? 'Swipe left to turn page' : 'Swipe right to turn back'}
               </Text>
               <Text style={[typography.metadataCaption, { color: colors.umber, fontSize: 11, marginTop: 1 }]}>
-                or tap bottom-right corner
+                {hintType === 'forward' ? 'or tap bottom-right corner' : 'or tap bottom-left corner'}
               </Text>
             </View>
-            <Pressable onPress={dismissHint} hitSlop={12} style={styles.hintCloseBtn}>
+            <Pressable
+              onPress={hintType === 'backward' ? dismissBackHint : dismissHint}
+              hitSlop={12}
+              style={styles.hintCloseBtn}
+            >
               <CloseIcon color={colors.fawn} size={14} />
             </Pressable>
           </View>
@@ -2081,7 +2666,7 @@ export default function ReaderScreen() {
           {/* Hairline divider */}
           <View style={[styles.hintDivider, { backgroundColor: colors.hairline }]} />
 
-          {/* Row 2: Translation & Language change */}
+          {/* Row 2: Translation info */}
           <View style={styles.hintRow}>
             <View style={styles.hintIconWrap}>
               <TranslateIcon color={colors.flameAmber} size={17} />
@@ -2091,24 +2676,19 @@ export default function ReaderScreen() {
                 Hold word to translate
               </Text>
               <Text style={[typography.metadataCaption, { color: colors.umber, fontSize: 11, marginTop: 1 }]}>
-                Tap pill to change language
+                Instant word definitions
               </Text>
             </View>
-            <Pressable
-              onPress={() => {
-                dismissHint();
-                setLanguagePickerVisible(true);
-              }}
-              hitSlop={8}
+            <View
               style={[
                 styles.hintPairPill,
                 { backgroundColor: colors.pairPillBackground, borderRadius: radius.pill },
               ]}
             >
               <Text style={[typography.eyebrowLabel, { color: colors.pairPillText, fontSize: 10.5, fontWeight: '600' }]}>
-                EN → {targetLanguageLabel(targetLanguage)} ▾
+                EN → {targetLanguageLabel(targetLanguage)}
               </Text>
-            </Pressable>
+            </View>
           </View>
         </Animated.View>
       ) : null}
@@ -2208,7 +2788,7 @@ export default function ReaderScreen() {
       />
 
       <ReaderGuideModal
-        visible={guideVisible}
+        visible={guideModalVisible}
         onClose={handleCloseGuide}
         onOpenLanguagePicker={() => {
           handleCloseGuide();
@@ -2235,6 +2815,31 @@ const styles = StyleSheet.create({
     height: '100%',
     overflow: 'visible',
   },
+  trailingEdgeDropShadow: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    right: -28,
+    width: 28,
+    flexDirection: 'row',
+    zIndex: 20,
+  },
+  edgeShadowBand1: {
+    width: 3,
+    height: '100%',
+  },
+  edgeShadowBand2: {
+    width: 6,
+    height: '100%',
+  },
+  edgeShadowBand3: {
+    width: 9,
+    height: '100%',
+  },
+  edgeShadowBand4: {
+    width: 10,
+    height: '100%',
+  },
   pageTouchable: {
     flex: 1,
   },
@@ -2257,45 +2862,70 @@ const styles = StyleSheet.create({
     width: 72,
     height: 72,
   },
-  modeCycleButton: {
+  leftCornerHotZone: {
     position: 'absolute',
-    right: 11,
-    width: 48,
-    height: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 20,
-    elevation: 6,
+    left: 0,
+    bottom: 0,
+    width: 72,
+    height: 72,
   },
-  ambienceButton: {
+  chromeMenuButton: {
     position: 'absolute',
-    right: 59,
+    left: 11,
     width: 48,
     height: 48,
     alignItems: 'center',
     justifyContent: 'center',
-    zIndex: 20,
-    elevation: 6,
+    zIndex: 50,
+    elevation: 20,
   },
-  translateButton: {
-    position: 'absolute',
-    right: 107,
-    width: 48,
-    height: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 20,
-    elevation: 6,
+  chromeMenuLayer: {
+    zIndex: 30,
   },
-  pageStyleButton: {
+  chromeMenuPanel: {
     position: 'absolute',
-    right: 155,
-    width: 48,
-    height: 48,
+    left: 11,
+    width: 236,
+    overflow: 'hidden',
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOpacity: 0.22,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+  },
+  chromeMenuRow: {
+    minHeight: 48,
+    flexDirection: 'row',
     alignItems: 'center',
+    paddingHorizontal: 16,
+  },
+  chromeMenuAa: {
+    width: 20,
+    textAlign: 'center',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  chromeMenuLabel: {
+    marginLeft: 12,
+    fontSize: 14,
+  },
+  menuToggleTrack: {
+    width: 38,
+    height: 22,
+    borderRadius: 11,
     justifyContent: 'center',
-    zIndex: 20,
-    elevation: 6,
+    paddingHorizontal: 2,
+  },
+  menuToggleThumb: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#FAF5EE',
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
+    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 2,
   },
   topBar: {
     position: 'absolute',
@@ -2311,16 +2941,6 @@ const styles = StyleSheet.create({
   topBarProgress: {
     alignItems: 'center',
     gap: 1,
-  },
-  guideButton: {
-    position: 'absolute',
-    left: 11,
-    width: 48,
-    height: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 20,
-    elevation: 6,
   },
   modeIconContainer: {
     width: 20,

@@ -62,9 +62,22 @@ export function HomeGuideModal({ visible, onClose, onNavigateTab }: HomeGuideMod
                 <LibraryIcon color={colors.flameAmber} size={20} />
               </View>
               <View style={styles.itemContent}>
-                <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 14.5 }]}>
-                  Library & Reading
-                </Text>
+                <View style={styles.itemTitleRow}>
+                  <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 14.5 }]}>
+                    Library & Shelves
+                  </Text>
+                  {onNavigateTab ? (
+                    <Pressable
+                      onPress={() => onNavigateTab('library')}
+                      hitSlop={8}
+                      style={[styles.jumpPill, { backgroundColor: colors.pairPillBackground, borderRadius: radius.pill }]}
+                    >
+                      <Text style={[typography.eyebrowLabel, { color: colors.pairPillText, fontSize: 10, fontWeight: '700' }]}>
+                        Open tab ➔
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                </View>
                 <Text style={[typography.metadataCaption, { color: colors.umber, fontSize: 11.5, marginTop: 2, lineHeight: 16.5 }]}>
                   Tap any book spine on the shelf to start reading. Jump back into <Text style={{ fontWeight: '600', color: colors.ink }}>Continue Reading</Text>, explore sacred texts (Quran, Bible, Vedas), or tap <Text style={{ fontWeight: '600', color: colors.ink }}>+ Import EPUB</Text> to add your own books.
                 </Text>
@@ -146,7 +159,7 @@ export function HomeGuideModal({ visible, onClose, onNavigateTab }: HomeGuideMod
           {/* Helpful reminder note */}
           <View style={styles.tipWrap}>
             <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 12, textAlign: 'center', lineHeight: 17 }]}>
-              To view this guide again anytime, tap the <Text style={{ color: colors.flameAmber, fontWeight: '700' }}>?</Text> button at the top of your shelf.
+              To view this guide again anytime, tap the <Text style={{ color: colors.flameAmber, fontWeight: '700' }}>?</Text> button at the top of your Home screen.
             </Text>
           </View>
 

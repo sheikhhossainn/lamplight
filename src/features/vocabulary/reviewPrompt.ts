@@ -1,12 +1,13 @@
 import { getSetting, setSetting } from '@/db/repositories/appSettings';
-import { getReviewStats } from '@/db/repositories/savedWords';
+import { getVocabularyEligibility } from '@/db/repositories/savedWords';
 
 // Flashcards are always reachable from the Notebook tab — this is only about
 // when the app volunteers a review. Gate is deliberately quiet: a deck worth
 // reviewing (5+ words), at least one word old enough that recalling it means
 // something (saved before today), and never twice in a day.
-export const MIN_DECK_SIZE = 5;
-const LAST_SHOWN_KEY = 'vocab_review_prompt_last_shown';
+export const MIN_REVIEW_WORDS = 5;
+export const MIN_DECK_SIZE = MIN_REVIEW_WORDS;
+const DAILY_CHECKPOINT_KEY = 'vocabulary.daily_review_checkpoint';
 
 function todayKey(): string {
   const now = new Date();
@@ -14,22 +15,32 @@ function todayKey(): string {
 }
 
 // Local midnight, not UTC — "saved before today" has to mean the reader's day.
-function startOfToday(): number {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-}
-
-// wordCount is the whole deck (what the prompt offers to review), not just the
-// day-old subset that made it eligible.
 export async function checkVocabReviewPrompt(): Promise<{ shouldPrompt: boolean; wordCount: number }> {
-  const lastShown = await getSetting(LAST_SHOWN_KEY);
-  const { total, readyToReview } = await getReviewStats(startOfToday());
-  const shouldPrompt = lastShown !== todayKey() && total >= MIN_DECK_SIZE && readyToReview > 0;
-  return { shouldPrompt, wordCount: total };
+  const today = todayKey();
+  const [dismissed, checkpointRaw, eligibility] = await Promise.all([
+    getSetting(`vocabulary.review_prompt_dismissed.${today}`),
+    getSetting(DAILY_CHECKPOINT_KEY),
+    getVocabularyEligibility(),
+  ]);
+  let completedToday = false;
+  try {
+    completedToday = JSON.parse(checkpointRaw ?? 'null')?.date === today;
+  } catch {
+    // Corrupt legacy settings should not stop a future review prompt.
+  }
+  return {
+    shouldPrompt:
+      dismissed !== '1' &&
+      !completedToday &&
+      eligibility.totalSaved >= MIN_REVIEW_WORDS &&
+      eligibility.dueCount > 0 &&
+      eligibility.reviewableBeforeTodayCount > 0,
+    wordCount: eligibility.totalSaved,
+  };
 }
 
-// Called whether the reader accepts or dismisses — either way they've answered
-// the question for today.
+// A dismissal is local-day scoped; accepting leaves completion as the thing
+// that suppresses future prompts for the day.
 export async function markVocabReviewPrompted(): Promise<void> {
-  await setSetting(LAST_SHOWN_KEY, todayKey());
+  await setSetting(`vocabulary.review_prompt_dismissed.${todayKey()}`, '1');
 }

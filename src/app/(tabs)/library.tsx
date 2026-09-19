@@ -51,9 +51,7 @@ import {
   type Shelf,
   type ShelfItem,
 } from '@/db/repositories/shelves';
-import { getSetting, setSetting } from '@/db/repositories/appSettings';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { HomeGuideModal } from '@/components/HomeGuideModal';
 import { isBookCached } from '@/features/content-ingestion/bookDownloader';
 import { importEpubFromFile } from '@/features/content-ingestion/epubImporter';
 import { targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
@@ -69,8 +67,6 @@ const ROW_ROTATIONS = [-2, 1.5, -1, 2.5, -2.5, 1, -1.5, 2];
 // Fixed slot width (BookSpine default 96 + Spacing.md gap) so the shelf
 // FlatList can compute scroll offsets without measuring every item.
 const SPINE_SLOT_WIDTH = 96 + 16;
-
-const HOME_GUIDE_SEEN_KEY = 'home_guide_shown_once';
 
 
 function getShelfSubtitle(): string {
@@ -169,10 +165,8 @@ export default function LibraryScreen() {
   const [filterOpen, setFilterOpen] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [reviewPrompt, setReviewPrompt] = useState<{ wordCount: number } | null>(null);
-  const [guideVisible, setGuideVisible] = useState(false);
   const [downloadConfirmBook, setDownloadConfirmBook] = useState<BookRow | null>(null);
   const [banglaBooks, setBanglaBooks] = useState<BanglaBookSummary[]>(FALLBACK_BANGLA_BOOKS);
-  const guideDismissedInSessionRef = useRef(false);
   const searchRef = useRef<TextInput>(null);
 
   const handleOpenContinueBook = useCallback((b: BookRow) => {
@@ -186,18 +180,6 @@ export default function LibraryScreen() {
         params: { bookId: b.id, bookTitle: b.title, bookCoverUrl: b.coverUrl ?? '' },
       });
     }
-  }, []);
-
-  const handleCloseGuide = useCallback(() => {
-    guideDismissedInSessionRef.current = true;
-    setGuideVisible(false);
-    void setSetting(HOME_GUIDE_SEEN_KEY, '1');
-  }, []);
-
-  const handleNavigateTab = useCallback((tab: 'library' | 'vocabulary' | 'settings') => {
-    // Temporary hide for tab navigation without marking permanently seen
-    setGuideVisible(false);
-    router.push(`/(tabs)/${tab}` as any);
   }, []);
 
   // When the keyboard is dismissed (e.g. swipe-back gesture) the search input
@@ -246,16 +228,6 @@ export default function LibraryScreen() {
     useCallback(() => {
       let isFocused = true;
       void (async () => {
-        // Automatically show home guide once on first visit
-        if (!guideDismissedInSessionRef.current) {
-          const seen = await getSetting(HOME_GUIDE_SEEN_KEY);
-          if (isFocused && seen !== '1' && !guideDismissedInSessionRef.current) {
-            setGuideVisible(true);
-          } else if (seen === '1') {
-            guideDismissedInSessionRef.current = true;
-          }
-        }
-
         await load();
         if (!isFocused) return;
 
@@ -549,17 +521,6 @@ export default function LibraryScreen() {
             {getShelfSubtitle()}
           </Text>
         </View>
-        <Pressable
-          onPress={() => setGuideVisible(true)}
-          hitSlop={12}
-          style={styles.helpButton}
-        >
-          <View style={[styles.helpBadge, { borderColor: colors.hairline, backgroundColor: colors.card }]}>
-            <Text style={[typography.uiRowTitle, { color: colors.umber, fontSize: 13, fontWeight: '600' }]}>
-              ?
-            </Text>
-          </View>
-        </Pressable>
       </View>
       <CultureEditionBanner />
 
@@ -1004,7 +965,6 @@ export default function LibraryScreen() {
         visible={reviewPrompt != null}
         wordCount={reviewPrompt?.wordCount ?? 0}
         onReview={() => {
-          void markVocabReviewPrompted();
           setReviewPrompt(null);
           router.push({ pathname: '/vocabulary', params: { tab: 'flashcards' } });
         }}
@@ -1016,11 +976,6 @@ export default function LibraryScreen() {
       />
 
       </ScrollView>
-      <HomeGuideModal
-        visible={guideVisible}
-        onClose={handleCloseGuide}
-        onNavigateTab={handleNavigateTab}
-      />
 
       {downloadConfirmBook ? (
         <ConfirmDialog

@@ -4,6 +4,8 @@ import Animated, { type SharedValue, useAnimatedStyle } from 'react-native-reani
 import { Image } from 'expo-image';
 import { LamplightColor } from '@/theme/tokens';
 
+import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
+
 const ANTIQUE_PAPER_DAY = require('../../../../assets/images/antique-paper-day.jpg');
 
 type BookPageFrameProps = {
@@ -26,20 +28,25 @@ const DAY_TONES = {
   liftSheen: 'rgba(255, 255, 255, 0.18)',
   shadow1: 'rgba(30, 20, 10, 0.20)',
   shadow2: 'rgba(30, 20, 10, 0.11)',
-
   shadow3: 'rgba(30, 20, 10, 0.05)',
   shadow4: 'rgba(30, 20, 10, 0.02)',
 };
 
 const NIGHT_TONES = {
-  spineCrease: 'rgba(0, 0, 0, 0.35)',
-  spineBand1: 'rgba(0, 0, 0, 0.20)',
-  spineBand2: 'rgba(0, 0, 0, 0.10)',
-  spineBand3: 'rgba(0, 0, 0, 0.04)',
-  shadow1: 'rgba(0, 0, 0, 0.40)',
-  shadow2: 'rgba(0, 0, 0, 0.22)',
-  shadow3: 'rgba(0, 0, 0, 0.10)',
-  shadow4: 'rgba(0, 0, 0, 0.03)',
+  // Spine shadow — deep indigo-black, cooler than day
+  spineCrease: 'rgba(10, 14, 28, 0.70)',
+  spineBand1: 'rgba(10, 14, 28, 0.40)',
+  spineBand2: 'rgba(10, 14, 28, 0.20)',
+  spineBand3: 'rgba(10, 14, 28, 0.08)',
+  // Fore-edge deckle — moonlit paper edge is cool grey-silver
+  coverRim: '#0E1018',
+  leaf4: '#181C26',
+  leaf3: '#202532',
+  leaf2: '#282E3E',
+  leaf1: '#32394A',
+  leafCutEdge: 'rgba(10, 14, 28, 0.45)',
+  // Lift sheen: cool silver glint on the turning right edge
+  liftSheen: 'rgba(200, 215, 240, 0.08)',
 };
 
 export function BookPageFrame({ children, themeProgress }: BookPageFrameProps) {
@@ -88,34 +95,72 @@ export function BookPageFrame({ children, themeProgress }: BookPageFrameProps) {
         <View style={[styles.turningEdgeCurl, { backgroundColor: DAY_TONES.liftSheen }]} />
       </Animated.View>
 
-      {/* Night Mode Spine Gutter */}
-      <Animated.View style={[styles.leftSpineShadow, styles.nightSpineShadow, nightLayerStyle]} pointerEvents="none">
-        <View style={[styles.spineBand3, { backgroundColor: NIGHT_TONES.spineBand3 }]} />
-        <View style={[styles.spineBand2, { backgroundColor: NIGHT_TONES.spineBand2 }]} />
-        <View style={[styles.spineBand1, { backgroundColor: NIGHT_TONES.spineBand1 }]} />
-        <View style={[styles.spineCrease, { backgroundColor: NIGHT_TONES.spineCrease }]} />
+      {/* Night (Lamp) Mode Layer: Same antique paper under moonlight */}
+      <Animated.View
+        style={[
+          StyleSheet.absoluteFill,
+          nightLayerStyle,
+          { backgroundColor: '#080A12' },
+        ]}
+        pointerEvents="none"
+      >
+        {/* The same antique paper — high opacity so the grain, fibers and texture are all visible */}
+        <Image
+          source={ANTIQUE_PAPER_DAY}
+          style={[StyleSheet.absoluteFill, { opacity: 0.82 }]}
+          contentFit="cover"
+          priority="high"
+          cachePolicy="memory-disk"
+        />
+
+        {/* Cool indigo-midnight wash — dims the warm amber of the paper to a moonlit silver-grey.
+            Moonlight doesn't kill texture, it shifts color temperature and reduces brightness. */}
+        <View
+          style={[
+            StyleSheet.absoluteFill,
+            { backgroundColor: 'rgba(10, 14, 26, 0.70)' },
+          ]}
+        />
+
+        {/* Soft silver moonlight glow from slightly above center — like a window above the reading chair */}
+        <Svg width="100%" height="100%" style={StyleSheet.absoluteFill}>
+          <Defs>
+            <RadialGradient id="moonGlow" cx="50%" cy="30%" rx="55%" ry="50%">
+              <Stop offset="0%"  stopColor="#C8D8F0" stopOpacity="0.12" />
+              <Stop offset="50%" stopColor="#A0B4D8" stopOpacity="0.05" />
+              <Stop offset="100%" stopColor="#0C0E18" stopOpacity="0" />
+            </RadialGradient>
+          </Defs>
+          <Rect x="0" y="0" width="100%" height="100%" fill="url(#moonGlow)" />
+        </Svg>
+
+        {/* Outer book cover rim in cool dark slate */}
+        <View style={[styles.coverRim, { backgroundColor: NIGHT_TONES.coverRim }]} />
+
+        {/* Stacked paper deckle leaf layers — cool slate tones */}
+        <View style={styles.rightDeckleStack}>
+          <View style={[styles.leafLine, { backgroundColor: NIGHT_TONES.leaf4, right: 0 }]} />
+          <View style={[styles.leafLine, { backgroundColor: NIGHT_TONES.leaf3, right: 1.5 }]} />
+          <View style={[styles.leafLine, { backgroundColor: NIGHT_TONES.leaf2, right: 3 }]} />
+          <View style={[styles.leafLine, { backgroundColor: NIGHT_TONES.leaf1, right: 4.5 }]} />
+          <View style={[styles.leafBorder, { borderColor: NIGHT_TONES.leafCutEdge, right: 5.5 }]} />
+        </View>
+
+        {/* Left Spine Gutter */}
+        <View style={[styles.leftSpineShadow, styles.nightSpineShadow]}>
+          <View style={[styles.spineBand3, { backgroundColor: NIGHT_TONES.spineBand3 }]} />
+          <View style={[styles.spineBand2, { backgroundColor: NIGHT_TONES.spineBand2 }]} />
+          <View style={[styles.spineBand1, { backgroundColor: NIGHT_TONES.spineBand1 }]} />
+          <View style={[styles.spineCrease, { backgroundColor: NIGHT_TONES.spineCrease }]} />
+        </View>
+
+        {/* Cool silver glint on right turning edge */}
+        <View style={[styles.turningEdgeCurl, { backgroundColor: NIGHT_TONES.liftSheen }]} />
       </Animated.View>
 
       {/* Page Content Container (Typography, Selection Handles, Word Taps) */}
       <View style={styles.contentWrap}>{children}</View>
 
-      {/* Turning Edge Drop Shadow (Casts onto adjacent page during turn) */}
-      <View style={styles.turningEdgeShadow} pointerEvents="none">
-        <Animated.View style={[StyleSheet.absoluteFill, dayLayerStyle]}>
-          <View style={[styles.edgeHairline, { backgroundColor: DAY_TONES.spineCrease }]} />
-          <View style={[styles.edgeShadow1, { backgroundColor: DAY_TONES.shadow1 }]} />
-          <View style={[styles.edgeShadow2, { backgroundColor: DAY_TONES.shadow2 }]} />
-          <View style={[styles.edgeShadow3, { backgroundColor: DAY_TONES.shadow3 }]} />
-          <View style={[styles.edgeShadow4, { backgroundColor: DAY_TONES.shadow4 }]} />
-        </Animated.View>
-        <Animated.View style={[StyleSheet.absoluteFill, nightLayerStyle]}>
-          <View style={[styles.edgeHairline, { backgroundColor: NIGHT_TONES.spineCrease }]} />
-          <View style={[styles.edgeShadow1, { backgroundColor: NIGHT_TONES.shadow1 }]} />
-          <View style={[styles.edgeShadow2, { backgroundColor: NIGHT_TONES.shadow2 }]} />
-          <View style={[styles.edgeShadow3, { backgroundColor: NIGHT_TONES.shadow3 }]} />
-          <View style={[styles.edgeShadow4, { backgroundColor: NIGHT_TONES.shadow4 }]} />
-        </Animated.View>
-      </View>
     </View>
   );
 }
