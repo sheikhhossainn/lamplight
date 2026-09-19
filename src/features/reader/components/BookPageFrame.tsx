@@ -100,7 +100,7 @@ export function BookPageFrame({ children, themeProgress }: BookPageFrameProps) {
         style={[
           StyleSheet.absoluteFill,
           nightLayerStyle,
-          { backgroundColor: '#0C0E18' },
+          { backgroundColor: '#080A12' },
         ]}
         pointerEvents="none"
       >
@@ -118,7 +118,7 @@ export function BookPageFrame({ children, themeProgress }: BookPageFrameProps) {
         <View
           style={[
             StyleSheet.absoluteFill,
-            { backgroundColor: 'rgba(10, 14, 26, 0.58)' },
+            { backgroundColor: 'rgba(10, 14, 26, 0.70)' },
           ]}
         />
 
