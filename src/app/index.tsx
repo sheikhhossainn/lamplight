@@ -7,6 +7,7 @@ import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { FlameGlow } from '@/components/FlameGlow';
 import { ChevronRightIcon } from '@/components/icons';
 import { hasCompletedOnboarding } from '@/features/settings/onboardingStatus';
+import { LamplightColor } from '@/theme/tokens';
 import { useTheme } from '@/theme/ThemeProvider';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
@@ -61,7 +62,7 @@ export default function SplashScreen() {
           <Text
             style={[
               typography.wordmark,
-              { color: colors.parchment, fontSize: 36, letterSpacing: 0.8, marginTop: spacing.xl },
+              { color: LamplightColor.parchment, fontSize: 36, letterSpacing: 0.8, marginTop: spacing.xl },
             ]}
           >
             Lamplight

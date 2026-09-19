@@ -43,6 +43,7 @@ import {
   saveCalibrationData,
   type CalibrationPreset,
 } from '@/features/vocabulary/calibration';
+import { LamplightColor } from '@/theme/tokens';
 import { useTheme } from '@/theme/ThemeProvider';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
@@ -104,7 +105,7 @@ const SLIDES: Slide[] = [
 ];
 
 function ReadIllustration() {
-  const { colors, typography, radius } = useTheme();
+  const { typography, radius } = useTheme();
   const textLines = [0, 1, 2, 3, 4];
   return (
     <View style={illustrationStyles.readCardWrap}>
@@ -112,7 +113,7 @@ function ReadIllustration() {
         style={[
           illustrationStyles.readBookPage,
           {
-            backgroundColor: colors.parchment,
+            backgroundColor: LamplightColor.parchment,
             borderRadius: radius.card,
             borderColor: 'rgba(245, 166, 35, 0.25)',
             borderWidth: 1,
@@ -122,7 +123,7 @@ function ReadIllustration() {
         <Text
           style={[
             typography.eyebrowLabel,
-            { color: colors.fawn, fontSize: 9, textAlign: 'center', marginBottom: 10, letterSpacing: 1.2 },
+            { color: LamplightColor.fawn, fontSize: 9, textAlign: 'center', marginBottom: 10, letterSpacing: 1.2 },
           ]}
         >
           CHAPTER I
@@ -131,7 +132,7 @@ function ReadIllustration() {
           <Text
             style={[
               typography.wordmark,
-              { color: colors.flameAmber, fontSize: 24, lineHeight: 26, marginRight: 8 },
+              { color: LamplightColor.flameAmber, fontSize: 24, lineHeight: 26, marginRight: 8 },
             ]}
           >
             I
@@ -140,13 +141,13 @@ function ReadIllustration() {
             <View
               style={[
                 illustrationStyles.textLine,
-                { backgroundColor: colors.ink, opacity: 0.2, width: '100%' },
+                { backgroundColor: LamplightColor.ink, opacity: 0.2, width: '100%' },
               ]}
             />
             <View
               style={[
                 illustrationStyles.textLine,
-                { backgroundColor: colors.ink, opacity: 0.2, width: '88%' },
+                { backgroundColor: LamplightColor.ink, opacity: 0.2, width: '88%' },
               ]}
             />
           </View>
@@ -158,7 +159,7 @@ function ReadIllustration() {
               style={[
                 illustrationStyles.textLine,
                 {
-                  backgroundColor: colors.ink,
+                  backgroundColor: LamplightColor.ink,
                   opacity: 0.16,
                   width: i === textLines.length - 1 ? '60%' : '100%',
                 },
@@ -195,7 +196,7 @@ function CoverageIllustration() {
           style={[
             illustrationStyles.bookCardHero,
             {
-              backgroundColor: colors.parchment,
+              backgroundColor: LamplightColor.parchment,
               borderRadius: radius.card,
               borderColor: colors.flameAmber,
               borderWidth: 1.5,
@@ -221,13 +222,13 @@ function CoverageIllustration() {
             <View
               style={[
                 illustrationStyles.textLine,
-                { backgroundColor: colors.ink, opacity: 0.25, width: '70%' },
+                { backgroundColor: LamplightColor.ink, opacity: 0.25, width: '70%' },
               ]}
             />
             <View
               style={[
                 illustrationStyles.textLine,
-                { backgroundColor: colors.ink, opacity: 0.15, width: '50%' },
+                { backgroundColor: LamplightColor.ink, opacity: 0.15, width: '50%' },
               ]}
             />
           </View>
@@ -261,15 +262,15 @@ function MemoryIllustration() {
       <View
         style={[
           illustrationStyles.sentenceCard,
-          { backgroundColor: colors.parchment, borderRadius: radius.card, padding: spacing.md },
+          { backgroundColor: LamplightColor.parchment, borderRadius: radius.card, padding: spacing.md },
         ]}
       >
-        <Text style={[typography.readingBody, { color: colors.ink, fontSize: 15, lineHeight: 26 }]}>
+        <Text style={[typography.readingBody, { color: LamplightColor.ink, fontSize: 15, lineHeight: 26 }]}>
           …a single man in possession of a good{' '}
           <Text
             style={{
               backgroundColor: 'rgba(245,166,35,0.35)',
-              color: colors.ink,
+              color: LamplightColor.ink,
               borderWidth: 2,
               borderColor: 'rgba(245,166,35,0.55)',
               borderRadius: 3,

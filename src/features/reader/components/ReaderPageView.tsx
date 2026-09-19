@@ -325,13 +325,36 @@ function renderParagraphRuns(
 ): (string | ReactElement)[] {
   const children: (string | ReactElement)[] = [];
   let spanKey = 0;
+
   for (let tokenIndex = 0; tokenIndex < tokens.length; tokenIndex += 1) {
     const token = tokens[tokenIndex];
+
+    // Non-word tokens (leading quotation marks, punctuation, symbols):
     if (!token.word) {
-      children.push(token.text);
+      const isTokenHl =
+        highlightRange != null && token.start < highlightRange.end && token.end > highlightRange.start;
+      if (isTokenHl && highlightColor) {
+        const hlStart = Math.max(token.start, highlightRange.start);
+        const hlEnd = Math.min(token.end, highlightRange.end);
+        const pre = token.text.slice(0, hlStart - token.start);
+        const hl = token.text.slice(hlStart - token.start, hlEnd - token.start);
+        const post = token.text.slice(hlEnd - token.start);
+        if (pre) children.push(pre);
+        if (hl) {
+          children.push(
+            <Text key={`nw${spanKey++}`} style={{ backgroundColor: highlightColor }}>
+              {hl}
+            </Text>,
+          );
+        }
+        if (post) children.push(post);
+      } else {
+        children.push(token.text);
+      }
       continue;
     }
 
+    // Collect trailing non-word text (spaces, commas, punctuation between words)
     let trailingText = '';
     let trailingIndex = tokenIndex + 1;
     while (trailingIndex < tokens.length && !tokens[trailingIndex].word) {
@@ -339,46 +362,114 @@ function renderParagraphRuns(
       trailingIndex += 1;
     }
 
+    const trailingStart = token.end;
+    const trailingEnd = token.end + trailingText.length;
+
+    // Check highlights for word and trailing text
+    const isTokenHl =
+      highlightRange != null && token.start < highlightRange.end && token.end > highlightRange.start;
+    const hlTrailingStart =
+      highlightRange != null ? Math.max(trailingStart, highlightRange.start) : trailingStart;
+    const hlTrailingEnd =
+      highlightRange != null ? Math.min(trailingEnd, highlightRange.end) : trailingStart;
+    const isTrailingHl = hlTrailingEnd > hlTrailingStart && Boolean(highlightColor);
+
+    const preTrailing = isTrailingHl ? trailingText.slice(0, hlTrailingStart - trailingStart) : '';
+    const hlTrailing = isTrailingHl
+      ? trailingText.slice(hlTrailingStart - trailingStart, hlTrailingEnd - trailingStart)
+      : '';
+    const postTrailing = isTrailingHl
+      ? trailingText.slice(hlTrailingEnd - trailingStart)
+      : trailingText;
+
     const isActive = activeRange != null && token.start === activeRange.start && token.end === activeRange.end;
     const isSaved = !isActive && token.word != null && savedWordSet.has(token.word.toLowerCase());
-    const isHighlighted = highlightRange != null && token.start < highlightRange.end && token.end > highlightRange.start;
-    const spanStyle = isActive
+
+    const wordStyle = isActive
       ? { backgroundColor: activeColor, color: activeTextColor }
       : isSaved
         ? { backgroundColor: savedWordColor, color: savedWordTextColor }
-        : isHighlighted && highlightColor
+        : isTokenHl && highlightColor
           ? { backgroundColor: highlightColor }
           : undefined;
-    children.push(
-      <Text
-        key={`s${spanKey}`}
-        onPress={
-          onTextPress
-            ? (event) => {
-                event.stopPropagation();
-                onTextPress();
-              }
-            : undefined
-        }
-        onLongPress={(event) =>
-          onWordLongPress({
-            word: token.word!,
-            paragraphIndex,
-            page,
-            start: token.start,
-            end: token.end,
-            pageX: event.nativeEvent.pageX,
-            pageY: event.nativeEvent.pageY,
-          })
-        }
-      >
-        {spanStyle ? <Text style={spanStyle}>{token.text}</Text> : token.text}
-        {trailingText}
-      </Text>,
-    );
-    spanKey += 1;
+
+    // Continuous highlighting: when both word and trailing text share the quote highlight
+    // without active/saved overrides, render them in a SINGLE <Text style={{ backgroundColor }}>
+    // span so there is zero horizontal gap between words.
+    const isContinuousHl =
+      isTokenHl &&
+      isTrailingHl &&
+      !isActive &&
+      !isSaved &&
+      highlightColor &&
+      preTrailing === '' &&
+      postTrailing === '';
+
+    if (isContinuousHl) {
+      children.push(
+        <Text
+          key={`s${spanKey++}`}
+          onPress={
+            onTextPress
+              ? (event) => {
+                  event.stopPropagation();
+                  onTextPress();
+                }
+              : undefined
+          }
+          onLongPress={(event) =>
+            onWordLongPress({
+              word: token.word!,
+              paragraphIndex,
+              page,
+              start: token.start,
+              end: token.end,
+              pageX: event.nativeEvent.pageX,
+              pageY: event.nativeEvent.pageY,
+            })
+          }
+        >
+          <Text style={{ backgroundColor: highlightColor }}>
+            {token.text}
+            {trailingText}
+          </Text>
+        </Text>,
+      );
+    } else {
+      children.push(
+        <Text
+          key={`s${spanKey++}`}
+          onPress={
+            onTextPress
+              ? (event) => {
+                  event.stopPropagation();
+                  onTextPress();
+                }
+              : undefined
+          }
+          onLongPress={(event) =>
+            onWordLongPress({
+              word: token.word!,
+              paragraphIndex,
+              page,
+              start: token.start,
+              end: token.end,
+              pageX: event.nativeEvent.pageX,
+              pageY: event.nativeEvent.pageY,
+            })
+          }
+        >
+          {wordStyle ? <Text style={wordStyle}>{token.text}</Text> : token.text}
+          {preTrailing ? preTrailing : null}
+          {hlTrailing ? <Text style={{ backgroundColor: highlightColor }}>{hlTrailing}</Text> : null}
+          {postTrailing ? postTrailing : null}
+        </Text>,
+      );
+    }
+
     tokenIndex = trailingIndex - 1;
   }
+
   return children;
 }
 
@@ -856,6 +947,8 @@ function ReaderPageViewImpl({
       if (highlightEntry?.quoteText) {
         const runStart = paragraph.indexOf(highlightEntry.quoteText);
         if (runStart !== -1) highlightRun = { start: runStart, end: runStart + highlightEntry.quoteText.length };
+      } else if (highlightEntry) {
+        highlightRun = { start: 0, end: paragraph.length };
       }
       return (
         <Text
@@ -870,7 +963,6 @@ function ReaderPageViewImpl({
               lineHeight: isBengaliText(paragraph) ? pageStyleConfig.banglaLineHeight : pageStyleConfig.lineHeight,
               letterSpacing: isBengaliText(paragraph) ? pageStyleConfig.banglaLetterSpacing : pageStyleConfig.letterSpacing,
               marginBottom: paragraphIndex === page.paragraphs.length - 1 ? 0 : spacing.sm,
-              backgroundColor: highlightWash && !highlightRun ? highlightWash : undefined,
             },
           ]}
           onPress={onPagePress}
