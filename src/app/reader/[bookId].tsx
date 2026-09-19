@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
@@ -11,6 +11,8 @@ import {
   useWindowDimensions,
   View,
   type LayoutChangeEvent,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
   type ViewToken,
 } from 'react-native';
 import Animated, {
@@ -32,6 +34,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import Svg, { Circle, Defs, LinearGradient, Path, Rect, Stop } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Image } from 'expo-image';
 
 import { ChevronLeftIcon, CloseIcon, MenuIcon, MoonIcon, QuestionIcon, SoundWaveIcon, SpeakerIcon, SunIcon, TranslateIcon } from '@/components/icons';
 import { AmbiencePicker } from '@/features/ambience/AmbiencePicker';
@@ -65,7 +68,7 @@ import { logEvent } from '@/features/analytics/analytics';
 import { BookFormatError, type IngestedBook } from '@/features/content-ingestion/textParser';
 import { getBook, updateBookTotalChapters, type BookRow } from '@/db/repositories/books';
 import { createHighlight, listHighlightsForBook, type Highlight } from '@/db/repositories/highlights';
-import { getReadingPosition, upsertReadingPosition } from '@/db/repositories/readingPosition';
+import { getReadingPosition, upsertReadingPosition, type ReadingPosition } from '@/db/repositories/readingPosition';
 import { listSavedWordsForBook, saveWord, type SavedWord } from '@/db/repositories/savedWords';
 import { getSetting, setSetting } from '@/db/repositories/appSettings';
 import { LanguagePicker } from '@/components/LanguagePicker';
@@ -83,12 +86,18 @@ import { LamplightColor, Spacing, type HighlightColorKey } from '@/theme/tokens'
 import { LamplightTypography } from '@/theme/typography';
 import { useTheme } from '@/theme/ThemeProvider';
 
+const ANTIQUE_PAPER_DAY = require('../../../assets/images/antique-paper-day.jpg');
+
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 const READER_GUIDE_SEEN_KEY = 'reader_guide_shown_once';
 const READER_HINT_SETTING_KEY = 'reader_gesture_hint_v4';
+const READER_BACK_HINT_SETTING_KEY = 'reader_back_gesture_hint_v1';
+// Set to true to always show Reader Guide and gesture hints in development / testing.
+const ALWAYS_SHOW_READER_GUIDE_IN_DEV = true;
+const NOOP_RANGE_DRAG = () => {};
 
 // The reading surface is a deliberate reading experience, pinned to fixed
 // literals rather than the (theme-reactive) tokens — so the page stays legible
@@ -293,7 +302,7 @@ type ReaderPageFrameProps = {
 // 1890s antique open-book page frame with paper folding dynamics:
 // As the reader swipes, the turning page flexes with dynamic shading and a
 // trailing edge drop shadow, completely preventing any overlapping text.
-function ReaderPageFrame({
+const ReaderPageFrame = memo(function ReaderPageFrame({
   children,
   pageIndex,
   scrollX,
@@ -340,7 +349,181 @@ function ReaderPageFrame({
       </BookPageFrame>
     </View>
   );
+});
+
+type ReaderPageCellProps = {
+  item: ReaderPage;
+  index: number;
+  scrollX: SharedValue<number>;
+  themeProgress: SharedValue<number>;
+  mode: ReaderMode;
+  pageWidth: number;
+  pageHeight: number;
+  topInset: number;
+  bottomInset: number;
+  fontSize: number;
+  lineHeight: number;
+  sourceLanguage: string;
+  targetLanguage: string;
+  highlightMap: Map<string, { colorKey: HighlightColorKey; quoteText: string | null }>;
+  highlightColors: Record<HighlightColorKey, string>;
+  savedWordSet: Set<string>;
+  savedWordColor: string;
+  savedWordTextColor: string;
+  activeWordRange: { paragraphIndex: number; start: number; end: number } | null;
+  selectionRange: {
+    startParagraph: number;
+    startOffset: number;
+    endParagraph: number;
+    endOffset: number;
+    showStartHandle?: boolean;
+    showEndHandle?: boolean;
+  } | null;
+  translatedParagraphs: string[] | null;
+  bilingualParagraphs: Array<{
+    paragraphIndex: number;
+    sentences: Array<{ id: string; original: string; translated: string }>;
+  }> | null;
+  onWordLongPress: (payload: {
+    word: string;
+    paragraphIndex: number;
+    page: ReaderPage;
+    start: number;
+    end: number;
+    pageX: number;
+    pageY: number;
+  }) => void;
+  onBilingualWordLongPress?: (payload: {
+    word: string;
+    contextSentence: string;
+    paragraphIndex: number;
+    anchor: { x: number; y: number };
+  }) => void;
+  onRangeEdgeDragStart?: (edge: 'start' | 'end') => void;
+  onRangeEdgeDrag: (
+    edge: 'start' | 'end',
+    pos: { paragraphIndex: number; offset: number },
+    direction?: 'prev-page' | 'next-page' | null,
+  ) => void;
+  onRangeEdgeDragEnd?: (edge: 'start' | 'end') => void;
+  onCloseTranslation: () => void;
+};
+
+function areReaderPageCellPropsEqual(prev: ReaderPageCellProps, next: ReaderPageCellProps): boolean {
+  if (prev.item.globalIndex !== next.item.globalIndex) return false;
+  if (prev.pageWidth !== next.pageWidth || prev.pageHeight !== next.pageHeight) return false;
+  if (prev.mode !== next.mode) return false;
+  if (prev.fontSize !== next.fontSize || prev.lineHeight !== next.lineHeight) return false;
+  if (prev.topInset !== next.topInset || prev.bottomInset !== next.bottomInset) return false;
+  if (prev.sourceLanguage !== next.sourceLanguage || prev.targetLanguage !== next.targetLanguage) return false;
+
+  if (prev.activeWordRange !== next.activeWordRange) {
+    if (!prev.activeWordRange || !next.activeWordRange) return false;
+    if (
+      prev.activeWordRange.paragraphIndex !== next.activeWordRange.paragraphIndex ||
+      prev.activeWordRange.start !== next.activeWordRange.start ||
+      prev.activeWordRange.end !== next.activeWordRange.end
+    ) {
+      return false;
+    }
+  }
+
+  if (prev.selectionRange !== next.selectionRange) {
+    if (!prev.selectionRange || !next.selectionRange) return false;
+    if (
+      prev.selectionRange.startParagraph !== next.selectionRange.startParagraph ||
+      prev.selectionRange.startOffset !== next.selectionRange.startOffset ||
+      prev.selectionRange.endParagraph !== next.selectionRange.endParagraph ||
+      prev.selectionRange.endOffset !== next.selectionRange.endOffset
+    ) {
+      return false;
+    }
+  }
+
+  if (prev.translatedParagraphs !== next.translatedParagraphs) return false;
+  if (prev.bilingualParagraphs !== next.bilingualParagraphs) return false;
+  if (prev.savedWordSet !== next.savedWordSet) return false;
+  if (prev.highlightMap !== next.highlightMap) return false;
+
+  return true;
 }
+
+const ReaderPageCell = memo(function ReaderPageCell({
+  item,
+  index,
+  scrollX,
+  themeProgress,
+  mode,
+  pageWidth,
+  pageHeight,
+  topInset,
+  bottomInset,
+  fontSize,
+  lineHeight,
+  sourceLanguage,
+  targetLanguage,
+  highlightMap,
+  highlightColors,
+  savedWordSet,
+  savedWordColor,
+  savedWordTextColor,
+  activeWordRange,
+  selectionRange,
+  translatedParagraphs,
+  bilingualParagraphs,
+  onWordLongPress,
+  onBilingualWordLongPress,
+  onRangeEdgeDragStart,
+  onRangeEdgeDrag,
+  onRangeEdgeDragEnd,
+  onCloseTranslation,
+}: ReaderPageCellProps) {
+  return (
+    <ReaderPageFrame
+      pageIndex={index}
+      scrollX={scrollX}
+      themeProgress={themeProgress}
+      mode={mode}
+      pageWidth={pageWidth}
+      pageHeight={pageHeight}
+    >
+      <View style={styles.pageTouchable}>
+        <ReaderPageView
+          page={item}
+          mode={mode}
+          sourceLanguage={sourceLanguage}
+          targetLanguage={targetLanguage}
+          dayTextColor={READING_TEXT_LIGHT}
+          lampTextColor={READING_TEXT_DARK}
+          themeProgress={themeProgress}
+          topInset={topInset}
+          bottomInset={bottomInset}
+          fontSize={fontSize}
+          lineHeight={lineHeight}
+          highlightMap={highlightMap}
+          highlightColors={highlightColors}
+          savedWordSet={savedWordSet}
+          savedWordColor={savedWordColor}
+          savedWordTextColor={savedWordTextColor}
+          activeWordRange={activeWordRange}
+          activeWordColor={highlightColors.amber}
+          activeWordTextColor="#2B2621"
+          selectionRange={selectionRange}
+          selectionColor={highlightColors.amber}
+          onWordLongPress={onWordLongPress}
+          onBilingualWordLongPress={onBilingualWordLongPress}
+          onRangeEdgeDragStart={onRangeEdgeDragStart}
+          onRangeEdgeDrag={onRangeEdgeDrag}
+          onRangeEdgeDragEnd={onRangeEdgeDragEnd}
+          translatedParagraphs={translatedParagraphs}
+          bilingualParagraphs={bilingualParagraphs}
+          onCloseTranslation={onCloseTranslation}
+          onPagePress={undefined}
+        />
+      </View>
+    </ReaderPageFrame>
+  );
+}, areReaderPageCellPropsEqual);
 
 // The exact selected substring across a word-aligned range spanning one or more
 // pages, joining paragraphs in reading order — used both for the saved quote
@@ -510,6 +693,11 @@ export default function ReaderScreen() {
   // Null until the first page settles, so opening a book (or jumping to a saved
   // page) never fires the sound — only an actual turn does.
   const lastPageIndexRef = useRef<number | null>(null);
+  const lastSettledPageIndexRef = useRef<number | null>(null);
+  const isSwipingRef = useRef(false);
+  const pendingTurnSoundRef = useRef(false);
+  const swipeSettledTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const suppressViewableSoundIndexRef = useRef<number | null>(null);
 
   // Hold a word -> action menu (Translate / Save as quote). `wordMenu` is the
   // held word while the menu is open; picking Translate promotes it to
@@ -546,40 +734,110 @@ export default function ReaderScreen() {
   } | null>(null);
 
   const [languagePickerVisible, setLanguagePickerVisible] = useState(false);
+  const [guideModalVisible, setGuideModalVisible] = useState(false);
   const guideOpenRef = useRef(false);
-  const guideProgress = useSharedValue(0);
-  const closeGuideRef = useRef<() => void>(() => {});
   const [pageStyleVisible, setPageStyleVisible] = useState(false);
   const guideDismissedRef = useRef(false);
   const readerHintDismissedRef = useRef(false);
 
-  const closeGuide = useCallback(() => {
-    guideOpenRef.current = false;
-    cancelAnimation(guideProgress);
-    guideProgress.value = withTiming(0, {
-      duration: 180,
-      easing: Easing.out(Easing.cubic),
-      reduceMotion: ReduceMotion.System,
-    });
-  }, [guideProgress]);
-  closeGuideRef.current = closeGuide;
+  // Smart first-run reader gesture hints (forward and turn-back cues)
+  const [hintVisible, setHintVisible] = useState(false);
+  const [hintType, setHintType] = useState<'forward' | 'backward'>('forward');
+  const hintOpacity = useSharedValue(0);
+  const hintTranslateY = useSharedValue(16);
+  const swipeArrowX = useSharedValue(0);
+  const readerBackHintDismissedRef = useRef(false);
+  const hasShownForwardHintRef = useRef(false);
+  const hasShownBackHintRef = useRef(false);
+  const backHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const backHintScheduledTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const dismissHint = useCallback(() => {
+    readerHintDismissedRef.current = true;
+    hasShownForwardHintRef.current = true;
+    void setSetting(READER_HINT_SETTING_KEY, '1');
+    if (backHintScheduledTimerRef.current) {
+      clearTimeout(backHintScheduledTimerRef.current);
+      backHintScheduledTimerRef.current = null;
+    }
+    if (backHintTimerRef.current) clearTimeout(backHintTimerRef.current);
+    hintOpacity.value = withTiming(0, { duration: 220, easing: Easing.in(Easing.cubic) });
+    hintTranslateY.value = withTiming(16, { duration: 220, easing: Easing.in(Easing.cubic) });
+    setTimeout(() => setHintVisible(false), 220);
+  }, [hintOpacity, hintTranslateY]);
+
+  const dismissBackHint = useCallback(() => {
+    readerBackHintDismissedRef.current = true;
+    hasShownBackHintRef.current = true;
+    void setSetting(READER_BACK_HINT_SETTING_KEY, '1');
+    if (backHintScheduledTimerRef.current) {
+      clearTimeout(backHintScheduledTimerRef.current);
+      backHintScheduledTimerRef.current = null;
+    }
+    if (backHintTimerRef.current) clearTimeout(backHintTimerRef.current);
+    hintOpacity.value = withTiming(0, { duration: 220, easing: Easing.in(Easing.cubic) });
+    hintTranslateY.value = withTiming(16, { duration: 220, easing: Easing.in(Easing.cubic) });
+    setTimeout(() => setHintVisible(false), 220);
+  }, [hintOpacity, hintTranslateY]);
+
+  const triggerForwardHint = useCallback(() => {
+    if (hasShownForwardHintRef.current || readerHintDismissedRef.current || guideOpenRef.current) return;
+    hasShownForwardHintRef.current = true;
+    setHintType('forward');
+    setHintVisible(true);
+    hintOpacity.value = withTiming(1, { duration: 350, easing: Easing.out(Easing.cubic) });
+    hintTranslateY.value = withTiming(0, { duration: 350, easing: Easing.out(Easing.cubic) });
+    cancelAnimation(swipeArrowX);
+    swipeArrowX.value = 0;
+    swipeArrowX.value = withRepeat(
+      withSequence(
+        withTiming(-7, { duration: 550, easing: Easing.out(Easing.quad) }),
+        withTiming(0, { duration: 550, easing: Easing.in(Easing.quad) }),
+      ),
+      -1,
+      true,
+    );
+    setTimeout(dismissHint, 6500);
+  }, [hintOpacity, hintTranslateY, swipeArrowX, dismissHint]);
+
+  const triggerBackHint = useCallback(() => {
+    if (hasShownBackHintRef.current || readerBackHintDismissedRef.current || guideOpenRef.current) return;
+    hasShownBackHintRef.current = true;
+    readerBackHintDismissedRef.current = true;
+    void setSetting(READER_BACK_HINT_SETTING_KEY, '1');
+    setHintType('backward');
+    setHintVisible(true);
+    cancelAnimation(swipeArrowX);
+    swipeArrowX.value = 0;
+    swipeArrowX.value = withRepeat(
+      withSequence(
+        withTiming(7, { duration: 550, easing: Easing.out(Easing.quad) }),
+        withTiming(0, { duration: 550, easing: Easing.in(Easing.quad) }),
+      ),
+      -1,
+      true,
+    );
+    hintOpacity.value = withTiming(1, { duration: 350, easing: Easing.out(Easing.cubic) });
+    hintTranslateY.value = withTiming(0, { duration: 350, easing: Easing.out(Easing.cubic) });
+    if (backHintTimerRef.current) clearTimeout(backHintTimerRef.current);
+    backHintTimerRef.current = setTimeout(dismissBackHint, 5500);
+  }, [hintOpacity, hintTranslateY, swipeArrowX, dismissBackHint]);
 
   const openGuide = useCallback(() => {
     closeChromeMenuRef.current();
     guideOpenRef.current = true;
-    cancelAnimation(guideProgress);
-    guideProgress.value = withTiming(1, {
-      duration: 200,
-      easing: Easing.out(Easing.cubic),
-      reduceMotion: ReduceMotion.System,
-    });
-  }, [guideProgress]);
+    setGuideModalVisible(true);
+  }, []);
 
   const handleCloseGuide = useCallback(() => {
     guideDismissedRef.current = true;
-    closeGuide();
+    guideOpenRef.current = false;
+    setGuideModalVisible(false);
     void setSetting(READER_GUIDE_SEEN_KEY, '1');
-  }, [closeGuide]);
+    setTimeout(() => {
+      triggerForwardHint();
+    }, 400);
+  }, [triggerForwardHint]);
 
   // Automatically show the Reader Guide modal once on first open of any book
   useEffect(() => {
@@ -587,7 +845,8 @@ export default function ReaderScreen() {
     void (async () => {
       const seen = await getSetting(READER_GUIDE_SEEN_KEY);
       if (guideDismissedRef.current) return;
-      if (seen === '1') {
+      const shouldShow = (__DEV__ && ALWAYS_SHOW_READER_GUIDE_IN_DEV) || seen !== '1';
+      if (!shouldShow) {
         guideDismissedRef.current = true;
       } else {
         openGuide();
@@ -595,27 +854,20 @@ export default function ReaderScreen() {
     })();
   }, [initialIndex, openGuide]);
 
-  // Smart first-run reader gesture hint (swipe left arrow + language pill)
-  const [hintVisible, setHintVisible] = useState(false);
-  const hintOpacity = useSharedValue(0);
-  const hintTranslateY = useSharedValue(16);
-  const swipeArrowX = useSharedValue(0);
-
-  const dismissHint = useCallback(() => {
-    readerHintDismissedRef.current = true;
-    void setSetting(READER_HINT_SETTING_KEY, '1');
-    hintOpacity.value = withTiming(0, { duration: 220, easing: Easing.in(Easing.cubic) });
-    hintTranslateY.value = withTiming(16, { duration: 220, easing: Easing.in(Easing.cubic) });
-    setTimeout(() => setHintVisible(false), 220);
-  }, [hintOpacity, hintTranslateY]);
-
   useEffect(() => {
-    if (readerHintDismissedRef.current) return;
     let cancelled = false;
-    void getSetting(READER_HINT_SETTING_KEY).then((seen) => {
+    void Promise.all([
+      getSetting(READER_HINT_SETTING_KEY),
+      getSetting(READER_BACK_HINT_SETTING_KEY),
+    ]).then(([seenForward, seenBack]) => {
       if (cancelled) return;
-      if (seen === '1') {
-        readerHintDismissedRef.current = true;
+      if (!(__DEV__ && ALWAYS_SHOW_READER_GUIDE_IN_DEV)) {
+        if (seenForward === '1') {
+          readerHintDismissedRef.current = true;
+        }
+        if (seenBack === '1') {
+          readerBackHintDismissedRef.current = true;
+        }
       }
     });
     return () => {
@@ -628,28 +880,14 @@ export default function ReaderScreen() {
       return;
     }
 
-    let hideTimer: ReturnType<typeof setTimeout> | null = null;
     const showTimer = setTimeout(() => {
-      if (readerHintDismissedRef.current || guideOpenRef.current) return;
-      setHintVisible(true);
-      hintOpacity.value = withTiming(1, { duration: 350, easing: Easing.out(Easing.cubic) });
-      hintTranslateY.value = withTiming(0, { duration: 350, easing: Easing.out(Easing.cubic) });
-      swipeArrowX.value = withRepeat(
-        withSequence(
-          withTiming(-7, { duration: 550, easing: Easing.out(Easing.quad) }),
-          withTiming(0, { duration: 550, easing: Easing.in(Easing.quad) }),
-        ),
-        -1,
-        true,
-      );
-      hideTimer = setTimeout(dismissHint, 6500);
+      triggerForwardHint();
     }, 1000);
 
     return () => {
       clearTimeout(showTimer);
-      if (hideTimer) clearTimeout(hideTimer);
     };
-  }, [book, pages.length, initialIndex, hintOpacity, hintTranslateY, swipeArrowX, dismissHint]);
+  }, [book, pages.length, initialIndex, triggerForwardHint]);
 
   const hintAnimatedStyle = useAnimatedStyle(() => ({
     opacity: hintOpacity.value,
@@ -1044,7 +1282,6 @@ export default function ReaderScreen() {
   closeChromeMenuRef.current = closeChromeMenu;
 
   const openChromeMenu = useCallback(() => {
-    closeGuideRef.current();
     chromeMenuOpenRef.current = true;
     cancelAnimation(chromeMenuProgress);
     chromeMenuProgress.value = withTiming(1, {
@@ -1062,15 +1299,57 @@ export default function ReaderScreen() {
     }
   }, [closeChromeMenu, openChromeMenu]);
 
+  const triggerSettledSound = useCallback(() => {
+    if (swipeSettledTimerRef.current) {
+      clearTimeout(swipeSettledTimerRef.current);
+      swipeSettledTimerRef.current = null;
+    }
+    isSwipingRef.current = false;
+    if (pendingTurnSoundRef.current) {
+      pendingTurnSoundRef.current = false;
+      if (lastPageIndexRef.current !== lastSettledPageIndexRef.current) {
+        playPageTurnRef.current();
+        lastSettledPageIndexRef.current = lastPageIndexRef.current;
+      }
+    }
+  }, []);
+
   const handleScrollBeginDrag = useCallback(() => {
+    isSwipingRef.current = true;
+    pendingTurnSoundRef.current = false;
+    if (swipeSettledTimerRef.current) {
+      clearTimeout(swipeSettledTimerRef.current);
+      swipeSettledTimerRef.current = null;
+    }
+    if (backHintScheduledTimerRef.current) {
+      clearTimeout(backHintScheduledTimerRef.current);
+      backHintScheduledTimerRef.current = null;
+    }
     dismissHint();
+    dismissBackHint();
     if (chromeMenuOpenRef.current) {
       closeChromeMenuRef.current();
     }
-    if (guideOpenRef.current) {
-      closeGuideRef.current();
-    }
-  }, [dismissHint]);
+  }, [dismissHint, dismissBackHint]);
+
+  const handleScrollEndDrag = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const vx = event.nativeEvent.velocity?.x ?? 0;
+      if (Math.abs(vx) < 0.1) {
+        if (swipeSettledTimerRef.current) {
+          clearTimeout(swipeSettledTimerRef.current);
+        }
+        swipeSettledTimerRef.current = setTimeout(() => {
+          triggerSettledSound();
+        }, 50);
+      }
+    },
+    [triggerSettledSound],
+  );
+
+  const handleMomentumScrollEnd = useCallback(() => {
+    triggerSettledSound();
+  }, [triggerSettledSound]);
 
   const commitReaderTheme = useCallback((nextTheme: ReaderMode) => {
     setMode(nextTheme);
@@ -1137,29 +1416,110 @@ export default function ReaderScreen() {
   pagesRef.current = pages;
   const dismissHintRef = useRef(dismissHint);
   dismissHintRef.current = dismissHint;
+  const dismissBackHintRef = useRef(dismissBackHint);
+  dismissBackHintRef.current = dismissBackHint;
+  const triggerBackHintRef = useRef(triggerBackHint);
+  triggerBackHintRef.current = triggerBackHint;
+
+  const triggerSettledSoundRef = useRef(triggerSettledSound);
+  triggerSettledSoundRef.current = triggerSettledSound;
+
+  const savePositionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingPositionRef = useRef<Omit<ReadingPosition, 'updatedAt'> | null>(null);
+
+  const flushReadingPosition = useCallback(() => {
+    if (savePositionTimerRef.current) {
+      clearTimeout(savePositionTimerRef.current);
+      savePositionTimerRef.current = null;
+    }
+    if (pendingPositionRef.current) {
+      const pos = pendingPositionRef.current;
+      pendingPositionRef.current = null;
+      void upsertReadingPosition(pos);
+    }
+  }, []);
+
+  const flushReadingPositionRef = useRef(flushReadingPosition);
+  flushReadingPositionRef.current = flushReadingPosition;
+
+  useEffect(() => {
+    return () => {
+      if (swipeSettledTimerRef.current) {
+        clearTimeout(swipeSettledTimerRef.current);
+        swipeSettledTimerRef.current = null;
+      }
+      if (savePositionTimerRef.current) {
+        clearTimeout(savePositionTimerRef.current);
+        savePositionTimerRef.current = null;
+      }
+      if (pendingPositionRef.current) {
+        const pos = pendingPositionRef.current;
+        pendingPositionRef.current = null;
+        void upsertReadingPosition(pos);
+      }
+    };
+  }, []);
 
   const onViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: ViewToken[] }) => {
       const first = viewableItems[0];
       if (first?.index == null) return;
       const page = first.item as ReaderPage;
-      // Play the turn sound only on a genuine page change — not the initial
-      // page settling on open, and not a re-emit of the same index.
-      if (lastPageIndexRef.current != null && first.index !== lastPageIndexRef.current) {
-        playPageTurnRef.current();
+
+      if (lastPageIndexRef.current == null) {
+        lastPageIndexRef.current = first.index;
+        lastSettledPageIndexRef.current = first.index;
+        setCurrentIndex(first.index);
+        return;
+      }
+
+      if (first.index !== lastPageIndexRef.current) {
+        if (suppressViewableSoundIndexRef.current === first.index) {
+          suppressViewableSoundIndexRef.current = null;
+        } else if (isSwipingRef.current) {
+          void hapticPageTurn();
+          pendingTurnSoundRef.current = true;
+          if (swipeSettledTimerRef.current) {
+            clearTimeout(swipeSettledTimerRef.current);
+          }
+          swipeSettledTimerRef.current = setTimeout(() => {
+            triggerSettledSoundRef.current();
+          }, 140);
+        } else {
+          playPageTurnRef.current();
+          lastSettledPageIndexRef.current = first.index;
+        }
+
         dismissHintRef.current();
+        if (backHintScheduledTimerRef.current) {
+          clearTimeout(backHintScheduledTimerRef.current);
+          backHintScheduledTimerRef.current = null;
+        }
+        if (first.index > 0 && !hasShownBackHintRef.current && !readerBackHintDismissedRef.current) {
+          backHintScheduledTimerRef.current = setTimeout(() => {
+            triggerBackHintRef.current();
+          }, 600);
+        } else if (first.index === 0) {
+          dismissBackHintRef.current();
+        }
       }
       lastPageIndexRef.current = first.index;
       setCurrentIndex(first.index);
       const currentBook = bookRef.current;
       const currentPages = pagesRef.current;
       if (currentBook) {
-        upsertReadingPosition({
+        pendingPositionRef.current = {
           bookId: currentBook.id,
           chapterIndex: page.chapterIndex,
           pageIndex: page.pageIndexInChapter,
           percentComplete: currentPages.length > 1 ? first.index / (currentPages.length - 1) : 1,
-        });
+        };
+        if (savePositionTimerRef.current) {
+          clearTimeout(savePositionTimerRef.current);
+        }
+        savePositionTimerRef.current = setTimeout(() => {
+          flushReadingPositionRef.current();
+        }, 400);
       }
     },
   ).current;
@@ -1186,10 +1546,27 @@ export default function ReaderScreen() {
 
   const goToNextPage = useCallback(() => {
     dismissHint();
+    dismissBackHint();
     if (currentIndex < pages.length - 1) {
-      listRef.current?.scrollToIndex({ index: currentIndex + 1, animated: true });
+      const nextIdx = currentIndex + 1;
+      suppressViewableSoundIndexRef.current = nextIdx;
+      lastSettledPageIndexRef.current = nextIdx;
+      playPageTurnRef.current();
+      listRef.current?.scrollToIndex({ index: nextIdx, animated: true });
     }
-  }, [currentIndex, pages.length, dismissHint]);
+  }, [currentIndex, pages.length, dismissHint, dismissBackHint]);
+
+  const goToPrevPage = useCallback(() => {
+    dismissHint();
+    dismissBackHint();
+    if (currentIndex > 0) {
+      const prevIdx = currentIndex - 1;
+      suppressViewableSoundIndexRef.current = prevIdx;
+      lastSettledPageIndexRef.current = prevIdx;
+      playPageTurnRef.current();
+      listRef.current?.scrollToIndex({ index: prevIdx, animated: true });
+    }
+  }, [currentIndex, dismissHint, dismissBackHint]);
 
   // Each ORIGINAL paragraph is translated independently (parallel requests) —
   // never the whole page joined into one blob — so the translated page keeps
@@ -1638,61 +2015,55 @@ export default function ReaderScreen() {
       const translatedParagraphsForItem = translationForItem?.paragraphs ?? null;
       const bilingualParagraphsForItem = translationForItem?.bilingualParagraphs ?? null;
       return (
-        <ReaderPageFrame
-          pageIndex={index}
+        <ReaderPageCell
+          item={item}
+          index={index}
           scrollX={scrollX}
           themeProgress={bgProgress}
           mode={mode}
           pageWidth={pageWidth}
           pageHeight={pageHeight}
-        >
-          <View style={styles.pageTouchable}>
-            <ReaderPageView
-              page={item}
-              mode={mode}
-              sourceLanguage={sourceLanguage}
-              targetLanguage={targetLanguage}
-              dayTextColor={READING_TEXT_LIGHT}
-              lampTextColor={READING_TEXT_DARK}
-              themeProgress={bgProgress}
-              topInset={insets.top}
-              bottomInset={insets.bottom}
-              fontSize={readingFontSizePx}
-              lineHeight={readingLineHeight}
-              highlightMap={highlightMap}
-              highlightColors={colors.highlight}
-              savedWordSet={savedWordSet}
-              savedWordColor={savedWordColor}
-              savedWordTextColor={savedWordTextColor}
-              activeWordRange={activeWordForItem}
-              activeWordColor={colors.highlight.amber}
-              activeWordTextColor="#2B2621"
-              selectionRange={selectionForItem}
-              selectionColor={colors.highlight.amber}
-              onWordLongPress={handleWordLongPress}
-              onBilingualWordLongPress={(payload) => {
-                setActiveWord({
-                  word: payload.word,
-                  paragraphIndex: payload.paragraphIndex,
-                  pageGlobalIndex: item.globalIndex,
-                  start: 0,
-                  end: payload.word.length,
-                  anchor: payload.anchor,
-                  contextSentence: payload.contextSentence,
-                });
-              }}
-              onRangeEdgeDragStart={handleRangeEdgeDragStart}
-              onRangeEdgeDrag={(edge, pos, direction) =>
-                handleRangeEdgeDrag(item.globalIndex, edge, pos, direction)
-              }
-              onRangeEdgeDragEnd={handleRangeEdgeDragEnd}
-              translatedParagraphs={translatedParagraphsForItem}
-              bilingualParagraphs={bilingualParagraphsForItem}
-              onCloseTranslation={toggleTranslation}
-              onPagePress={undefined}
-            />
-          </View>
-        </ReaderPageFrame>
+          topInset={insets.top}
+          bottomInset={insets.bottom}
+          fontSize={readingFontSizePx}
+          lineHeight={readingLineHeight}
+          sourceLanguage={sourceLanguage}
+          targetLanguage={targetLanguage}
+          highlightMap={highlightMap}
+          highlightColors={colors.highlight}
+          savedWordSet={savedWordSet}
+          savedWordColor={savedWordColor}
+          savedWordTextColor={savedWordTextColor}
+          activeWordRange={activeWordForItem}
+          selectionRange={selectionForItem}
+          translatedParagraphs={translatedParagraphsForItem}
+          bilingualParagraphs={bilingualParagraphsForItem}
+          onWordLongPress={handleWordLongPress}
+          onBilingualWordLongPress={
+            bilingualParagraphsForItem
+              ? (payload) => {
+                  setActiveWord({
+                    word: payload.word,
+                    paragraphIndex: payload.paragraphIndex,
+                    pageGlobalIndex: item.globalIndex,
+                    start: 0,
+                    end: payload.word.length,
+                    anchor: payload.anchor,
+                    contextSentence: payload.contextSentence,
+                  });
+                }
+              : undefined
+          }
+          onRangeEdgeDragStart={selectionForItem ? handleRangeEdgeDragStart : undefined}
+          onRangeEdgeDrag={
+            selectionForItem
+              ? (edge, pos, direction) =>
+                  handleRangeEdgeDrag(item.globalIndex, edge, pos, direction)
+              : NOOP_RANGE_DRAG
+          }
+          onRangeEdgeDragEnd={selectionForItem ? handleRangeEdgeDragEnd : undefined}
+          onCloseTranslation={toggleTranslation}
+        />
       );
     },
     [
@@ -1853,9 +2224,18 @@ export default function ReaderScreen() {
     <View style={styles.container} onLayout={handleContainerLayout}>
       {measurement}
       {/* Animated Day<->Lamp background — the single source of the page tint,
-          crossfading whenever `mode` flips. Light is a flat fill; dark fades in
+          crossfading whenever `mode` flips. Light uses the authentic antique paper
+          texture so any rapid paging cell boundary never flashes white; dark fades in
           as the exact Splash/Onboarding linear gradient. */}
-      <View style={[StyleSheet.absoluteFill, { backgroundColor: READING_BG_LIGHT }]} pointerEvents="none" />
+      <View style={StyleSheet.absoluteFill} pointerEvents="none">
+        <Image
+          source={ANTIQUE_PAPER_DAY}
+          style={StyleSheet.absoluteFill}
+          contentFit="cover"
+          priority="high"
+          cachePolicy="memory-disk"
+        />
+      </View>
       {/* Solid dark fill *under* the gradient SVG so the container's right/bottom
           edges are covered even where the Dimensions-sized SVG stops a pixel
           short — that gap used to reveal the cream base as a thin edge line. */}
@@ -1888,10 +2268,8 @@ export default function ReaderScreen() {
         getItemLayout={(_, index) => ({ length: pageWidth, offset: pageWidth * index, index })}
         renderItem={renderPage}
         extraData={`${readingFontSizePx}-${readingLineHeight}-${pageWidth}-${pageHeight}-${savedWordSet.size}-${selection ? `${selection.startPageGlobalIndex}:${selection.startParagraph}:${selection.startOffset}:${selection.endPageGlobalIndex}:${selection.endParagraph}:${selection.endOffset}` : ''}-${isDraggingHandle ? 'drag' : 'idle'}-${activeWord ? `${activeWord.pageGlobalIndex}:${activeWord.start}` : ''}-${wordMenu ? `${wordMenu.page.globalIndex}:${wordMenu.start}` : ''}-${translation ? `${translation.pageGlobalIndex}:${translation.status}` : ''}`}
-        // Detach off-screen pages' native view trees on iOS; disabled on Android
-        // where ClippingReactViewGroup detaches active pages during reflow, causing
-        // blank screens.
-        removeClippedSubviews={Platform.OS === 'ios'}
+        // Keep views attached across both platforms so rapid paging doesn't flash blank screens
+        removeClippedSubviews={false}
         onScrollToIndexFailed={(info) => {
           setTimeout(() => {
             listRef.current?.scrollToIndex({ index: info.index, animated: false });
@@ -1905,21 +2283,27 @@ export default function ReaderScreen() {
         // Lock paging while actively dragging a handle or reading whole-page translation
         scrollEnabled={!isDraggingHandle && currentTranslation == null}
         decelerationRate="fast"
-        // Keep the very first open of a book fast, but render adjacent pages ahead
-        // so swiping doesn't lag.
-        windowSize={7}
+        // Lightweight virtualized window prevents JS thread freezing during rapid paging
+        windowSize={5}
         initialNumToRender={2}
-        maxToRenderPerBatch={3}
-        updateCellsBatchingPeriod={30}
+        maxToRenderPerBatch={2}
+        updateCellsBatchingPeriod={40}
         onScrollBeginDrag={handleScrollBeginDrag}
+        onScrollEndDrag={handleScrollEndDrag}
+        onMomentumScrollEnd={handleMomentumScrollEnd}
         onScroll={scrollHandler}
         scrollEventThrottle={16}
       />
 
-      {/* Corner hot-zone advances the page (fold motif tap-to-turn); tapping elsewhere on
-          the page toggles chrome, wired per-page in renderPage so word/paragraph presses
-          underneath still win. Disabled while selecting lines for a quote. */}
-      {selection ? null : <Pressable style={styles.cornerHotZone} onPress={goToNextPage} />}
+      {/* Corner hot-zones: right advances page, left turns back when index > 0 */}
+      {selection ? null : (
+        <>
+          <Pressable style={styles.cornerHotZone} onPress={goToNextPage} />
+          {currentIndex > 0 ? (
+            <Pressable style={styles.leftCornerHotZone} onPress={goToPrevPage} />
+          ) : null}
+        </>
+      )}
 
       {/* One theme-aware top bar for both modes — back, chapter, progress. */}
       <Animated.View
@@ -2143,7 +2527,7 @@ export default function ReaderScreen() {
 
       <AmbiencePicker visible={ambienceOpen} onClose={() => setAmbienceOpen(false)} />
 
-      {/* Smart first-run reader guide — teaches page turns (swipe left) and translation language */}
+      {/* Smart first-run reader guide — teaches page turns (forward & back) and translation language */}
       {hintVisible && !selection ? (
         <Animated.View
           style={[
@@ -2160,24 +2544,38 @@ export default function ReaderScreen() {
           <View style={styles.hintRow}>
             <Animated.View style={[styles.hintIconWrap, arrowAnimatedStyle]}>
               <Svg width={19} height={19} viewBox="0 0 24 24" fill="none">
-                <Path
-                  d="M19 12H5M5 12L11 6M5 12L11 18"
-                  stroke={colors.flameAmber}
-                  strokeWidth={2}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
+                {hintType === 'forward' ? (
+                  <Path
+                    d="M19 12H5M5 12L11 6M5 12L11 18"
+                    stroke={colors.flameAmber}
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                ) : (
+                  <Path
+                    d="M5 12H19M19 12L13 6M19 12L13 18"
+                    stroke={colors.flameAmber}
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                )}
               </Svg>
             </Animated.View>
             <View style={styles.hintTextCol}>
               <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
-                Swipe left to turn page
+                {hintType === 'forward' ? 'Swipe left to turn page' : 'Swipe right to turn back'}
               </Text>
               <Text style={[typography.metadataCaption, { color: colors.umber, fontSize: 11, marginTop: 1 }]}>
-                or tap bottom-right corner
+                {hintType === 'forward' ? 'or tap bottom-right corner' : 'or tap bottom-left corner'}
               </Text>
             </View>
-            <Pressable onPress={dismissHint} hitSlop={12} style={styles.hintCloseBtn}>
+            <Pressable
+              onPress={hintType === 'backward' ? dismissBackHint : dismissHint}
+              hitSlop={12}
+              style={styles.hintCloseBtn}
+            >
               <CloseIcon color={colors.fawn} size={14} />
             </Pressable>
           </View>
@@ -2185,7 +2583,7 @@ export default function ReaderScreen() {
           {/* Hairline divider */}
           <View style={[styles.hintDivider, { backgroundColor: colors.hairline }]} />
 
-          {/* Row 2: Translation & Language change */}
+          {/* Row 2: Translation info */}
           <View style={styles.hintRow}>
             <View style={styles.hintIconWrap}>
               <TranslateIcon color={colors.flameAmber} size={17} />
@@ -2195,24 +2593,19 @@ export default function ReaderScreen() {
                 Hold word to translate
               </Text>
               <Text style={[typography.metadataCaption, { color: colors.umber, fontSize: 11, marginTop: 1 }]}>
-                Tap pill to change language
+                Instant word definitions
               </Text>
             </View>
-            <Pressable
-              onPress={() => {
-                dismissHint();
-                setLanguagePickerVisible(true);
-              }}
-              hitSlop={8}
+            <View
               style={[
                 styles.hintPairPill,
                 { backgroundColor: colors.pairPillBackground, borderRadius: radius.pill },
               ]}
             >
               <Text style={[typography.eyebrowLabel, { color: colors.pairPillText, fontSize: 10.5, fontWeight: '600' }]}>
-                EN → {targetLanguageLabel(targetLanguage)} ▾
+                EN → {targetLanguageLabel(targetLanguage)}
               </Text>
-            </Pressable>
+            </View>
           </View>
         </Animated.View>
       ) : null}
@@ -2311,7 +2704,7 @@ export default function ReaderScreen() {
       />
 
       <ReaderGuideModal
-        progress={guideProgress}
+        visible={guideModalVisible}
         onClose={handleCloseGuide}
         onOpenLanguagePicker={() => {
           handleCloseGuide();
@@ -2356,6 +2749,13 @@ const styles = StyleSheet.create({
   cornerHotZone: {
     position: 'absolute',
     right: 0,
+    bottom: 0,
+    width: 72,
+    height: 72,
+  },
+  leftCornerHotZone: {
+    position: 'absolute',
+    left: 0,
     bottom: 0,
     width: 72,
     height: 72,

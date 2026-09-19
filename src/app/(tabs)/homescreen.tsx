@@ -1,5 +1,5 @@
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
@@ -14,10 +14,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BookSpine } from '@/components/BookSpine';
 import { CultureEditionBanner } from '@/components/CultureEditionBanner';
 import { CultureMotif } from '@/components/CultureMotif';
+import { HomeGuideModal } from '@/components/HomeGuideModal';
 import { WordsIllustration } from '@/components/NotebookIllustrations';
 import { ChevronRightIcon, QuestionIcon } from '@/components/icons';
 import { getBook, listBanglaBooks, type BookRow } from '@/db/repositories/books';
 import { getSrsMetrics } from '@/db/repositories/savedWords';
+import { getSetting, setSetting } from '@/db/repositories/appSettings';
 import {
   listActiveReadingPositions,
   type ReadingPosition,
@@ -44,6 +46,10 @@ import { getLiteraryTheme } from '@/features/settings/literaryTheme';
 
 const { width: screenWidth } = Dimensions.get('window');
 const EASE_OUT = Easing.bezier(0.23, 1, 0.32, 1);
+
+const HOME_GUIDE_SEEN_KEY = 'home_guide_shown_once';
+// Set to true to always show Home Guide on every start in development / testing.
+const ALWAYS_SHOW_HOME_GUIDE_IN_DEV = true;
 
 function getEnglishGenre(genre?: string): string {
   if (!genre) return 'Classic Literature';
@@ -361,9 +367,38 @@ export default function Homescreen() {
     }
   }, []);
 
+  const [guideVisible, setGuideVisible] = useState(false);
+  const guideDismissedInSessionRef = useRef(false);
+
+  const handleCloseGuide = useCallback(() => {
+    guideDismissedInSessionRef.current = true;
+    setGuideVisible(false);
+    void setSetting(HOME_GUIDE_SEEN_KEY, '1');
+  }, []);
+
+  const handleNavigateTab = useCallback((tab: 'library' | 'vocabulary' | 'settings') => {
+    setGuideVisible(false);
+    router.push(`/(tabs)/${tab}` as any);
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
-      void loadProgress();
+      let isFocused = true;
+      void (async () => {
+        if (!guideDismissedInSessionRef.current) {
+          const seen = await getSetting(HOME_GUIDE_SEEN_KEY);
+          const shouldShow = (__DEV__ && ALWAYS_SHOW_HOME_GUIDE_IN_DEV) || seen !== '1';
+          if (isFocused && shouldShow && !guideDismissedInSessionRef.current) {
+            setGuideVisible(true);
+          } else if (seen === '1' && !(__DEV__ && ALWAYS_SHOW_HOME_GUIDE_IN_DEV)) {
+            guideDismissedInSessionRef.current = true;
+          }
+        }
+        await loadProgress();
+      })();
+      return () => {
+        isFocused = false;
+      };
     }, [loadProgress]),
   );
 
@@ -411,10 +446,26 @@ export default function Homescreen() {
       >
         {/* Top Atmosphere Greeting */}
         <View style={styles.headerRow}>
-          <Text style={[typography.screenTitle, { color: colors.ink }]}>{greeting.title}</Text>
-          <Text style={[typography.metadataCaption, { color: colors.fawn, marginTop: 4 }]}>
-            {greeting.subtitle}
-          </Text>
+          <View style={styles.headerTitleRow}>
+            <View style={{ flex: 1, paddingRight: spacing.sm }}>
+              <Text style={[typography.screenTitle, { color: colors.ink }]}>{greeting.title}</Text>
+              <Text style={[typography.metadataCaption, { color: colors.fawn, marginTop: 4 }]}>
+                {greeting.subtitle}
+              </Text>
+            </View>
+            <Pressable
+              onPress={() => setGuideVisible(true)}
+              hitSlop={12}
+              style={styles.helpButton}
+              accessibilityLabel="Open App Guide"
+            >
+              <View style={[styles.helpBadge, { borderColor: colors.hairline, backgroundColor: colors.card }]}>
+                <Text style={[typography.uiRowTitle, { color: colors.umber, fontSize: 13, fontWeight: '600' }]}>
+                  ?
+                </Text>
+              </View>
+            </Pressable>
+          </View>
           <CultureEditionBanner />
         </View>
 
@@ -1300,6 +1351,11 @@ export default function Homescreen() {
           </Pressable>
         </View>
       </ScrollView>
+      <HomeGuideModal
+        visible={guideVisible}
+        onClose={handleCloseGuide}
+        onNavigateTab={handleNavigateTab}
+      />
     </View>
   );
 }
@@ -1312,6 +1368,22 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   headerRow: {},
+  headerTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+  },
+  helpButton: {
+    paddingTop: 2,
+  },
+  helpBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   loadingBox: {
     paddingVertical: 64,
     alignItems: 'center',
