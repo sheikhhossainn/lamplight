@@ -33,17 +33,20 @@ const DAY_TONES = {
 };
 
 const NIGHT_TONES = {
-  spineCrease: 'rgba(0, 0, 0, 0.65)',
-  spineBand1: 'rgba(0, 0, 0, 0.38)',
-  spineBand2: 'rgba(0, 0, 0, 0.20)',
-  spineBand3: 'rgba(0, 0, 0, 0.08)',
-  coverRim: '#12100D',
-  leaf4: '#1A1610',
-  leaf3: '#221D16',
-  leaf2: '#2A241B',
-  leaf1: '#342D22',
-  leafCutEdge: 'rgba(0, 0, 0, 0.50)',
-  liftSheen: 'rgba(245, 166, 35, 0.06)',
+  // Spine shadow — deep indigo-black, cooler than day
+  spineCrease: 'rgba(10, 14, 28, 0.70)',
+  spineBand1: 'rgba(10, 14, 28, 0.40)',
+  spineBand2: 'rgba(10, 14, 28, 0.20)',
+  spineBand3: 'rgba(10, 14, 28, 0.08)',
+  // Fore-edge deckle — moonlit paper edge is cool grey-silver
+  coverRim: '#0E1018',
+  leaf4: '#181C26',
+  leaf3: '#202532',
+  leaf2: '#282E3E',
+  leaf1: '#32394A',
+  leafCutEdge: 'rgba(10, 14, 28, 0.45)',
+  // Lift sheen: cool silver glint on the turning right edge
+  liftSheen: 'rgba(200, 215, 240, 0.08)',
 };
 
 export function BookPageFrame({ children, themeProgress }: BookPageFrameProps) {
@@ -92,48 +95,49 @@ export function BookPageFrame({ children, themeProgress }: BookPageFrameProps) {
         <View style={[styles.turningEdgeCurl, { backgroundColor: DAY_TONES.liftSheen }]} />
       </Animated.View>
 
-      {/* Night (Lamp) Mode Layer: Same antique paper — read by candlelight */}
+      {/* Night (Lamp) Mode Layer: Same antique paper under moonlight */}
       <Animated.View
         style={[
           StyleSheet.absoluteFill,
           nightLayerStyle,
-          { backgroundColor: '#120F0C' },
+          { backgroundColor: '#0C0E18' },
         ]}
         pointerEvents="none"
       >
-        {/* Same paper texture as day but barely visible — grain comes through the dark wash */}
+        {/* The same antique paper — high opacity so the grain, fibers and texture are all visible */}
         <Image
           source={ANTIQUE_PAPER_DAY}
-          style={[StyleSheet.absoluteFill, { opacity: 0.10 }]}
+          style={[StyleSheet.absoluteFill, { opacity: 0.82 }]}
           contentFit="cover"
           priority="high"
           cachePolicy="memory-disk"
         />
 
-        {/* Deep warm-charcoal dark wash — like the same page held in a dark room */}
+        {/* Cool indigo-midnight wash — dims the warm amber of the paper to a moonlit silver-grey.
+            Moonlight doesn't kill texture, it shifts color temperature and reduces brightness. */}
         <View
           style={[
             StyleSheet.absoluteFill,
-            { backgroundColor: 'rgba(16, 12, 9, 0.88)' },
+            { backgroundColor: 'rgba(10, 14, 26, 0.58)' },
           ]}
         />
 
-        {/* Soft amber reading-lamp glow at center — warm, never cool */}
+        {/* Soft silver moonlight glow from slightly above center — like a window above the reading chair */}
         <Svg width="100%" height="100%" style={StyleSheet.absoluteFill}>
           <Defs>
-            <RadialGradient id="candleGlow" cx="50%" cy="42%" rx="60%" ry="55%">
-              <Stop offset="0%"  stopColor="#C87820" stopOpacity="0.13" />
-              <Stop offset="45%" stopColor="#8B5010" stopOpacity="0.06" />
-              <Stop offset="100%" stopColor="#120F0C" stopOpacity="0" />
+            <RadialGradient id="moonGlow" cx="50%" cy="30%" rx="55%" ry="50%">
+              <Stop offset="0%"  stopColor="#C8D8F0" stopOpacity="0.12" />
+              <Stop offset="50%" stopColor="#A0B4D8" stopOpacity="0.05" />
+              <Stop offset="100%" stopColor="#0C0E18" stopOpacity="0" />
             </RadialGradient>
           </Defs>
-          <Rect x="0" y="0" width="100%" height="100%" fill="url(#candleGlow)" />
+          <Rect x="0" y="0" width="100%" height="100%" fill="url(#moonGlow)" />
         </Svg>
 
-        {/* Outer book cover rim in dark walnut */}
+        {/* Outer book cover rim in cool dark slate */}
         <View style={[styles.coverRim, { backgroundColor: NIGHT_TONES.coverRim }]} />
 
-        {/* Stacked paper deckle leaf layers — warm dark walnut tones */}
+        {/* Stacked paper deckle leaf layers — cool slate tones */}
         <View style={styles.rightDeckleStack}>
           <View style={[styles.leafLine, { backgroundColor: NIGHT_TONES.leaf4, right: 0 }]} />
           <View style={[styles.leafLine, { backgroundColor: NIGHT_TONES.leaf3, right: 1.5 }]} />
@@ -150,7 +154,7 @@ export function BookPageFrame({ children, themeProgress }: BookPageFrameProps) {
           <View style={[styles.spineCrease, { backgroundColor: NIGHT_TONES.spineCrease }]} />
         </View>
 
-        {/* Turning Edge Lift Sheen in subtle warm amber */}
+        {/* Cool silver glint on right turning edge */}
         <View style={[styles.turningEdgeCurl, { backgroundColor: NIGHT_TONES.liftSheen }]} />
       </Animated.View>
 

@@ -2312,7 +2312,7 @@ export default function ReaderScreen() {
         />
       </View>
       <Animated.View
-        style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(16, 12, 9, 0.92)' }, darkBgStyle]}
+        style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(10, 14, 26, 0.62)' }, darkBgStyle]}
         pointerEvents="none"
       />
 
