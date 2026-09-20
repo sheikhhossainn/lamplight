@@ -30,7 +30,16 @@ export function WhatsNewOverlay() {
   if (!isHomeShellMounted || !entry || dismissed) return null;
 
   return (
-    <Modal visible transparent={false} animationType="fade" statusBarTranslucent>
+    <Modal
+      visible
+      transparent={false}
+      animationType="fade"
+      statusBarTranslucent
+      onRequestClose={() => {
+        markWhatsNewSeen(entry.version);
+        setDismissed(true);
+      }}
+    >
       <View style={[styles.container, { backgroundColor: colors.primaryDark, padding: spacing.xl }]}>
         <View style={styles.middleSection}>
           <Text style={[typography.onboardingHeadline, { color: colors.lampText, textAlign: 'center' }]}>

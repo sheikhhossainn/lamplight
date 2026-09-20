@@ -486,6 +486,33 @@ async function pushSingleMutation(
       return res.ok;
     }
 
+    case 'reading_session': {
+      const libraryItemId = payload.bookId ? await resolveLibraryItemId(payload.bookId, session.accessToken) : null;
+      const body = {
+        id: payload.id,
+        owner_id: session.userId,
+        library_item_id: libraryItemId,
+        started_at: new Date(payload.startedAt).toISOString(),
+        ended_at: payload.endedAt ? new Date(payload.endedAt).toISOString() : null,
+        duration_seconds: payload.durationSeconds ?? 0,
+        pages_read: payload.pagesRead ?? 0,
+        chapter_index: payload.chapterIndex ?? 0,
+        created_at: new Date(payload.startedAt ?? Date.now()).toISOString(),
+      };
+
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/reading_sessions`, {
+        method: 'POST',
+        headers: {
+          apikey: SUPABASE_ANON_KEY!,
+          Authorization: `Bearer ${session.accessToken}`,
+          'Content-Type': 'application/json',
+          Prefer: 'resolution=merge-duplicates',
+        },
+        body: JSON.stringify(body),
+      });
+      return res.ok;
+    }
+
     default:
       return true;
   }

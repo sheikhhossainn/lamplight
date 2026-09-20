@@ -21,6 +21,7 @@ import {
   snapshotLocalData,
   type LocalDataSnapshot,
 } from '@/features/account/accountMergeService';
+import { triggerSync } from '@/features/sync/syncWorker';
 import { useTheme } from '@/theme/ThemeProvider';
 
 export default function SignupScreen() {
@@ -112,6 +113,7 @@ export default function SignupScreen() {
         await updateUserProfile(displayName.trim());
       }
 
+      void triggerSync({ forceImmediate: true });
       router.replace('/(tabs)/homescreen');
     } catch {
       setErrorMessage('Account creation failed. Please try again.');

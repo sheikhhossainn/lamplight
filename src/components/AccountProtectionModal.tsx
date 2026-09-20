@@ -15,6 +15,7 @@ import {
   snapshotLocalData,
   type LocalDataSnapshot,
 } from '@/features/account/accountMergeService';
+import { triggerSync } from '@/features/sync/syncWorker';
 import { useTheme } from '@/theme/ThemeProvider';
 
 type AccountProtectionModalProps = {
@@ -135,6 +136,7 @@ export function AccountProtectionModal({
         if (verifyRes.success) {
           setIsError(false);
           setMessage('Account protected successfully! Your library is backed up.');
+          void triggerSync({ forceImmediate: true });
           onSuccess?.();
           setTimeout(() => {
             onClose();

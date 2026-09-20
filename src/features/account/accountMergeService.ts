@@ -5,6 +5,7 @@ import {
   updateMergeJournalState,
 } from '@/db/repositories/syncMergeJournal';
 import { enqueueMutation } from '@/db/repositories/syncOutbox';
+import { resolveLocalBookId } from '@/db/repositories/cloudLibraryMap';
 import { triggerSync } from '@/features/sync/syncWorker';
 
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
@@ -160,6 +161,34 @@ export async function executeAccountMerge(
     // Step 3: Pull cloud data into staging
     const cloudData = await fetchCloudData(session.accessToken);
 
+    // Resolve cloud library_item_id to local book_id for all cloud records
+    for (const cp of cloudData.readingPositions) {
+      if (!cp.book_id && cp.library_item_id) {
+        cp.book_id = await resolveLocalBookId(cp.library_item_id, session.accessToken, db);
+      }
+    }
+    cloudData.readingPositions = cloudData.readingPositions.filter((p) => Boolean(p.book_id));
+
+    for (const cw of cloudData.savedWords) {
+      if (!cw.book_id && cw.library_item_id) {
+        cw.book_id = await resolveLocalBookId(cw.library_item_id, session.accessToken, db);
+      }
+    }
+    cloudData.savedWords = cloudData.savedWords.filter((w) => Boolean(w.book_id));
+
+    for (const ch of cloudData.highlights) {
+      if (!ch.book_id && ch.library_item_id) {
+        ch.book_id = await resolveLocalBookId(ch.library_item_id, session.accessToken, db);
+      }
+    }
+    cloudData.highlights = cloudData.highlights.filter((h) => Boolean(h.book_id));
+
+    for (const csi of cloudData.shelfItems) {
+      if (!csi.book_id && csi.library_item_id) {
+        csi.book_id = await resolveLocalBookId(csi.library_item_id, session.accessToken, db);
+      }
+    }
+
     await updateMergeJournalState(journalId, 'merging');
 
     // Step 4: Execute merge transaction in SQLite
@@ -269,11 +298,15 @@ export async function executeAccountMerge(
       const localWordsMap = new Map(snapshot.data.savedWords.map((w) => [w.id, w]));
       for (const cw of cloudData.savedWords) {
         if (!localWordsMap.has(cw.id)) {
+          const srsDueDate = cw.srs_next_review_at
+            ? new Date(cw.srs_next_review_at).getTime()
+            : (cw.srs_due_date ?? 0);
           await db.runAsync(
             `INSERT OR IGNORE INTO saved_words (
               id, book_id, source_word, source_lang, target_lang, translation,
-              context_sentence, chapter_index, page_index, paragraph_index, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              context_sentence, chapter_index, page_index, paragraph_index, created_at,
+              srs_stage, srs_ease_factor, srs_due_date, srs_reps, srs_interval_days, srs_lapses
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)`,
             [
               cw.id,
               cw.book_id,
@@ -286,6 +319,10 @@ export async function executeAccountMerge(
               cw.page_index ?? 0,
               cw.paragraph_index ?? 0,
               new Date(cw.created_at ?? Date.now()).getTime(),
+              cw.srs_stage ?? cw.srs_box ?? 0,
+              cw.srs_ease_factor ?? 2.5,
+              srsDueDate,
+              cw.srs_reps ?? cw.srs_review_count ?? 0,
             ],
           );
         }
@@ -368,10 +405,12 @@ export async function executeAccountMerge(
         }
       }
       for (const csi of cloudData.shelfItems) {
-        await db.runAsync(
-          `INSERT OR IGNORE INTO shelf_items (shelf_id, book_id, added_at) VALUES (?, ?, ?)`,
-          [csi.shelf_id, csi.book_id, new Date(csi.added_at ?? Date.now()).getTime()],
-        );
+        if (csi.book_id) {
+          await db.runAsync(
+            `INSERT OR IGNORE INTO shelf_items (shelf_id, book_id, added_at) VALUES (?, ?, ?)`,
+            [csi.shelf_id, csi.book_id, new Date(csi.added_at ?? Date.now()).getTime()],
+          );
+        }
       }
     });
 

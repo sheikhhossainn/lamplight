@@ -21,6 +21,7 @@ import {
   snapshotLocalData,
   type LocalDataSnapshot,
 } from '@/features/account/accountMergeService';
+import { triggerSync } from '@/features/sync/syncWorker';
 import { useTheme } from '@/theme/ThemeProvider';
 
 export default function LoginScreen() {
@@ -97,6 +98,7 @@ export default function LoginScreen() {
       // Standard sign in
       const res = await verifyEmailOtp(email.trim().toLowerCase(), trimmedToken);
       if (res.success) {
+        void triggerSync({ forceImmediate: true });
         router.replace('/(tabs)/homescreen');
       } else {
         setErrorMessage(res.message || 'Invalid or expired code.');
