@@ -48,12 +48,12 @@ Understand request → graphify only if needed → read minimum files → implem
 
 ## Hard constraints
 
-- **Git author identity**: all commits and pushes must use the identity
-  `sheikhhossainn` (`skhossain799@gmail.com`). Never commit or push under any other account.
+- **Git author identity**: all commits and pushes must use the active developer's identity: `mahihasan909-gif` (`mahihasan909@gmail.com`). Always work on dedicated feature branches (`feature/*`).
 - **NEVER push without explicit user permission**: NEVER execute `git push` without the user explicitly
   and directly commanding you to push. This rule is absolute and strictly enforced across ALL modes —
   including turbo mode, bypass mode, auto-pilot, or any mode that bypasses terminal confirmations. All
   work must remain strictly local until the user explicitly requests a push.
+- **NEVER push to main or dev branch**: NEVER push directly to `main` or `dev` branches under any circumstances. Always work on and push to dedicated feature branches (`feature/*`).
 - **NEVER delete protected branches**: NEVER delete the `main` or `dev` branch under any circumstances,
   locally or remotely.
 - **expo-sqlite (Android)**: every DB call goes through the serializing queue in

@@ -362,5 +362,21 @@ export const MIGRATIONS: string[] = [
     hard_expires_at INTEGER
   );
   `,
+  // v17 — Local reading session tracking for reading streaks, habit analysis, and top-books stats
+  `
+  CREATE TABLE IF NOT EXISTS reading_sessions (
+    id TEXT PRIMARY KEY,
+    book_id TEXT NOT NULL,
+    started_at INTEGER NOT NULL,
+    ended_at INTEGER,
+    duration_seconds INTEGER NOT NULL DEFAULT 0,
+    pages_read INTEGER NOT NULL DEFAULT 0,
+    chapter_index INTEGER NOT NULL DEFAULT 0,
+    synced INTEGER NOT NULL DEFAULT 0
+  );
+
+  CREATE INDEX IF NOT EXISTS reading_sessions_book_idx ON reading_sessions (book_id);
+  CREATE INDEX IF NOT EXISTS reading_sessions_started_idx ON reading_sessions (started_at DESC);
+  `,
 ];
 

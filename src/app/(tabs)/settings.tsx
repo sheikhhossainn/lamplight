@@ -855,6 +855,48 @@ export default function SettingsScreen() {
           )}
         </View>
 
+        {/* View Profile & Reading Stats */}
+        <View style={[styles.itemDivider, { borderBottomColor: isLamp ? colors.hairline : '#2B2621' }]} />
+        <Pressable
+          onPress={() => router.push('/profile')}
+          style={[styles.settingsRow, { paddingVertical: 10 }]}
+        >
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={[typography.uiRowTitle, { color: isLamp ? colors.ink : colors.lampText, fontSize: 13 }]}>
+              Profile & Reading Stats
+            </Text>
+            <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11, marginTop: 1 }]}>
+              Streaks, reading velocity, top books & edit name
+            </Text>
+          </View>
+          <View style={{ width: 15, height: 15, alignItems: 'center', justifyContent: 'center' }}>
+            <ChevronRightIcon color={isLamp ? colors.straw : colors.fawn} size={14} />
+          </View>
+        </Pressable>
+
+        {/* Sign in with existing account (for guests) */}
+        {!isProtected ? (
+          <>
+            <View style={[styles.itemDivider, { borderBottomColor: isLamp ? colors.hairline : '#2B2621' }]} />
+            <Pressable
+              onPress={() => router.push('/login')}
+              style={[styles.settingsRow, { paddingVertical: 10 }]}
+            >
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={[typography.uiRowTitle, { color: isLamp ? colors.ink : colors.lampText, fontSize: 13 }]}>
+                  Sign in with existing account
+                </Text>
+                <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11, marginTop: 1 }]}>
+                  Restore your previous reading library and vocabulary
+                </Text>
+              </View>
+              <View style={{ width: 15, height: 15, alignItems: 'center', justifyContent: 'center' }}>
+                <ChevronRightIcon color={colors.flameAmber} size={14} />
+              </View>
+            </Pressable>
+          </>
+        ) : null}
+
         {/* Copyable Support ID Row */}
         {userId ? (
           <>
@@ -1043,6 +1085,52 @@ export default function SettingsScreen() {
             <Text style={[typography.uiRowTitle, { color: colors.primaryDark, fontSize: 12 }]}>Restart</Text>
           </Pressable>
         ) : null}
+      </View>
+
+      <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginTop: spacing.xl, marginBottom: spacing.sm }]}>
+        Legal & Privacy
+      </Text>
+      <View
+        style={[
+          styles.card,
+          {
+            backgroundColor: colors.card,
+            borderColor: colors.hairline,
+            borderRadius: radius.card,
+            marginBottom: spacing.xl,
+          },
+        ]}
+      >
+        <Pressable
+          onPress={() => router.push('/terms')}
+          style={[styles.settingsRow, { paddingVertical: 10 }]}
+        >
+          <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
+            Terms and Conditions
+          </Text>
+          <View style={{ width: 15, height: 15, alignItems: 'center', justifyContent: 'center' }}>
+            <ChevronRightIcon color={colors.straw} size={14} />
+          </View>
+        </Pressable>
+
+        <View style={[styles.itemDivider, { borderBottomColor: colors.hairline }]} />
+
+        <Pressable
+          onPress={() => router.push('/privacy')}
+          style={[styles.settingsRow, { paddingVertical: 10 }]}
+        >
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
+              Privacy Policy
+            </Text>
+            <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11, marginTop: 1 }]}>
+              EU GDPR, US CCPA/COPPA & Asian Privacy Acts
+            </Text>
+          </View>
+          <View style={{ width: 15, height: 15, alignItems: 'center', justifyContent: 'center' }}>
+            <ChevronRightIcon color={colors.straw} size={14} />
+          </View>
+        </Pressable>
       </View>
 
       <MotherTonguePicker

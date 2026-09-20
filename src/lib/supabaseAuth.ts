@@ -356,3 +356,155 @@ export async function signOutUser(keepLocalData: boolean = true): Promise<void> 
   }
 }
 
+const KEY_USER_DISPLAY_NAME = 'user_display_name';
+
+/**
+ * Returns cached or cloud profile information for the current user.
+ */
+export async function getUserProfile(): Promise<{
+  displayName: string;
+  email: string | null;
+  isProtected: boolean;
+  createdAt: string | null;
+}> {
+  const [email, isProtected, localName] = await Promise.all([
+    getUserEmail(),
+    isAuthenticatedAccount(),
+    getSetting(KEY_USER_DISPLAY_NAME),
+  ]);
+
+  let displayName = localName || (email ? email.split('@')[0] : 'Guest Reader');
+  let createdAt: string | null = null;
+
+  try {
+    if (SUPABASE_URL && SUPABASE_ANON_KEY) {
+      const session = await getSession();
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/profiles?id=eq.${session.userId}&select=display_name,created_at`,
+        {
+          headers: {
+            apikey: SUPABASE_ANON_KEY,
+            Authorization: `Bearer ${session.accessToken}`,
+          },
+        },
+      );
+      if (res.ok) {
+        const rows = (await res.json()) as Array<{ display_name?: string; created_at?: string }>;
+        if (rows && rows[0]) {
+          if (rows[0].display_name) {
+            displayName = rows[0].display_name;
+            await setSetting(KEY_USER_DISPLAY_NAME, displayName);
+          }
+          if (rows[0].created_at) {
+            createdAt = rows[0].created_at;
+          }
+        }
+      }
+    }
+  } catch {
+    // Offline or guest
+  }
+
+  return {
+    displayName,
+    email,
+    isProtected,
+    createdAt,
+  };
+}
+
+/**
+ * Updates the user's display name with server and local persistence.
+ */
+export async function updateUserProfile(
+  newName: string,
+): Promise<{ success: boolean; message?: string }> {
+  const sanitized = newName.trim().slice(0, 50);
+  if (!sanitized) {
+    return { success: false, message: 'Display name cannot be empty.' };
+  }
+
+  // Update local setting first
+  await setSetting(KEY_USER_DISPLAY_NAME, sanitized);
+
+  try {
+    if (SUPABASE_URL && SUPABASE_ANON_KEY) {
+      const session = await getSession();
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${session.userId}`, {
+        method: 'PATCH',
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${session.accessToken}`,
+          'Content-Type': 'application/json',
+          Prefer: 'return=minimal',
+        },
+        body: JSON.stringify({ display_name: sanitized }),
+      });
+
+      if (!res.ok) {
+        return { success: false, message: 'Failed to update remote profile.' };
+      }
+    }
+    return { success: true };
+  } catch (err: unknown) {
+    return { success: false, message: (err as Error)?.message || 'Network error updating profile.' };
+  }
+}
+
+/**
+ * Permanently deletes the user's account and cloud data via security definer RPC.
+ */
+export async function deleteAccount(
+  wipeLocalData: boolean = true,
+): Promise<{ success: boolean; message?: string }> {
+  try {
+    if (SUPABASE_URL && SUPABASE_ANON_KEY) {
+      const session = await getSession();
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/delete_user_account`, {
+        method: 'POST',
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${session.accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: '{}',
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        return {
+          success: false,
+          message: err.message || 'Failed to delete account on server. Please try again.',
+        };
+      }
+    }
+
+    // Sign out and clear tokens / data
+    await signOutUser(!wipeLocalData);
+    await setSetting(KEY_USER_DISPLAY_NAME, '');
+    return { success: true };
+  } catch (err: unknown) {
+    return { success: false, message: (err as Error)?.message || 'Network error deleting account.' };
+  }
+}
+
+/**
+ * Lightweight network connectivity check.
+ */
+export async function isOnline(): Promise<boolean> {
+  if (!SUPABASE_URL) return false;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 3000);
+  try {
+    const res = await fetch(`${SUPABASE_URL}/auth/v1/health`, {
+      method: 'GET',
+      signal: controller.signal,
+    });
+    return res.ok || res.status === 404 || res.status === 200;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
