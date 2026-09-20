@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { usePathname } from 'expo-router';
 
 import { CheckIcon } from '@/components/icons';
 import { getPendingWhatsNew, markWhatsNewSeen } from '@/features/app-update/whatsNew';
@@ -8,12 +9,25 @@ import { useTheme } from '@/theme/ThemeProvider';
 // Global, rendered once at the app root (see _layout.tsx). Shows once per
 // hydrate after an OTA update finishes applying — the entry is keyed by
 // version in whatsNew.ts, marked seen on dismiss so it never repeats.
+// Queued until the home/library shell is mounted (Section 9.4).
 export function WhatsNewOverlay() {
   const { colors, typography, spacing, radius } = useTheme();
+  const pathname = usePathname();
   const [dismissed, setDismissed] = useState(false);
+
+  // Queue What's New until the home screen shell is fully mounted.
+  // Suppress over onboarding, splash, paywall, readers, or account merge surfaces.
+  const isHomeShellMounted =
+    pathname === '/homescreen' ||
+    pathname === '/(tabs)' ||
+    pathname === '/(tabs)/library' ||
+    pathname === '/(tabs)/vocabulary' ||
+    pathname === '/(tabs)/settings' ||
+    pathname === '/saved-books';
+
   const entry = getPendingWhatsNew();
 
-  if (!entry || dismissed) return null;
+  if (!isHomeShellMounted || !entry || dismissed) return null;
 
   return (
     <Modal visible transparent={false} animationType="fade" statusBarTranslucent>
