@@ -67,6 +67,7 @@ import {
 import { sentenceAtOffset } from '@/features/reader/engine/words';
 import { getBookText, isBookCached } from '@/features/content-ingestion/bookDownloader';
 import { logEvent } from '@/features/analytics/analytics';
+import { startReadingSession, recordPageTurn, endReadingSession } from '@/features/analytics/readingTracker';
 import { BookFormatError, type IngestedBook } from '@/features/content-ingestion/textParser';
 import { triggerSync } from '@/features/sync/syncWorker';
 import { getBook, updateBookTotalChapters, type BookRow } from '@/db/repositories/books';
@@ -1330,6 +1331,15 @@ export default function ReaderScreen() {
     scrollX.value = idx * pageWidth;
   }, [pages, startPosition, initialIndex, scrollX, pageWidth]);
 
+  // Track active reading session for streaks, reading time, and habits
+  useEffect(() => {
+    if (!book?.id) return;
+    startReadingSession(book.id, startPosition?.chapterIndex ?? 0);
+    return () => {
+      endReadingSession();
+    };
+  }, [book?.id]);
+
   // Lowercased set of saved words for this book — matched in the reader text so
   // already-looked-up words get an amber marker. Reference-stable via useMemo
   // so memoized pages don't re-render unless the set actually changes.
@@ -1598,6 +1608,7 @@ export default function ReaderScreen() {
       const currentBook = bookRef.current;
       const currentPages = pagesRef.current;
       if (currentBook) {
+        recordPageTurn(currentBook.id, first.index);
         pendingPositionRef.current = {
           bookId: currentBook.id,
           chapterIndex: page.chapterIndex,

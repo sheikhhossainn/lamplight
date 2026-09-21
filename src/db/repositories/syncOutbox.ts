@@ -13,7 +13,8 @@ export type OutboxEntityType =
   | 'review_event'
   | 'highlight'
   | 'quiz_attempt'
-  | 'scripture';
+  | 'scripture'
+  | 'reading_session';
 
 export type SyncOutboxItem = {
   id: string;

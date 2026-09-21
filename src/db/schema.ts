@@ -362,5 +362,33 @@ export const MIGRATIONS: string[] = [
     hard_expires_at INTEGER
   );
   `,
+  // v17 — Local reading session tracking and account merge rollback journal
+  `
+  CREATE TABLE IF NOT EXISTS reading_sessions (
+    id TEXT PRIMARY KEY,
+    book_id TEXT NOT NULL,
+    started_at INTEGER NOT NULL,
+    ended_at INTEGER,
+    duration_seconds INTEGER NOT NULL DEFAULT 0,
+    pages_read INTEGER NOT NULL DEFAULT 0,
+    chapter_index INTEGER NOT NULL DEFAULT 0,
+    synced INTEGER NOT NULL DEFAULT 0
+  );
+
+  CREATE INDEX IF NOT EXISTS reading_sessions_book_idx ON reading_sessions (book_id);
+  CREATE INDEX IF NOT EXISTS reading_sessions_started_idx ON reading_sessions (started_at DESC);
+
+  CREATE TABLE IF NOT EXISTS sync_merge_journal (
+    id TEXT PRIMARY KEY,
+    started_at INTEGER NOT NULL,
+    prior_account_id TEXT,
+    target_account_id TEXT NOT NULL,
+    state TEXT NOT NULL,
+    backup_reference TEXT,
+    completed_at INTEGER
+  );
+
+  CREATE INDEX IF NOT EXISTS sync_merge_journal_started_idx ON sync_merge_journal (started_at DESC);
+  `,
 ];
 

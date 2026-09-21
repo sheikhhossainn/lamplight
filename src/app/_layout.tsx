@@ -204,6 +204,11 @@ function AppShell() {
         <Stack.Screen name="mood-verses/table" options={{ contentStyle: { backgroundColor: '#4A3620' } }} />
         <Stack.Screen name="mood-verses/ask" options={{ contentStyle: { backgroundColor: colors.parchment } }} />
         <Stack.Screen name="mood-verses/reflect" options={{ contentStyle: { backgroundColor: colors.parchment } }} />
+        <Stack.Screen name="login" options={{ contentStyle: { backgroundColor: colors.parchment } }} />
+        <Stack.Screen name="signup" options={{ contentStyle: { backgroundColor: colors.parchment } }} />
+        <Stack.Screen name="profile" options={{ contentStyle: { backgroundColor: colors.parchment } }} />
+        <Stack.Screen name="terms" options={{ contentStyle: { backgroundColor: colors.parchment } }} />
+        <Stack.Screen name="privacy" options={{ contentStyle: { backgroundColor: colors.parchment } }} />
       </Stack>
       <ThemeTransitionOverlay />
       <AppUpdatePrompt />

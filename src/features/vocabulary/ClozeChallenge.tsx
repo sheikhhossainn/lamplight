@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
@@ -237,81 +237,123 @@ export function ClozeChallenge({ words, mode = 'normal', maxQuestions = 10, onDo
   const slideAnimStyle = useAnimatedStyle(() => ({ transform: [{ translateX: slideX.value }] }));
   const isTransitioning = useRef(false);
 
+  const onTransitionFinished = useCallback(() => {
+    isTransitioning.current = false;
+  }, []);
+
+  const advanceToNextQuestion = useCallback(
+    (nextResults: { word: SavedWord; correct: boolean }[]) => {
+      setResults(nextResults);
+      setQIndex((prev) => prev + 1);
+      slideX.value = screenWidth;
+      slideX.value = withTiming(0, { duration: 220 }, (done) => {
+        if (done) {
+          runOnJS(onTransitionFinished)();
+        }
+      });
+    },
+    [screenWidth, slideX, onTransitionFinished],
+  );
+
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const eligible = words.slice(0, maxQuestions);
-      const built: QuizItem[] = [];
-      const mt = getMotherTongue();
+      try {
+        const eligible = words.slice(0, maxQuestions);
+        const built: QuizItem[] = [];
+        const mt = getMotherTongue();
 
-      for (let i = 0; i < eligible.length; i++) {
-        if (cancelled) return;
-        const w = eligible[i];
-        setLoadingStatus(`Preparing question ${i + 1} of ${eligible.length}…`);
+        for (let i = 0; i < eligible.length; i++) {
+          if (cancelled) return;
+          const w = eligible[i];
+          setLoadingStatus(`Preparing question ${i + 1} of ${eligible.length}…`);
 
-        let q: ClozeQuestion | null = null;
-        let isCustom = false;
+          let q: ClozeQuestion | null = null;
+          let isCustom = false;
 
-        if (mode === 'fresh') {
-          // Check fresh cache first
-          q = await getClozeCache('fresh_' + w.id);
-          if (!q) {
-            q = await generateFreshClozeQuestion(w.sourceWord, w.contextSentence);
-            if (q) {
-              await setClozeCache('fresh_' + w.id, q);
-            }
-          }
-          if (!q) {
-            q = await getClozeCache(w.id);
-          }
-        } else if (mode === 'synonyms') {
-          q = await getClozeCache(w.id);
-          if (!q) {
-            const sentence = sentenceContaining(w.contextSentence, w.sourceWord) || w.contextSentence;
-            q = await generateClozeQuestion(w.sourceWord, sentence);
-            if (q) await setClozeCache(w.id, q);
-          }
-          if (q) {
-            const cluster = await getWordCluster(w.id, mt);
-            if (cluster) {
-              const clusterOptions = [
-                ...cluster.synonyms.map((s) => s.word),
-                ...cluster.antonyms.map((a) => a.word),
-              ].filter((opt) => opt.toLowerCase() !== q!.answer.toLowerCase());
-
-              if (clusterOptions.length >= 2) {
-                isCustom = true;
-                const dists = clusterOptions.slice(0, 3);
-                for (const d of q.distractors) {
-                  if (dists.length < 3 && !dists.includes(d)) dists.push(d);
+          try {
+            if (mode === 'fresh') {
+              q = await getClozeCache('fresh_' + w.id);
+              if (!q) {
+                q = await generateFreshClozeQuestion(w.sourceWord, w.contextSentence);
+                if (q) {
+                  await setClozeCache('fresh_' + w.id, q);
                 }
-                q = {
-                  ...q,
-                  distractors: dists,
-                };
+              }
+              if (!q) {
+                q = await getClozeCache(w.id);
+              }
+            } else if (mode === 'synonyms') {
+              q = await getClozeCache(w.id);
+              if (!q) {
+                const sentence = sentenceContaining(w.contextSentence, w.sourceWord) || w.contextSentence;
+                q = await generateClozeQuestion(w.sourceWord, sentence);
+                if (q) await setClozeCache(w.id, q);
+              }
+              if (q) {
+                const cluster = await getWordCluster(w.id, mt);
+                if (cluster) {
+                  const clusterOptions = [
+                    ...cluster.synonyms.map((s) => s.word),
+                    ...cluster.antonyms.map((a) => a.word),
+                  ].filter((opt) => opt.toLowerCase() !== q!.answer.toLowerCase());
+
+                  if (clusterOptions.length >= 2) {
+                    isCustom = true;
+                    const dists = clusterOptions.slice(0, 3);
+                    for (const d of q.distractors) {
+                      if (dists.length < 3 && !dists.includes(d)) dists.push(d);
+                    }
+                    q = {
+                      ...q,
+                      distractors: dists,
+                    };
+                  }
+                }
+              }
+            } else {
+              q = await getClozeCache(w.id);
+              if (!q) {
+                const sentence = sentenceContaining(w.contextSentence, w.sourceWord) || w.contextSentence;
+                q = await generateClozeQuestion(w.sourceWord, sentence);
+                if (q) {
+                  await setClozeCache(w.id, q);
+                }
               }
             }
+          } catch (itemErr) {
+            console.warn('[ClozeChallenge] Error preparing question item:', itemErr);
           }
-        } else {
-          // Normal mode: try cache first, and if not cached, generate on the fly
-          q = await getClozeCache(w.id);
-          if (!q) {
-            const sentence = sentenceContaining(w.contextSentence, w.sourceWord) || w.contextSentence;
-            q = await generateClozeQuestion(w.sourceWord, sentence);
-            if (q) {
-              await setClozeCache(w.id, q);
-            }
+
+          // Offline / Edge-failure fallback: generate clean local cloze from sentence
+          if (!q && w.sourceWord) {
+            const sentence = sentenceContaining(w.contextSentence, w.sourceWord) || w.contextSentence || `The meaning of ${w.sourceWord} was evident.`;
+            const re = new RegExp(`\\b${w.sourceWord}\\b`, 'i');
+            const fallbackSentence = re.test(sentence) ? sentence.replace(re, '___') : `The word ___ fits naturally in this passage.`;
+            const defaultDistractors = ['apparent', 'obscure', 'subtle', 'profound'].filter(
+              (d) => d.toLowerCase() !== w.sourceWord.toLowerCase(),
+            );
+            q = {
+              sentence: fallbackSentence,
+              answer: w.sourceWord,
+              distractors: defaultDistractors.slice(0, 3),
+            };
+          }
+
+          if (q) {
+            built.push({ word: w, question: q, isCustomCluster: isCustom });
           }
         }
 
-        if (q) {
-          built.push({ word: w, question: q, isCustomCluster: isCustom });
+        if (!cancelled) {
+          setItems(built);
         }
-      }
-
-      if (!cancelled) {
-        setItems(built);
-        setLoading(false);
+      } catch (err) {
+        console.warn('[ClozeChallenge] Quiz preparation error:', err);
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     })();
     return () => {
@@ -362,12 +404,7 @@ export function ClozeChallenge({ words, mode = 'normal', maxQuestions = 10, onDo
     isTransitioning.current = true;
     slideX.value = withTiming(-screenWidth, { duration: 220 }, (finished) => {
       if (finished) {
-        runOnJS(setResults)(updated);
-        runOnJS(setQIndex)((i: number) => i + 1);
-        slideX.value = screenWidth;
-        slideX.value = withTiming(0, { duration: 220 }, () => {
-          runOnJS(() => { isTransitioning.current = false; })();
-        });
+        runOnJS(advanceToNextQuestion)(updated);
       }
     });
   };

@@ -1,5 +1,9 @@
 import { getSetting, setSetting } from '@/db/repositories/appSettings';
 import { getSession } from '@/lib/supabaseAuth';
+import {
+  computeLocalTamperSignature,
+  verifyLocalTamperSignature,
+} from './entitlementCrypto';
 
 export type PremiumFeature =
   | 'unlimited_learning'
@@ -21,10 +25,19 @@ export type EntitlementSnapshot = {
   startsAt: number | null;
   expiresAt: number | null;
   lastVerifiedAt: number | null;
+  userId?: string | null;
+  signature?: string | null;
+  localHash?: string | null;
+  clockTampered?: boolean;
 };
 
 const KEY_ENTITLEMENT_SNAPSHOT = 'entitlement_snapshot';
+const KEY_LAST_KNOWN_SERVER_TIME = 'last_known_server_time';
 const GRACE_PERIOD_MS = 72 * 60 * 60 * 1000; // 72 hours
+const CLOCK_DRIFT_TOLERANCE_MS = 5 * 60 * 1000; // 5 minutes
+
+let lastKnownServerTime = 0;
+let isClockTampered = false;
 
 const ALL_FEATURES_OFF: Record<PremiumFeature, boolean> = {
   unlimited_learning: false,
@@ -55,13 +68,72 @@ export const DEFAULT_FREE_SNAPSHOT: EntitlementSnapshot = {
   startsAt: null,
   expiresAt: null,
   lastVerifiedAt: null,
+  userId: null,
+  signature: null,
+  localHash: null,
+  clockTampered: false,
 };
 
 let currentSnapshot: EntitlementSnapshot = DEFAULT_FREE_SNAPSHOT;
 let isHydrated = false;
 const listeners = new Set<(snapshot: EntitlementSnapshot) => void>();
 
+/**
+ * Monotonic clock defense: records authoritative server time whenever
+ * the app communicates with Supabase.
+ */
+export async function recordServerTime(serverTimestampMs: number): Promise<void> {
+  if (typeof serverTimestampMs !== 'number' || isNaN(serverTimestampMs) || serverTimestampMs <= 0) return;
+  if (serverTimestampMs > lastKnownServerTime) {
+    lastKnownServerTime = serverTimestampMs;
+    await setSetting(KEY_LAST_KNOWN_SERVER_TIME, String(lastKnownServerTime)).catch(() => {});
+  }
+  checkClockIntegrity();
+}
+
+/**
+ * Evaluates whether the device clock has rolled backwards.
+ * If Date.now() < last_known_server_time - 5 minutes, flags clock_tampered: true.
+ */
+export function checkClockIntegrity(): boolean {
+  if (lastKnownServerTime > 0) {
+    const now = Date.now();
+    if (now < lastKnownServerTime - CLOCK_DRIFT_TOLERANCE_MS) {
+      if (!isClockTampered) {
+        console.warn('[EntitlementService] Clock rollback detected! Suspending trial/promo features.');
+        isClockTampered = true;
+        updateSnapshot({
+          ...currentSnapshot,
+          clockTampered: true,
+        });
+      }
+      return false;
+    }
+  }
+
+  if (isClockTampered) {
+    isClockTampered = false;
+    updateSnapshot({
+      ...currentSnapshot,
+      clockTampered: false,
+    });
+  }
+  return true;
+}
+
 function evaluateSnapshotWithGrace(snapshot: EntitlementSnapshot): EntitlementSnapshot {
+  // If clock was rolled backwards by > 5 minutes, suspend active trial/promo features
+  if (isClockTampered || snapshot.clockTampered) {
+    if (snapshot.source === 'promo' || snapshot.source === 'store_trial' || snapshot.status === 'trial') {
+      return {
+        ...snapshot,
+        status: 'free',
+        features: ALL_FEATURES_OFF,
+        clockTampered: true,
+      };
+    }
+  }
+
   if (snapshot.status === 'free' || !snapshot.expiresAt) {
     return snapshot;
   }
@@ -90,9 +162,43 @@ function evaluateSnapshotWithGrace(snapshot: EntitlementSnapshot): EntitlementSn
 export async function hydrateEntitlements(): Promise<void> {
   if (isHydrated) return;
   try {
+    // 1. Hydrate monotonic clock defense timestamp
+    const rawServerTime = await getSetting(KEY_LAST_KNOWN_SERVER_TIME);
+    if (rawServerTime) {
+      const parsedTime = Number(rawServerTime);
+      if (!isNaN(parsedTime) && parsedTime > 0) {
+        lastKnownServerTime = parsedTime;
+      }
+    }
+
+    if (lastKnownServerTime > 0 && Date.now() < lastKnownServerTime - CLOCK_DRIFT_TOLERANCE_MS) {
+      console.warn('[EntitlementService] Clock rolled backward on launch. Flagging clock_tampered.');
+      isClockTampered = true;
+    }
+
+    // 2. Hydrate entitlement snapshot with cryptographic verification
     const raw = await getSetting(KEY_ENTITLEMENT_SNAPSHOT);
     if (raw) {
       const parsed = JSON.parse(raw) as EntitlementSnapshot;
+
+      // Anti-tamper verification:
+      // If SQLite row indicates premium access, verify local tamper signature
+      if (parsed.status !== 'free') {
+        const isValid = verifyLocalTamperSignature(
+          parsed.userId,
+          parsed.status,
+          parsed.expiresAt,
+          parsed.localHash || parsed.signature,
+        );
+
+        if (!isValid) {
+          console.warn('[EntitlementService] Tampered SQLite entitlement row detected! Falling back to free.');
+          currentSnapshot = DEFAULT_FREE_SNAPSHOT;
+          setSetting(KEY_ENTITLEMENT_SNAPSHOT, JSON.stringify(DEFAULT_FREE_SNAPSHOT)).catch(() => {});
+          return;
+        }
+      }
+
       currentSnapshot = evaluateSnapshotWithGrace(parsed);
     }
   } catch (err) {
@@ -157,7 +263,7 @@ export function requireFeature(
 }
 
 /**
- * Authoritatively refreshes entitlements from Supabase server.
+ * Authoritatively refreshes cryptographically signed entitlements from Supabase server.
  */
 export async function refreshEntitlements(reason: string = 'manual'): Promise<EntitlementSnapshot> {
   const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
@@ -172,95 +278,111 @@ export async function refreshEntitlements(reason: string = 'manual'): Promise<En
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 8000);
 
-    // Fetch profile and active grants in parallel
-    const [profileRes, grantsRes] = await Promise.all([
-      fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${session.userId}&select=plan_key`, {
-        headers: {
-          apikey: SUPABASE_ANON_KEY,
-          Authorization: `Bearer ${session.accessToken}`,
-        },
-        signal: controller.signal,
-      }),
-      fetch(
-        `${SUPABASE_URL}/rest/v1/entitlement_grants?owner_id=eq.${session.userId}&revoked_at=is.null&ends_at=gt.now()&order=ends_at.desc&limit=1`,
-        {
-          headers: {
-            apikey: SUPABASE_ANON_KEY,
-            Authorization: `Bearer ${session.accessToken}`,
-          },
-          signal: controller.signal,
-        },
-      ).catch(() => null),
-    ]).finally(() => clearTimeout(timeoutId));
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_verified_entitlement`, {
+      method: 'POST',
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${session.accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timeoutId));
 
-    let isPlanPremium = false;
-    if (profileRes.ok) {
-      const profiles = (await profileRes.json()) as Array<{ plan_key: string }>;
-      if (profiles && profiles[0]?.plan_key === 'premium') {
-        isPlanPremium = true;
-      }
+    // Record server timestamp from response header
+    const dateHeader = res.headers.get('date');
+    if (dateHeader) {
+      recordServerTime(new Date(dateHeader).getTime()).catch(() => {});
     }
 
-    let activeGrant: { source_type: string; starts_at: string; ends_at: string } | null = null;
-    if (grantsRes && grantsRes.ok) {
-      const grants = (await grantsRes.json()) as Array<{
-        source_type: string;
-        starts_at: string;
-        ends_at: string;
-      }>;
-      if (grants && grants.length > 0 && grants[0]) {
-        activeGrant = grants[0];
-      }
-    }
-
-    const now = Date.now();
-    if (isPlanPremium) {
-      const snapshot: EntitlementSnapshot = {
-        status: 'premium',
-        features: ALL_FEATURES_ON,
-        source: 'subscription',
-        startsAt: now,
-        expiresAt: null, // Indefinite or managed by store
-        lastVerifiedAt: now,
+    if (res.ok) {
+      const data = (await res.json()) as {
+        status: EntitlementStatus;
+        source: EntitlementSource;
+        expires_at: number | null;
+        signature: string | null;
+        server_time: number | null;
       };
-      updateSnapshot(snapshot);
-      return snapshot;
-    } else if (activeGrant) {
-      const startsAt = new Date(activeGrant.starts_at).getTime();
-      const expiresAt = new Date(activeGrant.ends_at).getTime();
+
+      if (data.server_time) {
+        recordServerTime(Number(data.server_time)).catch(() => {});
+      }
+
+      const now = Date.now();
+      const status = data.status || 'free';
+      const isPremiumTier = status === 'premium' || status === 'trial';
+      const expiresAt = data.expires_at ? Number(data.expires_at) : null;
+
+      // Authoritative server signature and local cache integrity hash
+      const signature = data.signature || null;
+      const localHash = isPremiumTier ? computeLocalTamperSignature(session.userId, status, expiresAt) : null;
+
       const snapshot: EntitlementSnapshot = {
-        status: activeGrant.source_type === 'store_trial' ? 'trial' : 'premium',
-        features: ALL_FEATURES_ON,
-        source: (activeGrant.source_type as EntitlementSource) || 'promo',
-        startsAt,
+        status,
+        features: isPremiumTier ? ALL_FEATURES_ON : ALL_FEATURES_OFF,
+        source: data.source || 'none',
+        startsAt: currentSnapshot.startsAt || now,
         expiresAt,
         lastVerifiedAt: now,
+        userId: session.userId,
+        signature,
+        localHash,
+        clockTampered: isClockTampered,
       };
-      updateSnapshot(snapshot);
-      return snapshot;
-    } else {
-      // If we already hold an unexpired active grant locally, retain it
-      if (
-        currentSnapshot.status === 'premium' &&
-        currentSnapshot.expiresAt &&
-        now <= currentSnapshot.expiresAt
-      ) {
-        return currentSnapshot;
-      }
-      const snapshot: EntitlementSnapshot = {
-        status: 'free',
-        features: ALL_FEATURES_OFF,
-        source: 'none',
-        startsAt: null,
-        expiresAt: null,
-        lastVerifiedAt: now,
-      };
+
       updateSnapshot(snapshot);
       return snapshot;
     }
+
+    return getEntitlementSnapshot();
   } catch (err) {
     console.warn(`[EntitlementService] Refresh failed (${reason}), falling back to cached snapshot:`, err);
     return getEntitlementSnapshot();
+  }
+}
+
+/**
+ * Network ping to revalidate device clock against Supabase server.
+ * Restores trial/promo privileges if device time is back within monotonic bounds.
+ */
+export async function pingServerToRevalidateClock(): Promise<{
+  clockValid: boolean;
+  serverTime: number | null;
+}> {
+  const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
+  const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    return { clockValid: !isClockTampered, serverTime: null };
+  }
+
+  try {
+    const session = await getSession();
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_verified_entitlement`, {
+      method: 'POST',
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${session.accessToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    const dateHeader = res.headers.get('date');
+    if (dateHeader) {
+      await recordServerTime(new Date(dateHeader).getTime());
+    }
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.server_time) {
+        await recordServerTime(Number(data.server_time));
+      }
+      await refreshEntitlements('clock_revalidation');
+    }
+
+    return { clockValid: !isClockTampered, serverTime: lastKnownServerTime || null };
+  } catch (err) {
+    console.warn('[EntitlementService] Revalidation ping failed:', err);
+    return { clockValid: !isClockTampered, serverTime: null };
   }
 }
 
@@ -289,10 +411,17 @@ export async function redeemPromoCode(
       body: JSON.stringify({ p_code: code.trim() }),
     });
 
+    const dateHeader = res.headers.get('date');
+    if (dateHeader) {
+      recordServerTime(new Date(dateHeader).getTime()).catch(() => {});
+    }
+
     const data = await res.json();
     if (res.ok && data?.success) {
       const now = Date.now();
       const endsAt = data.ends_at ? new Date(data.ends_at).getTime() : now + 30 * 24 * 60 * 60 * 1000;
+      const localHash = computeLocalTamperSignature(session.userId, 'premium', endsAt);
+
       const snapshot: EntitlementSnapshot = {
         status: 'premium',
         features: ALL_FEATURES_ON,
@@ -300,6 +429,10 @@ export async function redeemPromoCode(
         startsAt: now,
         expiresAt: endsAt,
         lastVerifiedAt: now,
+        userId: session.userId,
+        signature: null,
+        localHash,
+        clockTampered: isClockTampered,
       };
       updateSnapshot(snapshot);
       refreshEntitlements('promo_redemption').catch(() => {});
