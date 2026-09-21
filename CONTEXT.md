@@ -102,6 +102,6 @@ LampLight/
 2. **Smallest Possible Diff**: Only touch code directly relevant to the user's task. Never refactor or clean up adjacent code without an explicit request.
 3. **Design Tokens First**: Never hardcode colors, spacing, or typography. Reference `src/theme/tokens.ts` and `typography.ts` via `useTheme()`.
 4. **Git Constraints**:
-   - Commit author identity must always be `sheikhhossainn` (`skhossain799@gmail.com`).
-   - **NEVER** run `git push` without explicit, unambiguous user command.
+   - Commit and push identity must dynamically inherit the active developer's git configuration (`git config user.name` / `user.email`). Never hardcode or override identities.
+   - **NEVER** run `git push` without explicit, unambiguous user command, and never push directly to `main` or `dev`.
 5. **Verification**: Always verify TypeScript integrity by running `npx tsc --noEmit` before concluding work.

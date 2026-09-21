@@ -48,7 +48,10 @@ Understand request → graphify only if needed → read minimum files → implem
 
 ## Hard constraints
 
-- **Git author identity**: all commits must inherit and respect the active developer's local git configuration (`git config user.name` and `git config user.email`). Never hardcode, alter, or override the git author/committer identity to a specific account; adapt dynamically to the environment of the current developer or collaborator.
+- **Dynamic Git author & push identity**:
+  - All commits and pushes must inherit and respect the active developer's environment (`git config user.name` and `git config user.email`, falling back to global git config). Never hardcode, alter, or override the author, committer, or push identity to a specific account (e.g. never force `sheikhhossainn` or any other account).
+  - Never execute commands that set local git credentials or user identities (`git config user.name ...`, `git config user.email ...`) to force a specific collaborator's name. Adapt dynamically to whoever is actively working in the repository.
+  - When pushing (only upon direct user command), never specify or inject a hardcoded GitHub username, email, token, or custom credentials into the push command or remote URL (e.g. never push via `https://<username>@github.com/...`). Rely entirely on the active developer's native Git Credential Manager, SSH keys, or GitHub CLI (`gh auth`) session.
 - **NEVER push without explicit user permission**: NEVER execute `git push` without the user explicitly
   and directly commanding you to push. This rule is absolute and strictly enforced across ALL modes —
   including turbo mode, bypass mode, auto-pilot, or any mode that bypasses terminal confirmations. All
