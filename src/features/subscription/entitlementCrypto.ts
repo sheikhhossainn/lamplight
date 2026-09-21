@@ -1,4 +1,4 @@
-export const SERVER_ENTITLEMENT_SECRET = 'lamplight-entitlement-secret-2026-server-internal';
+export const LOCAL_INTEGRITY_SALT = 'lamplight-local-cache-integrity-salt-v1';
 
 function sha256(ascii: string): Uint8Array {
   const mathPow = Math.pow;
@@ -125,24 +125,26 @@ export function hmacSha256(message: string, key: string): string {
   return hex;
 }
 
-export function computeEntitlementSignature(
+export function computeLocalTamperSignature(
   userId: string,
   status: string,
   expiresAt: number | null,
-  secret: string = SERVER_ENTITLEMENT_SECRET,
 ): string {
   const payload = `${userId}:${status}:${expiresAt ? Math.round(expiresAt) : 'never'}`;
-  return hmacSha256(payload, secret);
+  return hmacSha256(payload, LOCAL_INTEGRITY_SALT);
 }
 
-export function verifyEntitlementSignature(
+export function verifyLocalTamperSignature(
   userId: string | null | undefined,
   status: string,
   expiresAt: number | null,
   signature: string | null | undefined,
-  secret: string = SERVER_ENTITLEMENT_SECRET,
 ): boolean {
   if (!signature || !userId) return false;
-  const expected = computeEntitlementSignature(userId, status, expiresAt, secret);
+  const expected = computeLocalTamperSignature(userId, status, expiresAt);
   return expected.toLowerCase() === signature.toLowerCase();
 }
+
+// Aliases for backward compatibility in service layer
+export const computeEntitlementSignature = computeLocalTamperSignature;
+export const verifyEntitlementSignature = verifyLocalTamperSignature;

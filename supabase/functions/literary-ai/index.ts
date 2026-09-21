@@ -6,10 +6,10 @@ const GROQ_API_KEY = Deno.env.get('GROQ_API_KEY');
 
 const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
 const GROQ_MODELS = [
-  'qwen/qwen3.8-27b',
-  'groq/compound-mini',
-  'openai/gpt-oss-120b',
-  'openai/gpt-oss-20b',
+  'llama-3.3-70b-versatile',
+  'llama-3.1-8b-instant',
+  'gemma2-9b-it',
+  'mixtral-8x7b-32768',
 ];
 
 const corsHeaders = {
@@ -185,9 +185,10 @@ Deno.serve(async (req) => {
         .single();
 
       const currentCount = usageRow?.count_used ?? 0;
-      const FREE_DAILY_LIMIT = 300;
+      const FREE_DAILY_LIMIT = 50;
+      const countToAdd = sentences.length;
 
-      if (currentCount + sentences.length > FREE_DAILY_LIMIT) {
+      if (currentCount + countToAdd > FREE_DAILY_LIMIT) {
         return new Response(
           JSON.stringify({
             error: 'Free daily translation limit reached. Upgrade to Premium for unlimited literary translations.',
@@ -201,10 +202,11 @@ Deno.serve(async (req) => {
         );
       }
 
-      // Record / increment usage
+      // Record / increment usage with exact batch sentence count
       await supabase.rpc('increment_translation_usage', {
         p_owner_id: user.id,
         p_date: today,
+        p_count: countToAdd,
       });
     }
 
@@ -244,7 +246,8 @@ Return a JSON object with key "translations" containing an array of translated s
     );
   }
 
-  if (action === 'cloze_question') {
+  if (action === 'cloze_question' || action === 'fresh_cloze_question') {
+    const isFresh = action === 'fresh_cloze_question';
     const word = String(body.word || '').trim();
     const contextSentence = String(body.contextSentence || '').trim();
 
@@ -255,9 +258,12 @@ Return a JSON object with key "translations" containing an array of translated s
       });
     }
 
-    const system =
-      'You are a vocabulary quiz generator. Given a word and a sentence, return ONLY a JSON object with keys: "sentence" (the sentence with the word replaced by ___), "answer" (the original word, exact casing), "distractors" (array of exactly 3 plausible but wrong words of similar length/type). No extra keys.';
-    const userPrompt = `Word: "${word}"\nSentence: "${contextSentence}"`;
+    const system = isFresh
+      ? 'You are a vocabulary quiz generator. Given a word and its original sentence, compose a NEW, DIFFERENT creative sentence that uses the word naturally, replacing that word with ___. Return ONLY a JSON object with keys: "sentence" (the new sentence with ___), "answer" (the original word, exact casing), "distractors" (array of exactly 3 plausible but wrong words of similar length/type). No extra keys.'
+      : 'You are a vocabulary quiz generator. Given a word and a sentence, return ONLY a JSON object with keys: "sentence" (the sentence with the word replaced by ___), "answer" (the original word, exact casing), "distractors" (array of exactly 3 plausible but wrong words of similar length/type). No extra keys.';
+    const userPrompt = isFresh
+      ? `Word: "${word}"\nPrevious sentence context: "${contextSentence}"`
+      : `Word: "${word}"\nSentence: "${contextSentence}"`;
 
     const raw = await callGroq(system, userPrompt, 350, 0.3);
     if (raw) {
@@ -267,11 +273,11 @@ Return a JSON object with key "translations" containing an array of translated s
         const answer = typeof parsed.answer === 'string' ? parsed.answer : word;
 
         if (!sentence.includes('___')) {
-          const re = new RegExp(`\\b${word}\\b`, 'i');
-          if (re.test(contextSentence)) {
-            sentence = contextSentence.replace(re, '___');
+          if (!isFresh) {
+            const re = new RegExp(`\\b${word}\\b`, 'i');
+            sentence = re.test(contextSentence) ? contextSentence.replace(re, '___') : 'The meaning of ___ was clearly understood in context.';
           } else {
-            sentence = 'The meaning of ___ was clearly understood in context.';
+            sentence = 'In this modern age, ___ remains an essential virtue.';
           }
         }
 
@@ -280,7 +286,9 @@ Return a JSON object with key "translations" containing an array of translated s
           distractors = parsed.distractors.map(String).filter((d) => d.toLowerCase() !== answer.toLowerCase());
         }
 
-        const fallbackDistractors = ['apparent', 'obscure', 'profound', 'subtle', 'vivid', 'fleeting'];
+        const fallbackDistractors = isFresh
+          ? ['lucid', 'ephemeral', 'rigorous', 'candid', 'subtle']
+          : ['apparent', 'obscure', 'profound', 'subtle', 'vivid', 'fleeting'];
         for (const fb of fallbackDistractors) {
           if (distractors.length >= 3) break;
           if (fb.toLowerCase() !== answer.toLowerCase() && !distractors.includes(fb)) {
@@ -304,68 +312,7 @@ Return a JSON object with key "translations" containing an array of translated s
       }
     }
 
-    return new Response(JSON.stringify({ error: 'Failed to generate cloze question', success: false }), {
-      status: 502,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-  }
-
-  if (action === 'fresh_cloze_question') {
-    const word = String(body.word || '').trim();
-    const contextSentence = String(body.contextSentence || '').trim();
-
-    if (!word || !contextSentence) {
-      return new Response(JSON.stringify({ error: 'word and contextSentence are required' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    const system =
-      'You are a vocabulary quiz generator. Given a word and its original sentence, compose a NEW, DIFFERENT creative sentence that uses the word naturally, replacing that word with ___. Return ONLY a JSON object with keys: "sentence" (the new sentence with ___), "answer" (the original word, exact casing), "distractors" (array of exactly 3 plausible but wrong words of similar length/type). No extra keys.';
-    const userPrompt = `Word: "${word}"\nPrevious sentence context: "${contextSentence}"`;
-
-    const raw = await callGroq(system, userPrompt, 350, 0.3);
-    if (raw) {
-      try {
-        const parsed = JSON.parse(raw) as { sentence?: string; answer?: string; distractors?: unknown };
-        let sentence = typeof parsed.sentence === 'string' ? parsed.sentence : '';
-        const answer = typeof parsed.answer === 'string' ? parsed.answer : word;
-
-        if (!sentence.includes('___')) {
-          sentence = 'In this modern age, ___ remains an essential virtue.';
-        }
-
-        let distractors: string[] = [];
-        if (Array.isArray(parsed.distractors)) {
-          distractors = parsed.distractors.map(String).filter((d) => d.toLowerCase() !== answer.toLowerCase());
-        }
-
-        const fallbackDistractors = ['lucid', 'ephemeral', 'rigorous', 'candid', 'subtle'];
-        for (const fb of fallbackDistractors) {
-          if (distractors.length >= 3) break;
-          if (fb.toLowerCase() !== answer.toLowerCase() && !distractors.includes(fb)) {
-            distractors.push(fb);
-          }
-        }
-
-        return new Response(
-          JSON.stringify({
-            success: true,
-            question: {
-              sentence,
-              answer,
-              distractors: distractors.slice(0, 3),
-            },
-          }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-        );
-      } catch {
-        // malformed JSON
-      }
-    }
-
-    return new Response(JSON.stringify({ error: 'Failed to generate fresh cloze question', success: false }), {
+    return new Response(JSON.stringify({ error: `Failed to generate ${isFresh ? 'fresh ' : ''}cloze question`, success: false }), {
       status: 502,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

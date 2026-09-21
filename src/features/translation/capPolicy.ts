@@ -17,7 +17,7 @@ import {
 // reinstall: this app's auth is anonymous (see supabaseAuth.ts), so wiping the
 // app wipes the session too and mints a brand-new user with a fresh quota —
 // that gap needs real accounts, not more counters.
-export const FREE_DAILY_TRANSLATION_LIMIT = 300;
+export const FREE_DAILY_TRANSLATION_LIMIT = 50;
 
 export type CapCheck = {
   allowed: boolean;

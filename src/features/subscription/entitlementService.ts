@@ -1,8 +1,8 @@
 import { getSetting, setSetting } from '@/db/repositories/appSettings';
 import { getSession } from '@/lib/supabaseAuth';
 import {
-  computeEntitlementSignature,
-  verifyEntitlementSignature,
+  computeLocalTamperSignature,
+  verifyLocalTamperSignature,
 } from './entitlementCrypto';
 
 export type PremiumFeature =
@@ -27,6 +27,7 @@ export type EntitlementSnapshot = {
   lastVerifiedAt: number | null;
   userId?: string | null;
   signature?: string | null;
+  localHash?: string | null;
   clockTampered?: boolean;
 };
 
@@ -69,6 +70,7 @@ export const DEFAULT_FREE_SNAPSHOT: EntitlementSnapshot = {
   lastVerifiedAt: null,
   userId: null,
   signature: null,
+  localHash: null,
   clockTampered: false,
 };
 
@@ -180,13 +182,13 @@ export async function hydrateEntitlements(): Promise<void> {
       const parsed = JSON.parse(raw) as EntitlementSnapshot;
 
       // Anti-tamper verification:
-      // If SQLite row indicates premium access, verify HMAC-SHA256 signature
+      // If SQLite row indicates premium access, verify local tamper signature
       if (parsed.status !== 'free') {
-        const isValid = verifyEntitlementSignature(
+        const isValid = verifyLocalTamperSignature(
           parsed.userId,
           parsed.status,
           parsed.expiresAt,
-          parsed.signature,
+          parsed.localHash || parsed.signature,
         );
 
         if (!isValid) {
@@ -310,12 +312,9 @@ export async function refreshEntitlements(reason: string = 'manual'): Promise<En
       const isPremiumTier = status === 'premium' || status === 'trial';
       const expiresAt = data.expires_at ? Number(data.expires_at) : null;
 
-      // Verify server signature
-      let signature = data.signature || null;
-      if (!signature && isPremiumTier) {
-        // Compute signature locally if server omitted it
-        signature = computeEntitlementSignature(session.userId, status, expiresAt);
-      }
+      // Authoritative server signature and local cache integrity hash
+      const signature = data.signature || null;
+      const localHash = isPremiumTier ? computeLocalTamperSignature(session.userId, status, expiresAt) : null;
 
       const snapshot: EntitlementSnapshot = {
         status,
@@ -326,6 +325,7 @@ export async function refreshEntitlements(reason: string = 'manual'): Promise<En
         lastVerifiedAt: now,
         userId: session.userId,
         signature,
+        localHash,
         clockTampered: isClockTampered,
       };
 
@@ -420,7 +420,7 @@ export async function redeemPromoCode(
     if (res.ok && data?.success) {
       const now = Date.now();
       const endsAt = data.ends_at ? new Date(data.ends_at).getTime() : now + 30 * 24 * 60 * 60 * 1000;
-      const signature = computeEntitlementSignature(session.userId, 'premium', endsAt);
+      const localHash = computeLocalTamperSignature(session.userId, 'premium', endsAt);
 
       const snapshot: EntitlementSnapshot = {
         status: 'premium',
@@ -430,7 +430,8 @@ export async function redeemPromoCode(
         expiresAt: endsAt,
         lastVerifiedAt: now,
         userId: session.userId,
-        signature,
+        signature: null,
+        localHash,
         clockTampered: isClockTampered,
       };
       updateSnapshot(snapshot);

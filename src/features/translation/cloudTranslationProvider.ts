@@ -1,5 +1,5 @@
 import { getCachedTranslation, setCachedTranslation } from '@/db/repositories/translationCache';
-import { getSession } from '@/lib/supabaseAuth';
+import { callLiteraryAi } from './literaryAiClient';
 import type { LanguageCode, TranslationProvider, TranslationResult } from './TranslationProvider';
 
 // Thin wrapper around the unofficial (but widely used, key-free) Google Translate
@@ -58,41 +58,20 @@ async function fetchTranslation(
   }
 
   // 4. Fallback: Authenticated Supabase Edge Function literary-ai
-  const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
-  const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-  if (SUPABASE_URL && SUPABASE_ANON_KEY) {
-    try {
-      const session = await getSession();
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/literary-ai`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          apikey: SUPABASE_ANON_KEY,
-          Authorization: `Bearer ${session.accessToken}`,
-        },
-        body: JSON.stringify({
-          action: 'batch_translate',
-          sentences: [text],
-          fromLang: from,
-          toLang: to,
-        }),
-      });
+  const edgeRes = await callLiteraryAi<{ success?: boolean; translations?: string[] }>('batch_translate', {
+    sentences: [text],
+    fromLang: from,
+    toLang: to,
+  });
 
-      if (res.ok) {
-        const data = (await res.json()) as { success?: boolean; translations?: string[] };
-        if (data.success && data.translations?.[0]) {
-          const translatedText = String(data.translations[0]).trim();
-          const result: TranslationResult = { sourceText: text, translatedText };
+  if (edgeRes?.success && edgeRes.translations?.[0]) {
+    const translatedText = String(edgeRes.translations[0]).trim();
+    const result: TranslationResult = { sourceText: text, translatedText };
 
-          cache.set(key, result);
-          void setCachedTranslation(text, translatedText, from, to).catch(() => {});
+    cache.set(key, result);
+    void setCachedTranslation(text, translatedText, from, to).catch(() => {});
 
-          return result;
-        }
-      }
-    } catch (edgeErr) {
-      console.warn('[translation] Edge function fallback error:', edgeErr);
-    }
+    return result;
   }
 
   throw new Error(`Translation request failed for "${text}"`);

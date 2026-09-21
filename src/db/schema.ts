@@ -362,5 +362,32 @@ export const MIGRATIONS: string[] = [
     hard_expires_at INTEGER
   );
   `,
+  // v14 — vocabulary caches for adaptive quiz cloze questions, usage notes, and word clusters.
+  `
+  CREATE TABLE IF NOT EXISTS cloze_cache (
+    word_id TEXT PRIMARY KEY,
+    sentence TEXT NOT NULL,
+    answer TEXT NOT NULL,
+    distractors TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS usage_note_cache (
+    word_id TEXT PRIMARY KEY,
+    note TEXT NOT NULL,
+    mother_tongue TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS word_cluster_cache (
+    word_id TEXT NOT NULL,
+    mother_tongue TEXT NOT NULL,
+    usage_note TEXT NOT NULL,
+    synonyms TEXT NOT NULL,
+    antonyms TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (word_id, mother_tongue)
+  );
+  `,
 ];
 

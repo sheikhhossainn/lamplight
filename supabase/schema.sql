@@ -80,9 +80,9 @@ create table if not exists public.plans (
 -- See ROADMAP.md's "Free tier philosophy" section before changing these.
 insert into public.plans (key, display_name, vocabulary_words_per_book, quotes_per_book, translations_per_day, weekly_quiz_enabled, spaced_repetition_enabled, reading_insights_enabled, cloud_sync_enabled, ambient_sound_tier, quote_card_theme_count)
 values
-  ('free', 'Lamplight Free', 30, 15, 300, true, false, false, false, 'basic', 3),
+  ('free', 'Lamplight Free', 30, 15, 50, true, false, false, false, 'basic', 3),
   ('premium', 'Lamplight Premium', null, null, null, true, true, true, true, 'full', null)
-on conflict (key) do nothing;
+on conflict (key) do update set translations_per_day = excluded.translations_per_day;
 
 -- One row per auth.users row. Created by a trigger the moment someone
 -- signs in (anonymously or otherwise) — see handle_new_user() below.
@@ -384,13 +384,13 @@ create table if not exists public.translation_usage (
 -- needed to avoid a lost-update race between two concurrent increments for
 -- the same owner_id/usage_date. security invoker (default): runs as the
 -- calling role, so the existing RLS policy below still applies.
-create or replace function public.increment_translation_usage(p_owner_id uuid, p_date date)
+create or replace function public.increment_translation_usage(p_owner_id uuid, p_date date, p_count integer default 1)
 returns integer
 language sql
 as $$
   insert into public.translation_usage (owner_id, usage_date, count_used)
-  values (p_owner_id, p_date, 1)
-  on conflict (owner_id, usage_date) do update set count_used = translation_usage.count_used + 1
+  values (p_owner_id, p_date, coalesce(p_count, 1))
+  on conflict (owner_id, usage_date) do update set count_used = translation_usage.count_used + excluded.count_used
   returning count_used;
 $$;
 
@@ -692,12 +692,6 @@ begin
     v_campaign.id, v_owner_id, v_grant_id
   );
 
-  -- Authoritatively upgrade profile plan_key to premium via security-definer privilege
-  perform set_config('app.allow_plan_mutation', 'true', true);
-  update public.profiles
-  set plan_key = 'premium', updated_at = now()
-  where id = v_owner_id;
-
   return jsonb_build_object(
     'success', true,
     'message', 'Promo code redeemed successfully! Enjoy your Premium access.',
@@ -720,7 +714,7 @@ set search_path = public
 as $$
   select exists (
     select 1 from public.profiles
-    where id = p_user_id and plan_key = 'premium'
+    where id = p_user_id and (plan_key = 'premium' or is_beta_tester = true)
   ) or exists (
     select 1 from public.entitlement_grants
     where owner_id = p_user_id and revoked_at is null and (ends_at is null or ends_at > now())
@@ -741,6 +735,7 @@ as $$
 declare
   v_user_id uuid := auth.uid();
   v_plan_key text := 'free';
+  v_is_beta boolean := false;
   v_grant record;
   v_status text := 'free';
   v_source text := 'none';
@@ -763,14 +758,19 @@ begin
     );
   end if;
 
-  -- 1. Check profile plan_key
-  select plan_key into v_plan_key
+  -- 1. Check profile plan_key and beta tester status
+  select coalesce(plan_key, 'free'), coalesce(is_beta_tester, false)
+  into v_plan_key, v_is_beta
   from public.profiles
   where id = v_user_id;
 
   if v_plan_key = 'premium' then
     v_status := 'premium';
     v_source := 'subscription';
+    v_expires_at := null;
+  elsif v_is_beta = true then
+    v_status := 'premium';
+    v_source := 'beta';
     v_expires_at := null;
   else
     -- 2. Check active entitlement grants
@@ -984,7 +984,7 @@ create policy "insert own saved words" on public.saved_words for insert
         where sw.owner_id = auth.uid()
           and sw.library_item_id = saved_words.library_item_id
           and sw.deleted_at is null
-      ) < 30
+      ) < coalesce((select p.vocabulary_words_per_book from public.plans p where p.key = 'free'), 30)
     )
   );
 drop policy if exists "update own saved words" on public.saved_words;
@@ -1010,7 +1010,7 @@ create policy "insert own highlights" on public.highlights for insert
         where hl.owner_id = auth.uid()
           and hl.library_item_id = highlights.library_item_id
           and hl.deleted_at is null
-      ) < 15
+      ) < coalesce((select p.quotes_per_book from public.plans p where p.key = 'free'), 15)
     )
   );
 drop policy if exists "update own highlights" on public.highlights;

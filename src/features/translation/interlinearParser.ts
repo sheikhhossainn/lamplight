@@ -1,5 +1,5 @@
 import { cleanWordForLookup, tokenizeParagraph } from '@/features/reader/engine/words';
-import { getSession } from '@/lib/supabaseAuth';
+import { callLiteraryAi } from './literaryAiClient';
 import { translationProvider } from './index';
 
 export type InterlinearWord = {
@@ -99,41 +99,14 @@ export async function batchTranslateSentences(
 ): Promise<string[]> {
   if (sentences.length === 0) return [];
 
-  const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
-  const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+  const edgeRes = await callLiteraryAi<{ success?: boolean; translations?: string[] }>('batch_translate', {
+    sentences,
+    fromLang,
+    toLang,
+  });
 
-  if (SUPABASE_URL && SUPABASE_ANON_KEY) {
-    try {
-      const session = await getSession();
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 12000);
-
-      const response = await fetch(`${SUPABASE_URL}/functions/v1/literary-ai`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          apikey: SUPABASE_ANON_KEY,
-          Authorization: `Bearer ${session.accessToken}`,
-        },
-        body: JSON.stringify({
-          action: 'batch_translate',
-          sentences,
-          fromLang,
-          toLang,
-        }),
-        signal: controller.signal,
-      });
-      clearTimeout(timer);
-
-      if (response.ok) {
-        const data = (await response.json()) as { success?: boolean; translations?: string[] };
-        if (data.success && Array.isArray(data.translations) && data.translations.length === sentences.length) {
-          return data.translations.map((s) => String(s || '').trim());
-        }
-      }
-    } catch (e) {
-      console.warn('[interlinearParser] Server literary-ai translation failed, falling back to local provider:', e);
-    }
+  if (edgeRes?.success && Array.isArray(edgeRes.translations) && edgeRes.translations.length === sentences.length) {
+    return edgeRes.translations.map((s) => String(s || '').trim());
   }
 
   // Fallback to Google Translate per sentence
