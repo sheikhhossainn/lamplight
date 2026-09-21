@@ -71,14 +71,35 @@ function createQueue(): Enqueue {
 }
 
 function serializeDb(db: SQLiteDatabase, enqueue: Enqueue): SQLiteDatabase {
+  let inTransaction = false;
+
   return new Proxy(db, {
     get(target, prop, receiver) {
       const value = Reflect.get(target, prop, receiver);
       if (typeof value !== 'function' || typeof prop !== 'string' || !SERIALIZED_METHODS.has(prop)) {
         return typeof value === 'function' ? value.bind(target) : value;
       }
-      return (...args: unknown[]) =>
-        enqueue(() => (value as (...a: unknown[]) => Promise<unknown>).apply(target, args));
+
+      if (prop === 'withTransactionAsync') {
+        return (task: () => Promise<void>) =>
+          enqueue(async () => {
+            inTransaction = true;
+            try {
+              return await target.withTransactionAsync(task);
+            } finally {
+              inTransaction = false;
+            }
+          });
+      }
+
+      return (...args: unknown[]) => {
+        if (inTransaction) {
+          // While already inside an active serialized transaction, run directly
+          // against the native handle without re-enqueueing to prevent queue deadlock.
+          return (value as (...a: unknown[]) => Promise<unknown>).apply(target, args);
+        }
+        return enqueue(() => (value as (...a: unknown[]) => Promise<unknown>).apply(target, args));
+      };
     },
   });
 }

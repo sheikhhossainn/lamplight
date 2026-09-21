@@ -1057,6 +1057,29 @@ create policy "read own promo redemptions" on public.promo_redemptions for selec
   using (auth.uid() = owner_id);
 
 -- ============================================================================
+-- 13b. Account deletion — secure self-service erasure (Apple / Google / GDPR)
+-- ============================================================================
+create or replace function public.delete_user_account()
+returns void
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+declare
+  v_user_id uuid := auth.uid();
+begin
+  if v_user_id is null then
+    raise exception 'Authentication required';
+  end if;
+  -- Deleting from auth.users cascades to public.profiles, reading_sessions, saved_words, etc.
+  delete from auth.users where id = v_user_id;
+end;
+$$;
+
+revoke all on function public.delete_user_account() from public;
+grant execute on function public.delete_user_account() to authenticated;
+
+-- ============================================================================
 -- 14. Scripture verses — pgvector-backed verse store for mood flashcards and
 --     comparative Q&A. Deliberately outside the prose-book pipeline (no
 --     library_items FK, no reader screens) — its own parallel vertical per

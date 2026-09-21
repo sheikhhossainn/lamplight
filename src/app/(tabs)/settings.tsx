@@ -1,7 +1,7 @@
 import Constants from 'expo-constants';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   Easing,
   Extrapolation,
@@ -21,6 +21,17 @@ import {
   useAppUpdateBanner,
   type AppUpdateStatus,
 } from '@/features/app-update/useAppUpdateBanner';
+import * as Clipboard from 'expo-clipboard';
+import * as Sharing from 'expo-sharing';
+import { File, Paths } from 'expo-file-system';
+import { AccountProtectionModal } from '@/components/AccountProtectionModal';
+import {
+  isAuthenticatedAccount,
+  getUserEmail,
+  getUserId,
+  signOutUser,
+} from '@/lib/supabaseAuth';
+import { getDb } from '@/db/client';
 import { refreshSyncStatus, triggerSync, useSyncStatus, type SyncStatus } from '@/features/sync/syncWorker';
 import { getStorageUsage, clearTemporaryCache, getUnsyncedSafetyStatus, type StorageUsage } from '@/features/storage/storageManager';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -361,6 +372,113 @@ export default function SettingsScreen() {
   const [promoModalVisible, setPromoModalVisible] = useState(false);
   const [entitlement, setEntitlement] = useState<EntitlementSnapshot>(getEntitlementSnapshot());
 
+  const [isProtected, setIsProtected] = useState(false);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [accountProtectionModalVisible, setAccountProtectionModalVisible] = useState(false);
+  const [signOutDialogVisible, setSignOutDialogVisible] = useState(false);
+  const [restoreDialogVisible, setRestoreDialogVisible] = useState(false);
+  const [copiedToast, setCopiedToast] = useState(false);
+  const [exportingData, setExportingData] = useState(false);
+
+  const refreshAccountStatus = useCallback(async () => {
+    try {
+      const [authStatus, email, uid] = await Promise.all([
+        isAuthenticatedAccount(),
+        getUserEmail(),
+        getUserId(),
+      ]);
+      setIsProtected(authStatus);
+      setUserEmail(email);
+      setUserId(uid);
+    } catch (err) {
+      console.warn('[Settings] Error refreshing account status:', err);
+    }
+  }, []);
+
+  const handleCopySupportId = async () => {
+    if (!userId) return;
+    await Clipboard.setStringAsync(userId);
+    setCopiedToast(true);
+    setTimeout(() => setCopiedToast(false), 2000);
+  };
+
+  const handleExportData = async () => {
+    if (exportingData) return;
+    setExportingData(true);
+    try {
+      const db = await getDb();
+      const [savedWords, highlights, readingPositions, shelves, shelfItems, reviewEvents, quizAttempts] =
+        await Promise.all([
+          db.getAllAsync('SELECT * FROM saved_words'),
+          db.getAllAsync('SELECT * FROM highlights'),
+          db.getAllAsync('SELECT * FROM reading_positions'),
+          db.getAllAsync('SELECT * FROM shelves'),
+          db.getAllAsync('SELECT * FROM shelf_items'),
+          db.getAllAsync('SELECT * FROM review_events'),
+          db.getAllAsync('SELECT * FROM quiz_attempts'),
+        ]);
+
+      const payload = {
+        app: 'Lamplight',
+        version: Constants.expoConfig?.version ?? '1.0.0',
+        exportedAt: new Date().toISOString(),
+        userId: userId ?? 'guest',
+        data: {
+          savedWords,
+          highlights,
+          readingPositions,
+          shelves,
+          shelfItems,
+          reviewEvents,
+          quizAttempts,
+        },
+      };
+
+      const file = new File(Paths.cache, `lamplight-backup-${Date.now()}.json`);
+      file.create({ overwrite: true });
+      file.write(JSON.stringify(payload, null, 2));
+
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(file.uri, {
+          mimeType: 'application/json',
+          dialogTitle: 'Export Lamplight Reading Data',
+          UTI: 'public.json',
+        });
+      }
+    } catch (err) {
+      console.warn('[Settings] Failed to export data:', err);
+    } finally {
+      setExportingData(false);
+    }
+  };
+
+  const handleConfirmRestore = async () => {
+    setRestoreDialogVisible(false);
+    try {
+      await triggerSync({ forceImmediate: true });
+      loadStorage();
+      await refreshAccountStatus();
+    } catch (err) {
+      console.warn('[Settings] Failed to restore backup:', err);
+    }
+  };
+
+  const handleSignOutKeepData = async () => {
+    setSignOutDialogVisible(false);
+    await signOutUser(true);
+    await refreshAccountStatus();
+    await refreshSyncStatus();
+  };
+
+  const handleSignOutRemoveData = async () => {
+    setSignOutDialogVisible(false);
+    await signOutUser(false);
+    await refreshAccountStatus();
+    await refreshSyncStatus();
+    loadStorage();
+  };
+
   useEffect(() => {
     return subscribeToEntitlements(setEntitlement);
   }, []);
@@ -435,11 +553,12 @@ export default function SettingsScreen() {
         });
       loadStorage();
       void refreshSyncStatus();
+      void refreshAccountStatus();
 
       return () => {
         cancelled = true;
       };
-    }, [loadStorage]),
+    }, [loadStorage, refreshAccountStatus]),
   );
 
   return (
@@ -646,28 +765,80 @@ export default function SettingsScreen() {
             backgroundColor: isLamp ? colors.card : colors.primaryDark,
             borderColor: isLamp ? colors.hairline : colors.primaryDark,
             borderRadius: radius.card,
+            marginBottom: spacing.xl,
           },
         ]}
       >
+        {/* Status header */}
         <View style={styles.settingsRow}>
-          <View>
-            <Text style={[typography.uiRowTitle, { color: isLamp ? colors.ink : colors.lampText, fontSize: 13 }]}>
-              {isPremium ? (entitlement.source === 'promo' ? 'Promo Pass' : 'Premium Plan') : 'Free Plan'}
-            </Text>
+          <View style={{ flex: 1, minWidth: 0, paddingRight: spacing.sm }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text style={[typography.uiRowTitle, { color: isLamp ? colors.ink : colors.lampText, fontSize: 13 }]}>
+                {isProtected
+                  ? isPremium
+                    ? 'Premium Plan'
+                    : 'Protected Account'
+                  : 'Guest Library'}
+              </Text>
+              <View
+                style={{
+                  backgroundColor: isProtected
+                    ? (isPremium ? colors.flameAmber : 'rgba(127, 163, 122, 0.25)')
+                    : 'rgba(245, 237, 225, 0.12)',
+                  paddingHorizontal: 7,
+                  paddingVertical: 2,
+                  borderRadius: radius.pill,
+                }}
+              >
+                <Text
+                  style={{
+                    color: isProtected
+                      ? (isPremium ? colors.primaryDark : '#7FA37A')
+                      : colors.fawn,
+                    fontSize: 10,
+                    fontFamily: 'Manrope_700Bold',
+                  }}
+                >
+                  {isProtected ? (isPremium ? 'PREMIUM' : 'PROTECTED') : 'GUEST'}
+                </Text>
+              </View>
+            </View>
+
             <Text
               style={[
                 typography.metadataCaption,
-                { color: isLamp ? colors.fawn : colors.mutedOnDark, fontSize: 11, marginTop: 2 },
+                { color: isLamp ? colors.fawn : colors.mutedOnDark, fontSize: 11, marginTop: 3 },
               ]}
+              numberOfLines={1}
             >
-              {isPremium
-                ? 'Unlimited translations'
-                : translationsLeft === undefined
-                  ? 'Checking translations left…'
-                  : `${translationsLeft} translations left today`}
+              {isProtected
+                ? userEmail
+                  ? `${userEmail} · ${isPremium ? (entitlement.expiresAt ? `Renews ${new Date(entitlement.expiresAt).toLocaleDateString()}` : 'Active') : 'Free Plan'}`
+                  : 'Free Plan · Protected'
+                : 'Your library is only on this device'}
             </Text>
           </View>
-          {isPremium ? (
+
+          {/* Action button */}
+          {!isProtected ? (
+            <Pressable
+              onPress={() => setAccountProtectionModalVisible(true)}
+              style={[styles.upgradeButton, { backgroundColor: colors.flameAmber, borderRadius: radius.pill }]}
+            >
+              <Text style={[typography.uiRowTitle, { color: colors.primaryDark, fontSize: 12 }]}>
+                Protect and sync
+              </Text>
+            </Pressable>
+          ) : !isPremium ? (
+            <Pressable
+              onPress={() => router.push('/paywall')}
+              style={[styles.upgradeButton, { backgroundColor: colors.flameAmber, borderRadius: radius.pill }]}
+            >
+              <Text style={[typography.uiRowTitle, { color: colors.primaryDark, fontSize: 12 }]}>
+                Upgrade
+              </Text>
+            </Pressable>
+          ) : (
             <View
               style={[
                 styles.upgradeButton,
@@ -681,18 +852,176 @@ export default function SettingsScreen() {
             >
               <Text style={[typography.uiRowTitle, { color: colors.flameAmber, fontSize: 12 }]}>Active</Text>
             </View>
-          ) : (
-            <Pressable
-              onPress={() => router.push('/paywall')}
-              style={[styles.upgradeButton, { backgroundColor: colors.flameAmber, borderRadius: radius.pill }]}
-            >
-              <Text style={[typography.uiRowTitle, { color: colors.primaryDark, fontSize: 12 }]}>Upgrade</Text>
-            </Pressable>
           )}
         </View>
 
+        {/* View Profile & Reading Stats */}
         <View style={[styles.itemDivider, { borderBottomColor: isLamp ? colors.hairline : '#2B2621' }]} />
+        <Pressable
+          onPress={() => router.push('/profile' as any)}
+          style={[styles.settingsRow, { paddingVertical: 10 }]}
+        >
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={[typography.uiRowTitle, { color: isLamp ? colors.ink : colors.lampText, fontSize: 13 }]}>
+              Profile & Reading Stats
+            </Text>
+            <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11, marginTop: 1 }]}>
+              Streaks, reading velocity, top books & edit name
+            </Text>
+          </View>
+          <View style={{ width: 15, height: 15, alignItems: 'center', justifyContent: 'center' }}>
+            <ChevronRightIcon color={isLamp ? colors.straw : colors.fawn} size={14} />
+          </View>
+        </Pressable>
 
+        {/* Sign in with existing account (for guests) */}
+        {!isProtected ? (
+          <>
+            <View style={[styles.itemDivider, { borderBottomColor: isLamp ? colors.hairline : '#2B2621' }]} />
+            <Pressable
+              onPress={() => router.push('/login' as any)}
+              style={[styles.settingsRow, { paddingVertical: 10 }]}
+            >
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={[typography.uiRowTitle, { color: isLamp ? colors.ink : colors.lampText, fontSize: 13 }]}>
+                  Sign in with existing account
+                </Text>
+                <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11, marginTop: 1 }]}>
+                  Restore your previous reading library and vocabulary
+                </Text>
+              </View>
+              <View style={{ width: 15, height: 15, alignItems: 'center', justifyContent: 'center' }}>
+                <ChevronRightIcon color={colors.flameAmber} size={14} />
+              </View>
+            </Pressable>
+          </>
+        ) : null}
+
+        {/* Copyable Support ID Row */}
+        {userId ? (
+          <>
+            <View style={[styles.itemDivider, { borderBottomColor: isLamp ? colors.hairline : '#2B2621' }]} />
+            <View style={[styles.settingsRow, { paddingVertical: 8 }]}>
+              <View style={{ flex: 1, minWidth: 0, paddingRight: spacing.sm }}>
+                <Text style={[typography.uiRowTitle, { color: isLamp ? colors.ink : colors.lampText, fontSize: 12 }]}>
+                  Support ID
+                </Text>
+                <Text
+                  style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11, marginTop: 1 }]}
+                  numberOfLines={1}
+                >
+                  {userId}
+                </Text>
+              </View>
+              <Pressable
+                onPress={handleCopySupportId}
+                hitSlop={8}
+                style={[
+                  styles.upgradeButton,
+                  {
+                    backgroundColor: isLamp ? colors.segmentedTrack : 'rgba(245, 237, 225, 0.08)',
+                    borderRadius: radius.pill,
+                    paddingHorizontal: 10,
+                    paddingVertical: 4,
+                  },
+                ]}
+              >
+                <Text style={[typography.uiRowTitle, { color: isLamp ? colors.ink : colors.lampText, fontSize: 11 }]}>
+                  {copiedToast ? 'Copied!' : 'Copy'}
+                </Text>
+              </Pressable>
+            </View>
+          </>
+        ) : null}
+
+        {/* Cloud Backup & Sync (for protected accounts) */}
+        {isProtected ? (
+          <>
+            <View style={[styles.itemDivider, { borderBottomColor: isLamp ? colors.hairline : '#2B2621' }]} />
+            <View style={[styles.settingsRow, { paddingVertical: 8 }]}>
+              <View style={{ flex: 1, minWidth: 0, paddingRight: spacing.sm }}>
+                <Text style={[typography.uiRowTitle, { color: isLamp ? colors.ink : colors.lampText, fontSize: 12 }]}>
+                  Cloud Backup & Sync
+                </Text>
+                <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11, marginTop: 1 }]}>
+                  {syncSubtitle(syncStatus)}
+                </Text>
+              </View>
+
+              <View style={{ flexDirection: 'row', gap: 6 }}>
+                <Pressable
+                  onPress={() => setRestoreDialogVisible(true)}
+                  disabled={syncStatus === 'syncing'}
+                  style={[
+                    styles.upgradeButton,
+                    {
+                      backgroundColor: isLamp ? colors.segmentedTrack : 'rgba(245, 237, 225, 0.08)',
+                      borderRadius: radius.pill,
+                      paddingHorizontal: 10,
+                      paddingVertical: 5,
+                    },
+                  ]}
+                >
+                  <Text style={[typography.uiRowTitle, { color: isLamp ? colors.ink : colors.lampText, fontSize: 11 }]}>
+                    Restore
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => void triggerSync({ forceImmediate: true })}
+                  disabled={syncStatus === 'syncing'}
+                  style={[
+                    styles.upgradeButton,
+                    {
+                      backgroundColor:
+                        syncStatus === 'syncing'
+                          ? colors.fawn
+                          : colors.flameAmber,
+                      borderRadius: radius.pill,
+                      paddingHorizontal: 11,
+                      paddingVertical: 5,
+                    },
+                  ]}
+                >
+                  {syncStatus === 'syncing' ? (
+                    <ActivityIndicator size="small" color={colors.primaryDark} />
+                  ) : (
+                    <Text style={[typography.uiRowTitle, { color: colors.primaryDark, fontSize: 11 }]}>
+                      Back up now
+                    </Text>
+                  )}
+                </Pressable>
+              </View>
+            </View>
+          </>
+        ) : null}
+
+        {/* Export Reading Data */}
+        <View style={[styles.itemDivider, { borderBottomColor: isLamp ? colors.hairline : '#2B2621' }]} />
+        <Pressable
+          onPress={handleExportData}
+          disabled={exportingData}
+          style={[styles.settingsRow, { paddingVertical: 10 }]}
+        >
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={[typography.uiRowTitle, { color: isLamp ? colors.ink : colors.lampText, fontSize: 13 }]}>
+              Export reading data
+            </Text>
+            <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11, marginTop: 1 }]}>
+              JSON backup of words, highlights & reading positions
+            </Text>
+          </View>
+          {exportingData ? (
+            <ActivityIndicator size="small" color={colors.flameAmber} />
+          ) : (
+            <View style={{ width: 15, height: 15, alignItems: 'center', justifyContent: 'center' }}>
+              <ChevronRightIcon color={isLamp ? colors.straw : colors.fawn} size={14} />
+            </View>
+          )}
+        </Pressable>
+
+        {/* Redeem promo code */}
+        <View style={[styles.itemDivider, { borderBottomColor: isLamp ? colors.hairline : '#2B2621' }]} />
         <Pressable
           onPress={() => setPromoModalVisible(true)}
           style={[styles.settingsRow, { paddingVertical: 10 }]}
@@ -704,82 +1033,24 @@ export default function SettingsScreen() {
             <ChevronRightIcon color={colors.flameAmber} size={14} />
           </View>
         </Pressable>
-      </View>
 
-      <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginTop: spacing.xl, marginBottom: spacing.sm }]}>
-        Cloud Sync
-      </Text>
-      <View
-        style={[
-          styles.card,
-          styles.settingsRow,
-          {
-            backgroundColor: colors.card,
-            borderColor: colors.hairline,
-            borderRadius: radius.card,
-          },
-        ]}
-      >
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
-            Cloud Sync
-          </Text>
-          <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11, marginTop: 2 }]}>
-            {syncSubtitle(syncStatus)}
-          </Text>
-        </View>
-        <Pressable
-          onPress={() => {
-            if (syncStatus === 'guest') {
-              setAccountProtectionDialogVisible(true);
-            } else {
-              void triggerSync({ forceImmediate: true });
-            }
-          }}
-          disabled={syncStatus === 'syncing'}
-          style={[
-            styles.upgradeButton,
-            {
-              backgroundColor:
-                syncStatus === 'syncing'
-                  ? colors.fawn
-                  : syncStatus === 'guest'
-                  ? colors.flameAmber
-                  : syncStatus === 'offline_saved' || syncStatus === 'needs_attention'
-                  ? colors.flameAmber
-                  : (isLamp ? 'rgba(245, 237, 225, 0.08)' : 'rgba(28, 27, 30, 0.06)'),
-              borderRadius: radius.pill,
-              minWidth: 78,
-              alignItems: 'center',
-              justifyContent: 'center',
-              paddingHorizontal: 12,
-              paddingVertical: 6,
-            },
-          ]}
-        >
-          {syncStatus === 'syncing' ? (
-            <ActivityIndicator size="small" color={colors.primaryDark} />
-          ) : (
-            <Text
-              style={[
-                typography.uiRowTitle,
-                {
-                  color:
-                    syncStatus === 'guest' || syncStatus === 'offline_saved' || syncStatus === 'needs_attention'
-                      ? colors.primaryDark
-                      : colors.fawn,
-                  fontSize: 12,
-                },
-              ]}
+        {/* Sign Out (Protected accounts only) */}
+        {isProtected ? (
+          <>
+            <View style={[styles.itemDivider, { borderBottomColor: isLamp ? colors.hairline : '#2B2621' }]} />
+            <Pressable
+              onPress={() => setSignOutDialogVisible(true)}
+              style={[styles.settingsRow, { paddingVertical: 10 }]}
             >
-              {syncStatus === 'guest'
-                ? 'Log in'
-                : syncStatus === 'offline_saved' || syncStatus === 'needs_attention'
-                ? 'Retry'
-                : 'Sync now'}
-            </Text>
-          )}
-        </Pressable>
+              <Text style={[typography.uiRowTitle, { color: colors.highlight.clay, fontSize: 13 }]}>
+                Sign out
+              </Text>
+              <View style={{ width: 15, height: 15, alignItems: 'center', justifyContent: 'center' }}>
+                <ChevronRightIcon color={colors.highlight.clay} size={14} />
+              </View>
+            </Pressable>
+          </>
+        ) : null}
       </View>
 
       <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginTop: spacing.xl, marginBottom: spacing.sm }]}>
@@ -814,6 +1085,52 @@ export default function SettingsScreen() {
             <Text style={[typography.uiRowTitle, { color: colors.primaryDark, fontSize: 12 }]}>Restart</Text>
           </Pressable>
         ) : null}
+      </View>
+
+      <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginTop: spacing.xl, marginBottom: spacing.sm }]}>
+        Legal & Privacy
+      </Text>
+      <View
+        style={[
+          styles.card,
+          {
+            backgroundColor: colors.card,
+            borderColor: colors.hairline,
+            borderRadius: radius.card,
+            marginBottom: spacing.xl,
+          },
+        ]}
+      >
+        <Pressable
+          onPress={() => router.push('/terms' as any)}
+          style={[styles.settingsRow, { paddingVertical: 10 }]}
+        >
+          <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
+            Terms and Conditions
+          </Text>
+          <View style={{ width: 15, height: 15, alignItems: 'center', justifyContent: 'center' }}>
+            <ChevronRightIcon color={colors.straw} size={14} />
+          </View>
+        </Pressable>
+
+        <View style={[styles.itemDivider, { borderBottomColor: colors.hairline }]} />
+
+        <Pressable
+          onPress={() => router.push('/privacy' as any)}
+          style={[styles.settingsRow, { paddingVertical: 10 }]}
+        >
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
+              Privacy Policy
+            </Text>
+            <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11, marginTop: 1 }]}>
+              EU GDPR, US CCPA/COPPA & Asian Privacy Acts
+            </Text>
+          </View>
+          <View style={{ width: 15, height: 15, alignItems: 'center', justifyContent: 'center' }}>
+            <ChevronRightIcon color={colors.straw} size={14} />
+          </View>
+        </Pressable>
       </View>
 
       <MotherTonguePicker
@@ -883,11 +1200,121 @@ export default function SettingsScreen() {
         onConfirm={() => setAccountProtectionDialogVisible(false)}
         onCancel={() => setAccountProtectionDialogVisible(false)}
       />
+
+      <AccountProtectionModal
+        visible={accountProtectionModalVisible}
+        onClose={() => setAccountProtectionModalVisible(false)}
+        onSuccess={() => {
+          void refreshAccountStatus();
+          void refreshSyncStatus();
+          loadStorage();
+        }}
+      />
+
+      <ConfirmDialog
+        visible={restoreDialogVisible}
+        title="Restore Library Backup"
+        message="This will sync and pull your latest backed up reading progress, saved words, and highlights from your account into this device."
+        confirmLabel="Restore"
+        cancelLabel="Cancel"
+        onConfirm={handleConfirmRestore}
+        onCancel={() => setRestoreDialogVisible(false)}
+      />
+
+      <Modal
+        visible={signOutDialogVisible}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setSignOutDialogVisible(false)}
+      >
+        <Pressable style={styles.dialogBackdrop} onPress={() => setSignOutDialogVisible(false)}>
+          <Pressable
+            style={[
+              styles.dialogCard,
+              { backgroundColor: colors.card, borderColor: colors.hairline, borderRadius: radius.card },
+            ]}
+            onPress={() => {}}
+          >
+            <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 16 }]}>
+              Sign out of Lamplight?
+            </Text>
+            <Text style={[typography.metadataCaption, { color: colors.umber, marginTop: spacing.xs, lineHeight: 18 }]}>
+              Would you like to keep your reading progress and saved vocabulary on this device, or remove it?
+            </Text>
+
+            <View style={{ marginTop: spacing.lg, gap: 10 }}>
+              <Pressable
+                onPress={handleSignOutKeepData}
+                style={[
+                  styles.upgradeButton,
+                  {
+                    backgroundColor: colors.flameAmber,
+                    borderRadius: radius.pill,
+                    paddingVertical: 12,
+                    alignItems: 'center',
+                  },
+                ]}
+              >
+                <Text style={[typography.buttonLabel, { color: colors.primaryDark, fontSize: 13 }]}>
+                  Keep data on this device
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={handleSignOutRemoveData}
+                style={[
+                  styles.upgradeButton,
+                  {
+                    backgroundColor: 'transparent',
+                    borderWidth: 1,
+                    borderColor: colors.highlight.clay,
+                    borderRadius: radius.pill,
+                    paddingVertical: 12,
+                    alignItems: 'center',
+                  },
+                ]}
+              >
+                <Text style={[typography.uiRowTitle, { color: colors.highlight.clay, fontSize: 13 }]}>
+                  Remove data from this device
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => setSignOutDialogVisible(false)}
+                style={{ paddingVertical: 8, alignItems: 'center' }}
+              >
+                <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 13 }]}>
+                  Cancel
+                </Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
+  dialogBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  dialogCard: {
+    width: '100%',
+    maxWidth: 380,
+    borderWidth: 1,
+    padding: 22,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 6,
+  },
   container: {
     flex: 1,
   },
