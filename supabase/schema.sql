@@ -730,12 +730,59 @@ create trigger set_user_preferences_updated_at
 --     analytics_events when deciding what to build next.
 -- ============================================================================
 create table if not exists public.feedback (
-  id           uuid primary key default gen_random_uuid(),
-  owner_id     uuid references auth.users(id) on delete set null,
-  category     text not null default 'general', -- 'bug' | 'feature_request' | 'general'
-  message      text not null,
-  created_at   timestamptz not null default now()
+  id              uuid primary key default gen_random_uuid(),
+  owner_id        uuid references auth.users(id) on delete set null,
+  rating          smallint check (rating between 1 and 5),
+  category        text not null default 'general', -- 'bug' | 'feature' | 'translation' | 'general'
+  target_type     text not null default 'app',     -- 'app' | 'book' | 'translation'
+  target_id       text,                            -- e.g. book_id
+  message         text not null default '',
+  tags            jsonb not null default '[]',
+  client_metadata jsonb not null default '{}',
+  status          text not null default 'new',     -- 'new' | 'reviewed' | 'resolved'
+  created_at      timestamptz not null default now()
 );
+
+-- Idempotent column additions if feedback table already exists
+alter table public.feedback add column if not exists rating smallint check (rating between 1 and 5);
+alter table public.feedback add column if not exists target_type text not null default 'app';
+alter table public.feedback add column if not exists target_id text;
+alter table public.feedback add column if not exists tags jsonb not null default '[]';
+alter table public.feedback add column if not exists client_metadata jsonb not null default '{}';
+alter table public.feedback add column if not exists status text not null default 'new';
+
+create index if not exists feedback_created_at_idx on public.feedback (created_at desc);
+create index if not exists feedback_rating_idx on public.feedback (rating);
+create index if not exists feedback_category_idx on public.feedback (category);
+create index if not exists feedback_target_idx on public.feedback (target_type, target_id);
+
+-- Analytics View: overall feedback & rating metrics
+create or replace view public.feedback_summary as
+select
+  count(*) as total_feedback_count,
+  count(rating) as total_ratings_count,
+  round(avg(rating)::numeric, 2) as average_rating,
+  count(*) filter (where rating = 5) as stars_5_count,
+  count(*) filter (where rating = 4) as stars_4_count,
+  count(*) filter (where rating = 3) as stars_3_count,
+  count(*) filter (where rating = 2) as stars_2_count,
+  count(*) filter (where rating = 1) as stars_1_count,
+  count(*) filter (where category = 'bug') as bug_reports_count,
+  count(*) filter (where category = 'feature') as feature_requests_count,
+  count(*) filter (where category = 'translation') as translation_issues_count
+from public.feedback;
+
+-- Analytics View: book-specific review ratings
+create or replace view public.book_ratings_summary as
+select
+  target_id as book_id,
+  count(*) as review_count,
+  count(rating) as rating_count,
+  round(avg(rating)::numeric, 2) as average_rating,
+  max(created_at) as latest_review_at
+from public.feedback
+where target_type = 'book' and target_id is not null
+group by target_id;
 
 -- ============================================================================
 -- 12. App config — remote feature flags / kill switches. Read by key, so
@@ -875,7 +922,8 @@ create policy "manage own preferences" on public.user_preferences for all
   using (auth.uid() = owner_id) with check (auth.uid() = owner_id);
 drop policy if exists "manage own feedback" on public.feedback;
 create policy "manage own feedback" on public.feedback for all
-  using (auth.uid() = owner_id) with check (auth.uid() = owner_id);
+  using (auth.uid() = owner_id or owner_id is null)
+  with check (auth.uid() = owner_id or owner_id is null);
 
 drop policy if exists "manage own review events" on public.review_events;
 create policy "manage own review events" on public.review_events for all

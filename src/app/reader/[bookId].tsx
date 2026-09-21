@@ -38,7 +38,7 @@ import Svg, { Circle, Defs, LinearGradient, Path, RadialGradient, Rect, Stop } f
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 
-import { ChevronLeftIcon, CloseIcon, MenuIcon, MoonIcon, QuestionIcon, SoundWaveIcon, SpeakerIcon, SunIcon, TranslateIcon } from '@/components/icons';
+import { ChevronLeftIcon, CloseIcon, MenuIcon, MoonIcon, QuestionIcon, SoundWaveIcon, SpeakerIcon, StarIcon, SunIcon, TranslateIcon } from '@/components/icons';
 import { AmbiencePicker } from '@/features/ambience/AmbiencePicker';
 import { useAmbienceTrackId } from '@/features/ambience/ambiencePreference';
 import { ambienceTrackById } from '@/features/ambience/tracks';
@@ -76,6 +76,8 @@ import { listSavedWordsForBook, saveWord, type SavedWord } from '@/db/repositori
 import { createPendingLookup } from '@/db/repositories/pendingLookups';
 import { getSetting, setSetting } from '@/db/repositories/appSettings';
 import { LanguagePicker } from '@/components/LanguagePicker';
+import { FeedbackModal } from '@/components/FeedbackModal';
+import { recordMilestonePromptShown, shouldShowMilestonePrompt } from '@/features/feedback/feedbackService';
 import { PageStyleSelectorModal } from '@/features/reader/components/PageStyleSelectorModal';
 import { ReaderGuideModal } from '@/features/reader/components/ReaderGuideModal';
 import { getPageStyleConfig } from '@/features/reader/pageStyles';
@@ -818,6 +820,7 @@ export default function ReaderScreen() {
 
   const [languagePickerVisible, setLanguagePickerVisible] = useState(false);
   const [guideModalVisible, setGuideModalVisible] = useState(false);
+  const [feedbackModalVisible, setFeedbackModalVisible] = useState(false);
   const guideOpenRef = useRef(false);
   const [pageStyleVisible, setPageStyleVisible] = useState(false);
   const guideDismissedRef = useRef(false);
@@ -1643,6 +1646,14 @@ export default function ReaderScreen() {
       lastSettledPageIndexRef.current = nextIdx;
       playPageTurnRef.current();
       listRef.current?.scrollToIndex({ index: nextIdx, animated: true });
+    } else if (currentIndex === pages.length - 1 && pages.length > 2) {
+      void (async () => {
+        const canPrompt = await shouldShowMilestonePrompt();
+        if (canPrompt) {
+          await recordMilestonePromptShown();
+          setFeedbackModalVisible(true);
+        }
+      })();
     }
   }, [currentIndex, pages.length, dismissHint, dismissBackHint]);
 
@@ -2521,6 +2532,16 @@ export default function ReaderScreen() {
             <QuestionIcon color={isLamp ? READING_TEXT_DARK : READING_TEXT_LIGHT} size={18} />
             <Text style={[typography.uiRowTitle, styles.chromeMenuLabel, { color: isLamp ? READING_TEXT_DARK : READING_TEXT_LIGHT }]}>Reader Guide</Text>
           </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Rate and feedback"
+            testID="reader-feedback-button"
+            onPress={() => closeChromeMenu(() => setFeedbackModalVisible(true))}
+            style={styles.chromeMenuRow}
+          >
+            <StarIcon color={colors.flameAmber} size={18} />
+            <Text style={[typography.uiRowTitle, styles.chromeMenuLabel, { color: isLamp ? READING_TEXT_DARK : READING_TEXT_LIGHT }]}>Rate & Feedback</Text>
+          </Pressable>
         </Animated.View>
       </Animated.View>
 
@@ -2794,6 +2815,15 @@ export default function ReaderScreen() {
           handleCloseGuide();
           setLanguagePickerVisible(true);
         }}
+      />
+
+      <FeedbackModal
+        visible={feedbackModalVisible}
+        onClose={() => setFeedbackModalVisible(false)}
+        targetType="book"
+        targetId={book?.id ?? (typeof bookId === 'string' ? bookId : undefined)}
+        title="Enjoyed this read?"
+        subtitle={book?.title ? `Share your rating and thoughts on ${book.title}.` : 'Share your rating and feedback with us.'}
       />
     </View>
   );

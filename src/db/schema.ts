@@ -362,5 +362,19 @@ export const MIGRATIONS: string[] = [
     hard_expires_at INTEGER
   );
   `,
+  // v17 — In-app reviews, star ratings, and feedback outbox for offline capture
+  `
+  CREATE TABLE IF NOT EXISTS feedback_outbox (
+    id TEXT PRIMARY KEY,
+    rating INTEGER,
+    category TEXT NOT NULL,
+    target_type TEXT NOT NULL,
+    target_id TEXT,
+    message TEXT NOT NULL,
+    tags_json TEXT NOT NULL,
+    metadata_json TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  `,
 ];
 

@@ -68,6 +68,7 @@
     "fetch:vedas": "node scripts/fetch-vedas.mjs",
     "seed:scripture": "node scripts/seed-scripture-verses.mjs",
     "upload:ambience": "node scripts/upload-ambience.mjs assets/nature-music/trimmed",
+    "analyze:feedback": "node scripts/analyze-feedback.mjs",
     "update": "eas update --branch preview"
   },
   "private": true
