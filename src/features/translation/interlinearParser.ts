@@ -1,4 +1,5 @@
 import { cleanWordForLookup, tokenizeParagraph } from '@/features/reader/engine/words';
+import { getSession } from '@/lib/supabaseAuth';
 import { translationProvider } from './index';
 
 export type InterlinearWord = {
@@ -88,8 +89,8 @@ export async function translateInterlinearSentence(
 
 /**
  * Translates an array of literary sentences with high context awareness.
- * Uses Groq AI if available for authentic literary translation,
- * falling back gracefully to Google Translate.
+ * Uses authenticated server-side literary-ai Edge Function (backed by Groq AI),
+ * falling back gracefully to Google Translate if offline or rate limited.
  */
 export async function batchTranslateSentences(
   sentences: string[],
@@ -98,51 +99,40 @@ export async function batchTranslateSentences(
 ): Promise<string[]> {
   if (sentences.length === 0) return [];
 
-  const groqKey = process.env.EXPO_PUBLIC_GROQ_API_KEY;
-  if (groqKey) {
-    const candidateModels = ['groq/compound-mini', 'openai/gpt-oss-20b', 'qwen/qwen3.8-27b'];
-    for (const model of candidateModels) {
-      try {
-        const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${groqKey}`,
-          },
-          body: JSON.stringify({
-            model,
-            temperature: 0.2,
-            response_format: { type: 'json_object' },
-            messages: [
-              {
-                role: 'system',
-                content: `You are an elite literary translator for a language learning reading app.
-Translate the provided array of sentences from ${fromLang} to ${toLang}.
-Provide a faithful, elegant literary translation that sounds natural and captures archaic idioms accurately.
-Return a JSON object with key "translations" containing an array of translated strings with the exact same count and sequence as the input sentences:
-{"translations": ["...", "..."]}`,
-              },
-              {
-                role: 'user',
-                content: JSON.stringify(sentences),
-              },
-            ],
-          }),
-        });
+  const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
+  const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
-        if (response.ok) {
-          const data = (await response.json()) as any;
-          const content = data?.choices?.[0]?.message?.content;
-          if (content) {
-            const parsed = JSON.parse(content);
-            if (Array.isArray(parsed.translations) && parsed.translations.length === sentences.length) {
-              return parsed.translations.map((s: any) => String(s || '').trim());
-            }
-          }
+  if (SUPABASE_URL && SUPABASE_ANON_KEY) {
+    try {
+      const session = await getSession();
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 12000);
+
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/literary-ai`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${session.accessToken}`,
+        },
+        body: JSON.stringify({
+          action: 'batch_translate',
+          sentences,
+          fromLang,
+          toLang,
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+
+      if (response.ok) {
+        const data = (await response.json()) as { success?: boolean; translations?: string[] };
+        if (data.success && Array.isArray(data.translations) && data.translations.length === sentences.length) {
+          return data.translations.map((s) => String(s || '').trim());
         }
-      } catch (e) {
-        console.warn(`[interlinearParser] Groq ${model} failed, checking next model:`, e);
       }
+    } catch (e) {
+      console.warn('[interlinearParser] Server literary-ai translation failed, falling back to local provider:', e);
     }
   }
 

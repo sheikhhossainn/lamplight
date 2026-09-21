@@ -104,13 +104,15 @@ create trigger set_profiles_updated_at
   for each row execute function public.set_updated_at();
 
 -- Premium and beta authority must not be client-writable.
+-- Restricts plan_key upgrades strictly to server-side payment webhooks, receipt verification (service_role),
+-- or the security-definer redeem_promo() RPC via local session configuration.
 create or replace function public.protect_profile_plan_key()
 returns trigger
 language plpgsql
 security definer
 as $$
 begin
-  if (current_user != 'service_role') and (auth.role() = 'authenticated' or auth.role() = 'anon') then
+  if (auth.role() = 'authenticated' or auth.role() = 'anon') and current_setting('app.allow_plan_mutation', true) is distinct from 'true' then
     if new.plan_key is distinct from old.plan_key then
       raise exception 'plan_key is server-authoritative and cannot be modified directly';
     end if;
@@ -690,6 +692,12 @@ begin
     v_campaign.id, v_owner_id, v_grant_id
   );
 
+  -- Authoritatively upgrade profile plan_key to premium via security-definer privilege
+  perform set_config('app.allow_plan_mutation', 'true', true);
+  update public.profiles
+  set plan_key = 'premium', updated_at = now()
+  where id = v_owner_id;
+
   return jsonb_build_object(
     'success', true,
     'message', 'Promo code redeemed successfully! Enjoy your Premium access.',
@@ -701,6 +709,116 @@ $$;
 
 revoke all on function public.redeem_promo(text) from public;
 grant execute on function public.redeem_promo(text) to authenticated;
+
+-- Helper function: authoritative check whether a user has active premium entitlement
+create or replace function public.is_premium_user(p_user_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.profiles
+    where id = p_user_id and plan_key = 'premium'
+  ) or exists (
+    select 1 from public.entitlement_grants
+    where owner_id = p_user_id and revoked_at is null and (ends_at is null or ends_at > now())
+  );
+$$;
+
+revoke all on function public.is_premium_user(uuid) from public;
+grant execute on function public.is_premium_user(uuid) to authenticated, anon;
+
+-- Cryptographically signed entitlement RPC
+-- Generates an HMAC-SHA256 signature using internal server secret
+create or replace function public.get_verified_entitlement()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  v_user_id uuid := auth.uid();
+  v_plan_key text := 'free';
+  v_grant record;
+  v_status text := 'free';
+  v_source text := 'none';
+  v_expires_at timestamptz := null;
+  v_expires_epoch bigint := null;
+  v_secret text;
+  v_payload text;
+  v_signature text;
+  v_now_epoch bigint;
+begin
+  v_now_epoch := round(extract(epoch from now()) * 1000)::bigint;
+
+  if v_user_id is null then
+    return jsonb_build_object(
+      'status', 'free',
+      'source', 'none',
+      'expires_at', null,
+      'signature', null,
+      'server_time', v_now_epoch
+    );
+  end if;
+
+  -- 1. Check profile plan_key
+  select plan_key into v_plan_key
+  from public.profiles
+  where id = v_user_id;
+
+  if v_plan_key = 'premium' then
+    v_status := 'premium';
+    v_source := 'subscription';
+    v_expires_at := null;
+  else
+    -- 2. Check active entitlement grants
+    select * into v_grant
+    from public.entitlement_grants
+    where owner_id = v_user_id
+      and revoked_at is null
+      and (ends_at is null or ends_at > now())
+    order by ends_at desc nulls first
+    limit 1;
+
+    if found then
+      v_status := case when v_grant.source_type = 'store_trial' then 'trial' else 'premium' end;
+      v_source := coalesce(v_grant.source_type, 'promo');
+      v_expires_at := v_grant.ends_at;
+    else
+      v_status := 'free';
+      v_source := 'none';
+      v_expires_at := null;
+    end if;
+  end if;
+
+  if v_expires_at is not null then
+    v_expires_epoch := round(extract(epoch from v_expires_at) * 1000)::bigint;
+  end if;
+
+  -- Server internal secret
+  v_secret := coalesce(
+    nullif(current_setting('app.settings.entitlement_secret', true), ''),
+    'lamplight-entitlement-secret-2026-server-internal'
+  );
+
+  -- Payload: user_id + status + expires_at
+  v_payload := v_user_id::text || ':' || v_status || ':' || coalesce(v_expires_epoch::text, 'never');
+  v_signature := encode(extensions.hmac(v_payload::bytea, v_secret::bytea, 'sha256'), 'hex');
+
+  return jsonb_build_object(
+    'status', v_status,
+    'source', v_source,
+    'expires_at', v_expires_epoch,
+    'signature', v_signature,
+    'server_time', v_now_epoch
+  );
+end;
+$$;
+
+revoke all on function public.get_verified_entitlement() from public;
+grant execute on function public.get_verified_entitlement() to authenticated, anon;
 
 -- ============================================================================
 -- 10. Cross-device preferences — schema exists for the future "sync between
@@ -851,11 +969,56 @@ drop policy if exists "manage own reading positions" on public.reading_positions
 create policy "manage own reading positions" on public.reading_positions for all
   using (auth.uid() = owner_id) with check (auth.uid() = owner_id);
 drop policy if exists "manage own saved words" on public.saved_words;
-create policy "manage own saved words" on public.saved_words for all
+drop policy if exists "select own saved words" on public.saved_words;
+create policy "select own saved words" on public.saved_words for select
+  using (auth.uid() = owner_id);
+drop policy if exists "insert own saved words" on public.saved_words;
+create policy "insert own saved words" on public.saved_words for insert
+  with check (
+    auth.uid() = owner_id
+    and (
+      public.is_premium_user(auth.uid())
+      or (
+        select count(*)
+        from public.saved_words sw
+        where sw.owner_id = auth.uid()
+          and sw.library_item_id = saved_words.library_item_id
+          and sw.deleted_at is null
+      ) < 30
+    )
+  );
+drop policy if exists "update own saved words" on public.saved_words;
+create policy "update own saved words" on public.saved_words for update
   using (auth.uid() = owner_id) with check (auth.uid() = owner_id);
+drop policy if exists "delete own saved words" on public.saved_words;
+create policy "delete own saved words" on public.saved_words for delete
+  using (auth.uid() = owner_id);
+
 drop policy if exists "manage own highlights" on public.highlights;
-create policy "manage own highlights" on public.highlights for all
+drop policy if exists "select own highlights" on public.highlights;
+create policy "select own highlights" on public.highlights for select
+  using (auth.uid() = owner_id);
+drop policy if exists "insert own highlights" on public.highlights;
+create policy "insert own highlights" on public.highlights for insert
+  with check (
+    auth.uid() = owner_id
+    and (
+      public.is_premium_user(auth.uid())
+      or (
+        select count(*)
+        from public.highlights hl
+        where hl.owner_id = auth.uid()
+          and hl.library_item_id = highlights.library_item_id
+          and hl.deleted_at is null
+      ) < 15
+    )
+  );
+drop policy if exists "update own highlights" on public.highlights;
+create policy "update own highlights" on public.highlights for update
   using (auth.uid() = owner_id) with check (auth.uid() = owner_id);
+drop policy if exists "delete own highlights" on public.highlights;
+create policy "delete own highlights" on public.highlights for delete
+  using (auth.uid() = owner_id);
 drop policy if exists "manage own translation usage" on public.translation_usage;
 create policy "manage own translation usage" on public.translation_usage for all
   using (auth.uid() = owner_id) with check (auth.uid() = owner_id);
