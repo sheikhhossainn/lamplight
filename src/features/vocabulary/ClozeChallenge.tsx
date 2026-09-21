@@ -237,6 +237,24 @@ export function ClozeChallenge({ words, mode = 'normal', maxQuestions = 10, onDo
   const slideAnimStyle = useAnimatedStyle(() => ({ transform: [{ translateX: slideX.value }] }));
   const isTransitioning = useRef(false);
 
+  const onTransitionFinished = useCallback(() => {
+    isTransitioning.current = false;
+  }, []);
+
+  const advanceToNextQuestion = useCallback(
+    (nextResults: { word: SavedWord; correct: boolean }[]) => {
+      setResults(nextResults);
+      setQIndex((prev) => prev + 1);
+      slideX.value = screenWidth;
+      slideX.value = withTiming(0, { duration: 220 }, (done) => {
+        if (done) {
+          runOnJS(onTransitionFinished)();
+        }
+      });
+    },
+    [screenWidth, slideX, onTransitionFinished],
+  );
+
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -372,24 +390,6 @@ export function ClozeChallenge({ words, mode = 'normal', maxQuestions = 10, onDo
       </View>
     );
   }
-
-  const onTransitionFinished = useCallback(() => {
-    isTransitioning.current = false;
-  }, []);
-
-  const advanceToNextQuestion = useCallback(
-    (nextResults: { word: SavedWord; correct: boolean }[]) => {
-      setResults(nextResults);
-      setQIndex((prev) => prev + 1);
-      slideX.value = screenWidth;
-      slideX.value = withTiming(0, { duration: 220 }, (done) => {
-        if (done) {
-          runOnJS(onTransitionFinished)();
-        }
-      });
-    },
-    [screenWidth, slideX, onTransitionFinished],
-  );
 
   const currentItem = items[qIndex];
 
