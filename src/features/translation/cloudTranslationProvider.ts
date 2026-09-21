@@ -1,4 +1,5 @@
 import { getCachedTranslation, setCachedTranslation } from '@/db/repositories/translationCache';
+import { getSession } from '@/lib/supabaseAuth';
 import type { LanguageCode, TranslationProvider, TranslationResult } from './TranslationProvider';
 
 // Thin wrapper around the unofficial (but widely used, key-free) Google Translate
@@ -36,23 +37,65 @@ async function fetchTranslation(
     console.warn('[translation] Persistent cache read error:', err);
   }
 
-  // 3. Network fetch
-  const url = `${ENDPOINT}?client=gtx&sl=${from}&tl=${to}&dt=t&q=${encodeURIComponent(text)}`;
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Translation request failed (${response.status})`);
+  // 3. Network fetch (Primary: Google Translate)
+  try {
+    const url = `${ENDPOINT}?client=gtx&sl=${from}&tl=${to}&dt=t&q=${encodeURIComponent(text)}`;
+    const response = await fetch(url);
+    if (response.ok) {
+      const data = (await response.json()) as unknown;
+      const translatedText = extractTranslatedText(data);
+      const result: TranslationResult = { sourceText: text, translatedText };
+      
+      cache.set(key, result);
+      void setCachedTranslation(text, translatedText, from, to).catch((err) =>
+        console.warn('[translation] Persistent cache write error:', err),
+      );
+
+      return result;
+    }
+  } catch (err) {
+    console.warn('[translation] Primary Google Translate failed, attempting server Edge Function fallback:', err);
   }
 
-  const data = (await response.json()) as unknown;
-  const translatedText = extractTranslatedText(data);
-  const result: TranslationResult = { sourceText: text, translatedText };
-  
-  cache.set(key, result);
-  void setCachedTranslation(text, translatedText, from, to).catch((err) =>
-    console.warn('[translation] Persistent cache write error:', err),
-  );
+  // 4. Fallback: Authenticated Supabase Edge Function literary-ai
+  const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
+  const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+  if (SUPABASE_URL && SUPABASE_ANON_KEY) {
+    try {
+      const session = await getSession();
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/literary-ai`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${session.accessToken}`,
+        },
+        body: JSON.stringify({
+          action: 'batch_translate',
+          sentences: [text],
+          fromLang: from,
+          toLang: to,
+        }),
+      });
 
-  return result;
+      if (res.ok) {
+        const data = (await res.json()) as { success?: boolean; translations?: string[] };
+        if (data.success && data.translations?.[0]) {
+          const translatedText = String(data.translations[0]).trim();
+          const result: TranslationResult = { sourceText: text, translatedText };
+
+          cache.set(key, result);
+          void setCachedTranslation(text, translatedText, from, to).catch(() => {});
+
+          return result;
+        }
+      }
+    } catch (edgeErr) {
+      console.warn('[translation] Edge function fallback error:', edgeErr);
+    }
+  }
+
+  throw new Error(`Translation request failed for "${text}"`);
 }
 
 function extractTranslatedText(data: unknown): string {
