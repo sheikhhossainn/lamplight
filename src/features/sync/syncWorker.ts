@@ -198,18 +198,17 @@ export async function triggerSync(options?: { forceImmediate?: boolean }): Promi
 }
 
 async function runSyncIteration(forceImmediate: boolean): Promise<void> {
-  const isAuth = await isAuthenticatedAccount();
-  if (!isAuth) {
-    setSyncStatus('guest');
-    return;
-  }
-
   let session: { accessToken: string; userId: string } | null = null;
   try {
     session = await getSession();
   } catch {
     // Cannot authenticate right now -> device is offline or credentials unavailable
     setSyncStatus('offline_saved');
+    return;
+  }
+
+  if (!session?.userId) {
+    setSyncStatus('guest');
     return;
   }
 
@@ -546,14 +545,14 @@ async function pullServerChanges(session: { accessToken: string; userId: string 
 
       if (positions.length > 0) {
         let maxTime = lastSynced;
-        await db.withTransactionAsync(async () => {
+        await db.withTransactionAsync(async (tx) => {
           for (const pos of positions) {
             const time = new Date(pos.updated_at).getTime();
             if (time > maxTime) maxTime = time;
 
-            const bookId = await resolveLocalBookId(pos.library_item_id, session.accessToken, db);
+            const bookId = await resolveLocalBookId(pos.library_item_id, session.accessToken, tx);
             if (bookId) {
-              await db.runAsync(
+              await tx.runAsync(
                 `INSERT INTO reading_positions (book_id, chapter_index, page_index, percent_complete, updated_at, continue_hidden)
                  VALUES (?, ?, ?, ?, ?, 0)
                  ON CONFLICT(book_id) DO UPDATE SET
@@ -610,18 +609,18 @@ async function pullServerChanges(session: { accessToken: string; userId: string 
 
       if (words.length > 0) {
         let maxTime = lastSynced;
-        await db.withTransactionAsync(async () => {
+        await db.withTransactionAsync(async (tx) => {
           for (const word of words) {
             const time = new Date(word.updated_at).getTime();
             if (time > maxTime) maxTime = time;
 
             if (word.deleted_at) {
-              await db.runAsync('DELETE FROM saved_words WHERE id = ?', [word.id]);
+              await tx.runAsync('DELETE FROM saved_words WHERE id = ?', [word.id]);
             } else {
-              const bookId = await resolveLocalBookId(word.library_item_id, session.accessToken, db);
+              const bookId = await resolveLocalBookId(word.library_item_id, session.accessToken, tx);
               if (bookId) {
                 const srsDueDate = word.srs_next_review_at ? new Date(word.srs_next_review_at).getTime() : 0;
-                await db.runAsync(
+                await tx.runAsync(
                   `INSERT INTO saved_words (
                      id, book_id, source_word, source_lang, target_lang, translation, context_sentence,
                      chapter_index, page_index, paragraph_index, created_at,
@@ -693,17 +692,17 @@ async function pullServerChanges(session: { accessToken: string; userId: string 
 
       if (highlights.length > 0) {
         let maxTime = lastSynced;
-        await db.withTransactionAsync(async () => {
+        await db.withTransactionAsync(async (tx) => {
           for (const hl of highlights) {
             const time = new Date(hl.created_at).getTime();
             if (time > maxTime) maxTime = time;
 
             if (hl.deleted_at) {
-              await db.runAsync('DELETE FROM highlights WHERE id = ?', [hl.id]);
+              await tx.runAsync('DELETE FROM highlights WHERE id = ?', [hl.id]);
             } else {
-              const bookId = await resolveLocalBookId(hl.library_item_id, session.accessToken, db);
+              const bookId = await resolveLocalBookId(hl.library_item_id, session.accessToken, tx);
               if (bookId) {
-                await db.runAsync(
+                await tx.runAsync(
                   `INSERT INTO highlights (id, book_id, chapter_index, page_index, start_offset, end_offset, color_key, quote_text, created_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(id) DO UPDATE SET
@@ -755,12 +754,12 @@ async function pullServerChanges(session: { accessToken: string; userId: string 
 
       if (shelves.length > 0) {
         let maxTime = lastSynced;
-        await db.withTransactionAsync(async () => {
+        await db.withTransactionAsync(async (tx) => {
           for (const shelf of shelves) {
             const time = new Date(shelf.created_at).getTime();
             if (time > maxTime) maxTime = time;
 
-            await db.runAsync(
+            await tx.runAsync(
               `INSERT INTO shelves (id, name, created_at)
                VALUES (?, ?, ?)
                ON CONFLICT(id) DO UPDATE SET name = excluded.name`,
@@ -804,12 +803,12 @@ async function pullServerChanges(session: { accessToken: string; userId: string 
 
       if (attempts.length > 0) {
         let maxTime = lastSynced;
-        await db.withTransactionAsync(async () => {
+        await db.withTransactionAsync(async (tx) => {
           for (const att of attempts) {
             const time = new Date(att.created_at).getTime();
             if (time > maxTime) maxTime = time;
 
-            await db.runAsync(
+            await tx.runAsync(
               `INSERT INTO quiz_attempts (
                  id, book_id, mode, started_at, completed_at, correct_count, question_count, answers_json, created_at, updated_at
                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

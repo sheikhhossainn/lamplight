@@ -1,7 +1,8 @@
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Dimensions,
   FlatList,
   Platform,
@@ -1331,14 +1332,16 @@ export default function ReaderScreen() {
     scrollX.value = idx * pageWidth;
   }, [pages, startPosition, initialIndex, scrollX, pageWidth]);
 
-  // Track active reading session for streaks, reading time, and habits
-  useEffect(() => {
-    if (!book?.id) return;
-    startReadingSession(book.id, startPosition?.chapterIndex ?? 0);
-    return () => {
-      endReadingSession();
-    };
-  }, [book?.id]);
+  // Track active reading session for streaks, reading time, and habits (focus/blur lifecycle)
+  useFocusEffect(
+    useCallback(() => {
+      if (!book?.id) return;
+      startReadingSession(book.id, startPosition?.chapterIndex ?? 0);
+      return () => {
+        endReadingSession();
+      };
+    }, [book?.id, startPosition?.chapterIndex]),
+  );
 
   // Lowercased set of saved words for this book — matched in the reader text so
   // already-looked-up words get an amber marker. Reference-stable via useMemo
@@ -1999,6 +2002,14 @@ export default function ReaderScreen() {
   const handleSaveWord = useCallback(
     async (translation: string) => {
       if (!book || !activeWord) return;
+      if (!isPremiumUser() && savedWords.length >= 30) {
+        Alert.alert(
+          'Vocabulary Limit Reached',
+          'Free accounts can save up to 30 words per book. Upgrade to Premium for unlimited vocabulary.',
+          [{ text: 'OK' }],
+        );
+        return;
+      }
       void hapticSaveWord();
       const page = pages[currentIndex];
       const paragraph = page.paragraphs[activeWord.paragraphIndex] ?? '';
@@ -2019,7 +2030,7 @@ export default function ReaderScreen() {
       setActiveWord(null);
       logEvent('word_saved', { book_id: book.id, target_lang: targetLanguage });
     },
-    [book, activeWord, pages, currentIndex, sourceLanguage, targetLanguage],
+    [book, activeWord, pages, currentIndex, sourceLanguage, targetLanguage, savedWords.length],
   );
 
   const handleSaveForLater = useCallback(async () => {
@@ -2045,6 +2056,15 @@ export default function ReaderScreen() {
   // Highlights are always the app's single amber accent — no color picker.
   const handleSaveQuote = useCallback(async () => {
     if (!book || !selection) return;
+    if (!isPremiumUser() && highlights.length >= 15) {
+      Alert.alert(
+        'Quotes Limit Reached',
+        'Free accounts can save up to 15 quotes per book. Upgrade to Premium for unlimited quotes.',
+        [{ text: 'OK' }],
+      );
+      setSelection(null);
+      return;
+    }
     void hapticSaveWord();
     setIsDraggingHandle(false);
     clearEdgeTurnTimer();
@@ -2081,12 +2101,13 @@ export default function ReaderScreen() {
 
     if (newHighlights.length > 0) {
       setHighlights((prev) => [...newHighlights, ...prev]);
+      logEvent('quote_saved', { book_id: book.id });
     }
     setSelection(null);
     if (primaryHighlight) {
       router.push({ pathname: '/quote-share/[highlightId]', params: { highlightId: primaryHighlight.id } });
     }
-  }, [book, selection, pages, clearEdgeTurnTimer]);
+  }, [book, selection, pages, clearEdgeTurnTimer, highlights.length]);
 
   const renderPage = useCallback(
     ({ item, index }: { item: ReaderPage; index: number }) => {

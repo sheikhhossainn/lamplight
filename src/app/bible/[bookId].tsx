@@ -1,9 +1,10 @@
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View, type ViewToken } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BookmarkIcon, ChevronLeftIcon, ChevronRightIcon, ShareIcon } from '@/components/icons';
+import { startReadingSession, endReadingSession } from '@/features/analytics/readingTracker';
 import {
   createBibleHighlight,
   deleteBibleHighlight,
@@ -91,6 +92,15 @@ export default function BibleVerseReaderScreen() {
       void upsertBibleReadingPosition({ bookId, chapter: newChapter, verse: 1 });
     },
     [bookId, bookMeta],
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      startReadingSession(`bible-${bookId}`, currentChapter);
+      return () => {
+        endReadingSession();
+      };
+    }, [bookId, currentChapter]),
   );
 
   const [highlights, setHighlights] = useState<BibleHighlight[]>([]);

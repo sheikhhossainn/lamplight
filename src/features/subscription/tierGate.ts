@@ -38,15 +38,18 @@ export async function checkFeatureGate(
     };
   }
 
-  // 2. Connectivity check: Premium features require internet
-  const online = await isOnline();
-  if (!online) {
-    return {
-      allowed: false,
-      reason: 'offline_blocked',
-      title: 'Internet Connection Required',
-      message: 'Premium features require an active internet connection to verify your subscription and access cloud intelligence.',
-    };
+  // 2. Connectivity check: only features that strictly depend on remote servers require internet
+  const requiresOnline: PremiumFeature[] = ['cloud_sync', 'context_translation', 'ai_companion'];
+  if (requiresOnline.includes(feature)) {
+    const online = await isOnline();
+    if (!online) {
+      return {
+        allowed: false,
+        reason: 'offline_blocked',
+        title: 'Internet Connection Required',
+        message: 'This feature requires an active internet connection to communicate with cloud services.',
+      };
+    }
   }
 
   // 3. Premium entitlement check

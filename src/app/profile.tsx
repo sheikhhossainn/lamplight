@@ -24,6 +24,7 @@ import {
 import { computeUserReadingStats, type UserReadingStats } from '@/features/analytics/statsEngine';
 import { isPremiumUser } from '@/features/subscription/subscriptionState';
 import { useTheme } from '@/theme/ThemeProvider';
+import { LamplightColor } from '@/theme/tokens';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -282,7 +283,7 @@ export default function ProfileScreen() {
                           color: isPremium
                             ? colors.primaryDark
                             : profile.isProtected
-                            ? '#5A8A55'
+                            ? LamplightColor.highlight.sage
                             : colors.umber,
                           fontSize: 10,
                         },
@@ -768,9 +769,9 @@ export default function ProfileScreen() {
                 ]}
               >
                 {deletingAccount ? (
-                  <ActivityIndicator size="small" color="#fff" />
+                  <ActivityIndicator size="small" color={colors.parchment} />
                 ) : (
-                  <Text style={[typography.buttonLabel, { color: '#fff', fontSize: 13 }]}>
+                  <Text style={[typography.buttonLabel, { color: colors.parchment, fontSize: 13 }]}>
                     Delete Account
                   </Text>
                 )}

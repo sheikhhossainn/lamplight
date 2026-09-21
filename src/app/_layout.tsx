@@ -17,6 +17,7 @@ import { useEffect, useState } from 'react';
 import { AppState, View } from 'react-native';
 
 import { triggerSync } from '@/features/sync/syncWorker';
+import { getSession } from '@/lib/supabaseAuth';
 
 import { AppUpdatePrompt } from '@/components/AppUpdatePrompt';
 import { WhatsNewOverlay } from '@/components/WhatsNewOverlay';
@@ -64,6 +65,7 @@ export default function RootLayout() {
   // Load persisted settings (translation language pair, mother tongue, page style) once on launch.
   useEffect(() => {
     void Promise.all([
+      getSession().catch(() => {}),
       hydrateTargetLanguage(),
       hydrateTargetReadingLanguage(),
       hydrateMotherTongue(),

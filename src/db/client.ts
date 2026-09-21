@@ -23,7 +23,7 @@ const BOOTSTRAP_CATALOG: {
   categories?: string[];
 }[] = require('../../assets/books/manifest.json');
 
-let dbPromise: Promise<SQLiteDatabase> | null = null;
+let dbPromise: Promise<TransactionalDb> | null = null;
 
 // expo-sqlite's Android binding corrupts native statement state when two
 // statements are prepared concurrently on the same connection — surfaces as
@@ -70,9 +70,11 @@ function createQueue(): Enqueue {
   };
 }
 
-function serializeDb(db: SQLiteDatabase, enqueue: Enqueue): SQLiteDatabase {
-  let inTransaction = false;
+export type TransactionalDb = Omit<SQLiteDatabase, 'withTransactionAsync'> & {
+  withTransactionAsync(task: (txDb: SQLiteDatabase) => Promise<void>): Promise<void>;
+};
 
+function serializeDb(db: SQLiteDatabase, enqueue: Enqueue): TransactionalDb {
   return new Proxy(db, {
     get(target, prop, receiver) {
       const value = Reflect.get(target, prop, receiver);
@@ -81,27 +83,19 @@ function serializeDb(db: SQLiteDatabase, enqueue: Enqueue): SQLiteDatabase {
       }
 
       if (prop === 'withTransactionAsync') {
-        return (task: () => Promise<void>) =>
+        return (task: (txDb: SQLiteDatabase) => Promise<void>) =>
           enqueue(async () => {
-            inTransaction = true;
-            try {
-              return await target.withTransactionAsync(task);
-            } finally {
-              inTransaction = false;
-            }
+            return await target.withTransactionAsync(async () => {
+              await task(target);
+            });
           });
       }
 
       return (...args: unknown[]) => {
-        if (inTransaction) {
-          // While already inside an active serialized transaction, run directly
-          // against the native handle without re-enqueueing to prevent queue deadlock.
-          return (value as (...a: unknown[]) => Promise<unknown>).apply(target, args);
-        }
         return enqueue(() => (value as (...a: unknown[]) => Promise<unknown>).apply(target, args));
       };
     },
-  });
+  }) as unknown as TransactionalDb;
 }
 
 async function migrate(db: SQLiteDatabase) {
@@ -275,7 +269,7 @@ function refreshFromRemoteInBackground(db: SQLiteDatabase, enqueue: Enqueue) {
     .finally(() => endLibrarySync());
 }
 
-export async function getDb(): Promise<SQLiteDatabase> {
+export async function getDb(): Promise<TransactionalDb> {
   if (!dbPromise) {
     dbPromise = (async () => {
       const db = await openDatabaseAsync('lamplight.db');
