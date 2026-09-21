@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
@@ -373,6 +373,24 @@ export function ClozeChallenge({ words, mode = 'normal', maxQuestions = 10, onDo
     );
   }
 
+  const onTransitionFinished = useCallback(() => {
+    isTransitioning.current = false;
+  }, []);
+
+  const advanceToNextQuestion = useCallback(
+    (nextResults: { word: SavedWord; correct: boolean }[]) => {
+      setResults(nextResults);
+      setQIndex((prev) => prev + 1);
+      slideX.value = screenWidth;
+      slideX.value = withTiming(0, { duration: 220 }, (done) => {
+        if (done) {
+          runOnJS(onTransitionFinished)();
+        }
+      });
+    },
+    [screenWidth, slideX, onTransitionFinished],
+  );
+
   const currentItem = items[qIndex];
 
   const handleResult = (correct: boolean) => {
@@ -386,12 +404,7 @@ export function ClozeChallenge({ words, mode = 'normal', maxQuestions = 10, onDo
     isTransitioning.current = true;
     slideX.value = withTiming(-screenWidth, { duration: 220 }, (finished) => {
       if (finished) {
-        runOnJS(setResults)(updated);
-        runOnJS(setQIndex)((i: number) => i + 1);
-        slideX.value = screenWidth;
-        slideX.value = withTiming(0, { duration: 220 }, () => {
-          runOnJS(() => { isTransitioning.current = false; })();
-        });
+        runOnJS(advanceToNextQuestion)(updated);
       }
     });
   };
