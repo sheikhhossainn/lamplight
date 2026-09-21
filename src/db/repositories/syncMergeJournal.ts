@@ -1,4 +1,5 @@
 import { getDb } from '@/db/client';
+import { generateId } from '@/lib/id';
 
 export type SyncMergeJournalState =
   | 'prompting'
@@ -18,17 +19,6 @@ export type SyncMergeJournal = {
   completed_at: number | null;
 };
 
-function generateUuid(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    const v = c === 'x' ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
-}
-
 /**
  * Creates a new merge journal entry before beginning an account merge.
  */
@@ -38,7 +28,7 @@ export async function createMergeJournal(
   backupReference?: string,
 ): Promise<string> {
   const db = await getDb();
-  const id = generateUuid();
+  const id = generateId();
   const now = Date.now();
 
   await db.runAsync(

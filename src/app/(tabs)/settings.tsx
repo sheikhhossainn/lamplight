@@ -36,6 +36,7 @@ import { refreshSyncStatus, triggerSync, useSyncStatus, type SyncStatus } from '
 import { getStorageUsage, clearTemporaryCache, getUnsyncedSafetyStatus, type StorageUsage } from '@/features/storage/storageManager';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { RedeemPromoModal } from '@/components/RedeemPromoModal';
+import { FeedbackModal } from '@/components/FeedbackModal';
 import { setTargetLanguage, targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
 import { useReadingTheme } from '@/features/settings/readingTheme';
 import {
@@ -73,7 +74,7 @@ import {
   useLiteraryTheme,
 } from '@/features/settings/literaryTheme';
 import { useTheme } from '@/theme/ThemeProvider';
-import { getCultureThemeColors, Layout, Spacing } from '@/theme/tokens';
+import { getCultureThemeColors, LamplightColor, Layout, Spacing } from '@/theme/tokens';
 
 const TAB_BAR_CLEARANCE = Layout.tabBarHeight + Spacing.xl;
 
@@ -370,6 +371,7 @@ export default function SettingsScreen() {
   const [unsyncedCount, setUnsyncedCount] = useState(0);
   const [accountProtectionDialogVisible, setAccountProtectionDialogVisible] = useState(false);
   const [promoModalVisible, setPromoModalVisible] = useState(false);
+  const [feedbackModalVisible, setFeedbackModalVisible] = useState(false);
   const [entitlement, setEntitlement] = useState<EntitlementSnapshot>(getEntitlementSnapshot());
 
   const [isProtected, setIsProtected] = useState(false);
@@ -793,7 +795,7 @@ export default function SettingsScreen() {
                 <Text
                   style={{
                     color: isProtected
-                      ? (isPremium ? colors.primaryDark : '#7FA37A')
+                      ? (isPremium ? colors.primaryDark : LamplightColor.highlight.sage)
                       : colors.fawn,
                     fontSize: 10,
                     fontFamily: 'Manrope_700Bold',
@@ -856,7 +858,7 @@ export default function SettingsScreen() {
         </View>
 
         {/* View Profile & Reading Stats */}
-        <View style={[styles.itemDivider, { borderBottomColor: isLamp ? colors.hairline : '#2B2621' }]} />
+        <View style={[styles.itemDivider, { borderBottomColor: isLamp ? colors.hairline : LamplightColor.ember }]} />
         <Pressable
           onPress={() => router.push('/profile' as any)}
           style={[styles.settingsRow, { paddingVertical: 10 }]}
@@ -1054,6 +1056,37 @@ export default function SettingsScreen() {
       </View>
 
       <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginTop: spacing.xl, marginBottom: spacing.sm }]}>
+        Support & Feedback
+      </Text>
+      <View
+        style={[
+          styles.card,
+          {
+            backgroundColor: colors.card,
+            borderColor: colors.hairline,
+            borderRadius: radius.card,
+          },
+        ]}
+      >
+        <Pressable
+          onPress={() => setFeedbackModalVisible(true)}
+          style={[styles.settingsRow, { paddingVertical: 10 }]}
+        >
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
+              Send Feedback
+            </Text>
+            <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11, marginTop: 1 }]}>
+              Share bugs, thoughts, or feature ideas
+            </Text>
+          </View>
+          <View style={{ width: 15, height: 15, alignItems: 'center', justifyContent: 'center' }}>
+            <ChevronRightIcon color={colors.straw} size={14} />
+          </View>
+        </Pressable>
+      </View>
+
+      <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginTop: spacing.xl, marginBottom: spacing.sm }]}>
         About
       </Text>
       <View
@@ -1169,6 +1202,11 @@ export default function SettingsScreen() {
         onSuccess={() => {
           loadStorage();
         }}
+      />
+
+      <FeedbackModal
+        visible={feedbackModalVisible}
+        onClose={() => setFeedbackModalVisible(false)}
       />
 
       <ConfirmDialog

@@ -9,7 +9,8 @@ type ActiveSession = {
   bookId: string;
   chapterIndex: number;
   startedAt: number;
-  lastActiveAt: number;
+  lastInteractionAt: number;
+  lastTickAt: number;
   accumulatedSeconds: number;
   pagesRead: number;
 };
@@ -37,7 +38,8 @@ export function startReadingSession(bookId: string, chapterIndex: number = 0): v
     bookId,
     chapterIndex,
     startedAt: now,
-    lastActiveAt: now,
+    lastInteractionAt: now,
+    lastTickAt: now,
     accumulatedSeconds: 0,
     pagesRead: 0,
   };
@@ -56,20 +58,34 @@ export function startReadingSession(bookId: string, chapterIndex: number = 0): v
   startHeartbeat();
 }
 
+export function recordInteraction(): void {
+  if (!currentSession) return;
+  const now = Date.now();
+  const elapsedSinceLastTick = Math.max(0, Math.floor((now - currentSession.lastTickAt) / 1000));
+  const idleSeconds = Math.floor((now - currentSession.lastInteractionAt) / 1000);
+
+  if (idleSeconds < IDLE_TIMEOUT_SECONDS && elapsedSinceLastTick > 0) {
+    currentSession.accumulatedSeconds += Math.min(elapsedSinceLastTick, IDLE_TIMEOUT_SECONDS);
+  }
+  currentSession.lastInteractionAt = now;
+  currentSession.lastTickAt = now;
+}
+
 export function recordPageTurn(bookId?: string, _pageIndex?: number): void {
   if (!currentSession) return;
   if (bookId && currentSession.bookId !== bookId) return;
 
   const now = Date.now();
-  const idleSeconds = Math.floor((now - currentSession.lastActiveAt) / 1000);
+  const elapsedSinceLastTick = Math.max(0, Math.floor((now - currentSession.lastTickAt) / 1000));
+  const idleSeconds = Math.floor((now - currentSession.lastInteractionAt) / 1000);
 
-  // If user was idle for less than the timeout, add the delta
-  if (idleSeconds < IDLE_TIMEOUT_SECONDS) {
-    currentSession.accumulatedSeconds += idleSeconds;
+  if (idleSeconds < IDLE_TIMEOUT_SECONDS && elapsedSinceLastTick > 0) {
+    currentSession.accumulatedSeconds += Math.min(elapsedSinceLastTick, IDLE_TIMEOUT_SECONDS);
   }
 
   currentSession.pagesRead += 1;
-  currentSession.lastActiveAt = now;
+  currentSession.lastInteractionAt = now;
+  currentSession.lastTickAt = now;
 }
 
 export function endReadingSession(): void {
@@ -78,10 +94,11 @@ export function endReadingSession(): void {
   stopHeartbeat();
 
   const now = Date.now();
-  const idleSeconds = Math.floor((now - currentSession.lastActiveAt) / 1000);
+  const idleSeconds = Math.floor((now - currentSession.lastInteractionAt) / 1000);
+  const elapsedSinceLastTick = Math.max(0, Math.floor((now - currentSession.lastTickAt) / 1000));
 
-  if (idleSeconds < IDLE_TIMEOUT_SECONDS) {
-    currentSession.accumulatedSeconds += idleSeconds;
+  if (idleSeconds < IDLE_TIMEOUT_SECONDS && elapsedSinceLastTick > 0) {
+    currentSession.accumulatedSeconds += Math.min(elapsedSinceLastTick, IDLE_TIMEOUT_SECONDS);
   }
 
   const totalDuration = Math.max(1, currentSession.accumulatedSeconds);
@@ -131,17 +148,20 @@ function tickHeartbeat(): void {
   if (!currentSession) return;
 
   const now = Date.now();
-  const idleSeconds = Math.floor((now - currentSession.lastActiveAt) / 1000);
+  const idleSeconds = Math.floor((now - currentSession.lastInteractionAt) / 1000);
 
   if (idleSeconds < IDLE_TIMEOUT_SECONDS) {
-    currentSession.accumulatedSeconds += 10;
-    currentSession.lastActiveAt = now;
+    const elapsedSinceLastTick = Math.max(0, Math.floor((now - currentSession.lastTickAt) / 1000));
+    currentSession.accumulatedSeconds += elapsedSinceLastTick;
+    currentSession.lastTickAt = now;
 
     // Periodically update local duration every heartbeat
     void updateReadingSession(currentSession.id, {
       durationSeconds: currentSession.accumulatedSeconds,
       pagesRead: currentSession.pagesRead,
     });
+  } else {
+    currentSession.lastTickAt = now;
   }
 }
 

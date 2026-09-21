@@ -136,10 +136,15 @@ export async function computeUserReadingStats(): Promise<UserReadingStats> {
     for (const dStr of sortedDates) {
       const [y, m, d] = dStr.split('-').map(Number);
       const ts = new Date(y, m - 1, d).getTime();
-      if (prevTimestamp === null || ts - prevTimestamp === 86400000) {
-        tempStreak++;
-      } else {
+      if (prevTimestamp === null) {
         tempStreak = 1;
+      } else {
+        const diffDays = Math.round((ts - prevTimestamp) / 86400000);
+        if (diffDays === 1) {
+          tempStreak++;
+        } else if (diffDays > 1) {
+          tempStreak = 1;
+        }
       }
       prevTimestamp = ts;
       if (tempStreak > longestStreak) longestStreak = tempStreak;

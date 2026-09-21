@@ -333,19 +333,19 @@ export async function signOutUser(keepLocalData: boolean = true): Promise<void> 
   if (!keepLocalData) {
     const { getDb } = await import('@/db/client');
     const db = await getDb();
-    await db.withTransactionAsync(async () => {
-      await db.runAsync('DELETE FROM saved_words');
-      await db.runAsync('DELETE FROM highlights');
-      await db.runAsync('DELETE FROM reading_positions');
-      await db.runAsync('DELETE FROM shelves');
-      await db.runAsync('DELETE FROM shelf_items');
-      await db.runAsync('DELETE FROM review_events');
-      await db.runAsync('DELETE FROM quiz_attempts');
-      await db.runAsync('DELETE FROM sync_outbox');
-      await db.runAsync('DELETE FROM sync_cursor');
-      await db.runAsync('DELETE FROM pending_word_lookups');
-      await db.runAsync('DELETE FROM reading_sessions');
-      await db.runAsync('DELETE FROM sync_merge_journal');
+    await db.withTransactionAsync(async (tx) => {
+      await tx.runAsync('DELETE FROM saved_words');
+      await tx.runAsync('DELETE FROM highlights');
+      await tx.runAsync('DELETE FROM reading_positions');
+      await tx.runAsync('DELETE FROM shelves');
+      await tx.runAsync('DELETE FROM shelf_items');
+      await tx.runAsync('DELETE FROM review_events');
+      await tx.runAsync('DELETE FROM quiz_attempts');
+      await tx.runAsync('DELETE FROM sync_outbox');
+      await tx.runAsync('DELETE FROM sync_cursor');
+      await tx.runAsync('DELETE FROM pending_word_lookups');
+      await tx.runAsync('DELETE FROM reading_sessions');
+      await tx.runAsync('DELETE FROM sync_merge_journal');
     });
   }
 

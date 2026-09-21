@@ -192,7 +192,7 @@ export async function executeAccountMerge(
     await updateMergeJournalState(journalId, 'merging');
 
     // Step 4: Execute merge transaction in SQLite
-    await db.withTransactionAsync(async () => {
+    await db.withTransactionAsync(async (tx) => {
       // 4.1 Merge Reading Positions: latest timestamp wins, furthest percent retained
       const cloudPositionsMap = new Map(cloudData.readingPositions.map((p) => [p.book_id, p]));
       for (const localPos of snapshot.data.readingPositions) {
@@ -207,7 +207,7 @@ export async function executeAccountMerge(
             ? localPos.page_index
             : cloudPos.page_index;
 
-          await db.runAsync(
+          await tx.runAsync(
             `INSERT INTO reading_positions (book_id, chapter_index, page_index, percent_complete, updated_at, continue_hidden)
              VALUES (?, ?, ?, ?, ?, ?)
              ON CONFLICT(book_id) DO UPDATE SET
@@ -232,24 +232,24 @@ export async function executeAccountMerge(
                 updatedAt: localPos.updated_at,
               },
             },
-            db,
+            tx,
           );
         }
       }
 
       // Upsert any cloud-only positions into local DB
       const localPositionsMap = new Map(snapshot.data.readingPositions.map((p) => [p.book_id, p]));
-      for (const cp of cloudData.readingPositions) {
-        if (!localPositionsMap.has(cp.book_id)) {
-          await db.runAsync(
+      for (const cloudPos of cloudData.readingPositions) {
+        if (!localPositionsMap.has(cloudPos.book_id)) {
+          await tx.runAsync(
             `INSERT OR IGNORE INTO reading_positions (book_id, chapter_index, page_index, percent_complete, updated_at, continue_hidden)
              VALUES (?, ?, ?, ?, ?, ?)`,
             [
-              cp.book_id,
-              cp.chapter_index ?? 0,
-              cp.page_index ?? 0,
-              cp.percent_complete ?? 0,
-              new Date(cp.updated_at ?? Date.now()).getTime(),
+              cloudPos.book_id,
+              cloudPos.chapter_index ?? 0,
+              cloudPos.page_index ?? 0,
+              cloudPos.percent_complete ?? 0,
+              new Date(cloudPos.updated_at ?? Date.now()).getTime(),
               0,
             ],
           );
@@ -262,67 +262,67 @@ export async function executeAccountMerge(
         cloudData.savedWords.map((w) => [`${w.book_id}:${w.source_word.toLowerCase()}`, w]),
       );
 
-      for (const lw of snapshot.data.savedWords) {
-        const key = `${lw.book_id}:${lw.source_word.toLowerCase()}`;
-        const match = cloudWordsMap.get(lw.id) ?? cloudWordKeyMap.get(key);
+      for (const localWord of snapshot.data.savedWords) {
+        const key = `${localWord.book_id}:${localWord.source_word.toLowerCase()}`;
+        const match = cloudWordsMap.get(localWord.id) ?? cloudWordKeyMap.get(key);
         if (!match) {
           // Local-only word: enqueue to upload to cloud
           await enqueueMutation(
             {
               entityType: 'saved_word',
-              entityId: lw.id,
+              entityId: localWord.id,
               operation: 'upsert',
               payload: {
-                id: lw.id,
-                bookId: lw.book_id,
-                sourceWord: lw.source_word,
-                sourceLang: lw.source_lang,
-                targetLang: lw.target_lang,
-                translation: lw.translation,
-                contextSentence: lw.context_sentence,
-                chapterIndex: lw.chapter_index,
-                pageIndex: lw.page_index ?? 0,
-                paragraphIndex: lw.paragraph_index ?? 0,
-                srsStage: lw.srs_stage ?? 0,
-                srsEaseFactor: lw.srs_ease_factor ?? 2.5,
-                srsDueDate: lw.srs_due_date,
-                createdAt: lw.created_at,
+                id: localWord.id,
+                bookId: localWord.book_id,
+                sourceWord: localWord.source_word,
+                sourceLang: localWord.source_lang,
+                targetLang: localWord.target_lang,
+                translation: localWord.translation,
+                contextSentence: localWord.context_sentence,
+                chapterIndex: localWord.chapter_index,
+                pageIndex: localWord.page_index ?? 0,
+                paragraphIndex: localWord.paragraph_index ?? 0,
+                srsStage: localWord.srs_stage ?? 0,
+                srsEaseFactor: localWord.srs_ease_factor ?? 2.5,
+                srsDueDate: localWord.srs_due_date,
+                createdAt: localWord.created_at,
               },
             },
-            db,
+            tx,
           );
         }
       }
 
       // Insert cloud words that do not exist locally
       const localWordsMap = new Map(snapshot.data.savedWords.map((w) => [w.id, w]));
-      for (const cw of cloudData.savedWords) {
-        if (!localWordsMap.has(cw.id)) {
-          const srsDueDate = cw.srs_next_review_at
-            ? new Date(cw.srs_next_review_at).getTime()
-            : (cw.srs_due_date ?? 0);
-          await db.runAsync(
+      for (const cloudWord of cloudData.savedWords) {
+        if (!localWordsMap.has(cloudWord.id)) {
+          const srsDueDate = cloudWord.srs_next_review_at
+            ? new Date(cloudWord.srs_next_review_at).getTime()
+            : (cloudWord.srs_due_date ?? 0);
+          await tx.runAsync(
             `INSERT OR IGNORE INTO saved_words (
               id, book_id, source_word, source_lang, target_lang, translation,
               context_sentence, chapter_index, page_index, paragraph_index, created_at,
               srs_stage, srs_ease_factor, srs_due_date, srs_reps, srs_interval_days, srs_lapses
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)`,
             [
-              cw.id,
-              cw.book_id,
-              cw.source_word,
-              cw.source_lang,
-              cw.target_lang,
-              cw.translation,
-              cw.context_sentence,
-              cw.chapter_index ?? 0,
-              cw.page_index ?? 0,
-              cw.paragraph_index ?? 0,
-              new Date(cw.created_at ?? Date.now()).getTime(),
-              cw.srs_stage ?? cw.srs_box ?? 0,
-              cw.srs_ease_factor ?? 2.5,
+              cloudWord.id,
+              cloudWord.book_id,
+              cloudWord.source_word,
+              cloudWord.source_lang,
+              cloudWord.target_lang,
+              cloudWord.translation,
+              cloudWord.context_sentence,
+              cloudWord.chapter_index ?? 0,
+              cloudWord.page_index ?? 0,
+              cloudWord.paragraph_index ?? 0,
+              new Date(cloudWord.created_at ?? Date.now()).getTime(),
+              cloudWord.srs_stage ?? cloudWord.srs_box ?? 0,
+              cloudWord.srs_ease_factor ?? 2.5,
               srsDueDate,
-              cw.srs_reps ?? cw.srs_review_count ?? 0,
+              cloudWord.srs_reps ?? cloudWord.srs_review_count ?? 0,
             ],
           );
         }
@@ -330,46 +330,46 @@ export async function executeAccountMerge(
 
       // 4.3 Merge Highlights: union
       const cloudHlMap = new Map(cloudData.highlights.map((h) => [h.id, h]));
-      for (const lh of snapshot.data.highlights) {
-        if (!cloudHlMap.has(lh.id)) {
+      for (const localHl of snapshot.data.highlights) {
+        if (!cloudHlMap.has(localHl.id)) {
           await enqueueMutation(
             {
               entityType: 'highlight',
-              entityId: lh.id,
+              entityId: localHl.id,
               operation: 'upsert',
               payload: {
-                id: lh.id,
-                bookId: lh.book_id,
-                chapterIndex: lh.chapter_index ?? 0,
-                pageIndex: lh.page_index ?? 0,
-                startOffset: lh.start_offset ?? 0,
-                endOffset: lh.end_offset ?? 0,
-                colorKey: lh.color_key ?? 'amber',
-                quoteText: lh.quote_text ?? '',
-                createdAt: lh.created_at,
+                id: localHl.id,
+                bookId: localHl.book_id,
+                chapterIndex: localHl.chapter_index ?? 0,
+                pageIndex: localHl.page_index ?? 0,
+                startOffset: localHl.start_offset ?? 0,
+                endOffset: localHl.end_offset ?? 0,
+                colorKey: localHl.color_key ?? 'amber',
+                quoteText: localHl.quote_text ?? '',
+                createdAt: localHl.created_at,
               },
             },
-            db,
+            tx,
           );
         }
       }
       const localHlMap = new Map(snapshot.data.highlights.map((h) => [h.id, h]));
-      for (const ch of cloudData.highlights) {
-        if (!localHlMap.has(ch.id)) {
-          await db.runAsync(
+      for (const cloudHl of cloudData.highlights) {
+        if (!localHlMap.has(cloudHl.id)) {
+          await tx.runAsync(
             `INSERT OR IGNORE INTO highlights (
               id, book_id, chapter_index, page_index, start_offset, end_offset, color_key, quote_text, created_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
-              ch.id,
-              ch.book_id,
-              ch.chapter_index ?? 0,
-              ch.page_index ?? 0,
-              ch.start_offset ?? 0,
-              ch.end_offset ?? 0,
-              ch.color_key ?? 'amber',
-              ch.quote_text ?? '',
-              new Date(ch.created_at ?? Date.now()).getTime(),
+              cloudHl.id,
+              cloudHl.book_id,
+              cloudHl.chapter_index ?? 0,
+              cloudHl.page_index ?? 0,
+              cloudHl.start_offset ?? 0,
+              cloudHl.end_offset ?? 0,
+              cloudHl.color_key ?? 'amber',
+              cloudHl.quote_text ?? '',
+              new Date(cloudHl.created_at ?? Date.now()).getTime(),
             ],
           );
         }
@@ -377,38 +377,38 @@ export async function executeAccountMerge(
 
       // 4.4 Merge Shelves & Shelf Items
       const cloudShelvesMap = new Map(cloudData.shelves.map((s) => [s.id, s]));
-      for (const ls of snapshot.data.shelves) {
-        if (!cloudShelvesMap.has(ls.id)) {
+      for (const localShelf of snapshot.data.shelves) {
+        if (!cloudShelvesMap.has(localShelf.id)) {
           await enqueueMutation(
             {
               entityType: 'shelf',
-              entityId: ls.id,
+              entityId: localShelf.id,
               operation: 'upsert',
               payload: {
-                id: ls.id,
-                name: ls.name,
-                sortOrder: ls.sort_order ?? 0,
-                createdAt: ls.created_at,
+                id: localShelf.id,
+                name: localShelf.name,
+                sortOrder: localShelf.sort_order ?? 0,
+                createdAt: localShelf.created_at,
               },
             },
-            db,
+            tx,
           );
         }
       }
       const localShelvesMap = new Map(snapshot.data.shelves.map((s) => [s.id, s]));
-      for (const cs of cloudData.shelves) {
-        if (!localShelvesMap.has(cs.id)) {
-          await db.runAsync(
+      for (const cloudShelf of cloudData.shelves) {
+        if (!localShelvesMap.has(cloudShelf.id)) {
+          await tx.runAsync(
             `INSERT OR IGNORE INTO shelves (id, name, created_at) VALUES (?, ?, ?)`,
-            [cs.id, cs.name, new Date(cs.created_at ?? Date.now()).getTime()],
+            [cloudShelf.id, cloudShelf.name, new Date(cloudShelf.created_at ?? Date.now()).getTime()],
           );
         }
       }
-      for (const csi of cloudData.shelfItems) {
-        if (csi.book_id) {
-          await db.runAsync(
+      for (const cloudShelfItem of cloudData.shelfItems) {
+        if (cloudShelfItem.book_id) {
+          await tx.runAsync(
             `INSERT OR IGNORE INTO shelf_items (shelf_id, book_id, added_at) VALUES (?, ?, ?)`,
-            [csi.shelf_id, csi.book_id, new Date(csi.added_at ?? Date.now()).getTime()],
+            [cloudShelfItem.shelf_id, cloudShelfItem.book_id, new Date(cloudShelfItem.added_at ?? Date.now()).getTime()],
           );
         }
       }
