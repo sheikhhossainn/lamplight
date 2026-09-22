@@ -49,7 +49,7 @@ Understand request → graphify only if needed → read minimum files → implem
 ## Hard constraints
 
 - **Git author identity**: all commits and pushes must use the identity
-  `sheikhhossainn` (`skhossain799@gmail.com`). Never commit or push under any other account.
+  `Mahim25800` (`mhim2580@gmail.com`). Never commit or push under any other account.
 - **NEVER push without explicit user permission**: NEVER execute `git push` without the user explicitly
   and directly commanding you to push. This rule is absolute and strictly enforced across ALL modes —
   including turbo mode, bypass mode, auto-pilot, or any mode that bypasses terminal confirmations. All

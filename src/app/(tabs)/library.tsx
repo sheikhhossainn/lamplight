@@ -36,6 +36,8 @@ import {
   useTargetReadingLanguage,
 } from '@/features/settings/targetReadingLanguage';
 import { getLiteraryThemeOption } from '@/features/settings/literaryTheme';
+import { getStoredCalibrationData } from '@/features/vocabulary/calibration';
+import { VocabularyCalibrationModal } from '@/features/vocabulary/VocabularyCalibrationModal';
 import { ShelfEditorModal, type ShelfDraft } from '@/components/ShelfEditorModal';
 import { VocabReviewPrompt } from '@/components/VocabReviewPrompt';
 import { checkVocabReviewPrompt, markVocabReviewPrompted } from '@/features/vocabulary/reviewPrompt';
@@ -152,7 +154,8 @@ function SkeletonShelf() {
 }
 
 export default function LibraryScreen() {
-  const { colors, typography, spacing, radius } = useTheme();
+  const { colors, typography, spacing, radius, scheme } = useTheme();
+  const isLamp = scheme === 'lamp';
   const insets = useSafeAreaInsets();
   const targetLanguage = useTargetLanguage();
   const targetReadingLanguage = useTargetReadingLanguage();
@@ -173,6 +176,8 @@ export default function LibraryScreen() {
   const [reviewPrompt, setReviewPrompt] = useState<{ wordCount: number } | null>(null);
   const [downloadConfirmBook, setDownloadConfirmBook] = useState<BookRow | null>(null);
   const [banglaBooks, setBanglaBooks] = useState<BanglaBookSummary[]>(FALLBACK_BANGLA_BOOKS);
+  const [isCalibrationSkipped, setIsCalibrationSkipped] = useState(false);
+  const [calibrationModalVisible, setCalibrationModalVisible] = useState(false);
   const searchRef = useRef<TextInput>(null);
 
   const handleOpenContinueBook = useCallback((b: BookRow) => {
@@ -236,6 +241,11 @@ export default function LibraryScreen() {
       void (async () => {
         await load();
         if (!isFocused) return;
+
+        const calib = await getStoredCalibrationData();
+        if (isFocused) {
+          setIsCalibrationSkipped(Boolean(calib?.isSkipped));
+        }
 
         // Library is the landing screen, so this is where the once-a-day review
         // invitation surfaces. Never in the reader — nothing interrupts reading.
@@ -529,6 +539,39 @@ export default function LibraryScreen() {
         </View>
       </View>
       <CultureEditionBanner targetReadingLanguage={targetReadingLanguage} />
+
+      {isCalibrationSkipped ? (
+        <Pressable
+          onPress={() => setCalibrationModalVisible(true)}
+          style={{
+            marginTop: spacing.md,
+            paddingVertical: 10,
+            paddingHorizontal: 14,
+            borderRadius: radius.card,
+            backgroundColor: isLamp ? '#232023' : 'rgba(245, 166, 35, 0.08)',
+            borderColor: 'rgba(245, 166, 35, 0.25)',
+            borderWidth: 1,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+            <Text style={{ color: colors.flameAmber, fontSize: 13 }}>✦</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={[typography.eyebrowLabel, { color: colors.flameAmber, fontSize: 10, letterSpacing: 0.6 }]}>
+                CALIBRATE YOUR SHELF
+              </Text>
+              <Text style={[typography.metadataCaption, { color: colors.ink, fontSize: 11.5, marginTop: 2 }]}>
+                Get vocabulary comprehension percentages tailored to you.
+              </Text>
+            </View>
+          </View>
+          <Text style={[typography.eyebrowLabel, { color: colors.flameAmber, fontSize: 11, fontWeight: '600', marginLeft: 8 }]}>
+            30s Check →
+          </Text>
+        </Pressable>
+      ) : null}
 
       <View
         style={[
@@ -1077,6 +1120,13 @@ export default function LibraryScreen() {
           onCancel={() => setDownloadConfirmBook(null)}
         />
       ) : null}
+      <VocabularyCalibrationModal
+        visible={calibrationModalVisible}
+        onClose={() => setCalibrationModalVisible(false)}
+        onCalibrated={() => {
+          setIsCalibrationSkipped(false);
+        }}
+      />
     </View>
   );
 }

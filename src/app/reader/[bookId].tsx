@@ -88,6 +88,7 @@ import { getReadingTheme, setReadingTheme, useReadingTheme } from '@/features/se
 import { isPremiumUser } from '@/features/subscription/subscriptionState';
 import { checkTranslationCap, recordTranslationUsage, translationProvider } from '@/features/translation';
 import { batchTranslateSentences, splitSentences } from '@/features/translation/interlinearParser';
+import { updatePassiveVocabularyEstimate } from '@/features/vocabulary/calibration';
 import { LamplightColor, Spacing, type HighlightColorKey } from '@/theme/tokens';
 import { LamplightTypography } from '@/theme/typography';
 import { useTheme } from '@/theme/ThemeProvider';
@@ -826,6 +827,21 @@ export default function ReaderScreen() {
   const guideDismissedRef = useRef(false);
   const readerHintDismissedRef = useRef(false);
 
+  // Passive in-flight vocabulary calibration trackers
+  const sessionLookupsRef = useRef(0);
+  const sessionPagesReadRef = useRef<Set<number>>(new Set());
+
+  useEffect(() => {
+    return () => {
+      if (sessionPagesReadRef.current.size >= 10) {
+        void updatePassiveVocabularyEstimate(
+          sessionLookupsRef.current,
+          sessionPagesReadRef.current.size,
+        );
+      }
+    };
+  }, []);
+
   // Smart first-run reader gesture hints (forward and turn-back cues)
   const [hintVisible, setHintVisible] = useState(false);
   const [hintType, setHintType] = useState<'forward' | 'backward'>('forward');
@@ -1559,6 +1575,14 @@ export default function ReaderScreen() {
       if (first?.index == null) return;
       const page = first.item as ReaderPage;
 
+      sessionPagesReadRef.current.add(first.index);
+      if (sessionPagesReadRef.current.size >= 10 && sessionPagesReadRef.current.size % 10 === 0) {
+        void updatePassiveVocabularyEstimate(
+          sessionLookupsRef.current,
+          sessionPagesReadRef.current.size,
+        );
+      }
+
       if (lastPageIndexRef.current == null) {
         lastPageIndexRef.current = first.index;
         lastSettledPageIndexRef.current = first.index;
@@ -2162,6 +2186,7 @@ export default function ReaderScreen() {
           onBilingualWordLongPress={
             bilingualParagraphsForItem
               ? (payload) => {
+                  sessionLookupsRef.current += 1;
                   setActiveWord({
                     word: payload.word,
                     paragraphIndex: payload.paragraphIndex,
@@ -2752,6 +2777,7 @@ export default function ReaderScreen() {
         sourceLanguage={sourceLanguage}
         onTranslate={() => {
           if (!wordMenu) return;
+          sessionLookupsRef.current += 1;
           setActiveWord({
             word: wordMenu.word,
             paragraphIndex: wordMenu.paragraphIndex,
