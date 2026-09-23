@@ -47,6 +47,13 @@ import {
 } from '@/features/vocabulary/calibration';
 import { VocabularyCalibrationModal } from '@/features/vocabulary/VocabularyCalibrationModal';
 import {
+  getReadingGoal,
+  calculateCadencePacing,
+  type ReadingGoal,
+  type CadencePacing,
+} from '@/db/repositories/readingGoals';
+import { ReadingCadenceModal } from '@/components/ReadingCadenceModal';
+import {
   getTargetReadingLanguage,
   useTargetReadingLanguage,
 } from '@/features/settings/targetReadingLanguage';
@@ -222,6 +229,8 @@ export default function Homescreen() {
   const [starterDoor, setStarterDoor] = useState<'gentle' | 'balanced' | 'deep'>('balanced');
   const [calibrationModalVisible, setCalibrationModalVisible] = useState(false);
   const [sparkIndex, setSparkIndex] = useState(0);
+  const [cadenceGoal, setCadenceGoal] = useState<ReadingGoal | null>(null);
+  const [cadenceModalVisible, setCadenceModalVisible] = useState(false);
   const [srsMetrics, setSrsMetrics] = useState<{
     totalWords: number;
     dueToday: number;
@@ -344,13 +353,17 @@ export default function Homescreen() {
         if (topBookRow) {
           setLatestBook(topBookRow);
           setLatestPosition(topPos);
+          const goal = await getReadingGoal(topBookRow.id);
+          setCadenceGoal(goal);
         } else {
           setLatestBook(null);
           setLatestPosition(null);
+          setCadenceGoal(null);
         }
       } else {
         setLatestBook(null);
         setLatestPosition(null);
+        setCadenceGoal(null);
       }
 
       setReadyBook(null);
@@ -379,6 +392,15 @@ export default function Homescreen() {
       setLoading(false);
     }
   }, [targetReadingLanguage, starterDoor]);
+
+  const cadencePacing = useMemo(() => {
+    if (!latestBook || !cadenceGoal) return null;
+    return calculateCadencePacing({
+      goal: cadenceGoal,
+      totalChapters: Math.max(1, latestBook.totalChapters),
+      currentChapterIndex: latestPosition?.chapterIndex ?? 0,
+    });
+  }, [latestBook, latestPosition, cadenceGoal]);
 
   const handleClearCurrentReading = useCallback(async () => {
     if (!latestBook) return;
@@ -846,6 +868,61 @@ export default function Homescreen() {
                   </Text>
                 </View>
               </View>
+
+              {/* Reading Cadence / Nightly Goal */}
+              <Pressable
+                onPress={(e) => {
+                  e?.stopPropagation?.();
+                  setCadenceModalVisible(true);
+                }}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  backgroundColor: cadenceGoal
+                    ? (isLamp ? 'rgba(245, 166, 35, 0.12)' : 'rgba(245, 166, 35, 0.15)')
+                    : (isLamp ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.03)'),
+                  borderColor: cadenceGoal ? 'rgba(245, 166, 35, 0.35)' : colors.hairline,
+                  borderWidth: 1,
+                  borderRadius: radius.pill,
+                  paddingVertical: 7,
+                  paddingHorizontal: spacing.md,
+                  marginTop: spacing.md,
+                }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                  <Text style={{ fontSize: 13 }}>{cadenceGoal ? '🕯️' : '⏳'}</Text>
+                  <Text
+                    style={[
+                      typography.metadataCaption,
+                      {
+                        color: cadenceGoal ? colors.flameAmber : colors.fawn,
+                        fontWeight: cadenceGoal ? '700' : '500',
+                        fontSize: 12,
+                      },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {cadencePacing
+                      ? `Cadence: ${cadencePacing.daysRemaining} days left · ${cadencePacing.requiredChaptersToday} ch/day`
+                      : 'Set target days & daily reading pace'}
+                  </Text>
+                </View>
+                <Text
+                  style={[
+                    typography.eyebrowLabel,
+                    {
+                      color: cadenceGoal ? colors.flameAmber : colors.fawn,
+                      fontSize: 10,
+                      fontWeight: '600',
+                      letterSpacing: 0.5,
+                      textTransform: 'uppercase',
+                    },
+                  ]}
+                >
+                  {cadenceGoal ? 'Adjust →' : 'Set Goal →'}
+                </Text>
+              </Pressable>
 
               {/* Literary Encouragement & Action */}
               <View
@@ -1507,6 +1584,19 @@ export default function Homescreen() {
           setCalibratedBook(estimate.startingBook);
         }}
       />
+      {latestBook ? (
+        <ReadingCadenceModal
+          visible={cadenceModalVisible}
+          bookId={latestBook.id}
+          bookTitle={latestBook.title}
+          totalChapters={Math.max(1, latestBook.totalChapters)}
+          currentChapterIndex={latestPosition?.chapterIndex ?? 0}
+          onClose={() => setCadenceModalVisible(false)}
+          onGoalSaved={(newGoal: ReadingGoal) => {
+            setCadenceGoal(newGoal);
+          }}
+        />
+      ) : null}
     </View>
   );
 }

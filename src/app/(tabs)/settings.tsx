@@ -413,6 +413,29 @@ export default function SettingsScreen() {
 
   const isLamp = theme === 'lamp';
   const themeAnim = themeTransitionProgress;
+  const dayColors = getCultureThemeColors(cultureTheme, 'day');
+  const lampColors = getCultureThemeColors(cultureTheme, 'lamp');
+
+  const animatedContainerStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(
+      themeAnim.value,
+      [0, 1],
+      [dayColors.parchment, lampColors.parchment],
+    ),
+  }), [dayColors, lampColors]);
+
+  const animatedCardStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(
+      themeAnim.value,
+      [0, 1],
+      [dayColors.card, lampColors.card],
+    ),
+    borderColor: interpolateColor(
+      themeAnim.value,
+      [0, 1],
+      [dayColors.hairline, lampColors.hairline],
+    ),
+  }), [dayColors, lampColors]);
 
   useFocusEffect(
     useCallback(() => {
@@ -447,8 +470,8 @@ export default function SettingsScreen() {
   return (
     // Scrolls now that About sits below the plan card — on a short phone the
     // last section would otherwise fall off the bottom with no way to reach it.
-    <ScrollView
-      style={[styles.container, { backgroundColor: colors.parchment }]}
+    <Animated.ScrollView
+      style={[styles.container, animatedContainerStyle]}
       contentContainerStyle={{
         paddingHorizontal: spacing.xl,
         paddingTop: insets.top + 16,
@@ -463,12 +486,11 @@ export default function SettingsScreen() {
       <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginBottom: spacing.sm }]}>
         Appearance
       </Text>
-      <View
+      <Animated.View
         style={[
           styles.card,
+          animatedCardStyle,
           {
-            backgroundColor: colors.card,
-            borderColor: colors.hairline,
             borderRadius: radius.card,
             marginBottom: spacing.xl,
           },
@@ -502,17 +524,16 @@ export default function SettingsScreen() {
             </View>
           </Pressable>
         </View>
-      </View>
+      </Animated.View>
 
       <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginBottom: spacing.sm }]}>
         Reading
       </Text>
-      <View
+      <Animated.View
         style={[
           styles.card,
+          animatedCardStyle,
           {
-            backgroundColor: colors.card,
-            borderColor: colors.hairline,
             borderRadius: radius.card,
             marginBottom: spacing.xl,
             paddingVertical: 4,
@@ -523,17 +544,16 @@ export default function SettingsScreen() {
           <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>Page-turn sound</Text>
           <ToggleSwitch value={pageTurnSound} onChange={setPageTurnSoundEnabled} themeAnim={themeAnim} />
         </View>
-      </View>
+      </Animated.View>
 
       <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginBottom: spacing.sm }]}>
         Language
       </Text>
-      <View
+      <Animated.View
         style={[
           styles.card,
+          animatedCardStyle,
           {
-            backgroundColor: colors.card,
-            borderColor: colors.hairline,
             borderRadius: radius.card,
             marginBottom: spacing.xl,
             paddingVertical: 4,
@@ -567,17 +587,16 @@ export default function SettingsScreen() {
             </Text>
           </Pressable>
         </View>
-      </View>
+      </Animated.View>
 
       <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginBottom: spacing.sm }]}>
         Storage
       </Text>
-      <View
+      <Animated.View
         style={[
           styles.card,
+          animatedCardStyle,
           {
-            backgroundColor: colors.card,
-            borderColor: colors.hairline,
             borderRadius: radius.card,
             marginBottom: spacing.xl,
           },
@@ -636,7 +655,7 @@ export default function SettingsScreen() {
             )}
           </Pressable>
         </View>
-      </View>
+      </Animated.View>
 
       <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginBottom: spacing.sm }]}>
         Account
@@ -711,13 +730,12 @@ export default function SettingsScreen() {
       <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginTop: spacing.xl, marginBottom: spacing.sm }]}>
         Cloud Sync
       </Text>
-      <View
+      <Animated.View
         style={[
           styles.card,
           styles.settingsRow,
+          animatedCardStyle,
           {
-            backgroundColor: colors.card,
-            borderColor: colors.hairline,
             borderRadius: radius.card,
           },
         ]}
@@ -782,17 +800,16 @@ export default function SettingsScreen() {
             </Text>
           )}
         </Pressable>
-      </View>
+      </Animated.View>
 
       <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginTop: spacing.xl, marginBottom: spacing.sm }]}>
         Feedback
       </Text>
-      <View
+      <Animated.View
         style={[
           styles.card,
+          animatedCardStyle,
           {
-            backgroundColor: colors.card,
-            borderColor: colors.hairline,
             borderRadius: radius.card,
           },
         ]}
@@ -813,18 +830,17 @@ export default function SettingsScreen() {
             <ChevronRightIcon color={colors.straw} size={15} />
           </View>
         </Pressable>
-      </View>
+      </Animated.View>
 
       <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginTop: spacing.xl, marginBottom: spacing.sm }]}>
         About
       </Text>
-      <View
+      <Animated.View
         style={[
           styles.card,
           styles.settingsRow,
+          animatedCardStyle,
           {
-            backgroundColor: colors.card,
-            borderColor: colors.hairline,
             borderRadius: radius.card,
           },
         ]}
@@ -847,7 +863,7 @@ export default function SettingsScreen() {
             <Text style={[typography.uiRowTitle, { color: colors.primaryDark, fontSize: 12 }]}>Restart</Text>
           </Pressable>
         ) : null}
-      </View>
+      </Animated.View>
 
       <MotherTonguePicker
         visible={motherTonguePickerVisible}
@@ -921,7 +937,7 @@ export default function SettingsScreen() {
         onConfirm={() => setAccountProtectionDialogVisible(false)}
         onCancel={() => setAccountProtectionDialogVisible(false)}
       />
-    </ScrollView>
+    </Animated.ScrollView>
   );
 }
 
