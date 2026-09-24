@@ -39,7 +39,7 @@ import Svg, { Circle, Defs, LinearGradient, Path, RadialGradient, Rect, Stop } f
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 
-import { ChevronLeftIcon, CloseIcon, MenuIcon, MoonIcon, QuestionIcon, SoundWaveIcon, SpeakerIcon, SunIcon, TranslateIcon } from '@/components/icons';
+import { ChevronLeftIcon, CloseIcon, MenuIcon, MoonIcon, QuestionIcon, SoundWaveIcon, SpeakerIcon, StarIcon, SunIcon, TranslateIcon } from '@/components/icons';
 import { AmbiencePicker } from '@/features/ambience/AmbiencePicker';
 import { useAmbienceTrackId } from '@/features/ambience/ambiencePreference';
 import { ambienceTrackById } from '@/features/ambience/tracks';
@@ -78,6 +78,8 @@ import { listSavedWordsForBook, saveWord, type SavedWord } from '@/db/repositori
 import { createPendingLookup } from '@/db/repositories/pendingLookups';
 import { getSetting, setSetting } from '@/db/repositories/appSettings';
 import { LanguagePicker } from '@/components/LanguagePicker';
+import { FeedbackModal } from '@/components/FeedbackModal';
+import { recordMilestonePromptShown, shouldShowMilestonePrompt } from '@/features/feedback/feedbackService';
 import { PageStyleSelectorModal } from '@/features/reader/components/PageStyleSelectorModal';
 import { ReaderGuideModal } from '@/features/reader/components/ReaderGuideModal';
 import { getPageStyleConfig } from '@/features/reader/pageStyles';
@@ -88,6 +90,7 @@ import { getReadingTheme, setReadingTheme, useReadingTheme } from '@/features/se
 import { isPremiumUser } from '@/features/subscription/subscriptionState';
 import { checkTranslationCap, recordTranslationUsage, translationProvider } from '@/features/translation';
 import { batchTranslateSentences, splitSentences } from '@/features/translation/interlinearParser';
+import { updatePassiveVocabularyEstimate } from '@/features/vocabulary/calibration';
 import { LamplightColor, Spacing, type HighlightColorKey } from '@/theme/tokens';
 import { LamplightTypography } from '@/theme/typography';
 import { useTheme } from '@/theme/ThemeProvider';
@@ -820,10 +823,26 @@ export default function ReaderScreen() {
 
   const [languagePickerVisible, setLanguagePickerVisible] = useState(false);
   const [guideModalVisible, setGuideModalVisible] = useState(false);
+  const [feedbackModalVisible, setFeedbackModalVisible] = useState(false);
   const guideOpenRef = useRef(false);
   const [pageStyleVisible, setPageStyleVisible] = useState(false);
   const guideDismissedRef = useRef(false);
   const readerHintDismissedRef = useRef(false);
+
+  // Passive in-flight vocabulary calibration trackers
+  const sessionLookupsRef = useRef(0);
+  const sessionPagesReadRef = useRef<Set<number>>(new Set());
+
+  useEffect(() => {
+    return () => {
+      if (sessionPagesReadRef.current.size >= 10) {
+        void updatePassiveVocabularyEstimate(
+          sessionLookupsRef.current,
+          sessionPagesReadRef.current.size,
+        );
+      }
+    };
+  }, []);
 
   // Smart first-run reader gesture hints (forward and turn-back cues)
   const [hintVisible, setHintVisible] = useState(false);
@@ -1569,6 +1588,14 @@ export default function ReaderScreen() {
       if (first?.index == null) return;
       const page = first.item as ReaderPage;
 
+      sessionPagesReadRef.current.add(first.index);
+      if (sessionPagesReadRef.current.size >= 10 && sessionPagesReadRef.current.size % 10 === 0) {
+        void updatePassiveVocabularyEstimate(
+          sessionLookupsRef.current,
+          sessionPagesReadRef.current.size,
+        );
+      }
+
       if (lastPageIndexRef.current == null) {
         lastPageIndexRef.current = first.index;
         lastSettledPageIndexRef.current = first.index;
@@ -1657,6 +1684,14 @@ export default function ReaderScreen() {
       lastSettledPageIndexRef.current = nextIdx;
       playPageTurnRef.current();
       listRef.current?.scrollToIndex({ index: nextIdx, animated: true });
+    } else if (currentIndex === pages.length - 1 && pages.length > 2) {
+      void (async () => {
+        const canPrompt = await shouldShowMilestonePrompt();
+        if (canPrompt) {
+          await recordMilestonePromptShown();
+          setFeedbackModalVisible(true);
+        }
+      })();
     }
   }, [currentIndex, pages.length, dismissHint, dismissBackHint]);
 
@@ -2183,6 +2218,7 @@ export default function ReaderScreen() {
           onBilingualWordLongPress={
             bilingualParagraphsForItem
               ? (payload) => {
+                  sessionLookupsRef.current += 1;
                   setActiveWord({
                     word: payload.word,
                     paragraphIndex: payload.paragraphIndex,
@@ -2553,6 +2589,16 @@ export default function ReaderScreen() {
             <QuestionIcon color={isLamp ? READING_TEXT_DARK : READING_TEXT_LIGHT} size={18} />
             <Text style={[typography.uiRowTitle, styles.chromeMenuLabel, { color: isLamp ? READING_TEXT_DARK : READING_TEXT_LIGHT }]}>Reader Guide</Text>
           </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Rate and feedback"
+            testID="reader-feedback-button"
+            onPress={() => closeChromeMenu(() => setFeedbackModalVisible(true))}
+            style={styles.chromeMenuRow}
+          >
+            <StarIcon color={colors.flameAmber} size={18} />
+            <Text style={[typography.uiRowTitle, styles.chromeMenuLabel, { color: isLamp ? READING_TEXT_DARK : READING_TEXT_LIGHT }]}>Rate & Feedback</Text>
+          </Pressable>
         </Animated.View>
       </Animated.View>
 
@@ -2763,6 +2809,7 @@ export default function ReaderScreen() {
         sourceLanguage={sourceLanguage}
         onTranslate={() => {
           if (!wordMenu) return;
+          sessionLookupsRef.current += 1;
           setActiveWord({
             word: wordMenu.word,
             paragraphIndex: wordMenu.paragraphIndex,
@@ -2826,6 +2873,15 @@ export default function ReaderScreen() {
           handleCloseGuide();
           setLanguagePickerVisible(true);
         }}
+      />
+
+      <FeedbackModal
+        visible={feedbackModalVisible}
+        onClose={() => setFeedbackModalVisible(false)}
+        targetType="book"
+        targetId={book?.id ?? (typeof bookId === 'string' ? bookId : undefined)}
+        title="Enjoyed this read?"
+        subtitle={book?.title ? `Share your rating and thoughts on ${book.title}.` : 'Share your rating and feedback with us.'}
       />
     </View>
   );
