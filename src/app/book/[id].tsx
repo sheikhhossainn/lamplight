@@ -8,6 +8,7 @@ import { isBengaliText, isJapaneseText, isKoreanText } from '@/theme/typography'
 import { isDarkSpineColor, spineColorForBook } from '@/components/BookSpine';
 import { AddToShelfSheet } from '@/components/AddToShelfSheet';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { ScreenStateView } from '@/components/ScreenStateView';
 import { BookmarkIcon, ChevronLeftIcon, ChevronRightIcon, MoreHorizontalIcon } from '@/components/icons';
 import { deleteBookCache, isBookCached } from '@/features/content-ingestion/bookDownloader';
 import { deleteImportedBook, getBook, isImportedBook, setBookFavorite, type BookRow } from '@/db/repositories/books';
@@ -33,6 +34,7 @@ export default function BookDetailScreen() {
   const { colors, typography, spacing, radius, layout } = useTheme();
   const insets = useSafeAreaInsets();
   const [book, setBook] = useState<BookRow | null>(null);
+  const [loading, setLoading] = useState(true);
   const [coverFailed, setCoverFailed] = useState(false);
 
   useEffect(() => {
@@ -194,6 +196,7 @@ export default function BookDetailScreen() {
           setDownloaded(resolvedBook ? isBookCached(resolvedBook.id) : false);
           setShelves(shelfRows);
           setShelfItems(shelfItemRows);
+          setLoading(false);
         }
       })();
       return () => {
@@ -244,10 +247,31 @@ export default function BookDetailScreen() {
     router.back();
   }, [book, imported]);
 
-  // Themed placeholder instead of bare null — null falls through to the root
-  // navigator's charcoal contentStyle, which reads as a black-screen flash
-  // during the (normally brief) moment before `book` loads.
-  if (!book) return <View style={[styles.loadingPlaceholder, { backgroundColor: colors.parchment }]} />;
+  if (loading) {
+    return (
+      <ScreenStateView
+        type="loading"
+        title="Opening Book"
+        message="Gathering edition details and reading history…"
+        fullScreen
+        canGoBack
+      />
+    );
+  }
+
+  if (!book) {
+    return (
+      <ScreenStateView
+        type="error"
+        title="Book Not Found"
+        message="This book could not be found in your library or local catalog."
+        fullScreen
+        canGoBack
+        actionLabel="Return to Library"
+        onAction={() => router.replace('/(tabs)/library')}
+      />
+    );
+  }
 
   // totalChapters === 0 means "not yet known" for a bulk-imported book (see
   // scripts/sync-bulk-catalog.mjs) — it's filled in locally the first time

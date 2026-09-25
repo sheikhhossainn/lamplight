@@ -4,6 +4,7 @@ import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View, type Vi
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BookmarkIcon, ChevronLeftIcon, ChevronRightIcon, ShareIcon } from '@/components/icons';
+import { ScreenStateView } from '@/components/ScreenStateView';
 import { startReadingSession, endReadingSession } from '@/features/analytics/readingTracker';
 import {
   createBibleHighlight,
@@ -324,7 +325,19 @@ export default function BibleVerseReaderScreen() {
     },
   ).current;
 
-  if (!bookMeta) return <View style={{ flex: 1, backgroundColor: colors.parchment }} />;
+  if (!bookMeta) {
+    return (
+      <ScreenStateView
+        type="error"
+        title="Book Not Found"
+        message="This book could not be found in the Old Testament scriptures."
+        fullScreen
+        canGoBack
+        actionLabel="Return to Bible Index"
+        onAction={() => router.replace('/bible')}
+      />
+    );
+  }
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.parchment }}>

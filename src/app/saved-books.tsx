@@ -4,6 +4,7 @@ import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { ScreenStateView } from '@/components/ScreenStateView';
 import { CheckIcon, ChevronLeftIcon, TrashIcon } from '@/components/icons';
 import { SkeletonRows } from '@/components/SkeletonRows';
 import { listBooks, type BookRow } from '@/db/repositories/books';
@@ -206,9 +207,14 @@ export default function SavedBooksScreen() {
       {!loaded ? (
         <SkeletonRows />
       ) : downloaded.length === 0 ? (
-        <Text style={[typography.metadataCaption, { color: colors.umber, marginTop: spacing.lg }]}>
-          No downloads yet — a book is saved here the first time you open it.
-        </Text>
+        <ScreenStateView
+          type="empty"
+          title="No Offline Books"
+          message="Books you download or open are stored here for offline reading in candlelight."
+          actionLabel="Explore Library"
+          onAction={() => router.replace('/(tabs)/library')}
+          style={{ marginTop: spacing.xl }}
+        />
       ) : (
         <FlatList
           data={downloaded}
