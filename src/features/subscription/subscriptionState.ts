@@ -5,6 +5,7 @@ import {
   subscribeToEntitlements,
   refreshEntitlements,
   hydrateEntitlements,
+  resetEntitlementsToFree,
   type PremiumFeature,
   type EntitlementSnapshot,
 } from './entitlementService';
@@ -25,6 +26,7 @@ export {
   subscribeToEntitlements,
   refreshEntitlements,
   hydrateEntitlements,
+  resetEntitlementsToFree,
   type PremiumFeature,
   type EntitlementSnapshot,
 };

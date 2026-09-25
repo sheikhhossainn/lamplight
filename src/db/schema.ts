@@ -390,5 +390,110 @@ export const MIGRATIONS: string[] = [
 
   CREATE INDEX IF NOT EXISTS sync_merge_journal_started_idx ON sync_merge_journal (started_at DESC);
   `,
+  // v18 — In-app reviews, star ratings, and feedback outbox for offline capture
+  `
+  CREATE TABLE IF NOT EXISTS feedback_outbox (
+    id TEXT PRIMARY KEY,
+    rating INTEGER,
+    category TEXT NOT NULL,
+    target_type TEXT NOT NULL,
+    target_id TEXT,
+    message TEXT NOT NULL,
+    tags_json TEXT NOT NULL,
+    metadata_json TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  `,
+  // v19 — Local favorites stay attached to catalog books without changing
+  // remote catalog ownership. They are intentionally device-local until the
+  // broader sync entity coverage is expanded.
+  `
+  ALTER TABLE books ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0;
+  CREATE INDEX IF NOT EXISTS books_favorite_idx ON books (is_favorite, title);
+  `,
+  // v20 — Private reader notes anchored to a stable book/chapter/page location.
+  // Notes remain local until the broader sync entity coverage includes them.
+  `
+  CREATE TABLE IF NOT EXISTS reader_notes (
+    id TEXT PRIMARY KEY,
+    book_id TEXT NOT NULL REFERENCES books(id),
+    chapter_index INTEGER NOT NULL,
+    page_index INTEGER NOT NULL,
+    note_text TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS reader_notes_book_idx
+    ON reader_notes (book_id, updated_at DESC);
+  `,
+  // v21 — Lightweight page bookmarks, kept separate from text highlights and
+  // private notes. They remain local until bookmark sync coverage is added.
+  `
+  CREATE TABLE IF NOT EXISTS bookmarks (
+    id TEXT PRIMARY KEY,
+    book_id TEXT NOT NULL REFERENCES books(id),
+    chapter_index INTEGER NOT NULL,
+    page_index INTEGER NOT NULL,
+    label TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    UNIQUE(book_id, chapter_index, page_index)
+  );
+
+  CREATE INDEX IF NOT EXISTS bookmarks_book_idx
+    ON bookmarks (book_id, chapter_index, page_index);
+  `,
+  // v22 — Persistent local download lifecycle state. The cache file remains
+  // the source of truth for readable content; this table makes failures and
+  // retries visible after a process restart.
+  `
+  CREATE TABLE IF NOT EXISTS download_states (
+    book_id TEXT PRIMARY KEY,
+    status TEXT NOT NULL,
+    progress INTEGER,
+    error_code TEXT,
+    updated_at INTEGER NOT NULL
+  );
+  `,
+  // v23 — Custom vocabulary study decks (LEARN-03). Readers can organize saved
+  // words across books into named study decks. Removing a deck leaves saved
+  // words intact, and deleting a saved word removes orphaned deck memberships.
+  `
+  CREATE TABLE IF NOT EXISTS vocabulary_decks (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS vocabulary_deck_items (
+    deck_id TEXT NOT NULL REFERENCES vocabulary_decks(id) ON DELETE CASCADE,
+    word_id TEXT NOT NULL REFERENCES saved_words(id) ON DELETE CASCADE,
+    added_at INTEGER NOT NULL,
+    PRIMARY KEY (deck_id, word_id)
+  );
+
+  CREATE INDEX IF NOT EXISTS deck_items_deck_idx ON vocabulary_deck_items (deck_id);
+  CREATE INDEX IF NOT EXISTS deck_items_word_idx ON vocabulary_deck_items (word_id);
+  `,
+  // v24 — Offline analytics event queue (REL-03). Queues client events locally
+  // during offline reading sessions, preserving exact occurred_at timestamps,
+  // preventing data loss, and auto-flushing in batches upon reconnection.
+  `
+  CREATE TABLE IF NOT EXISTS analytics_queue (
+    id TEXT PRIMARY KEY,
+    event_type TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    occurred_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    last_attempt_at INTEGER,
+    last_error TEXT
+  );
+
+  CREATE INDEX IF NOT EXISTS analytics_queue_occurred_idx
+    ON analytics_queue (occurred_at ASC);
+  `,
 ];
 

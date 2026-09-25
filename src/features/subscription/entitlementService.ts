@@ -4,6 +4,7 @@ import {
   computeLocalTamperSignature,
   verifyLocalTamperSignature,
 } from './entitlementCrypto';
+import type { CustomerInfo } from 'react-native-purchases';
 
 export type PremiumFeature =
   | 'unlimited_learning'
@@ -233,6 +234,10 @@ function updateSnapshot(newSnapshot: EntitlementSnapshot) {
   }
 }
 
+export function resetEntitlementsToFree(): void {
+  updateSnapshot(DEFAULT_FREE_SNAPSHOT);
+}
+
 export function canUse(feature: PremiumFeature): boolean {
   const snapshot = getEntitlementSnapshot();
   return Boolean(snapshot.features[feature]);
@@ -260,6 +265,43 @@ export function requireFeature(
     allowed: false,
     reason: context ?? reasons[feature] ?? 'This feature requires Lamplight Premium.',
   };
+}
+
+/**
+ * Applies RevenueCat CustomerInfo to the local entitlement view so a
+ * successful store purchase updates the UI immediately. Server-side Premium
+ * operations remain authoritative through the Supabase entitlement path.
+ */
+export async function applyRevenueCatEntitlement(info: CustomerInfo): Promise<EntitlementSnapshot> {
+  const existing = getEntitlementSnapshot();
+  if (!info.entitlements.active.premium && existing.source !== 'subscription') {
+    return existing;
+  }
+
+  try {
+    const session = await getSession();
+    const entitlement = info.entitlements.active.premium;
+    const now = Date.now();
+    const expiresAt = entitlement?.expirationDate ? new Date(entitlement.expirationDate).getTime() : null;
+    const status: EntitlementStatus = entitlement?.periodType === 'TRIAL' ? 'trial' : entitlement ? 'premium' : 'free';
+    const snapshot: EntitlementSnapshot = {
+      status,
+      features: entitlement ? ALL_FEATURES_ON : ALL_FEATURES_OFF,
+      source: entitlement ? 'subscription' : 'none',
+      startsAt: entitlement?.latestPurchaseDate ? new Date(entitlement.latestPurchaseDate).getTime() : now,
+      expiresAt,
+      lastVerifiedAt: now,
+      userId: session.userId,
+      signature: null,
+      localHash: computeLocalTamperSignature(session.userId, status, expiresAt),
+      clockTampered: isClockTampered,
+    };
+    updateSnapshot(snapshot);
+    return snapshot;
+  } catch (error) {
+    console.warn('[EntitlementService] Could not apply RevenueCat entitlement:', error);
+    return existing;
+  }
 }
 
 /**

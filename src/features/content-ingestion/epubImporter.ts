@@ -2,6 +2,7 @@ import { cacheImportedBook } from '@/features/content-ingestion/bookDownloader';
 import { parseEpub } from '@/features/content-ingestion/epubParser';
 import { createLocalBook, type BookRow } from '@/db/repositories/books';
 import { generateId } from '@/lib/id';
+import { backupImportedEpub } from '@/features/sync/epubBackupService';
 
 // Import EPUB (Library's "+ Import EPUB"): unlike catalog books, there's no
 // Supabase row and no text_url to download from later — parse once here,
@@ -16,11 +17,23 @@ export async function importEpubFromFile(file: { base64(): Promise<string> }): P
   const id = generateId();
   cacheImportedBook(id, { chapters: parsed.chapters });
 
-  return createLocalBook({
+  const book = await createLocalBook({
     id,
     title: parsed.title,
     author: parsed.author,
     sourceLanguage: parsed.language,
     totalChapters: parsed.chapters.length,
   });
+
+  // Asynchronously back up EPUB to private cloud storage if user is entitled to cloud sync
+  void backupImportedEpub({
+    bookId: id,
+    title: parsed.title,
+    author: parsed.author,
+    base64,
+  }).catch((err) => {
+    console.warn('[epubImporter] Background cloud backup skipped or failed:', err);
+  });
+
+  return book;
 }

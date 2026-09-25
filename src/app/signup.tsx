@@ -1,4 +1,4 @@
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import {
   ActivityIndicator,
@@ -15,7 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 
 import { FlameGlow } from '@/components/FlameGlow';
-import { sendEmailOtp, updateUserProfile, verifyEmailOtp } from '@/lib/supabaseAuth';
+import { getSession, sendEmailOtp, updateUserProfile, verifyEmailOtp } from '@/lib/supabaseAuth';
 import {
   executeAccountMerge,
   snapshotLocalData,
@@ -27,6 +27,8 @@ import { useTheme } from '@/theme/ThemeProvider';
 export default function SignupScreen() {
   const insets = useSafeAreaInsets();
   const { colors, typography, radius, spacing } = useTheme();
+  const { mode } = useLocalSearchParams<{ mode?: string }>();
+  const isProtectMode = mode === 'protect';
 
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
@@ -93,7 +95,9 @@ export default function SignupScreen() {
         localSnapshot &&
         (localSnapshot.savedWordsCount > 0 ||
           localSnapshot.highlightsCount > 0 ||
-          localSnapshot.booksCount > 0)
+          localSnapshot.booksCount > 0 ||
+          localSnapshot.shelvesCount > 0 ||
+          localSnapshot.reviewEventsCount > 0)
       ) {
         const mergeRes = await executeAccountMerge(normalizedEmail, trimmedToken, localSnapshot);
         if (!mergeRes.success) {
@@ -113,7 +117,13 @@ export default function SignupScreen() {
         await updateUserProfile(displayName.trim());
       }
 
-      void triggerSync({ forceImmediate: true });
+      const { coordinateAuthTransition } = await import('@/features/account/accountSessionCoordinator');
+      const session = await getSession();
+      await coordinateAuthTransition({
+        newUserId: session.userId,
+        type: isProtectMode ? 'protect' : 'login',
+        preserveOutbox: true,
+      });
       router.replace('/(tabs)/homescreen');
     } catch {
       setErrorMessage('Account creation failed. Please try again.');
@@ -178,7 +188,11 @@ export default function SignupScreen() {
               { color: colors.ink, fontSize: 26, lineHeight: 32, textAlign: 'center', marginTop: 12 },
             ]}
           >
-            {step === 'details' ? 'Join Lamplight' : 'Verify Your Email'}
+            {step === 'details'
+              ? isProtectMode
+                ? 'Protect Your Library'
+                : 'Join Lamplight'
+              : 'Verify Your Email'}
           </Text>
 
           <Text
@@ -188,7 +202,9 @@ export default function SignupScreen() {
             ]}
           >
             {step === 'details'
-              ? 'Create a sanctuary for your reading journey. Back up your notes, streaks, and library.'
+              ? isProtectMode
+                ? 'Link your email to back up your books, vocabulary, notes, and reading streaks safely across devices.'
+                : 'Create a sanctuary for your reading journey. Back up your notes, streaks, and library.'
               : `Enter the 6-digit confirmation code sent to ${email}.`}
           </Text>
 
@@ -343,6 +359,71 @@ export default function SignupScreen() {
               </>
             ) : (
               <>
+                {localSnapshot &&
+                  (localSnapshot.savedWordsCount > 0 ||
+                    localSnapshot.highlightsCount > 0 ||
+                    localSnapshot.booksCount > 0 ||
+                    localSnapshot.shelvesCount > 0) && (
+                    <View
+                      style={[
+                        styles.mergePreviewCard,
+                        { backgroundColor: colors.parchment, borderColor: colors.hairline },
+                      ]}
+                    >
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text style={{ fontSize: 13 }}>📚</Text>
+                        <Text
+                          style={[
+                            typography.eyebrowLabel,
+                            { color: colors.flameAmber, fontSize: 10, letterSpacing: 0.8 },
+                          ]}
+                        >
+                          {isProtectMode ? 'LIBRARY PROTECTION PREVIEW' : 'LOCAL READING MERGE PREVIEW'}
+                        </Text>
+                      </View>
+                      <Text
+                        style={[
+                          typography.metadataCaption,
+                          { color: colors.umber, marginTop: 4, lineHeight: 17 },
+                        ]}
+                      >
+                        {isProtectMode
+                          ? 'Your local reading history will be safely backed up to this account:'
+                          : 'Your guest reading history will be combined into this account:'}
+                      </Text>
+                      <View style={{ marginTop: 6, gap: 2 }}>
+                        {localSnapshot.booksCount > 0 && (
+                          <Text style={[typography.metadataCaption, { color: colors.ink, fontSize: 12 }]}>
+                            • {localSnapshot.booksCount} reading position{localSnapshot.booksCount === 1 ? '' : 's'}
+                          </Text>
+                        )}
+                        {localSnapshot.savedWordsCount > 0 && (
+                          <Text style={[typography.metadataCaption, { color: colors.ink, fontSize: 12 }]}>
+                            • {localSnapshot.savedWordsCount} saved vocabulary word{localSnapshot.savedWordsCount === 1 ? '' : 's'}
+                          </Text>
+                        )}
+                        {localSnapshot.highlightsCount > 0 && (
+                          <Text style={[typography.metadataCaption, { color: colors.ink, fontSize: 12 }]}>
+                            • {localSnapshot.highlightsCount} saved quote{localSnapshot.highlightsCount === 1 ? '' : 's'} & highlight{localSnapshot.highlightsCount === 1 ? '' : 's'}
+                          </Text>
+                        )}
+                        {localSnapshot.shelvesCount > 0 && (
+                          <Text style={[typography.metadataCaption, { color: colors.ink, fontSize: 12 }]}>
+                            • {localSnapshot.shelvesCount} shelf{localSnapshot.shelvesCount === 1 ? '' : 'ves'}
+                          </Text>
+                        )}
+                      </View>
+                      <Text
+                        style={[
+                          typography.metadataCaption,
+                          { color: colors.fawn, fontSize: 11, marginTop: 6 },
+                        ]}
+                      >
+                        All current progress will be preserved without loss.
+                      </Text>
+                    </View>
+                  )}
+
                 <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginBottom: 6 }]}>
                   6-DIGIT CODE
                 </Text>
@@ -392,7 +473,7 @@ export default function SignupScreen() {
                     <ActivityIndicator size="small" color={colors.primaryDark} />
                   ) : (
                     <Text style={[typography.buttonLabel, { color: colors.primaryDark, fontSize: 13 }]}>
-                      Complete Account Creation
+                      {isProtectMode ? 'Protect and Link Library' : 'Complete Account Creation'}
                     </Text>
                   )}
                 </Pressable>
@@ -496,5 +577,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  mergePreviewCard: {
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
   },
 });

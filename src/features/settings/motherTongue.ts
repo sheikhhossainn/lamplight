@@ -20,6 +20,8 @@ export type MotherTongueOption = {
 export type ScriptureLabels = {
   sectionTitle: string;
   askLabel: string;
+  reflectLabel: string;
+  tableLabel: string;
   comparativeTitle: string;
   comparativeSubtitle: string;
   comparativeBody: string;
@@ -36,6 +38,8 @@ const SCRIPTURE_LABELS: Record<MotherTongueCode, ScriptureLabels> = {
   bn: {
     sectionTitle: 'ধর্মগ্রন্থ',
     askLabel: 'ধর্ম সম্পর্কে জানুন ✦',
+    reflectLabel: 'প্রশান্তির আয়াত ✦',
+    tableLabel: 'পবিত্র টেবিল',
     comparativeTitle: 'তুলনামূলক ধর্মগ্রন্থ',
     comparativeSubtitle: 'বিভিন্ন ধর্মের মূল পাঠ জানুন',
     comparativeBody: 'কুরআন, বাইবেল, তাওরাত ও বেদের প্রামাণ্য মূল পাঠ ও ব্যাখ্যা অন্বেষণ করুন।',
@@ -50,6 +54,8 @@ const SCRIPTURE_LABELS: Record<MotherTongueCode, ScriptureLabels> = {
   ja: {
     sectionTitle: '聖典',
     askLabel: '聖典を知る ✦',
+    reflectLabel: '心の慰め ✦',
+    tableLabel: '聖典の卓',
     comparativeTitle: '聖典を読み比べる',
     comparativeSubtitle: '宗教の原典に触れる',
     comparativeBody: 'クルアーン、聖書、トーラー、ヴェーダの原典と信頼できる解説を読みます。',
@@ -64,6 +70,8 @@ const SCRIPTURE_LABELS: Record<MotherTongueCode, ScriptureLabels> = {
   ko: {
     sectionTitle: '경전',
     askLabel: '경전 알아보기 ✦',
+    reflectLabel: '위로의 구절 ✦',
+    tableLabel: '신성한 탁자',
     comparativeTitle: '경전을 함께 읽기',
     comparativeSubtitle: '여러 전통의 원문을 만나다',
     comparativeBody: '꾸란, 성경, 토라, 베다의 원문과 검증된 해설을 살펴봅니다.',
@@ -78,6 +86,8 @@ const SCRIPTURE_LABELS: Record<MotherTongueCode, ScriptureLabels> = {
   ar: {
     sectionTitle: 'الكتب المقدسة',
     askLabel: 'استكشف الكتب المقدسة ✦',
+    reflectLabel: 'آيات للسكينة ✦',
+    tableLabel: 'مائدة النصوص',
     comparativeTitle: 'قراءة مقارنة للنصوص',
     comparativeSubtitle: 'تعرّف إلى النصوص الأصلية',
     comparativeBody: 'استكشف النصوص الأصلية والشروح الموثوقة للقرآن والكتاب المقدس والتوراة والفيدا.',
@@ -92,6 +102,8 @@ const SCRIPTURE_LABELS: Record<MotherTongueCode, ScriptureLabels> = {
   en: {
     sectionTitle: 'Scriptures',
     askLabel: 'Explore Scriptures ✦',
+    reflectLabel: 'Verses for Comfort ✦',
+    tableLabel: 'Sacred Table',
     comparativeTitle: 'Comparative Scriptures',
     comparativeSubtitle: 'Learn across major traditions',
     comparativeBody: 'Explore primary verses and trusted commentary across the Quran, Bible, Torah, and Vedas.',

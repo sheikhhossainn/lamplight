@@ -1,6 +1,10 @@
 import { FileSystemUploadType, uploadAsync } from 'expo-file-system/legacy';
 
 import { cloudTranslationProvider } from '@/features/translation/cloudTranslationProvider';
+import { getSession } from '@/lib/supabaseAuth';
+
+const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
 /**
  * Transcribes a local audio recording URI into text in whatever language was spoken
@@ -14,33 +18,24 @@ export async function transcribeAudioUri(
   audioUri: string,
   languageCode?: string,
 ): Promise<string> {
-  const groqKey = process.env.EXPO_PUBLIC_GROQ_API_KEY;
-  const openaiKey = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
-
-  if (!groqKey && !openaiKey) {
-    throw new Error(
-      'To use voice speech-to-text, please add EXPO_PUBLIC_GROQ_API_KEY (free at groq.com) or EXPO_PUBLIC_OPENAI_API_KEY to your environment.',
-    );
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    throw new Error('Voice transcription is unavailable until Supabase is configured.');
   }
+
+  const { getAppFlag } = await import('@/features/config/appConfig');
+  if (!getAppFlag('voice_transcription_enabled')) {
+    throw new Error('Voice transcription is temporarily paused for service maintenance.');
+  }
+
+  const session = await getSession();
 
   const extension = audioUri.split('.').pop() || 'm4a';
   const mimeType = extension === 'wav' ? 'audio/wav' : extension === 'mp3' ? 'audio/mpeg' : 'audio/m4a';
 
+  const endpoint = `${SUPABASE_URL}/functions/v1/transcribe-audio`;
   const parameters: Record<string, string> = {
-    model: groqKey ? 'whisper-large-v3' : 'whisper-1',
-    temperature: '0',
+    language: languageCode?.trim() || 'auto',
   };
-
-  // Lock to specific language if user picked one (e.g. 'en', 'bn', 'ar')
-  if (languageCode && languageCode.trim() && languageCode !== 'auto') {
-    parameters.language = languageCode.trim();
-  }
-
-  const endpoint = groqKey
-    ? 'https://api.groq.com/openai/v1/audio/transcriptions'
-    : 'https://api.openai.com/v1/audio/transcriptions';
-
-  const apiKey = groqKey || openaiKey;
 
   const response = await uploadAsync(endpoint, audioUri, {
     fieldName: 'file',
@@ -49,12 +44,20 @@ export async function transcribeAudioUri(
     mimeType,
     parameters,
     headers: {
-      Authorization: `Bearer ${apiKey}`,
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${session.accessToken}`,
     },
   });
 
   if (response.status < 200 || response.status >= 300) {
-    throw new Error(`Speech transcription failed (${response.status}): ${response.body}`);
+    let message = 'Speech transcription failed. Please try again.';
+    try {
+      const error = JSON.parse(response.body) as { message?: string };
+      if (error.message) message = error.message;
+    } catch {
+      // Keep a safe, user-facing fallback when the Edge Function response is not JSON.
+    }
+    throw new Error(message);
   }
 
   const data = JSON.parse(response.body) as { text?: string };

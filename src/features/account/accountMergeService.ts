@@ -417,8 +417,14 @@ export async function executeAccountMerge(
     // Step 5: Mark journal as completed
     await updateMergeJournalState(journalId, 'completed', Date.now());
 
-    // Step 6: Trigger immediate cloud sync
-    void triggerSync({ forceImmediate: true });
+    // Step 6: Coordinate auth identity transition (RevenueCat, cursors, outbox, entitlements, sync, telemetry)
+    const { coordinateAuthTransition } = await import('@/features/account/accountSessionCoordinator');
+    await coordinateAuthTransition({
+      priorUserId: priorAccountId,
+      newUserId: session.userId,
+      type: 'merge',
+      preserveOutbox: true,
+    });
 
     return { success: true };
   } catch (err: unknown) {
@@ -426,6 +432,10 @@ export async function executeAccountMerge(
     if (journalId) {
       await updateMergeJournalState(journalId, 'failed');
     }
+    const { logEvent } = await import('@/features/analytics/analytics');
+    logEvent('account_merge_failed', {
+      reason: (err as Error)?.message || 'An unexpected error occurred during account merge.',
+    });
     return {
       success: false,
       message: (err as Error)?.message || 'An unexpected error occurred during account merge.',

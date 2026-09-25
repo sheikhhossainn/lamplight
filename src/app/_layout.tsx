@@ -17,6 +17,8 @@ import { useEffect, useState } from 'react';
 import { AppState, View } from 'react-native';
 
 import { triggerSync } from '@/features/sync/syncWorker';
+import { flushAnalyticsQueue } from '@/features/analytics/analytics';
+import { fetchRemoteAppConfig, hydrateAppConfig } from '@/features/config/appConfig';
 import { getSession } from '@/lib/supabaseAuth';
 
 import { AppUpdatePrompt } from '@/components/AppUpdatePrompt';
@@ -30,8 +32,12 @@ import { hydrateTargetReadingLanguage } from '@/features/settings/targetReadingL
 import { hydrateLiteraryTheme } from '@/features/settings/literaryTheme';
 import { hydrateOnboardingStatus } from '@/features/settings/onboardingStatus';
 import { hydratePageStyle } from '@/features/settings/pageStylePrefs';
+import { hydrateReadingTypography } from '@/features/settings/readingPrefs';
 import { cleanupPartialDownloads } from '@/features/storage/storageManager';
+import { reconcileDownloadStates } from '@/features/content-ingestion/bookDownloader';
 import { hydrateEntitlements } from '@/features/subscription/entitlementService';
+import { reconcilePendingMergeJournals } from '@/features/account/accountSessionCoordinator';
+import { BillingProvider } from '@/features/billing/BillingProvider';
 import { LamplightThemeProvider, useTheme } from '@/theme/ThemeProvider';
 import { ThemeTransitionOverlay } from '@/theme/ThemeTransitionOverlay';
 
@@ -62,19 +68,23 @@ export default function RootLayout() {
 
   const ready = (fontsLoaded || Boolean(fontError)) && onboardingChecked;
 
-  // Load persisted settings (translation language pair, mother tongue, page style) once on launch.
+  // Load persisted settings (translation language pair, mother tongue, page style, app config) once on launch.
   useEffect(() => {
     void Promise.all([
       getSession().catch(() => {}),
+      hydrateAppConfig().catch(() => {}),
       hydrateTargetLanguage(),
       hydrateTargetReadingLanguage(),
       hydrateMotherTongue(),
       hydratePageStyle(),
+      hydrateReadingTypography(),
       hydrateLiteraryTheme(),
       hydrateEntitlements(),
       cleanupPartialDownloads().catch(() => {}),
+      reconcileDownloadStates().catch(() => {}),
       seedJapaneseCatalog(),
       seedKoreanCatalog(),
+      reconcilePendingMergeJournals().catch(() => {}),
     ]);
   }, []);
 
@@ -86,13 +96,17 @@ export default function RootLayout() {
     );
   }, []);
 
-  // Trigger local-first sync on launch and when returning to foreground
+  // Trigger local-first sync, flush offline analytics, and refresh remote app config on launch and when returning to foreground
   useEffect(() => {
     void triggerSync();
+    void flushAnalyticsQueue();
+    void fetchRemoteAppConfig();
 
     const subscription = AppState.addEventListener('change', (nextAppState) => {
       if (nextAppState === 'active') {
         void triggerSync();
+        void flushAnalyticsQueue();
+        void fetchRemoteAppConfig();
       }
     });
 
@@ -114,7 +128,9 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <LamplightThemeProvider>
-        <AppShell />
+        <BillingProvider>
+          <AppShell />
+        </BillingProvider>
       </LamplightThemeProvider>
     </GestureHandlerRootView>
   );
@@ -205,6 +221,7 @@ function AppShell() {
             flash libraryBackground before the gradient paints. */}
         <Stack.Screen name="mood-verses/table" options={{ contentStyle: { backgroundColor: '#4A3620' } }} />
         <Stack.Screen name="mood-verses/ask" options={{ contentStyle: { backgroundColor: colors.parchment } }} />
+        <Stack.Screen name="mood-verses/inquiry" options={{ contentStyle: { backgroundColor: colors.parchment } }} />
         <Stack.Screen name="mood-verses/reflect" options={{ contentStyle: { backgroundColor: colors.parchment } }} />
         <Stack.Screen name="login" options={{ contentStyle: { backgroundColor: colors.parchment } }} />
         <Stack.Screen name="signup" options={{ contentStyle: { backgroundColor: colors.parchment } }} />

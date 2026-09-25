@@ -7,6 +7,7 @@ import {
   FlatList,
   Platform,
   Pressable,
+  Share,
   StyleSheet,
   Text,
   useWindowDimensions,
@@ -30,6 +31,7 @@ import Animated, {
   type SharedValue,
   useAnimatedScrollHandler,
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
   withRepeat,
   withSequence,
@@ -39,18 +41,25 @@ import Svg, { Circle, Defs, LinearGradient, Path, RadialGradient, Rect, Stop } f
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 
-import { ChevronLeftIcon, CloseIcon, MenuIcon, MoonIcon, QuestionIcon, SoundWaveIcon, SpeakerIcon, SunIcon, TranslateIcon } from '@/components/icons';
+import { BookmarkIcon, ChevronLeftIcon, CloseIcon, MenuIcon, MoonIcon, QuestionIcon, SearchIcon, SoundWaveIcon, SpeakerIcon, StarIcon, SunIcon, TranslateIcon } from '@/components/icons';
 import { AmbiencePicker } from '@/features/ambience/AmbiencePicker';
 import { useAmbienceTrackId } from '@/features/ambience/ambiencePreference';
 import { ambienceTrackById } from '@/features/ambience/tracks';
 import { useAmbiencePlayer } from '@/features/ambience/useAmbiencePlayer';
 import { usePageTurnSound } from '@/features/reader/usePageTurnSound';
 import { getPageTurnSoundEnabled, setPageTurnSoundEnabled, usePageTurnSoundEnabled } from '@/features/settings/soundPrefs';
-import { BookLoadingScreen } from '@/features/reader/components/BookLoadingScreen';
+import { BookLoadingScreen, type ReaderLoadingStage } from '@/features/reader/components/BookLoadingScreen';
 import { BookPageFrame } from '@/features/reader/components/BookPageFrame';
+import { ReaderFailureScreen } from '@/features/reader/components/ReaderFailureScreen';
 import { ReaderPageView } from '@/features/reader/components/ReaderPageView';
 import { WordActionMenu } from '@/features/reader/components/WordActionMenu';
 import { WordTranslationPopup } from '@/features/reader/components/WordTranslationPopup';
+import { File } from 'expo-file-system';
+import {
+  classifyReaderError,
+  type ReaderFailureDetails,
+  type ReaderRecoveryActionType,
+} from '@/features/reader/readerFailureHandler';
 import { hapticPageTurn, hapticSaveWord } from '@/lib/haptics';
 import {
   findGlobalIndex,
@@ -66,7 +75,7 @@ import {
   setMeasuredGlyphWidths,
 } from '@/features/reader/engine/glyphWidths';
 import { sentenceAtOffset } from '@/features/reader/engine/words';
-import { getBookText, isBookCached } from '@/features/content-ingestion/bookDownloader';
+import { deleteBookCache, getBookText, isBookCached } from '@/features/content-ingestion/bookDownloader';
 import { logEvent } from '@/features/analytics/analytics';
 import { startReadingSession, recordPageTurn, endReadingSession } from '@/features/analytics/readingTracker';
 import { BookFormatError, type IngestedBook } from '@/features/content-ingestion/textParser';
@@ -74,20 +83,34 @@ import { triggerSync } from '@/features/sync/syncWorker';
 import { getBook, updateBookTotalChapters, type BookRow } from '@/db/repositories/books';
 import { createHighlight, listHighlightsForBook, type Highlight } from '@/db/repositories/highlights';
 import { getReadingPosition, upsertReadingPosition, type ReadingPosition } from '@/db/repositories/readingPosition';
+import { createReaderNote, deleteReaderNote, listReaderNotesForBook, updateReaderNote, type ReaderNote } from '@/db/repositories/readerNotes';
+import { createBookmark, deleteBookmark, listBookmarksForBook, type Bookmark } from '@/db/repositories/bookmarks';
+import { setDownloadState } from '@/db/repositories/downloadStates';
 import { listSavedWordsForBook, saveWord, type SavedWord } from '@/db/repositories/savedWords';
 import { createPendingLookup } from '@/db/repositories/pendingLookups';
 import { getSetting, setSetting } from '@/db/repositories/appSettings';
 import { LanguagePicker } from '@/components/LanguagePicker';
+import { FeedbackModal } from '@/components/FeedbackModal';
+import { MilestoneCelebrationModal } from '@/components/MilestoneCelebrationModal';
+import { checkAndTriggerMilestone, type MilestoneConfig } from '@/features/milestones/milestoneService';
+import { getUserProfile } from '@/lib/supabaseAuth';
+import { recordMilestonePromptShown, shouldShowMilestonePrompt } from '@/features/feedback/feedbackService';
 import { PageStyleSelectorModal } from '@/features/reader/components/PageStyleSelectorModal';
+import { ReaderContentsModal } from '@/features/reader/components/ReaderContentsModal';
 import { ReaderGuideModal } from '@/features/reader/components/ReaderGuideModal';
+import { ReaderNotesModal } from '@/features/reader/components/ReaderNotesModal';
+import { ReaderBookmarksModal } from '@/features/reader/components/ReaderBookmarksModal';
+import { ReadingCompanionModal } from '@/features/companion/ReadingCompanionModal';
+import { ReaderSearchModal, type ReaderSearchResult } from '@/features/reader/components/ReaderSearchModal';
 import { getPageStyleConfig } from '@/features/reader/pageStyles';
 import { usePageStyle } from '@/features/settings/pageStylePrefs';
 import { setTargetLanguage, targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
-import { getReadingFontSize, getReadingLineHeight, READING_FONT_SIZE_PX, READING_LINE_HEIGHT_PX } from '@/features/settings/readingPrefs';
+import { getReadingFontSize, getReadingLineHeight, useReadingTypography, resetReadingTypographyPrefs, READING_FONT_SIZE_PX, READING_LINE_HEIGHT_PX } from '@/features/settings/readingPrefs';
 import { getReadingTheme, setReadingTheme, useReadingTheme } from '@/features/settings/readingTheme';
-import { isPremiumUser } from '@/features/subscription/subscriptionState';
+import { canUse } from '@/features/subscription/subscriptionState';
 import { checkTranslationCap, recordTranslationUsage, translationProvider } from '@/features/translation';
 import { batchTranslateSentences, splitSentences } from '@/features/translation/interlinearParser';
+import { updatePassiveVocabularyEstimate } from '@/features/vocabulary/calibration';
 import { LamplightColor, Spacing, type HighlightColorKey } from '@/theme/tokens';
 import { LamplightTypography } from '@/theme/typography';
 import { useTheme } from '@/theme/ThemeProvider';
@@ -101,8 +124,6 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const READER_GUIDE_SEEN_KEY = 'reader_guide_shown_once';
 const READER_HINT_SETTING_KEY = 'reader_gesture_hint_v4';
 const READER_BACK_HINT_SETTING_KEY = 'reader_back_gesture_hint_v1';
-// Set to true to always show Reader Guide and gesture hints in development / testing.
-const ALWAYS_SHOW_READER_GUIDE_IN_DEV = true;
 const NOOP_RANGE_DRAG = () => {};
 
 // The reading surface is a deliberate reading experience, pinned to fixed
@@ -321,11 +342,20 @@ const ReaderPageFrame = memo(function ReaderPageFrame({
 }: ReaderPageFrameProps) {
   const isLamp = mode === 'lamp';
   const halfW = pageWidth / 2;
+  const reducedMotion = useReducedMotion();
 
   // 1. 3D page curl & elevation transform:
   // Strictly active ONLY during an in-flight page turn (0.002 < progress < 0.998).
+  // Disabled when system Reduce Motion is active for comfortable, calm reading.
   const pageTransformStyle = useAnimatedStyle(() => {
     'worklet';
+    if (reducedMotion) {
+      return {
+        zIndex: 1,
+        elevation: 0,
+        transform: [{ translateX: 0 }],
+      };
+    }
     const x = scrollX.value;
     const pageStart = pageIndex * pageWidth;
     const offset = x - pageStart;
@@ -360,6 +390,9 @@ const ReaderPageFrame = memo(function ReaderPageFrame({
   // Simulates the concave curvature shading of bending antique paper.
   const paperShadingStyle = useAnimatedStyle(() => {
     'worklet';
+    if (reducedMotion) {
+      return { opacity: 0 };
+    }
     const x = scrollX.value;
     const pageStart = pageIndex * pageWidth;
     const offset = x - pageStart;
@@ -380,6 +413,9 @@ const ReaderPageFrame = memo(function ReaderPageFrame({
   // 3. Trailing edge physical cast shadow (casts onto revealed page during turn)
   const edgeShadowStyle = useAnimatedStyle(() => {
     'worklet';
+    if (reducedMotion) {
+      return { opacity: 0 };
+    }
     const x = scrollX.value;
     const pageStart = pageIndex * pageWidth;
     const offset = x - pageStart;
@@ -492,6 +528,7 @@ type ReaderPageCellProps = {
   ) => void;
   onRangeEdgeDragEnd?: (edge: 'start' | 'end') => void;
   onCloseTranslation: () => void;
+  searchHighlight?: { paragraphIndex: number; start: number; end: number } | null;
 };
 
 function areReaderPageCellPropsEqual(prev: ReaderPageCellProps, next: ReaderPageCellProps): boolean {
@@ -501,6 +538,17 @@ function areReaderPageCellPropsEqual(prev: ReaderPageCellProps, next: ReaderPage
   if (prev.fontSize !== next.fontSize || prev.lineHeight !== next.lineHeight) return false;
   if (prev.topInset !== next.topInset || prev.bottomInset !== next.bottomInset) return false;
   if (prev.sourceLanguage !== next.sourceLanguage || prev.targetLanguage !== next.targetLanguage) return false;
+
+  if (prev.searchHighlight !== next.searchHighlight) {
+    if (!prev.searchHighlight || !next.searchHighlight) return false;
+    if (
+      prev.searchHighlight.paragraphIndex !== next.searchHighlight.paragraphIndex ||
+      prev.searchHighlight.start !== next.searchHighlight.start ||
+      prev.searchHighlight.end !== next.searchHighlight.end
+    ) {
+      return false;
+    }
+  }
 
   if (prev.activeWordRange !== next.activeWordRange) {
     if (!prev.activeWordRange || !next.activeWordRange) return false;
@@ -562,6 +610,7 @@ const ReaderPageCell = memo(function ReaderPageCell({
   onRangeEdgeDrag,
   onRangeEdgeDragEnd,
   onCloseTranslation,
+  searchHighlight,
 }: ReaderPageCellProps) {
   return (
     <ReaderPageFrame
@@ -595,6 +644,7 @@ const ReaderPageCell = memo(function ReaderPageCell({
           activeWordTextColor="#2B2621"
           selectionRange={selectionRange}
           selectionColor={highlightColors.amber}
+          searchHighlight={searchHighlight}
           onWordLongPress={onWordLongPress}
           onBilingualWordLongPress={onBilingualWordLongPress}
           onRangeEdgeDragStart={onRangeEdgeDragStart}
@@ -674,11 +724,12 @@ export default function ReaderScreen() {
   // null, which was fine when getBundledBookText was instant and synchronous,
   // but a real download can take several seconds and needs its own UI state.
   const [bookTextState, setBookTextState] = useState<
-    | { status: 'loading' }
+    | { status: 'loading'; stage?: ReaderLoadingStage }
     | { status: 'ready'; book: IngestedBook }
-    | { status: 'unavailable'; message?: string }
-    | { status: 'error'; message: string }
-  >({ status: 'loading' });
+    | { status: 'unavailable'; message?: string; failure?: ReaderFailureDetails }
+    | { status: 'error'; message: string; failure?: ReaderFailureDetails }
+  >({ status: 'loading', stage: 'downloading' });
+  const [reportIssueModalVisible, setReportIssueModalVisible] = useState(false);
   const [startPosition, setStartPosition] = useState<{ chapterIndex: number; pageIndex: number } | null>(
     null,
   );
@@ -820,10 +871,53 @@ export default function ReaderScreen() {
 
   const [languagePickerVisible, setLanguagePickerVisible] = useState(false);
   const [guideModalVisible, setGuideModalVisible] = useState(false);
+  const [feedbackModalVisible, setFeedbackModalVisible] = useState(false);
+  const [activeMilestone, setActiveMilestone] = useState<MilestoneConfig | null>(null);
+  const [isGuestUser, setIsGuestUser] = useState(false);
+
+  useEffect(() => {
+    void getUserProfile().then((prof) => {
+      setIsGuestUser(!prof.isProtected);
+    }).catch(() => {});
+  }, []);
   const guideOpenRef = useRef(false);
   const [pageStyleVisible, setPageStyleVisible] = useState(false);
+  const [contentsVisible, setContentsVisible] = useState(false);
+  const [searchVisible, setSearchVisible] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchHighlight, setSearchHighlight] = useState<{
+    pageGlobalIndex: number;
+    paragraphIndex: number;
+    start: number;
+    end: number;
+  } | null>(null);
+  const searchHighlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [notesVisible, setNotesVisible] = useState(false);
+  const [readerNotes, setReaderNotes] = useState<ReaderNote[]>([]);
+  const [bookmarksVisible, setBookmarksVisible] = useState(false);
+  const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
+  const [companionVisible, setCompanionVisible] = useState(false);
+  const [companionSelectedText, setCompanionSelectedText] = useState<string | null>(null);
   const guideDismissedRef = useRef(false);
   const readerHintDismissedRef = useRef(false);
+
+  // Passive in-flight vocabulary calibration trackers
+  const sessionLookupsRef = useRef(0);
+  const sessionPagesReadRef = useRef<Set<number>>(new Set());
+
+  useEffect(() => {
+    return () => {
+      if (searchHighlightTimerRef.current) {
+        clearTimeout(searchHighlightTimerRef.current);
+      }
+      if (sessionPagesReadRef.current.size >= 10) {
+        void updatePassiveVocabularyEstimate(
+          sessionLookupsRef.current,
+          sessionPagesReadRef.current.size,
+        );
+      }
+    };
+  }, []);
 
   // Smart first-run reader gesture hints (forward and turn-back cues)
   const [hintVisible, setHintVisible] = useState(false);
@@ -914,6 +1008,153 @@ export default function ReaderScreen() {
     setGuideModalVisible(true);
   }, []);
 
+  const readerChapters = useMemo(
+    () => (bookTextState.status === 'ready'
+      ? bookTextState.book.chapters.map((chapter) => ({
+          index: chapter.index,
+          title: chapter.title,
+          pageCount: pages.filter((page) => page.chapterIndex === chapter.index).length,
+        }))
+      : []),
+    [bookTextState, pages],
+  );
+
+  const currentChapterIndex = pages[currentIndex]?.chapterIndex ?? 0;
+  const openChapter = useCallback((chapterIndex: number) => {
+    const targetIndex = findGlobalIndex(pages, chapterIndex, 0);
+    setCurrentIndex(targetIndex);
+    listRef.current?.scrollToIndex({ index: targetIndex, animated: false });
+  }, [pages]);
+
+  const searchResults = useMemo<ReaderSearchResult[]>(() => {
+    const needle = searchQuery.trim().normalize('NFC').toLocaleLowerCase();
+    if (!needle || needle.length < 2 || pages.length === 0) return [];
+
+    const results: ReaderSearchResult[] = [];
+    for (const page of pages) {
+      for (let pIdx = 0; pIdx < page.paragraphs.length; pIdx++) {
+        const paragraph = page.paragraphs[pIdx];
+        const lowerText = paragraph.normalize('NFC').toLocaleLowerCase();
+        const matchIndex = lowerText.indexOf(needle);
+        if (matchIndex === -1) continue;
+
+        const start = Math.max(0, matchIndex - 42);
+        const end = Math.min(paragraph.length, matchIndex + needle.length + 65);
+        const prefix = start > 0 ? '…' : '';
+        const suffix = end < paragraph.length ? '…' : '';
+        results.push({
+          id: `${page.globalIndex}-${pIdx}-${matchIndex}`,
+          chapterIndex: page.chapterIndex,
+          chapterTitle: page.chapterTitle,
+          pageIndex: page.pageIndexInChapter,
+          pageGlobalIndex: page.globalIndex,
+          paragraphIndex: pIdx,
+          matchStart: matchIndex,
+          matchEnd: matchIndex + needle.length,
+          matchText: paragraph.slice(matchIndex, matchIndex + needle.length),
+          snippet: `${prefix}${paragraph.slice(start, end).trim()}${suffix}`,
+        });
+        if (results.length >= 50) break;
+      }
+      if (results.length >= 50) break;
+    }
+    return results;
+  }, [pages, searchQuery]);
+
+  const openSearchResult = useCallback((result: ReaderSearchResult) => {
+    setCurrentIndex(result.pageGlobalIndex);
+    listRef.current?.scrollToIndex({ index: result.pageGlobalIndex, animated: false });
+    scrollX.value = result.pageGlobalIndex * pageWidth;
+
+    if (searchHighlightTimerRef.current) {
+      clearTimeout(searchHighlightTimerRef.current);
+    }
+    setSearchHighlight({
+      pageGlobalIndex: result.pageGlobalIndex,
+      paragraphIndex: result.paragraphIndex,
+      start: result.matchStart,
+      end: result.matchEnd,
+    });
+    searchHighlightTimerRef.current = setTimeout(() => {
+      setSearchHighlight(null);
+    }, 2800);
+  }, [pageWidth, scrollX]);
+
+  const activeReaderPage = pages[currentIndex];
+  const currentChapterTitle = activeReaderPage?.chapterTitle ?? `Chapter ${currentChapterIndex + 1}`;
+  const handleSaveReaderNote = useCallback(async (noteText: string) => {
+    if (!book || !activeReaderPage || !noteText.trim()) return;
+    const note = await createReaderNote({
+      bookId: book.id,
+      chapterIndex: activeReaderPage.chapterIndex,
+      pageIndex: activeReaderPage.pageIndexInChapter,
+      noteText,
+    });
+    setReaderNotes((previous) => [note, ...previous]);
+  }, [book, activeReaderPage]);
+
+  const handleDeleteReaderNote = useCallback(async (noteId: string) => {
+    setReaderNotes((previous) => previous.filter((note) => note.id !== noteId));
+    await deleteReaderNote(noteId);
+  }, []);
+
+  const handleEditReaderNote = useCallback(async (noteId: string, noteText: string) => {
+    const updated = await updateReaderNote(noteId, noteText);
+    if (!updated) return;
+    setReaderNotes((previous) => [updated, ...previous.filter((note) => note.id !== noteId)]);
+  }, []);
+
+  const handleExportReaderNotes = useCallback(async () => {
+    if (!book || readerNotes.length === 0) return;
+    const markdown = [
+      `# Notes: ${book.title}`,
+      '',
+      ...readerNotes.map((note) => `## Chapter ${note.chapterIndex + 1} · Page ${note.pageIndex + 1}\n\n${note.noteText}`),
+    ].join('\n\n');
+    try {
+      await Share.share({ title: `Notes: ${book.title}`, message: markdown });
+    } catch {
+      // The native share sheet can be dismissed or unavailable on some hosts.
+    }
+  }, [book, readerNotes]);
+
+  const currentBookmark = useMemo(
+    () => bookmarks.find(
+      (bookmark) => bookmark.chapterIndex === currentChapterIndex
+        && bookmark.pageIndex === (activeReaderPage?.pageIndexInChapter ?? 0),
+    ),
+    [activeReaderPage?.pageIndexInChapter, bookmarks, currentChapterIndex],
+  );
+
+  const handleToggleBookmark = useCallback(async () => {
+    if (!book || !activeReaderPage) return;
+    if (currentBookmark) {
+      await deleteBookmark(currentBookmark.id);
+      setBookmarks((previous) => previous.filter((bookmark) => bookmark.id !== currentBookmark.id));
+      logEvent('bookmark_deleted', { book_id: book.id });
+      return;
+    }
+    const created = await createBookmark({
+      bookId: book.id,
+      chapterIndex: activeReaderPage.chapterIndex,
+      pageIndex: activeReaderPage.pageIndexInChapter,
+    });
+    setBookmarks((previous) => [...previous.filter((bookmark) => bookmark.id !== created.id), created]);
+    logEvent('bookmark_created', { book_id: book.id });
+  }, [activeReaderPage, book, currentBookmark]);
+
+  const handleJumpToBookmark = useCallback((bookmark: Bookmark) => {
+    const targetIndex = findGlobalIndex(pages, bookmark.chapterIndex, bookmark.pageIndex);
+    setCurrentIndex(targetIndex);
+    listRef.current?.scrollToIndex({ index: targetIndex, animated: false });
+    setBookmarksVisible(false);
+  }, [pages]);
+
+  const chapterTitles = useMemo(
+    () => new Map(readerChapters.map((chapter) => [chapter.index, chapter.title])),
+    [readerChapters],
+  );
+
   const handleCloseGuide = useCallback(() => {
     guideDismissedRef.current = true;
     guideOpenRef.current = false;
@@ -930,7 +1171,7 @@ export default function ReaderScreen() {
     void (async () => {
       const seen = await getSetting(READER_GUIDE_SEEN_KEY);
       if (guideDismissedRef.current) return;
-      const shouldShow = (__DEV__ && ALWAYS_SHOW_READER_GUIDE_IN_DEV) || seen !== '1';
+      const shouldShow = seen !== '1';
       if (!shouldShow) {
         guideDismissedRef.current = true;
       } else {
@@ -946,13 +1187,11 @@ export default function ReaderScreen() {
       getSetting(READER_BACK_HINT_SETTING_KEY),
     ]).then(([seenForward, seenBack]) => {
       if (cancelled) return;
-      if (!(__DEV__ && ALWAYS_SHOW_READER_GUIDE_IN_DEV)) {
-        if (seenForward === '1') {
-          readerHintDismissedRef.current = true;
-        }
-        if (seenBack === '1') {
-          readerBackHintDismissedRef.current = true;
-        }
+      if (seenForward === '1') {
+        readerHintDismissedRef.current = true;
+      }
+      if (seenBack === '1') {
+        readerBackHintDismissedRef.current = true;
       }
     });
     return () => {
@@ -1012,18 +1251,15 @@ export default function ReaderScreen() {
       : isKorean
         ? 'ko'
         : (book?.sourceLanguage ?? 'en');
+  const typographyPrefs = useReadingTypography();
   const pageStyleId = usePageStyle();
   const pageStyleConfig = getPageStyleConfig(pageStyleId);
   const readingFontSizePx = isBangla
-    ? pageStyleConfig.banglaFontSize
-    : isJapanese || isKorean
-    ? getReadingFontSize(sourceLanguage)
-    : pageStyleConfig.fontSize;
+    ? Math.max(17, typographyPrefs.fontSize + 0.5)
+    : getReadingFontSize(sourceLanguage, typographyPrefs.fontSize);
   const readingLineHeight = isBangla
-    ? pageStyleConfig.banglaLineHeight
-    : isJapanese || isKorean
-    ? getReadingLineHeight(sourceLanguage)
-    : pageStyleConfig.lineHeight;
+    ? getReadingLineHeight('bn', readingFontSizePx, typographyPrefs.lineHeightRatio)
+    : getReadingLineHeight(sourceLanguage, readingFontSizePx, typographyPrefs.lineHeightRatio);
   const targetLanguage = useTargetLanguage();
 
   const sharedTheme = useReadingTheme();
@@ -1090,11 +1326,13 @@ export default function ReaderScreen() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      let [bookRow, position, bookHighlights, words] = await Promise.all([
+      let [bookRow, position, bookHighlights, words, notes, bookMarks] = await Promise.all([
         getBook(bookId),
         getReadingPosition(bookId),
         listHighlightsForBook(bookId),
         listSavedWordsForBook(bookId),
+        listReaderNotesForBook(bookId),
+        listBookmarksForBook(bookId),
       ]);
       if (cancelled) return;
 
@@ -1138,6 +1376,7 @@ export default function ReaderScreen() {
           gutenbergId: null,
           chapter1Anchor: null,
           categories: [],
+          isFavorite: false,
           totalChapters: 0,
           source: 'bangla_api',
           isAvailable: true,
@@ -1156,6 +1395,7 @@ export default function ReaderScreen() {
           gutenbergId: null,
           chapter1Anchor: null,
           categories: [jaDetail.genre],
+          isFavorite: false,
           totalChapters: jaDetail.totalChapters,
           source: 'aozora_bunko',
           isAvailable: true,
@@ -1174,6 +1414,7 @@ export default function ReaderScreen() {
           gutenbergId: null,
           chapter1Anchor: null,
           categories: [koDetail.genre],
+          isFavorite: false,
           totalChapters: koDetail.totalChapters,
           source: 'gongu_korea',
           isAvailable: true,
@@ -1183,6 +1424,8 @@ export default function ReaderScreen() {
       setBook(bookRow);
       setHighlights(bookHighlights);
       setSavedWords(words);
+      setReaderNotes(notes);
+      setBookmarks(bookMarks);
       // A jump target (from Vocabulary/Book Detail) wins over the saved position.
       const jumpC = jumpChapter != null ? Number(jumpChapter) : null;
       const jumpP = jumpPage != null ? Number(jumpPage) : null;
@@ -1195,16 +1438,30 @@ export default function ReaderScreen() {
       }
 
       if (!bookRow && !isRegional) {
-        setBookTextState({ status: 'unavailable' });
+        const failure = classifyReaderError(new Error('missing download'), {
+          bookId,
+          isCustomEpub: Boolean(bookId.startsWith('custom-')),
+          hasTextUrl: false,
+        });
+        await setDownloadState({ bookId, status: 'unavailable', errorCode: failure.code });
+        setBookTextState({ status: 'unavailable', message: failure.message, failure });
         return;
       }
 
       if (bookRow && !bookRow.textUrl && !isBookCached(bookRow.id) && !isRegional) {
-        setBookTextState({ status: 'unavailable' });
+        const failure = classifyReaderError(new Error('missing download'), {
+          bookId: bookRow.id,
+          isCustomEpub: Boolean(bookRow.id.startsWith('custom-')),
+          hasTextUrl: false,
+        });
+        await setDownloadState({ bookId: bookRow.id, status: 'unavailable', errorCode: failure.code });
+        setBookTextState({ status: 'unavailable', message: failure.message, failure });
         return;
       }
 
       try {
+        setBookTextState({ status: 'loading', stage: 'downloading' });
+        await setDownloadState({ bookId: bookRow?.id ?? bookId, status: 'downloading', progress: 0 });
         const ingested = await getBookText(
           bookRow?.id ?? bookId,
           bookRow?.title ?? 'বাংলা গ্রন্থ',
@@ -1212,13 +1469,22 @@ export default function ReaderScreen() {
           bookRow?.chapter1Anchor ?? undefined,
         );
         if (cancelled) return;
+        setBookTextState({ status: 'loading', stage: 'parsing' });
         if (!ingested.chapters || ingested.chapters.length === 0) {
+          const failure = classifyReaderError(new Error('empty chapters'), {
+            bookId: bookRow?.id ?? bookId,
+            isCustomEpub: Boolean(bookRow?.id.startsWith('custom-')),
+            hasTextUrl: Boolean(bookRow?.textUrl),
+          });
+          await setDownloadState({ bookId: bookRow?.id ?? bookId, status: 'unavailable', errorCode: failure.code });
           setBookTextState({
             status: 'unavailable',
-            message: isBangla ? 'বইটিতে পড়ার মতো কোনো বিষয়বস্তু নেই।' : `${bookRow?.title ?? 'This book'} has no readable content.`,
+            message: failure.message,
+            failure,
           });
           return;
         }
+        await setDownloadState({ bookId: bookRow?.id ?? bookId, status: 'ready', progress: 100, errorCode: null });
         setBookTextState({ status: 'ready', book: ingested });
         const freshRow = (await getBook(bookId)) ?? (rawBookId ? await getBook(rawBookId) : null);
         if (freshRow && !cancelled) {
@@ -1231,20 +1497,32 @@ export default function ReaderScreen() {
         }
       } catch (err) {
         if (cancelled) return;
-        // A format error (README stub / not a Gutenberg text) is permanent —
-        // show "unavailable", not a retryable "download failed".
-        if (err instanceof BookFormatError) {
-          setBookTextState({ status: 'unavailable', message: err.message });
-        } else {
-          setBookTextState({
-            status: 'error',
-            message: err instanceof Error ? err.message : 'Download failed',
-          });
+        const failure = classifyReaderError(err, {
+          bookId: bookRow?.id ?? bookId,
+          isCustomEpub: Boolean(bookRow?.id.startsWith('custom-')),
+          hasTextUrl: Boolean(bookRow?.textUrl),
+        });
+        await setDownloadState({
+          bookId: bookRow?.id ?? bookId,
+          status: failure.code === 'unsupported_format' ? 'unavailable' : 'failed',
+          errorCode: failure.code,
+        });
+        if ((failure.code === 'malformed_epub' || failure.code === 'empty_chapters') && bookRow?.textUrl) {
+          await deleteBookCache(bookRow.id).catch(() => {});
         }
+        logEvent('reader_error', { book_id: bookRow?.id ?? bookId, code: failure.code });
+        setBookTextState({
+          status: 'error',
+          message: failure.message,
+          failure,
+        });
       }
     })();
     return () => {
       cancelled = true;
+      if (bookId && !isBookCached(bookId)) {
+        void setDownloadState({ bookId, status: 'failed', errorCode: 'interrupted' }).catch(() => {});
+      }
     };
   }, [bookId, rawBookId, jumpChapter, jumpPage]);
 
@@ -1276,16 +1554,29 @@ export default function ReaderScreen() {
     const bookText = bookTextState.book;
     let cancelled = false;
     if (pages.length === 0) {
-      const paginated = paginateBook(bookText, {
-        contentWidthPx,
-        contentHeightPx,
-        fontSizePx: readingFontSizePx,
-        lineHeightPx: readingLineHeight,
-        paragraphGapPx: Spacing.sm,
-        chapterTitleExtraPx,
-        measuredCharsPerLine,
-      });
-      setPages(paginated);
+      try {
+        const paginated = paginateBook(bookText, {
+          contentWidthPx,
+          contentHeightPx,
+          fontSizePx: readingFontSizePx,
+          lineHeightPx: readingLineHeight,
+          paragraphGapPx: Spacing.sm,
+          chapterTitleExtraPx,
+          measuredCharsPerLine,
+        });
+        if (paginated.length === 0 && bookText.chapters.length > 0) {
+          throw new Error('pagination failure: zero pages');
+        }
+        setPages(paginated);
+      } catch (pErr) {
+        const failure = classifyReaderError(pErr, {
+          bookId: book?.id ?? bookId,
+          isCustomEpub: Boolean(book?.id.startsWith('custom-')),
+          hasTextUrl: Boolean(book?.textUrl),
+        });
+        logEvent('reader_error', { book_id: book?.id ?? bookId, code: failure.code });
+        setBookTextState({ status: 'error', message: failure.message, failure });
+      }
       return;
     }
 
@@ -1296,18 +1587,65 @@ export default function ReaderScreen() {
       ? cancelIdleCallback
       : clearTimeout;
 
+    const activePage = pages[currentIndex];
+    const anchor = activePage
+      ? {
+          chapterIndex: activePage.chapterIndex,
+          paragraphText: activePage.paragraphs[0] || '',
+          pageIndexInChapter: activePage.pageIndexInChapter,
+        }
+      : null;
+
     const taskId = schedule(() => {
       if (cancelled) return;
-      const paginated = paginateBook(bookText, {
-        contentWidthPx,
-        contentHeightPx,
-        fontSizePx: readingFontSizePx,
-        lineHeightPx: readingLineHeight,
-        paragraphGapPx: Spacing.sm,
-        chapterTitleExtraPx,
-        measuredCharsPerLine,
-      });
-      setPages(paginated);
+      try {
+        const paginated = paginateBook(bookText, {
+          contentWidthPx,
+          contentHeightPx,
+          fontSizePx: readingFontSizePx,
+          lineHeightPx: readingLineHeight,
+          paragraphGapPx: Spacing.sm,
+          chapterTitleExtraPx,
+          measuredCharsPerLine,
+        });
+        if (paginated.length === 0 && bookText.chapters.length > 0) {
+          throw new Error('pagination failure: zero pages');
+        }
+        setPages(paginated);
+
+        if (anchor && paginated.length > 0) {
+          let targetIdx = -1;
+          if (anchor.paragraphText) {
+            targetIdx = paginated.findIndex(
+              (p) =>
+                p.chapterIndex === anchor.chapterIndex &&
+                p.paragraphs.some(
+                  (para) => para.includes(anchor.paragraphText) || anchor.paragraphText.includes(para),
+                ),
+            );
+          }
+          if (targetIdx === -1) {
+            const chapterPages = paginated.filter((p) => p.chapterIndex === anchor.chapterIndex);
+            if (chapterPages.length > 0) {
+              const clamped = chapterPages[Math.min(anchor.pageIndexInChapter, chapterPages.length - 1)];
+              targetIdx = clamped.globalIndex;
+            }
+          }
+          if (targetIdx >= 0 && targetIdx < paginated.length) {
+            setCurrentIndex(targetIdx);
+            listRef.current?.scrollToIndex({ index: targetIdx, animated: false });
+            scrollX.value = targetIdx * pageWidth;
+          }
+        }
+      } catch (pErr) {
+        const failure = classifyReaderError(pErr, {
+          bookId: book?.id ?? bookId,
+          isCustomEpub: Boolean(book?.id.startsWith('custom-')),
+          hasTextUrl: Boolean(book?.textUrl),
+        });
+        logEvent('reader_error', { book_id: book?.id ?? bookId, code: failure.code });
+        setBookTextState({ status: 'error', message: failure.message, failure });
+      }
     });
     return () => {
       cancelled = true;
@@ -1569,6 +1907,14 @@ export default function ReaderScreen() {
       if (first?.index == null) return;
       const page = first.item as ReaderPage;
 
+      sessionPagesReadRef.current.add(first.index);
+      if (sessionPagesReadRef.current.size >= 10 && sessionPagesReadRef.current.size % 10 === 0) {
+        void updatePassiveVocabularyEstimate(
+          sessionLookupsRef.current,
+          sessionPagesReadRef.current.size,
+        );
+      }
+
       if (lastPageIndexRef.current == null) {
         lastPageIndexRef.current = first.index;
         lastSettledPageIndexRef.current = first.index;
@@ -1657,6 +2003,19 @@ export default function ReaderScreen() {
       lastSettledPageIndexRef.current = nextIdx;
       playPageTurnRef.current();
       listRef.current?.scrollToIndex({ index: nextIdx, animated: true });
+    } else if (currentIndex === pages.length - 1 && pages.length > 2) {
+      void (async () => {
+        const milestone = await checkAndTriggerMilestone('first_completed_book');
+        if (milestone) {
+          setActiveMilestone(milestone);
+        } else {
+          const canPrompt = await shouldShowMilestonePrompt();
+          if (canPrompt) {
+            await recordMilestonePromptShown();
+            setFeedbackModalVisible(true);
+          }
+        }
+      })();
     }
   }, [currentIndex, pages.length, dismissHint, dismissBackHint]);
 
@@ -1697,7 +2056,7 @@ export default function ReaderScreen() {
       if (finished) runOnJS(hideChrome)();
     });
 
-    const premium = isPremiumUser();
+    const premium = canUse('unlimited_learning');
     const cap = await checkTranslationCap(premium);
     if (!cap.allowed) {
       setTranslation({ pageGlobalIndex, status: 'capped' });
@@ -1752,7 +2111,8 @@ export default function ReaderScreen() {
         bilingualParagraphs,
       });
       scheduleAutoHide();
-    } catch {
+    } catch (err) {
+      logEvent('reader_error', { book_id: book?.id ?? bookId, code: 'translation_failure' });
       setTranslation({ pageGlobalIndex, status: 'error' });
       scheduleAutoHide();
     }
@@ -1765,23 +2125,88 @@ export default function ReaderScreen() {
       (typeof bookId === 'string' && bookId.startsWith('bn-'));
     if (!book && !isBangla) return;
     if (!isBangla && !book?.textUrl) return;
-    setBookTextState({ status: 'loading' });
+    setBookTextState({ status: 'loading', stage: 'downloading' });
     try {
       const targetId = book?.id ?? bookId;
       const targetTitle = book?.title ?? 'বাংলা গ্রন্থ';
+      await setDownloadState({ bookId: targetId, status: 'downloading', progress: 0 });
       const ingested = await getBookText(targetId, targetTitle, book?.textUrl, book?.chapter1Anchor ?? undefined);
+      setBookTextState({ status: 'loading', stage: 'parsing' });
+      if (!ingested.chapters || ingested.chapters.length === 0) {
+        const failure = classifyReaderError(new Error('empty chapters'), {
+          bookId: targetId,
+          isCustomEpub: Boolean(book?.id.startsWith('custom-')),
+          hasTextUrl: Boolean(book?.textUrl),
+        });
+        await setDownloadState({ bookId: targetId, status: 'unavailable', errorCode: failure.code });
+        setBookTextState({ status: 'unavailable', message: failure.message, failure });
+        return;
+      }
+      await setDownloadState({ bookId: targetId, status: 'ready', progress: 100, errorCode: null });
       setBookTextState({ status: 'ready', book: ingested });
       if (book && book.totalChapters === 0 && ingested.chapters.length > 0) {
         updateBookTotalChapters(book.id, ingested.chapters.length);
       }
     } catch (err) {
-      if (err instanceof BookFormatError) {
-        setBookTextState({ status: 'unavailable', message: err.message });
-      } else {
-        setBookTextState({ status: 'error', message: err instanceof Error ? err.message : 'Download failed' });
+      const failure = classifyReaderError(err, {
+        bookId: book?.id ?? bookId,
+        isCustomEpub: Boolean(book?.id.startsWith('custom-')),
+        hasTextUrl: Boolean(book?.textUrl),
+      });
+      await setDownloadState({
+        bookId: book?.id ?? bookId,
+        status: failure.code === 'unsupported_format' ? 'unavailable' : 'failed',
+        errorCode: failure.code,
+      });
+      if ((failure.code === 'malformed_epub' || failure.code === 'empty_chapters') && book?.textUrl) {
+        await deleteBookCache(book.id).catch(() => {});
       }
+      logEvent('reader_error', { book_id: book?.id ?? bookId, code: failure.code });
+      setBookTextState({ status: 'error', message: failure.message, failure });
     }
   }, [book, bookId]);
+
+  const handleRecoveryAction = useCallback(
+    async (actionType: ReaderRecoveryActionType) => {
+      switch (actionType) {
+        case 'retry':
+        case 'redownload':
+          await retryDownload();
+          break;
+        case 'library':
+          router.back();
+          break;
+        case 'reset_typography':
+          resetReadingTypographyPrefs();
+          if (book && isBookCached(book.id)) {
+            setPages([]);
+            setInitialIndex(null);
+            void retryDownload();
+          }
+          break;
+        case 'choose_file':
+          try {
+            const picked = await File.pickFileAsync(undefined, 'application/epub+zip');
+            const file = Array.isArray(picked) ? picked[0] : picked;
+            if (!file) return;
+            const { importEpubFromFile } = await import('@/features/content-ingestion/epubImporter');
+            const imported = await importEpubFromFile(file);
+            logEvent('book_imported', { book_id: imported.id });
+            router.replace({ pathname: '/reader/[bookId]', params: { bookId: imported.id } });
+          } catch (pickErr) {
+            const pickMsg = pickErr instanceof Error ? pickErr.message : '';
+            if (!pickMsg.toLowerCase().includes('cancel')) {
+              Alert.alert('Import failed', pickMsg || 'Could not import this EPUB file.');
+            }
+          }
+          break;
+        case 'report_issue':
+          setReportIssueModalVisible(true);
+          break;
+      }
+    },
+    [retryDownload, book, bookId],
+  );
 
   const handleWordLongPress = useCallback(
     (payload: {
@@ -2002,11 +2427,21 @@ export default function ReaderScreen() {
   const handleSaveWord = useCallback(
     async (translation: string) => {
       if (!book || !activeWord) return;
-      if (!isPremiumUser() && savedWords.length >= 30) {
+      if (!canUse('unlimited_learning') && savedWords.length >= 30) {
         Alert.alert(
           'Vocabulary Limit Reached',
           'Free accounts can save up to 30 words per book. Upgrade to Premium for unlimited vocabulary.',
-          [{ text: 'OK' }],
+          [
+            { text: 'Not Now', style: 'cancel' },
+            {
+              text: 'View Premium',
+              onPress: () =>
+                router.push({
+                  pathname: '/paywall',
+                  params: { feature: 'unlimited_learning', trigger: 'vocab_limit' },
+                }),
+            },
+          ],
         );
         return;
       }
@@ -2056,11 +2491,21 @@ export default function ReaderScreen() {
   // Highlights are always the app's single amber accent — no color picker.
   const handleSaveQuote = useCallback(async () => {
     if (!book || !selection) return;
-    if (!isPremiumUser() && highlights.length >= 15) {
+    if (!canUse('unlimited_learning') && highlights.length >= 15) {
       Alert.alert(
         'Quotes Limit Reached',
         'Free accounts can save up to 15 quotes per book. Upgrade to Premium for unlimited quotes.',
-        [{ text: 'OK' }],
+        [
+          { text: 'Not Now', style: 'cancel' },
+          {
+            text: 'View Premium',
+            onPress: () =>
+              router.push({
+                pathname: '/paywall',
+                params: { feature: 'unlimited_learning', trigger: 'quotes_limit' },
+              }),
+          },
+        ],
       );
       setSelection(null);
       return;
@@ -2183,6 +2628,7 @@ export default function ReaderScreen() {
           onBilingualWordLongPress={
             bilingualParagraphsForItem
               ? (payload) => {
+                  sessionLookupsRef.current += 1;
                   setActiveWord({
                     word: payload.word,
                     paragraphIndex: payload.paragraphIndex,
@@ -2204,6 +2650,15 @@ export default function ReaderScreen() {
           }
           onRangeEdgeDragEnd={selectionForItem ? handleRangeEdgeDragEnd : undefined}
           onCloseTranslation={toggleTranslation}
+          searchHighlight={
+            searchHighlight && searchHighlight.pageGlobalIndex === item.globalIndex
+              ? {
+                  paragraphIndex: searchHighlight.paragraphIndex,
+                  start: searchHighlight.start,
+                  end: searchHighlight.end,
+                }
+              : null
+          }
         />
       );
     },
@@ -2232,6 +2687,7 @@ export default function ReaderScreen() {
       mode,
       pageWidth,
       pageHeight,
+      searchHighlight,
     ],
   );
 
@@ -2283,49 +2739,48 @@ export default function ReaderScreen() {
   );
 
   if (bookTextState.status === 'loading') {
-    return <BookLoadingScreen title={book?.title ?? bookTitle ?? 'বইটি লোড হচ্ছে…'} coverUrl={book?.coverUrl ?? bookCoverUrl} />;
-  }
-
-  if (bookTextState.status === 'unavailable') {
     return (
-      <View style={[styles.centered, { backgroundColor: colors.parchment, padding: 24 }]}>
-        <Text style={[typography.uiRowTitle, { color: colors.ink, textAlign: 'center' }]}>
-          {bookTextState.message ?? `${book?.title ?? 'This book'} isn't available to read yet.`}
-        </Text>
-        <Text style={[typography.metadataCaption, { color: colors.fawn, textAlign: 'center', marginTop: 10 }]}>
-          {isBangla
-            ? 'এই বইটির কোনো পাঠযোগ্য বিষয়বস্তু পাওয়া যায়নি।'
-            : 'This title has no readable text edition on Project Gutenberg.'}
-        </Text>
-      </View>
+      <BookLoadingScreen
+        title={book?.title ?? bookTitle ?? 'বইটি লোড হচ্ছে…'}
+        coverUrl={book?.coverUrl ?? bookCoverUrl}
+        stage={bookTextState.stage}
+      />
     );
   }
 
-  if (bookTextState.status === 'error') {
+  if (bookTextState.status === 'unavailable' || bookTextState.status === 'error') {
+    const fallbackFailure: ReaderFailureDetails = {
+      code: bookTextState.status === 'unavailable' ? 'unsupported_format' : 'unknown',
+      title: bookTextState.status === 'unavailable' ? 'Book Edition Unavailable' : 'Unable to Prepare Book',
+      message: bookTextState.message ?? 'This title could not be opened right now.',
+      primaryAction: {
+        type: bookTextState.status === 'unavailable' ? 'library' : 'retry',
+        label: bookTextState.status === 'unavailable' ? 'Return to Library' : 'Try Again',
+      },
+      secondaryAction: {
+        type: 'report_issue',
+        label: 'Report Issue',
+      },
+    };
+
     return (
-      <View style={[styles.centered, { backgroundColor: colors.parchment, padding: 24 }]}>
-        <Text style={[typography.uiRowTitle, { color: colors.ink, textAlign: 'center', marginBottom: 4 }]}>
-          Couldn't download {book?.title ?? 'this book'}.
-        </Text>
-        {/* Temporary diagnostic — surfaces the raw error while debugging the
-            Gutenberg redirect issue; not meant to stay user-facing long-term. */}
-        {bookTextState.message ? (
-          <Text
-            style={[
-              typography.metadataCaption,
-              { color: colors.fawn, textAlign: 'center', marginBottom: 16 },
-            ]}
-          >
-            {bookTextState.message}
-          </Text>
-        ) : null}
-        <Pressable
-          onPress={retryDownload}
-          style={[styles.selectionSave, { backgroundColor: colors.flameAmber }]}
-        >
-          <Text style={[typography.uiRowTitle, { color: colors.primaryDark, fontSize: 13 }]}>Try again</Text>
-        </Pressable>
-      </View>
+      <>
+        <ReaderFailureScreen
+          failure={bookTextState.failure ?? fallbackFailure}
+          bookTitle={book?.title ?? bookTitle}
+          coverUrl={book?.coverUrl ?? bookCoverUrl}
+          onAction={handleRecoveryAction}
+        />
+        <FeedbackModal
+          visible={reportIssueModalVisible}
+          onClose={() => setReportIssueModalVisible(false)}
+          initialCategory="bug"
+          targetType="book"
+          targetId={book?.id ?? (typeof bookId === 'string' ? bookId : undefined)}
+          title="Report Book Issue"
+          subtitle="Tell us what went wrong so we can fix this title."
+        />
+      </>
     );
   }
 
@@ -2333,7 +2788,11 @@ export default function ReaderScreen() {
     return (
       <View style={styles.container}>
         {measurement}
-        <BookLoadingScreen title={bookTitle ?? 'বইটি প্রস্তুত হচ্ছে…'} coverUrl={bookCoverUrl} />
+        <BookLoadingScreen
+          title={bookTitle ?? 'বইটি প্রস্তুত হচ্ছে…'}
+          coverUrl={bookCoverUrl}
+          stage="preparing"
+        />
       </View>
     );
   }
@@ -2343,7 +2802,11 @@ export default function ReaderScreen() {
     return (
       <View style={styles.container}>
         {measurement}
-        <BookLoadingScreen title={book.title ?? bookTitle ?? 'বইটি প্রস্তুত হচ্ছে…'} coverUrl={book.coverUrl ?? bookCoverUrl} />
+        <BookLoadingScreen
+          title={book.title ?? bookTitle ?? 'বইটি প্রস্তুত হচ্ছে…'}
+          coverUrl={book.coverUrl ?? bookCoverUrl}
+          stage="paginating"
+        />
       </View>
     );
   }
@@ -2388,7 +2851,7 @@ export default function ReaderScreen() {
         initialScrollIndex={initialIndex}
         getItemLayout={(_, index) => ({ length: pageWidth, offset: pageWidth * index, index })}
         renderItem={renderPage}
-        extraData={`${readingFontSizePx}-${readingLineHeight}-${pageWidth}-${pageHeight}-${savedWordSet.size}-${selection ? `${selection.startPageGlobalIndex}:${selection.startParagraph}:${selection.startOffset}:${selection.endPageGlobalIndex}:${selection.endParagraph}:${selection.endOffset}` : ''}-${isDraggingHandle ? 'drag' : 'idle'}-${activeWord ? `${activeWord.pageGlobalIndex}:${activeWord.start}` : ''}-${wordMenu ? `${wordMenu.page.globalIndex}:${wordMenu.start}` : ''}-${translation ? `${translation.pageGlobalIndex}:${translation.status}` : ''}`}
+        extraData={`${readingFontSizePx}-${readingLineHeight}-${pageWidth}-${pageHeight}-${savedWordSet.size}-${selection ? `${selection.startPageGlobalIndex}:${selection.startParagraph}:${selection.startOffset}:${selection.endPageGlobalIndex}:${selection.endParagraph}:${selection.endOffset}` : ''}-${isDraggingHandle ? 'drag' : 'idle'}-${activeWord ? `${activeWord.pageGlobalIndex}:${activeWord.start}` : ''}-${wordMenu ? `${wordMenu.page.globalIndex}:${wordMenu.start}` : ''}-${translation ? `${translation.pageGlobalIndex}:${translation.status}` : ''}-${searchHighlight ? `${searchHighlight.pageGlobalIndex}:${searchHighlight.paragraphIndex}:${searchHighlight.start}` : ''}`}
         // Keep views attached across both platforms so rapid paging doesn't flash blank screens
         removeClippedSubviews={false}
         onScrollToIndexFailed={(info) => {
@@ -2483,6 +2946,84 @@ export default function ReaderScreen() {
             { top: insets.top + 58, borderRadius: radius.card },
           ]}
         >
+          {pages.length > 0 && readerChapters.length > 0 ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Table of contents"
+              testID="reader-contents-button"
+              onPress={() => closeChromeMenu(() => setContentsVisible(true))}
+              style={styles.chromeMenuRow}
+            >
+              <Text style={[styles.chromeMenuAa, { color: colors.flameAmber }]}>☷</Text>
+              <Text style={[typography.uiRowTitle, styles.chromeMenuLabel, { color: isLamp ? READING_TEXT_DARK : READING_TEXT_LIGHT }]}>Table of Contents</Text>
+            </Pressable>
+          ) : null}
+          {pages.length > 0 ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Search this book"
+              testID="reader-search-button"
+              onPress={() => closeChromeMenu(() => {
+                setSearchQuery('');
+                setSearchVisible(true);
+              })}
+              style={styles.chromeMenuRow}
+            >
+              <SearchIcon color={colors.flameAmber} size={18} />
+              <Text style={[typography.uiRowTitle, styles.chromeMenuLabel, { color: isLamp ? READING_TEXT_DARK : READING_TEXT_LIGHT }]}>Search This Book</Text>
+            </Pressable>
+          ) : null}
+          {pages.length > 0 ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={currentBookmark ? 'Remove bookmark from this page' : 'Bookmark this page'}
+              testID="reader-bookmark-button"
+              onPress={() => closeChromeMenu(() => void handleToggleBookmark())}
+              style={styles.chromeMenuRow}
+            >
+              <BookmarkIcon color={currentBookmark ? colors.flameAmber : isLamp ? READING_TEXT_DARK : READING_TEXT_LIGHT} size={18} filled={Boolean(currentBookmark)} />
+              <Text style={[typography.uiRowTitle, styles.chromeMenuLabel, { color: isLamp ? READING_TEXT_DARK : READING_TEXT_LIGHT }]}>{currentBookmark ? 'Remove Bookmark' : 'Bookmark This Page'}</Text>
+            </Pressable>
+          ) : null}
+          {pages.length > 0 ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="View bookmarks"
+              testID="reader-bookmarks-button"
+              onPress={() => closeChromeMenu(() => setBookmarksVisible(true))}
+              style={styles.chromeMenuRow}
+            >
+              <BookmarkIcon color={bookmarks.length > 0 ? colors.flameAmber : isLamp ? READING_TEXT_DARK : READING_TEXT_LIGHT} size={18} />
+              <Text style={[typography.uiRowTitle, styles.chromeMenuLabel, { color: isLamp ? READING_TEXT_DARK : READING_TEXT_LIGHT }]}>Bookmarks ({bookmarks.length})</Text>
+            </Pressable>
+          ) : null}
+          {pages.length > 0 ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Private notes"
+              testID="reader-notes-button"
+              onPress={() => closeChromeMenu(() => setNotesVisible(true))}
+              style={styles.chromeMenuRow}
+            >
+              <Text style={[styles.chromeMenuAa, { color: readerNotes.length > 0 ? colors.flameAmber : isLamp ? READING_TEXT_DARK : READING_TEXT_LIGHT }]}>✎</Text>
+              <Text style={[typography.uiRowTitle, styles.chromeMenuLabel, { color: isLamp ? READING_TEXT_DARK : READING_TEXT_LIGHT }]}>Private Notes</Text>
+            </Pressable>
+          ) : null}
+          {pages.length > 0 ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="AI Reading Companion"
+              testID="reader-companion-button"
+              onPress={() => closeChromeMenu(() => {
+                setCompanionSelectedText(null);
+                setCompanionVisible(true);
+              })}
+              style={styles.chromeMenuRow}
+            >
+              <Text style={[styles.chromeMenuAa, { color: colors.flameAmber }]}>✦</Text>
+              <Text style={[typography.uiRowTitle, styles.chromeMenuLabel, { color: isLamp ? READING_TEXT_DARK : READING_TEXT_LIGHT }]}>Reading Companion</Text>
+            </Pressable>
+          ) : null}
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Page and font style"
@@ -2552,6 +3093,16 @@ export default function ReaderScreen() {
           >
             <QuestionIcon color={isLamp ? READING_TEXT_DARK : READING_TEXT_LIGHT} size={18} />
             <Text style={[typography.uiRowTitle, styles.chromeMenuLabel, { color: isLamp ? READING_TEXT_DARK : READING_TEXT_LIGHT }]}>Reader Guide</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Rate and feedback"
+            testID="reader-feedback-button"
+            onPress={() => closeChromeMenu(() => setFeedbackModalVisible(true))}
+            style={styles.chromeMenuRow}
+          >
+            <StarIcon color={colors.flameAmber} size={18} />
+            <Text style={[typography.uiRowTitle, styles.chromeMenuLabel, { color: isLamp ? READING_TEXT_DARK : READING_TEXT_LIGHT }]}>Rate & Feedback</Text>
           </Pressable>
         </Animated.View>
       </Animated.View>
@@ -2634,6 +3185,52 @@ export default function ReaderScreen() {
                 <Text style={[typography.metadataCaption, { color: colors.flameAmber, fontSize: 11.5, marginTop: 2 }]}>
                   Keep the lamp lit
                 </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      ) : null}
+
+      {currentTranslation?.status === 'error' ? (
+        <View
+          style={[
+            styles.hintCard,
+            { top: insets.top + 72, backgroundColor: colors.card, borderColor: colors.hairline },
+          ]}
+        >
+          <View style={styles.hintRow}>
+            <View style={[styles.hintAccent, { backgroundColor: colors.flameAmber }]} />
+            <View style={styles.hintTextCol}>
+              <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
+                Translation Unavailable
+              </Text>
+              <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11.5, marginTop: 2 }]}>
+                Could not translate this passage.
+              </Text>
+            </View>
+            <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Dismiss translation error"
+                onPress={() => setTranslation(null)}
+                hitSlop={8}
+                style={{ paddingHorizontal: 6, paddingVertical: 4 }}
+              >
+                <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 12 }]}>Dismiss</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Retry translation"
+                onPress={() => toggleTranslation()}
+                hitSlop={8}
+                style={{
+                  backgroundColor: colors.flameAmber,
+                  paddingHorizontal: 10,
+                  paddingVertical: 5,
+                  borderRadius: 4,
+                }}
+              >
+                <Text style={[typography.uiRowTitle, { color: colors.primaryDark, fontSize: 12 }]}>Retry</Text>
               </Pressable>
             </View>
           </View>
@@ -2746,14 +3343,28 @@ export default function ReaderScreen() {
               return `${n} word${n === 1 ? '' : 's'} selected`;
             })()}
           </Text>
-          <Pressable
-            onPress={handleSaveQuote}
-            style={[styles.selectionSave, { backgroundColor: colors.flameAmber }]}
-          >
-            <Text style={[typography.uiRowTitle, { color: colors.primaryDark, fontSize: 12 }]}>
-              Save quote
-            </Text>
-          </Pressable>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Pressable
+              onPress={() => {
+                const txt = selectedText(pages, selection);
+                setCompanionSelectedText(txt);
+                setCompanionVisible(true);
+              }}
+              style={[styles.selectionSave, { backgroundColor: colors.libraryBackground, borderWidth: 1, borderColor: colors.flameAmber }]}
+            >
+              <Text style={[typography.uiRowTitle, { color: colors.flameAmber, fontSize: 12 }]}>
+                Ask AI
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={handleSaveQuote}
+              style={[styles.selectionSave, { backgroundColor: colors.flameAmber }]}
+            >
+              <Text style={[typography.uiRowTitle, { color: colors.primaryDark, fontSize: 12 }]}>
+                Save quote
+              </Text>
+            </Pressable>
+          </View>
         </View>
       ) : null}
 
@@ -2763,6 +3374,8 @@ export default function ReaderScreen() {
         sourceLanguage={sourceLanguage}
         onTranslate={() => {
           if (!wordMenu) return;
+          sessionLookupsRef.current += 1;
+          const pText = wordMenu.page.paragraphs[wordMenu.paragraphIndex] ?? '';
           setActiveWord({
             word: wordMenu.word,
             paragraphIndex: wordMenu.paragraphIndex,
@@ -2770,6 +3383,7 @@ export default function ReaderScreen() {
             start: wordMenu.start,
             end: wordMenu.end,
             anchor: wordMenu.anchor,
+            contextSentence: sentenceAtOffset(pText, wordMenu.start),
           });
           setWordMenu(null);
         }}
@@ -2793,6 +3407,9 @@ export default function ReaderScreen() {
         anchor={activeWord?.anchor ?? null}
         sourceLang={sourceLanguage}
         sourceLangLabel={sourceLanguage.toUpperCase()}
+        contextSentence={activeWord?.contextSentence}
+        bookTitle={book?.title}
+        bookAuthor={book?.author}
         onClose={() => setActiveWord(null)}
         onSave={handleSaveWord}
         onSaveForLater={handleSaveForLater}
@@ -2819,12 +3436,100 @@ export default function ReaderScreen() {
         isBangla={Boolean(isBangla)}
       />
 
+      <ReaderContentsModal
+        visible={contentsVisible}
+        chapters={readerChapters}
+        currentChapterIndex={currentChapterIndex}
+        onSelectChapter={openChapter}
+        onClose={() => setContentsVisible(false)}
+      />
+
+      <ReaderSearchModal
+        visible={searchVisible}
+        query={searchQuery}
+        results={searchResults}
+        onQueryChange={setSearchQuery}
+        onSelectResult={openSearchResult}
+        onClose={() => setSearchVisible(false)}
+      />
+
+      <ReaderBookmarksModal
+        visible={bookmarksVisible}
+        bookmarks={bookmarks}
+        chapterTitles={chapterTitles}
+        onJump={handleJumpToBookmark}
+        onDelete={(bookmark) => {
+          setBookmarks((previous) => previous.filter((item) => item.id !== bookmark.id));
+          void deleteBookmark(bookmark.id);
+        }}
+        onClose={() => setBookmarksVisible(false)}
+      />
+
+      <ReaderNotesModal
+        visible={notesVisible}
+        notes={readerNotes}
+        currentChapterTitle={currentChapterTitle}
+        currentChapterIndex={currentChapterIndex}
+        currentPageIndex={activeReaderPage?.pageIndexInChapter ?? 0}
+        onSave={(noteText) => void handleSaveReaderNote(noteText)}
+        onEdit={(noteId, noteText) => void handleEditReaderNote(noteId, noteText)}
+        onDelete={(noteId) => void handleDeleteReaderNote(noteId)}
+        onExport={() => void handleExportReaderNotes()}
+        onClose={() => setNotesVisible(false)}
+      />
+
+      <ReadingCompanionModal
+        visible={companionVisible}
+        onClose={() => setCompanionVisible(false)}
+        selectedText={companionSelectedText}
+        bookId={book?.id}
+        bookTitle={book?.title}
+        bookAuthor={book?.author}
+        chapterIndex={currentChapterIndex}
+        totalChapters={readerChapters.length || book?.totalChapters}
+        chapterTitle={readerChapters[currentChapterIndex]?.title}
+        pageIndex={currentPage?.pageIndexInChapter}
+        totalPages={totalPages}
+        currentChapterText={pages
+          .filter((p) => p.chapterIndex === currentChapterIndex)
+          .map((p) => p.paragraphs.join('\n\n'))
+          .join('\n\n')}
+        priorChapterTexts={readerChapters.slice(0, currentChapterIndex + 1).map((_ch, idx) =>
+          pages
+            .filter((p) => p.chapterIndex === idx)
+            .map((p) => p.paragraphs.join('\n\n'))
+            .join('\n\n')
+        )}
+        onUpgradePress={() => router.push('/paywall')}
+      />
+
       <ReaderGuideModal
         visible={guideModalVisible}
         onClose={handleCloseGuide}
         onOpenLanguagePicker={() => {
           handleCloseGuide();
           setLanguagePickerVisible(true);
+        }}
+      />
+
+      <FeedbackModal
+        visible={feedbackModalVisible}
+        onClose={() => setFeedbackModalVisible(false)}
+        targetType="book"
+        targetId={book?.id ?? (typeof bookId === 'string' ? bookId : undefined)}
+        title="Enjoyed this read?"
+        subtitle={book?.title ? `Share your rating and thoughts on ${book.title}.` : 'Share your rating and feedback with us.'}
+      />
+
+      <MilestoneCelebrationModal
+        visible={activeMilestone != null}
+        milestone={activeMilestone}
+        isGuest={isGuestUser}
+        onClose={() => setActiveMilestone(null)}
+        onProtectAccount={() => router.push('/signup' as any)}
+        onFeedback={() => {
+          setActiveMilestone(null);
+          setFeedbackModalVisible(true);
         }}
       />
     </View>

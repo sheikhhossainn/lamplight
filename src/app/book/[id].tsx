@@ -8,9 +8,10 @@ import { isBengaliText, isJapaneseText, isKoreanText } from '@/theme/typography'
 import { isDarkSpineColor, spineColorForBook } from '@/components/BookSpine';
 import { AddToShelfSheet } from '@/components/AddToShelfSheet';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { ScreenStateView } from '@/components/ScreenStateView';
 import { BookmarkIcon, ChevronLeftIcon, ChevronRightIcon, MoreHorizontalIcon } from '@/components/icons';
 import { deleteBookCache, isBookCached } from '@/features/content-ingestion/bookDownloader';
-import { deleteImportedBook, getBook, isImportedBook, type BookRow } from '@/db/repositories/books';
+import { deleteImportedBook, getBook, isImportedBook, setBookFavorite, type BookRow } from '@/db/repositories/books';
 import { listHighlightsForBook } from '@/db/repositories/highlights';
 import { getReadingPosition, type ReadingPosition } from '@/db/repositories/readingPosition';
 import { listSavedWordsForBook, type SavedWord } from '@/db/repositories/savedWords';
@@ -23,6 +24,8 @@ import {
   type Shelf,
   type ShelfItem,
 } from '@/db/repositories/shelves';
+import { getReadingGoal, type ReadingGoal } from '@/db/repositories/readingGoals';
+import { ReadingCadenceModal } from '@/components/ReadingCadenceModal';
 import { targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
 import { useTheme } from '@/theme/ThemeProvider';
 
@@ -31,12 +34,15 @@ export default function BookDetailScreen() {
   const { colors, typography, spacing, radius, layout } = useTheme();
   const insets = useSafeAreaInsets();
   const [book, setBook] = useState<BookRow | null>(null);
+  const [loading, setLoading] = useState(true);
   const [coverFailed, setCoverFailed] = useState(false);
 
   useEffect(() => {
     setCoverFailed(false);
   }, [id, book?.coverUrl]);
   const [position, setPosition] = useState<ReadingPosition | null>(null);
+  const [cadenceGoal, setCadenceGoal] = useState<ReadingGoal | null>(null);
+  const [cadenceModalVisible, setCadenceModalVisible] = useState(false);
   const [quoteCount, setQuoteCount] = useState(0);
   const [savedWords, setSavedWords] = useState<SavedWord[]>([]);
   const [confirmVisible, setConfirmVisible] = useState(false);
@@ -51,13 +57,14 @@ export default function BookDetailScreen() {
     useCallback(() => {
       let cancelled = false;
       (async () => {
-        const [bookRow, positionRow, highlights, words, shelfRows, shelfItemRows] = await Promise.all([
+        const [bookRow, positionRow, highlights, words, shelfRows, shelfItemRows, goalRow] = await Promise.all([
           getBook(id),
           getReadingPosition(id),
           listHighlightsForBook(id),
           listSavedWordsForBook(id),
           listShelves(),
           listShelfItems(),
+          getReadingGoal(id),
         ]);
         let resolvedBook = bookRow;
         if (!resolvedBook && (id.startsWith('ja-') || id.includes('kokoro') || id.includes('botchan') || id.includes('rashomon') || id.includes('merosu') || id.includes('ginga') || id.includes('gon'))) {
@@ -183,11 +190,13 @@ export default function BookDetailScreen() {
         if (!cancelled) {
           setBook(resolvedBook);
           setPosition(positionRow);
+          setCadenceGoal(goalRow);
           setQuoteCount(highlights.length);
           setSavedWords(words);
           setDownloaded(resolvedBook ? isBookCached(resolvedBook.id) : false);
           setShelves(shelfRows);
           setShelfItems(shelfItemRows);
+          setLoading(false);
         }
       })();
       return () => {
@@ -238,10 +247,31 @@ export default function BookDetailScreen() {
     router.back();
   }, [book, imported]);
 
-  // Themed placeholder instead of bare null — null falls through to the root
-  // navigator's charcoal contentStyle, which reads as a black-screen flash
-  // during the (normally brief) moment before `book` loads.
-  if (!book) return <View style={[styles.loadingPlaceholder, { backgroundColor: colors.parchment }]} />;
+  if (loading) {
+    return (
+      <ScreenStateView
+        type="loading"
+        title="Opening Book"
+        message="Gathering edition details and reading history…"
+        fullScreen
+        canGoBack
+      />
+    );
+  }
+
+  if (!book) {
+    return (
+      <ScreenStateView
+        type="error"
+        title="Book Not Found"
+        message="This book could not be found in your library or local catalog."
+        fullScreen
+        canGoBack
+        actionLabel="Return to Library"
+        onAction={() => router.replace('/(tabs)/library')}
+      />
+    );
+  }
 
   // totalChapters === 0 means "not yet known" for a bulk-imported book (see
   // scripts/sync-bulk-catalog.mjs) — it's filled in locally the first time
@@ -265,6 +295,16 @@ export default function BookDetailScreen() {
       setDownloadConfirmVisible(true);
     } else {
       openReader();
+    }
+  };
+  const handleToggleFavorite = async () => {
+    if (!book) return;
+    const nextValue = !book.isFavorite;
+    setBook({ ...book, isFavorite: nextValue });
+    try {
+      await setBookFavorite(book.id, nextValue);
+    } catch {
+      setBook({ ...book, isFavorite: !nextValue });
     }
   };
   const percent = position ? position.percentComplete : 0;
@@ -296,14 +336,24 @@ export default function BookDetailScreen() {
         <Pressable onPress={() => router.back()} hitSlop={12}>
           <ChevronLeftIcon color={colors.ink} />
         </Pressable>
-        {/* Only show the menu when there's actually an action: an imported book
-            to delete, or a download to remove. A catalog book that's never been
-            opened has nothing to manage, so no dots. */}
-        {imported || downloaded ? (
-          <Pressable onPress={handleMoreOptions} hitSlop={12}>
-            <MoreHorizontalIcon color={colors.ink} />
+        <View style={styles.topActions}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={book.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+            onPress={() => void handleToggleFavorite()}
+            hitSlop={12}
+          >
+            <BookmarkIcon color={book.isFavorite ? colors.flameAmber : colors.fawn} size={21} filled={book.isFavorite} />
           </Pressable>
-        ) : null}
+          {/* Only show the menu when there's actually an action: an imported book
+              to delete, or a download to remove. A catalog book that's never been
+              opened has nothing to manage, so no dots. */}
+          {imported || downloaded ? (
+            <Pressable onPress={handleMoreOptions} hitSlop={12}>
+              <MoreHorizontalIcon color={colors.ink} />
+            </Pressable>
+          ) : null}
+        </View>
       </View>
 
       <View style={[styles.cover, { backgroundColor: coverColor }]}>
@@ -507,6 +557,42 @@ export default function BookDetailScreen() {
         </Text>
       </Pressable>
 
+      {isAvailable ? (
+        <Pressable
+          onPress={() => setCadenceModalVisible(true)}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            paddingVertical: 12,
+            paddingHorizontal: spacing.md,
+            marginTop: spacing.sm,
+            borderRadius: radius.pill,
+            borderWidth: 1,
+            borderColor: cadenceGoal ? colors.flameAmber : colors.hairline,
+            backgroundColor: cadenceGoal
+              ? 'rgba(245, 166, 35, 0.08)'
+              : 'transparent',
+          }}
+        >
+          <Text style={{ fontSize: 14, marginRight: 8 }}>{cadenceGoal ? '🕯️' : '⏱️'}</Text>
+          <Text
+            style={[
+              typography.buttonLabel,
+              {
+                color: cadenceGoal ? colors.flameAmber : colors.ink,
+                fontSize: 13,
+                fontWeight: '600',
+              },
+            ]}
+          >
+            {cadenceGoal
+              ? `Reading Cadence: ${cadenceGoal.targetDays} Days · ${cadenceGoal.dailyMinutes}m/day`
+              : 'Set Reading Cadence & Daily Goal'}
+          </Text>
+        </Pressable>
+      ) : null}
+
       <ConfirmDialog
         visible={downloadConfirmVisible}
         title="Download book to device?"
@@ -542,6 +628,20 @@ export default function BookDetailScreen() {
         onCreate={handleCreateShelf}
         onClose={() => setShelfSheetVisible(false)}
       />
+
+      {book ? (
+        <ReadingCadenceModal
+          visible={cadenceModalVisible}
+          bookId={book.id}
+          bookTitle={book.title}
+          totalChapters={Math.max(1, book.totalChapters)}
+          currentChapterIndex={position?.chapterIndex ?? 0}
+          onClose={() => setCadenceModalVisible(false)}
+          onGoalSaved={(newGoal: ReadingGoal) => {
+            setCadenceGoal(newGoal);
+          }}
+        />
+      ) : null}
     </ScrollView>
   );
 }
@@ -558,6 +658,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 16,
+  },
+  topActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 18,
   },
   cover: {
     width: 132,

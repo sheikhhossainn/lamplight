@@ -24,6 +24,7 @@ let currentStatus: SyncStatus = 'guest';
 let isSyncRunning = false;
 let pendingReRun = false;
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+let syncAborted = false;
 
 export function getSyncStatus(): SyncStatus {
   return currentStatus;
@@ -170,10 +171,10 @@ export async function triggerSync(options?: { forceImmediate?: boolean }): Promi
 
   try {
     let continueLoop = true;
-    while (continueLoop) {
+    while (continueLoop && !syncAborted) {
       pendingReRun = false;
       await runSyncIteration(options?.forceImmediate ?? false);
-      continueLoop = pendingReRun;
+      continueLoop = pendingReRun && !syncAborted;
     }
 
     const pendingCount = await getPendingMutationCount();
@@ -197,7 +198,26 @@ export async function triggerSync(options?: { forceImmediate?: boolean }): Promi
   }
 }
 
+/**
+ * Gracefully aborts or finishes the current sync iteration before an identity switch or sign-out.
+ */
+export async function pauseOrFinishSync(timeoutMs = 3000): Promise<void> {
+  syncAborted = true;
+  pendingReRun = false;
+  if (debounceTimer) {
+    clearTimeout(debounceTimer);
+    debounceTimer = null;
+  }
+  const startTime = Date.now();
+  while (isSyncRunning && Date.now() - startTime < timeoutMs) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  syncAborted = false;
+  setSyncStatus('guest');
+}
+
 async function runSyncIteration(forceImmediate: boolean): Promise<void> {
+  if (syncAborted) return;
   let session: { accessToken: string; userId: string } | null = null;
   try {
     session = await getSession();
@@ -500,6 +520,252 @@ async function pushSingleMutation(
       };
 
       const res = await fetch(`${SUPABASE_URL}/rest/v1/reading_sessions`, {
+        method: 'POST',
+        headers: {
+          apikey: SUPABASE_ANON_KEY!,
+          Authorization: `Bearer ${session.accessToken}`,
+          'Content-Type': 'application/json',
+          Prefer: 'resolution=merge-duplicates',
+        },
+        body: JSON.stringify(body),
+      });
+      return res.ok;
+    }
+
+    case 'bookmark': {
+      if (mutation.operation === 'delete') {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/bookmarks?id=eq.${mutation.entityId}`, {
+          method: 'DELETE',
+          headers: {
+            apikey: SUPABASE_ANON_KEY!,
+            Authorization: `Bearer ${session.accessToken}`,
+          },
+        });
+        return res.ok;
+      }
+      const libraryItemId = await resolveLibraryItemId(payload.bookId, session.accessToken);
+      if (!libraryItemId) return false;
+
+      const body = {
+        id: payload.id,
+        owner_id: session.userId,
+        library_item_id: libraryItemId,
+        chapter_index: payload.chapterIndex,
+        page_index: payload.pageIndex,
+        label: payload.label ?? null,
+        created_at: new Date(payload.createdAt ?? Date.now()).toISOString(),
+        updated_at: new Date(payload.updatedAt ?? Date.now()).toISOString(),
+      };
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/bookmarks`, {
+        method: 'POST',
+        headers: {
+          apikey: SUPABASE_ANON_KEY!,
+          Authorization: `Bearer ${session.accessToken}`,
+          'Content-Type': 'application/json',
+          Prefer: 'resolution=merge-duplicates',
+        },
+        body: JSON.stringify(body),
+      });
+      return res.ok;
+    }
+
+    case 'reader_note': {
+      if (mutation.operation === 'delete') {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/reader_notes?id=eq.${mutation.entityId}`, {
+          method: 'DELETE',
+          headers: {
+            apikey: SUPABASE_ANON_KEY!,
+            Authorization: `Bearer ${session.accessToken}`,
+          },
+        });
+        return res.ok;
+      }
+      const libraryItemId = await resolveLibraryItemId(payload.bookId, session.accessToken);
+      if (!libraryItemId) return false;
+
+      const body = {
+        id: payload.id,
+        owner_id: session.userId,
+        library_item_id: libraryItemId,
+        chapter_index: payload.chapterIndex,
+        page_index: payload.pageIndex,
+        note_text: payload.noteText,
+        created_at: new Date(payload.createdAt ?? Date.now()).toISOString(),
+        updated_at: new Date(payload.updatedAt ?? Date.now()).toISOString(),
+      };
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/reader_notes`, {
+        method: 'POST',
+        headers: {
+          apikey: SUPABASE_ANON_KEY!,
+          Authorization: `Bearer ${session.accessToken}`,
+          'Content-Type': 'application/json',
+          Prefer: 'resolution=merge-duplicates',
+        },
+        body: JSON.stringify(body),
+      });
+      return res.ok;
+    }
+
+    case 'reading_goal': {
+      if (mutation.operation === 'delete') {
+        const libraryItemId = await resolveLibraryItemId(payload.bookId, session.accessToken);
+        if (!libraryItemId) return false;
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/reading_goals?library_item_id=eq.${libraryItemId}`, {
+          method: 'DELETE',
+          headers: {
+            apikey: SUPABASE_ANON_KEY!,
+            Authorization: `Bearer ${session.accessToken}`,
+          },
+        });
+        return res.ok;
+      }
+      const libraryItemId = await resolveLibraryItemId(payload.bookId, session.accessToken);
+      if (!libraryItemId) return false;
+
+      const body = {
+        owner_id: session.userId,
+        library_item_id: libraryItemId,
+        target_days: payload.targetDays,
+        target_completion_date: new Date(payload.targetCompletionDate).toISOString(),
+        daily_minutes: payload.dailyMinutes,
+        preferred_hour: payload.preferredHour,
+        preferred_minute: payload.preferredMinute,
+        notifications_enabled: payload.notificationsEnabled,
+        is_adaptive: payload.isAdaptive,
+        created_at: new Date(payload.createdAt ?? Date.now()).toISOString(),
+        updated_at: new Date(payload.updatedAt ?? Date.now()).toISOString(),
+      };
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/reading_goals`, {
+        method: 'POST',
+        headers: {
+          apikey: SUPABASE_ANON_KEY!,
+          Authorization: `Bearer ${session.accessToken}`,
+          'Content-Type': 'application/json',
+          Prefer: 'resolution=merge-duplicates',
+        },
+        body: JSON.stringify(body),
+      });
+      return res.ok;
+    }
+
+    case 'book_favorite': {
+      const libraryItemId = await resolveLibraryItemId(payload.bookId, session.accessToken);
+      if (!libraryItemId) return false;
+
+      if (!payload.isFavorite) {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/book_favorites?library_item_id=eq.${libraryItemId}&owner_id=eq.${session.userId}`, {
+          method: 'DELETE',
+          headers: {
+            apikey: SUPABASE_ANON_KEY!,
+            Authorization: `Bearer ${session.accessToken}`,
+          },
+        });
+        return res.ok;
+      }
+
+      const body = {
+        owner_id: session.userId,
+        library_item_id: libraryItemId,
+        created_at: new Date().toISOString(),
+      };
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/book_favorites`, {
+        method: 'POST',
+        headers: {
+          apikey: SUPABASE_ANON_KEY!,
+          Authorization: `Bearer ${session.accessToken}`,
+          'Content-Type': 'application/json',
+          Prefer: 'resolution=merge-duplicates',
+        },
+        body: JSON.stringify(body),
+      });
+      return res.ok;
+    }
+
+    case 'shelf_item': {
+      const libraryItemId = await resolveLibraryItemId(payload.bookId, session.accessToken);
+      if (!libraryItemId) return false;
+
+      if (mutation.operation === 'delete') {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/shelf_items?shelf_id=eq.${payload.shelfId}&library_item_id=eq.${libraryItemId}`, {
+          method: 'DELETE',
+          headers: {
+            apikey: SUPABASE_ANON_KEY!,
+            Authorization: `Bearer ${session.accessToken}`,
+          },
+        });
+        return res.ok;
+      }
+
+      const body = {
+        shelf_id: payload.shelfId,
+        library_item_id: libraryItemId,
+        owner_id: session.userId,
+        created_at: new Date().toISOString(),
+      };
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/shelf_items`, {
+        method: 'POST',
+        headers: {
+          apikey: SUPABASE_ANON_KEY!,
+          Authorization: `Bearer ${session.accessToken}`,
+          'Content-Type': 'application/json',
+          Prefer: 'resolution=merge-duplicates',
+        },
+        body: JSON.stringify(body),
+      });
+      return res.ok;
+    }
+
+    case 'vocabulary_deck': {
+      if (mutation.operation === 'delete') {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/vocabulary_decks?id=eq.${mutation.entityId}`, {
+          method: 'DELETE',
+          headers: {
+            apikey: SUPABASE_ANON_KEY!,
+            Authorization: `Bearer ${session.accessToken}`,
+          },
+        });
+        return res.ok;
+      }
+
+      const body = {
+        id: payload.id,
+        owner_id: session.userId,
+        name: payload.name,
+        created_at: new Date(payload.createdAt ?? Date.now()).toISOString(),
+        updated_at: new Date(payload.updatedAt ?? Date.now()).toISOString(),
+      };
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/vocabulary_decks`, {
+        method: 'POST',
+        headers: {
+          apikey: SUPABASE_ANON_KEY!,
+          Authorization: `Bearer ${session.accessToken}`,
+          'Content-Type': 'application/json',
+          Prefer: 'resolution=merge-duplicates',
+        },
+        body: JSON.stringify(body),
+      });
+      return res.ok;
+    }
+
+    case 'vocabulary_deck_item': {
+      if (mutation.operation === 'delete') {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/vocabulary_deck_items?deck_id=eq.${payload.deckId}&saved_word_id=eq.${payload.wordId}`, {
+          method: 'DELETE',
+          headers: {
+            apikey: SUPABASE_ANON_KEY!,
+            Authorization: `Bearer ${session.accessToken}`,
+          },
+        });
+        return res.ok;
+      }
+
+      const body = {
+        deck_id: payload.deckId,
+        saved_word_id: payload.wordId,
+        owner_id: session.userId,
+        created_at: new Date().toISOString(),
+      };
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/vocabulary_deck_items`, {
         method: 'POST',
         headers: {
           apikey: SUPABASE_ANON_KEY!,

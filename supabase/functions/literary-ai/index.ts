@@ -98,6 +98,14 @@ function normalizeRelated(raw: unknown): Array<{ word: string; meaning: string }
   return results.slice(0, 3);
 }
 
+async function sha256Hex(str: string): Promise<string> {
+  const enc = new TextEncoder().encode(str);
+  const hashBuf = await crypto.subtle.digest('SHA-256', enc);
+  return Array.from(new Uint8Array(hashBuf))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -380,6 +388,422 @@ Return a JSON object with key "translations" containing an array of translated s
       status: 502,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
+  }
+
+  if (action === 'context_translate') {
+    // Context-aware translation requires Premium tier (FULLAPP.md §10.4)
+    if (!isPremium) {
+      return new Response(
+        JSON.stringify({
+          error: 'Context-aware translation requires Lamplight Premium.',
+          requiresPremium: true,
+          success: false,
+        }),
+        {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      );
+    }
+
+    const word = String(body.word || '').trim().slice(0, 100);
+    const contextSentence = String(body.contextSentence || '').trim().slice(0, 500);
+    const fromLang = String(body.fromLang || 'en').trim();
+    const toLang = String(body.toLang || 'bn').trim();
+    const bookTitle = body.bookTitle ? String(body.bookTitle).trim().slice(0, 100) : undefined;
+    const bookAuthor = body.bookAuthor ? String(body.bookAuthor).trim().slice(0, 100) : undefined;
+
+    if (!word || !contextSentence) {
+      return new Response(JSON.stringify({ error: 'word and contextSentence are required', success: false }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const tongueName = TONGUE_NAMES[toLang] ?? toLang;
+
+    const system =
+      `You are an elite literary linguist and translator for Lamplight reading app.\n` +
+      `Given a word or phrase and its exact sentence in a book, analyze its contextual meaning.\n` +
+      `Translate and explain it in ${tongueName}.\n` +
+      `Return ONLY a valid JSON object with these exact keys:\n` +
+      `- "contextualTranslation": string (exact translation of this word AS USED in this sentence in ${tongueName})\n` +
+      `- "definition": string (1 concise definition of this specific contextual sense in ${tongueName})\n` +
+      `- "partOfSpeech": string ("noun" | "verb" | "adjective" | "adverb" | "idiom" | "phrase" | "other")\n` +
+      `- "contextFit": string (1 concise sentence explaining why this meaning fits the literary context)\n` +
+      `- "synonyms": array of up to 3 objects { "word": string, "meaning": string in ${tongueName} }\n` +
+      `- "antonyms": array of up to 3 objects { "word": string, "meaning": string in ${tongueName} }\n` +
+      `- "grammarNote": string or null (brief grammatical nuance, archaic usage, or idiom note)\n` +
+      `- "version": "v1-groq-literary"`;
+
+    const userPrompt =
+      `Word/Phrase: "${word}"\n` +
+      `Context Sentence: "${contextSentence}"\n` +
+      (bookTitle ? `Book: "${bookTitle}" by ${bookAuthor || 'Classic Author'}\n` : '') +
+      `Source Language: ${fromLang}\nTarget Language: ${toLang}`;
+
+    const raw = await callGroq(system, userPrompt, 500, 0.2);
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw) as Record<string, unknown>;
+        const contextualTranslation = String(
+          parsed.contextualTranslation ?? parsed.contextual_translation ?? parsed.translation ?? '',
+        ).trim();
+        const definition = String(parsed.definition ?? '').trim();
+        const partOfSpeech = String(parsed.partOfSpeech ?? parsed.part_of_speech ?? 'other').trim();
+        const contextFit = String(parsed.contextFit ?? parsed.context_fit ?? '').trim();
+        const synonyms = normalizeRelated(parsed.synonyms);
+        const antonyms = normalizeRelated(parsed.antonyms);
+        const grammarNote = parsed.grammarNote ? String(parsed.grammarNote).trim() : null;
+
+        if (contextualTranslation || definition) {
+          return new Response(
+            JSON.stringify({
+              success: true,
+              enrichment: {
+                contextualTranslation: contextualTranslation || word,
+                definition,
+                partOfSpeech,
+                contextFit,
+                synonyms,
+                antonyms,
+                grammarNote,
+                version: 'v1-groq-literary',
+              },
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+          );
+        }
+      } catch (err) {
+        console.warn('[literary-ai] Failed to parse context_translate JSON:', err);
+      }
+    }
+
+    return new Response(JSON.stringify({ error: 'Failed to generate context translation', success: false }), {
+      status: 502,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
+  // -------------------------------------------------------------
+  // AI Reading Companion Actions (FULLAPP.md §16)
+  // -------------------------------------------------------------
+  if (action === 'companion_report_feedback') {
+    const { reason, notes, bookId, chapterIndex, targetAction, excerptHash } = body;
+    if (!reason) {
+      return new Response(JSON.stringify({ error: 'Feedback reason is required', success: false }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    try {
+      await supabase.from('companion_feedback').insert({
+        owner_id: user.id,
+        action: String(targetAction || 'general'),
+        book_id: bookId ? String(bookId) : null,
+        chapter_index: typeof chapterIndex === 'number' ? chapterIndex : null,
+        reason: String(reason),
+        notes: notes ? String(notes).slice(0, 1000) : null,
+        excerpt_hash: excerptHash ? String(excerptHash) : null,
+      });
+    } catch (err) {
+      console.warn('[literary-ai] Failed to record companion feedback:', err);
+    }
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        message: 'Thank you for your report. Our editorial team reviews all reports to keep Lamplight accurate and spoiler-free.',
+      }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    );
+  }
+
+  const COMPANION_ACTIONS = [
+    'companion_explain',
+    'companion_simplify',
+    'companion_summary',
+    'companion_recap_characters',
+    'companion_reflective_questions',
+  ];
+
+  if (COMPANION_ACTIONS.includes(action)) {
+    // 1. Entitlement check (FULLAPP.md §16.2.2 & §16.4)
+    if (!isPremium) {
+      return new Response(
+        JSON.stringify({
+          error: 'The AI Reading Companion requires Lamplight Premium.',
+          requiresPremium: true,
+          success: false,
+        }),
+        {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      );
+    }
+
+    // 2. Daily usage rate limit accounting (FULLAPP.md §16.2.4)
+    const PREMIUM_DAILY_COMPANION_LIMIT = 60;
+    const today = new Date().toISOString().split('T')[0];
+    let currentUsage = 0;
+    try {
+      const { data: usageRow } = await supabase
+        .from('companion_usage')
+        .select('count_used')
+        .eq('owner_id', user.id)
+        .eq('usage_date', today)
+        .single();
+      currentUsage = usageRow?.count_used ?? 0;
+    } catch {
+      // non-blocking
+    }
+
+    if (currentUsage >= PREMIUM_DAILY_COMPANION_LIMIT) {
+      return new Response(
+        JSON.stringify({
+          error: `Daily companion limit of ${PREMIUM_DAILY_COMPANION_LIMIT} requests reached. Quota refreshes tomorrow.`,
+          limit: PREMIUM_DAILY_COMPANION_LIMIT,
+          current: currentUsage,
+          success: false,
+        }),
+        {
+          status: 429,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      );
+    }
+
+    const bookTitle = body.bookTitle ? String(body.bookTitle).trim().slice(0, 100) : '';
+    const bookAuthor = body.bookAuthor ? String(body.bookAuthor).trim().slice(0, 100) : '';
+    const chapterIndex = typeof body.chapterIndex === 'number' ? body.chapterIndex : 0;
+    const chapterTitle = body.chapterTitle ? String(body.chapterTitle).trim().slice(0, 100) : `Chapter ${chapterIndex + 1}`;
+
+    // 3. Cache lookup (FULLAPP.md §16.2.8)
+    const excerptHashInput = String(body.excerpt || body.sentence || body.chapterExcerpt || body.textUpToNow || '').slice(0, 500);
+    const cacheKey = await sha256Hex(`companion:${action}:${bookTitle}:${chapterIndex}:${excerptHashInput}:v1`);
+
+    try {
+      const { data: cached } = await supabase
+        .from('companion_cache')
+        .select('response')
+        .eq('cache_key', cacheKey)
+        .single();
+
+      if (cached?.response) {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            cached: true,
+            data: cached.response,
+            version: 'v1-groq-companion',
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
+    } catch {
+      // non-blocking cache lookup
+    }
+
+    // 4. Action-specific prompts and Groq invocation
+    let systemPrompt = '';
+    let userPrompt = '';
+    let maxTokens = 500;
+
+    if (action === 'companion_explain') {
+      const passage = String(body.excerpt || '').trim().slice(0, 1500);
+      const isReference = Boolean(body.isReference);
+
+      if (!passage) {
+        return new Response(JSON.stringify({ error: 'Excerpt is required', success: false }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      systemPrompt =
+        `You are Lamplight's AI Reading Companion, an erudite literary guide.\n` +
+        (isReference
+          ? `Explain any literary, classical, mythological, philosophical, or historical references in this excerpt.\n`
+          : `Explain the difficult meaning, subtle nuances, subtext, and prose craft in this excerpt.\n`) +
+        `STRICT SPOILER RULE: Explain ONLY the provided excerpt in the context of ${chapterTitle}. NEVER reveal, hint at, or foreshadow future plot twists, character deaths, or events from future chapters.\n` +
+        `Return ONLY a valid JSON object with these exact keys:\n` +
+        `- "explanation": string (2-3 concise, elegant paragraphs explaining the passage)\n` +
+        `- "keyThemes": array of 1-3 concise strings highlighting themes or motifs\n` +
+        `- "referenceNote": string or null (if any classical/historical allusion is present, explain it briefly; otherwise null)\n` +
+        `- "version": "v1-groq-companion"`;
+
+      userPrompt =
+        (bookTitle ? `Book: "${bookTitle}" by ${bookAuthor || 'Classic Author'}\n` : '') +
+        `Location: ${chapterTitle}\n` +
+        `Excerpt:\n"${passage}"`;
+      maxTokens = 550;
+    } else if (action === 'companion_simplify') {
+      const sentence = String(body.sentence || '').trim().slice(0, 600);
+
+      if (!sentence) {
+        return new Response(JSON.stringify({ error: 'Sentence is required', success: false }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      systemPrompt =
+        `You are Lamplight's AI Reading Companion.\n` +
+        `Simplify the provided complex, archaic, or dense literary sentence into clear, modern English while preserving 100% of its original meaning, nuance, and emotional tone.\n` +
+        `Return ONLY a valid JSON object with these exact keys:\n` +
+        `- "simplified": string (the crystal-clear modern paraphrase)\n` +
+        `- "originalMeaning": string (1 concise sentence explaining what was originally conveyed)\n` +
+        `- "vocabularyBreakdown": array of up to 3 objects { "archaicWord": string, "modernMeaning": string }\n` +
+        `- "version": "v1-groq-companion"`;
+
+      userPrompt =
+        (bookTitle ? `Book: "${bookTitle}" by ${bookAuthor || 'Classic Author'}\n` : '') +
+        `Sentence:\n"${sentence}"`;
+      maxTokens = 400;
+    } else if (action === 'companion_summary') {
+      const chapterExcerpt = String(body.chapterExcerpt || '').trim().slice(0, 4000);
+
+      if (!chapterExcerpt) {
+        return new Response(JSON.stringify({ error: 'Chapter excerpt is required', success: false }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      systemPrompt =
+        `You are Lamplight's AI Reading Companion.\n` +
+        `Summarize Chapter ${chapterIndex + 1} (${chapterTitle}) for a reader.\n` +
+        `CRITICAL SPOILER SAFETY: You MUST ONLY summarize what takes place in this specific chapter text. Do NOT reveal, foreshadow, or hint at any deaths, betrayals, twists, or outcomes in subsequent chapters.\n` +
+        `Return ONLY a valid JSON object with these exact keys:\n` +
+        `- "summary": string (2-3 concise, well-crafted paragraphs summarizing key narrative events)\n` +
+        `- "keyDevelopments": array of 3-4 bullet points noting pivotal moments in this chapter\n` +
+        `- "thematicFocus": string (1 sentence summarizing the chapter's central theme or emotional tone)\n` +
+        `- "spoilerFreeGuarantee": true\n` +
+        `- "version": "v1-groq-companion"`;
+
+      userPrompt =
+        (bookTitle ? `Book: "${bookTitle}" by ${bookAuthor || 'Classic Author'}\n` : '') +
+        `Chapter: ${chapterTitle} (Chapter ${chapterIndex + 1})\n` +
+        `Chapter Text:\n${chapterExcerpt}`;
+      maxTokens = 650;
+    } else if (action === 'companion_recap_characters') {
+      const textUpToNow = String(body.textUpToNow || '').trim().slice(0, 4000);
+
+      if (!textUpToNow) {
+        return new Response(JSON.stringify({ error: 'Reading text is required', success: false }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      systemPrompt =
+        `You are Lamplight's AI Reading Companion.\n` +
+        `Recap the characters encountered in the reader's journey up to Chapter ${chapterIndex + 1} (${chapterTitle}).\n` +
+        `CRITICAL SPOILER SAFETY: Describe characters' status, intentions, and roles ONLY as known up to this point in the book. NEVER reveal future secrets, identities, betrayals, or fates from later chapters.\n` +
+        `Return ONLY a valid JSON object with these exact keys:\n` +
+        `- "characters": array of objects { "name": string, "role": string, "statusUpToNow": string, "keyRelationships": string }\n` +
+        `- "version": "v1-groq-companion"`;
+
+      userPrompt =
+        (bookTitle ? `Book: "${bookTitle}" by ${bookAuthor || 'Classic Author'}\n` : '') +
+        `Current Position: Chapter ${chapterIndex + 1} (${chapterTitle})\n` +
+        `Text Excerpt Up To Current Position:\n${textUpToNow}`;
+      maxTokens = 700;
+    } else if (action === 'companion_reflective_questions') {
+      const chapterExcerpt = String(body.chapterExcerpt || '').trim().slice(0, 4000);
+
+      if (!chapterExcerpt) {
+        return new Response(JSON.stringify({ error: 'Chapter excerpt is required', success: false }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      systemPrompt =
+        `You are Lamplight's AI Reading Companion.\n` +
+        `Generate 3 thoughtful, reflective discussion questions about Chapter ${chapterIndex + 1} (${chapterTitle}).\n` +
+        `Questions should invite the reader to ponder moral choices, character motivations, and universal literary themes. Do NOT ask about future events.\n` +
+        `Return ONLY a valid JSON object with these exact keys:\n` +
+        `- "questions": array of 3 objects { "question": string, "theme": string, "contextNote": string }\n` +
+        `- "version": "v1-groq-companion"`;
+
+      userPrompt =
+        (bookTitle ? `Book: "${bookTitle}" by ${bookAuthor || 'Classic Author'}\n` : '') +
+        `Chapter: ${chapterTitle} (Chapter ${chapterIndex + 1})\n` +
+        `Chapter Text:\n${chapterExcerpt}`;
+      maxTokens = 550;
+    }
+
+    // 5. Call Groq
+    const raw = await callGroq(systemPrompt, userPrompt, maxTokens, 0.25);
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw);
+
+        // Store in companion_cache (non-blocking)
+        try {
+          await supabase.from('companion_cache').upsert({
+            cache_key: cacheKey,
+            action,
+            model_version: 'v1-groq-companion',
+            response: parsed,
+          });
+        } catch {
+          // ignore cache write error
+        }
+
+        // Increment usage accounting (non-blocking)
+        try {
+          await supabase.rpc('increment_companion_usage', {
+            p_owner_id: user.id,
+            p_date: today,
+            p_count: 1,
+          });
+        } catch {
+          // ignore usage write error
+        }
+
+        // Record request telemetry (non-blocking, no copyrighted text logged)
+        try {
+          await supabase.from('companion_request_logs').insert({
+            owner_id: user.id,
+            action,
+            book_id: body.bookId ? String(body.bookId) : null,
+            chapter_index: chapterIndex,
+            token_estimate: maxTokens,
+            cost_estimate_cents: 0.0006,
+            success: true,
+          });
+        } catch {
+          // ignore telemetry write error
+        }
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            cached: false,
+            data: parsed,
+            version: 'v1-groq-companion',
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      } catch (err) {
+        console.warn(`[literary-ai] Failed to parse ${action} JSON:`, err);
+      }
+    }
+
+    return new Response(
+      JSON.stringify({
+        error: 'AI Reading Companion engine was temporarily unable to fulfill this request. Please try again.',
+        success: false,
+      }),
+      {
+        status: 502,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      },
+    );
   }
 
   return new Response(JSON.stringify({ error: `Unknown action: ${action}` }), {

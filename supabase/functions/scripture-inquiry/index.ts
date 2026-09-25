@@ -71,12 +71,26 @@ Deno.serve(async (req) => {
       }),
       signal: controller.signal,
     });
-    if (!response.ok) return json({ error: 'AI request failed' }, 502);
-    const payload = await response.json() as { choices?: { message?: { content?: string } }[] };
+    const payload = await response.json() as {
+      choices?: { message?: { content?: string } }[];
+      usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+    };
     const content = payload.choices?.[0]?.message?.content;
     if (!content) return json({ error: 'AI returned no response' }, 502);
+
+    // Telemetry: Log token cost and model version without logging raw sensitive questions (FULLAPP §13.3)
+    console.log(JSON.stringify({
+      event: 'scripture_inquiry_ai_completed',
+      model: 'openai/gpt-oss-20b',
+      prompt_tokens: payload.usage?.prompt_tokens ?? null,
+      completion_tokens: payload.usage?.completion_tokens ?? null,
+      total_tokens: payload.usage?.total_tokens ?? null,
+      question_length: question.length,
+    }));
+
     try {
-      return json(JSON.parse(content));
+      const parsed = JSON.parse(content);
+      return json({ ...parsed, modelVersion: 'openai/gpt-oss-20b' });
     } catch {
       return json({ error: 'AI returned invalid data' }, 502);
     }

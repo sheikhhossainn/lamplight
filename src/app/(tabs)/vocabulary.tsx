@@ -1,6 +1,6 @@
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, LayoutAnimation, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, LayoutAnimation, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import * as Haptics from 'expo-haptics';
@@ -38,6 +38,13 @@ import {
 } from '@/db/repositories/bible';
 import { deleteHighlight, listAllHighlights, type Highlight } from '@/db/repositories/highlights';
 import {
+  deleteReaderNote,
+  exportNotesToJson,
+  exportNotesToMarkdown,
+  listAllReaderNotes,
+  type ReaderNoteWithBook,
+} from '@/db/repositories/readerNotes';
+import {
   deleteQuranHighlight,
   listAllQuranHighlights,
   type QuranHighlight,
@@ -45,11 +52,31 @@ import {
 import {
   deleteSavedWord,
   listSavedWords,
+  listSavedWordCountsByDay,
   getVocabularyEligibility,
   updateWordSrs,
+  type DailySavedWordCount,
   type SavedWord,
   type VocabularyEligibility,
 } from '@/db/repositories/savedWords';
+import { VocabularyGrowthChart } from '@/features/vocabulary/VocabularyGrowthChart';
+import {
+  filterWordsByMastery,
+  getMasteryFilterCounts,
+  getWordMasteryInfo,
+  type MasteryFilter,
+} from '@/features/vocabulary/mastery';
+import { WordDetailModal } from '@/features/vocabulary/WordDetailModal';
+import { MilestoneCelebrationModal } from '@/components/MilestoneCelebrationModal';
+import { checkAndTriggerMilestone, type MilestoneConfig } from '@/features/milestones/milestoneService';
+import { getUserProfile } from '@/lib/supabaseAuth';
+import { AddToDeckModal } from '@/components/AddToDeckModal';
+import {
+  deleteVocabularyDeck,
+  listVocabularyDecks,
+  listWordsForDeck,
+  type VocabularyDeckWithCount,
+} from '@/db/repositories/vocabularyDecks';
 import {
   deletePendingLookup,
   listPendingLookups,
@@ -71,23 +98,32 @@ import {
 import { ClozeChallenge } from '@/features/vocabulary/ClozeChallenge';
 import { ClozeResultScreen } from '@/features/vocabulary/ClozeResultScreen';
 import { generateWordCluster } from '@/features/vocabulary/clozeEngine';
+import {
+  evaluateQuizGate,
+  recordWeeklyQuizSampleUsed,
+  hasUsedWeeklyQuizSample,
+  type QuizMode,
+} from '@/features/vocabulary/quizGateService';
 import { speakWord, warmUpSpeechEngine } from '@/features/audio/pronunciationEngine';
 import { getMotherTongue, getScriptureLabels, useMotherTongue, type ScriptureLabels } from '@/features/settings/motherTongue';
 import { hapticFlashcardAction } from '@/lib/haptics';
 import { logEvent } from '@/features/analytics/analytics';
+import { getAppFlag } from '@/features/config/appConfig';
+import { canUse, requireFeature } from '@/features/subscription/subscriptionState';
 import { useTheme } from '@/theme/ThemeProvider';
 import { getNativeUiTextStyle } from '@/theme/typography';
 
-type Tab = 'list' | 'flashcards' | 'quiz' | 'quotes' | 'verses';
+type Tab = 'list' | 'flashcards' | 'quiz' | 'quotes' | 'notes' | 'verses';
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'list', label: 'Words' },
   { key: 'flashcards', label: 'Review' },
   { key: 'quiz', label: 'Quiz' },
   { key: 'quotes', label: 'Quotes' },
+  { key: 'notes', label: 'Notes' },
   { key: 'verses', label: 'Verses' },
 ];
-const TAB_KEYS: Tab[] = ['list', 'flashcards', 'quiz', 'quotes', 'verses'];
+const TAB_KEYS: Tab[] = ['list', 'flashcards', 'quiz', 'quotes', 'notes', 'verses'];
 const SRS_REVIEW_BATCH_SIZE = 20;
 const QUIZ_QUESTION_LIMIT = 5;
 const MIN_QUIZ_WORDS_PER_BOOK = 5;
@@ -171,15 +207,29 @@ export default function VocabularyScreen() {
   const isLamp = scheme === 'lamp';
   const insets = useSafeAreaInsets();
   const [words, setWords] = useState<SavedWord[]>([]);
+  const [growthCounts, setGrowthCounts] = useState<DailySavedWordCount[]>([]);
+  const [masteryFilter, setMasteryFilter] = useState<MasteryFilter>('all');
+  const [selectedWordForDetail, setSelectedWordForDetail] = useState<SavedWord | null>(null);
+  const [activeMilestone, setActiveMilestone] = useState<MilestoneConfig | null>(null);
+  const [isGuestUser, setIsGuestUser] = useState(false);
+  const [decks, setDecks] = useState<VocabularyDeckWithCount[]>([]);
+  const [selectedDeckId, setSelectedDeckId] = useState<string | null>(null);
+  const [deckWords, setDeckWords] = useState<SavedWord[] | null>(null);
+  const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
+  const [selectedWordIds, setSelectedWordIds] = useState<Set<string>>(new Set());
+  const [addToDeckModalVisible, setAddToDeckModalVisible] = useState(false);
+  const [wordsForAddToDeck, setWordsForAddToDeck] = useState<SavedWord[]>([]);
   const [eligibility, setEligibility] = useState<VocabularyEligibility | null>(null);
   const [recentBookId, setRecentBookId] = useState<string | null>(null);
   const [books, setBooks] = useState<BookRow[]>([]);
   const [quotes, setQuotes] = useState<Highlight[]>([]);
+  const [readerNotes, setReaderNotes] = useState<ReaderNoteWithBook[]>([]);
   const [quranHighlights, setQuranHighlights] = useState<QuranHighlight[]>([]);
   const [bibleHighlights, setBibleHighlights] = useState<BibleHighlight[]>([]);
   const [pendingLookups, setPendingLookups] = useState<PendingWordLookup[]>([]);
   const [collapsedWordBooks, setCollapsedWordBooks] = useState<Record<string, boolean>>({});
   const [collapsedQuoteBooks, setCollapsedQuoteBooks] = useState<Record<string, boolean>>({});
+  const [collapsedNoteBooks, setCollapsedNoteBooks] = useState<Record<string, boolean>>({});
   const [collapsedVerseGroups, setCollapsedVerseGroups] = useState<Record<string, boolean>>({});
 
   const toggleWordBook = (bookId: string) => {
@@ -192,6 +242,12 @@ export default function VocabularyScreen() {
     void Haptics.selectionAsync().catch(() => {});
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setCollapsedQuoteBooks((prev) => ({ ...prev, [bookId]: !prev[bookId] }));
+  };
+
+  const toggleNoteBook = (bookId: string) => {
+    void Haptics.selectionAsync().catch(() => {});
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setCollapsedNoteBooks((prev) => ({ ...prev, [bookId]: !prev[bookId] }));
   };
 
   const toggleVerseGroup = (groupTitle: string) => {
@@ -236,8 +292,12 @@ export default function VocabularyScreen() {
       getVocabularyEligibility(),
       listActiveReadingPositions(),
       listPendingLookups().catch(() => []),
-    ]).then(([w, b, q, qv, bv, nextEligibility, positions, pending]) => {
+      listAllReaderNotes().catch(() => []),
+      listSavedWordCountsByDay(30).catch(() => []),
+      listVocabularyDecks().catch(() => []),
+    ]).then(([w, b, q, qv, bv, nextEligibility, positions, pending, notes, counts, deckList]) => {
       setWords(w);
+      setGrowthCounts(counts);
       setEligibility(nextEligibility);
       setRecentBookId(positions[0]?.bookId ?? null);
       setBooks(b);
@@ -245,9 +305,26 @@ export default function VocabularyScreen() {
       setQuranHighlights(qv);
       setBibleHighlights(bv);
       setPendingLookups(pending);
+      setReaderNotes(notes);
+      setDecks(deckList);
       setLoaded(true);
+      void getUserProfile().then((prof) => setIsGuestUser(!prof.isProtected)).catch(() => {});
     });
   }, []);
+
+  useEffect(() => {
+    if (!selectedDeckId) {
+      setDeckWords(null);
+      return;
+    }
+    let cancelled = false;
+    void listWordsForDeck(selectedDeckId).then((dw) => {
+      if (!cancelled) setDeckWords(dw);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedDeckId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -334,14 +411,76 @@ export default function VocabularyScreen() {
 
   const bookTitle = (bookId: string) => books.find((b) => b.id === bookId)?.title ?? bookId;
   const getBook = (bookId: string) => books.find((b) => b.id === bookId);
-  const groups = words.reduce<Record<string, SavedWord[]>>((acc, word) => {
+  const wordsToFilter = useMemo(() => {
+    if (selectedDeckId && deckWords) return deckWords;
+    return words;
+  }, [selectedDeckId, deckWords, words]);
+  const filterCounts = useMemo(() => getMasteryFilterCounts(wordsToFilter), [wordsToFilter]);
+  const filteredWords = useMemo(
+    () => filterWordsByMastery(wordsToFilter, masteryFilter),
+    [wordsToFilter, masteryFilter],
+  );
+  const groups = filteredWords.reduce<Record<string, SavedWord[]>>((acc, word) => {
     (acc[word.bookId] ??= []).push(word);
     return acc;
   }, {});
+
+  const toggleWordSelection = (wordId: string) => {
+    void Haptics.selectionAsync().catch(() => {});
+    setSelectedWordIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(wordId)) next.delete(wordId);
+      else next.add(wordId);
+      return next;
+    });
+  };
   const quoteGroups = quotes.reduce<Record<string, Highlight[]>>((acc, quote) => {
     (acc[quote.bookId] ??= []).push(quote);
     return acc;
   }, {});
+  const noteGroups = useMemo(() => {
+    return readerNotes.reduce<Record<string, ReaderNoteWithBook[]>>((acc, note) => {
+      (acc[note.bookId] ??= []).push(note);
+      return acc;
+    }, {});
+  }, [readerNotes]);
+
+  const confirmRemoveNote = (note: ReaderNoteWithBook) => {
+    setConfirm({
+      title: 'Delete note?',
+      message: 'This note will be permanently removed.',
+      onConfirm: async () => {
+        setReaderNotes((prev) => prev.filter((n) => n.id !== note.id));
+        await deleteReaderNote(note.id);
+        setConfirm(null);
+      },
+    });
+  };
+
+  const handleExportNotes = () => {
+    if (readerNotes.length === 0) return;
+    Alert.alert('Export Notes', 'Choose an export format:', [
+      {
+        text: 'Markdown (.md)',
+        onPress: () => {
+          void Share.share({
+            message: exportNotesToMarkdown(readerNotes),
+            title: 'Lamplight Notes',
+          });
+        },
+      },
+      {
+        text: 'JSON (.json)',
+        onPress: () => {
+          void Share.share({
+            message: exportNotesToJson(readerNotes),
+            title: 'Lamplight Notes JSON',
+          });
+        },
+      },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
   const verses = useMemo(
     () =>
       [...buildQuranVerseEntries(quranHighlights, scriptureLabels), ...buildBibleVerseEntries(bibleHighlights, scriptureLabels)].sort(
@@ -391,13 +530,40 @@ export default function VocabularyScreen() {
     >
       <View style={styles.headerRow}>
         <Text style={[typography.screenTitle, { color: colors.ink }]}>Notebook</Text>
-        <Text style={[typography.uiRowTitle, { color: colors.fawn, fontSize: 12 }]}>
-          {tab === 'quotes'
-            ? `${quotes.length} ${quotes.length === 1 ? 'quote' : 'quotes'}`
-            : tab === 'verses'
-              ? `${verses.length} ${verses.length === 1 ? 'verse' : 'verses'}`
-              : `${words.length} ${words.length === 1 ? 'word' : 'words'}`}
-        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          {tab === 'notes' && readerNotes.length > 0 ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Export reading notes"
+              hitSlop={8}
+              onPress={handleExportNotes}
+              style={({ pressed }) => [
+                {
+                  backgroundColor: `${colors.flameAmber}18`,
+                  borderColor: `${colors.flameAmber}44`,
+                  borderWidth: 1,
+                  borderRadius: radius.pill,
+                  paddingHorizontal: 10,
+                  paddingVertical: 3,
+                },
+                pressed && { opacity: 0.6 },
+              ]}
+            >
+              <Text style={[typography.metadataCaption, { color: colors.flameAmber, fontWeight: '700', fontSize: 11 }]}>
+                Export
+              </Text>
+            </Pressable>
+          ) : null}
+          <Text style={[typography.uiRowTitle, { color: colors.fawn, fontSize: 12 }]}>
+            {tab === 'quotes'
+              ? `${quotes.length} ${quotes.length === 1 ? 'quote' : 'quotes'}`
+              : tab === 'notes'
+                ? `${readerNotes.length} ${readerNotes.length === 1 ? 'note' : 'notes'}`
+                : tab === 'verses'
+                  ? `${verses.length} ${verses.length === 1 ? 'verse' : 'verses'}`
+                  : `${words.length} ${words.length === 1 ? 'word' : 'words'}`}
+          </Text>
+        </View>
       </View>
       <CultureEditionBanner compact />
 
@@ -467,21 +633,22 @@ export default function VocabularyScreen() {
         {tab === 'flashcards' ? (
         !loaded ? (
           <SkeletonRows />
-        ) : (eligibility?.totalSaved ?? 0) < MIN_REVIEW_WORDS ? (
+        ) : !selectedDeckId && (eligibility?.totalSaved ?? 0) < MIN_REVIEW_WORDS ? (
           <LockedReview totalSaved={eligibility?.totalSaved ?? 0} recentBookId={recentBookId} />
         ) : (
           <FlashcardDeck
-            words={words}
+            words={wordsToFilter}
             books={books}
-            dueCount={eligibility?.dueCount ?? 0}
+            dueCount={selectedDeckId ? wordsToFilter.length : (eligibility?.dueCount ?? 0)}
             onWordUpdated={reload}
             onNavigateToStudySynonyms={handleNavigateToStudySynonyms}
             initialConfig={flashcardInit}
             onClearInitialConfig={() => setFlashcardInit(null)}
+            onMilestone={(m) => setActiveMilestone(m)}
           />
         )
       ) : tab === 'quiz' ? (
-        !loaded || !eligibility ? <SkeletonRows /> : <QuizTab eligibility={eligibility} books={books} words={words} />
+        !loaded || !eligibility ? <SkeletonRows /> : <QuizTab eligibility={eligibility} books={books} words={wordsToFilter} />
       ) : tab === 'quotes' ? (
         <ScrollView
           contentContainerStyle={{ paddingTop: spacing.sm, paddingBottom: 48 }}
@@ -590,6 +757,163 @@ export default function VocabularyScreen() {
                               hitSlop={8}
                               onPress={() => confirmRemoveQuote(quote)}
                               style={styles.actionIconBtn}
+                            >
+                              <TrashIcon color={colors.straw} size={16} />
+                            </Pressable>
+                          </View>
+                        </View>
+                      ))}
+                    </View>
+                  ) : null}
+                </View>
+              );
+            })
+          )}
+        </ScrollView>
+      ) : tab === 'notes' ? (
+        <ScrollView
+          contentContainerStyle={{ paddingTop: spacing.sm, paddingBottom: 48 }}
+          showsVerticalScrollIndicator={false}
+          overScrollMode="never"
+        >
+          {!loaded ? (
+            <SkeletonRows />
+          ) : readerNotes.length === 0 ? (
+            <EmptyPrompt variant="notes" message="Notes you jot down while reading will appear here." />
+          ) : (
+            Object.entries(noteGroups).map(([bookId, groupNotes]) => {
+              const book = getBook(bookId);
+              const title = book?.title ?? groupNotes[0]?.bookTitle ?? bookId;
+              const isCollapsed = Boolean(collapsedNoteBooks[bookId]);
+              const coverUrl = book?.coverUrl ?? groupNotes[0]?.coverImage;
+
+              return (
+                <View
+                  key={bookId}
+                  style={[
+                    styles.collectionCard,
+                    {
+                      backgroundColor: colors.card,
+                      borderColor: colors.hairline,
+                    },
+                  ]}
+                >
+                  <Pressable
+                    onPress={() => toggleNoteBook(bookId)}
+                    style={styles.cardHeader}
+                  >
+                    <View style={styles.coverThumbnailWrapper}>
+                      {coverUrl ? (
+                        <Image
+                          source={{ uri: coverUrl }}
+                          style={styles.coverThumbnailImage}
+                          contentFit="cover"
+                          transition={150}
+                        />
+                      ) : (
+                        <View style={[styles.coverFallback, { backgroundColor: isLamp ? '#3A342D' : '#DFD4C2' }]}>
+                          <View style={[styles.coverAccentBar, { backgroundColor: colors.flameAmber }]} />
+                          <Text style={[styles.coverFallbackInitials, { color: colors.ink }]}>
+                            {title.slice(0, 2).toUpperCase()}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+
+                    <View style={styles.headerInfo}>
+                      <Text numberOfLines={1} style={[typography.uiRowTitle, { color: colors.ink, fontSize: 16, fontWeight: '600' }]}>
+                        {title}
+                      </Text>
+                      <View style={styles.countRow}>
+                        <View style={[styles.countDot, { backgroundColor: colors.flameAmber }]} />
+                        <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 12 }]}>
+                          {groupNotes.length} {groupNotes.length === 1 ? 'note' : 'notes'}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.expandIconBox}>
+                      {isCollapsed ? (
+                        <ChevronRightIcon color={colors.straw} size={18} />
+                      ) : (
+                        <ChevronDownIcon color={colors.straw} size={18} />
+                      )}
+                    </View>
+                  </Pressable>
+
+                  {!isCollapsed ? (
+                    <View style={styles.expandedContent}>
+                      {groupNotes.map((note, index) => (
+                        <View
+                          key={note.id}
+                          style={[
+                            styles.quoteRow,
+                            index < groupNotes.length - 1 && [
+                              styles.itemDivider,
+                              { borderBottomColor: isLamp ? '#332E27' : '#EAE1D3' },
+                            ],
+                          ]}
+                        >
+                          <Pressable
+                            onPress={() =>
+                              router.push({
+                                pathname: '/reader/[bookId]',
+                                params: {
+                                  bookId: note.bookId,
+                                  jumpChapter: String(note.chapterIndex),
+                                  jumpPage: String(note.pageIndex),
+                                },
+                              })
+                            }
+                            style={styles.quoteMainContent}
+                          >
+                            <View style={styles.noteLocationRow}>
+                              <Text
+                                style={[
+                                  typography.metadataCaption,
+                                  { color: colors.flameAmber, fontWeight: '600', fontSize: 11 },
+                                ]}
+                              >
+                                Ch. {note.chapterIndex + 1} · Page {note.pageIndex + 1}
+                              </Text>
+                              <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11 }]}>
+                                {new Date(note.updatedAt).toLocaleDateString(undefined, {
+                                  month: 'short',
+                                  day: 'numeric',
+                                })}
+                              </Text>
+                            </View>
+                            <Text
+                              numberOfLines={4}
+                              style={[typography.readingBody, { color: colors.ink, fontSize: 15, lineHeight: 22 }]}
+                            >
+                              {note.noteText}
+                            </Text>
+                          </Pressable>
+
+                          <View style={styles.itemActions}>
+                            <Pressable
+                              hitSlop={8}
+                              onPress={() =>
+                                router.push({
+                                  pathname: '/reader/[bookId]',
+                                  params: {
+                                    bookId: note.bookId,
+                                    jumpChapter: String(note.chapterIndex),
+                                    jumpPage: String(note.pageIndex),
+                                  },
+                                })
+                              }
+                              style={styles.actionIconBtn}
+                              accessibilityLabel="Jump to note location in book"
+                            >
+                              <ChevronRightIcon color={colors.straw} size={15} />
+                            </Pressable>
+                            <Pressable
+                              hitSlop={8}
+                              onPress={() => confirmRemoveNote(note)}
+                              style={styles.actionIconBtn}
+                              accessibilityLabel="Delete note"
                             >
                               <TrashIcon color={colors.straw} size={16} />
                             </Pressable>
@@ -731,6 +1055,253 @@ export default function VocabularyScreen() {
             <SkeletonRows />
           ) : (
             <>
+              {words.length > 0 ? (
+                <>
+                  <VocabularyGrowthChart counts={growthCounts} totalWords={words.length} />
+
+                  {/* Study Decks Bar (LEARN-03) */}
+                  <View style={{ marginBottom: spacing.xs }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                      <Text style={[typography.eyebrowLabel, { color: colors.fawn, fontSize: 10 }]}>
+                        STUDY DECKS
+                      </Text>
+                      <Pressable
+                        onPress={() => {
+                          void Haptics.selectionAsync().catch(() => {});
+                          setIsMultiSelectMode((prev) => !prev);
+                          if (isMultiSelectMode) setSelectedWordIds(new Set());
+                        }}
+                        hitSlop={8}
+                      >
+                        <Text style={[typography.buttonLabel, { color: colors.flameAmber, fontSize: 11 }]}>
+                          {isMultiSelectMode ? 'Done' : 'Select'}
+                        </Text>
+                      </Pressable>
+                    </View>
+
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={{ gap: 8, paddingBottom: spacing.xs, alignItems: 'center' }}
+                    >
+                      <Pressable
+                        onPress={() => {
+                          void Haptics.selectionAsync().catch(() => {});
+                          setSelectedDeckId(null);
+                        }}
+                        style={[
+                          styles.filterChip,
+                          {
+                            backgroundColor: selectedDeckId === null ? colors.primaryDark : colors.card,
+                            borderColor: selectedDeckId === null ? colors.primaryDark : colors.hairline,
+                            borderRadius: radius.pill,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            typography.eyebrowLabel,
+                            {
+                              color: selectedDeckId === null ? colors.parchment : colors.umber,
+                              fontSize: 10,
+                            },
+                          ]}
+                        >
+                          ALL WORDS ({words.length})
+                        </Text>
+                      </Pressable>
+
+                      {decks.map((deck) => {
+                        const isDeckSelected = selectedDeckId === deck.id;
+                        return (
+                          <Pressable
+                            key={deck.id}
+                            onPress={() => {
+                              void Haptics.selectionAsync().catch(() => {});
+                              setSelectedDeckId(isDeckSelected ? null : deck.id);
+                            }}
+                            style={[
+                              styles.filterChip,
+                              {
+                                backgroundColor: isDeckSelected ? colors.primaryDark : colors.card,
+                                borderColor: isDeckSelected ? colors.flameAmber : colors.hairline,
+                                borderRadius: radius.pill,
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                gap: 4,
+                              },
+                            ]}
+                          >
+                            <Text style={{ color: colors.flameAmber, fontSize: 9 }}>✦</Text>
+                            <Text
+                              style={[
+                                typography.eyebrowLabel,
+                                {
+                                  color: isDeckSelected ? colors.flameAmber : colors.umber,
+                                  fontSize: 10,
+                                },
+                              ]}
+                            >
+                              {deck.name.toUpperCase()} ({deck.wordCount})
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+
+                      <Pressable
+                        onPress={() => {
+                          if (!canUse('unlimited_learning')) {
+                            router.push({
+                              pathname: '/paywall',
+                              params: { feature: 'unlimited_learning', trigger: 'custom_deck' },
+                            });
+                            return;
+                          }
+                          setWordsForAddToDeck([]);
+                          setAddToDeckModalVisible(true);
+                        }}
+                        style={[
+                          styles.filterChip,
+                          {
+                            backgroundColor: colors.card,
+                            borderColor: colors.hairline,
+                            borderRadius: radius.pill,
+                            borderStyle: 'dashed',
+                          },
+                        ]}
+                      >
+                        <Text style={[typography.eyebrowLabel, { color: colors.flameAmber, fontSize: 10 }]}>
+                          + NEW DECK
+                        </Text>
+                      </Pressable>
+                    </ScrollView>
+                  </View>
+
+                  {/* Active Deck Card */}
+                  {selectedDeckId && (
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        backgroundColor: isLamp ? '#232023' : 'rgba(245, 166, 35, 0.1)',
+                        borderColor: isLamp ? 'rgba(245, 166, 35, 0.25)' : 'rgba(245, 166, 35, 0.35)',
+                        borderWidth: 1,
+                        borderRadius: radius.card,
+                        paddingHorizontal: 14,
+                        paddingVertical: 10,
+                        marginBottom: spacing.sm,
+                      }}
+                    >
+                      <View style={{ flex: 1, minWidth: 0, paddingRight: 8 }}>
+                        <Text style={[typography.eyebrowLabel, { color: colors.flameAmber, fontSize: 10 }]}>
+                          ACTIVE STUDY DECK
+                        </Text>
+                        <Text numberOfLines={1} style={[typography.uiRowTitle, { color: colors.ink, fontSize: 14, marginTop: 2 }]}>
+                          {decks.find((d) => d.id === selectedDeckId)?.name ?? 'Study Deck'}
+                        </Text>
+                      </View>
+
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <Pressable
+                          onPress={() => {
+                            const currentDeck = decks.find((d) => d.id === selectedDeckId);
+                            if (!currentDeck) return;
+                            setConfirm({
+                              title: 'Delete study deck?',
+                              message: `Delete “${currentDeck.name}”? All saved words will remain in your library.`,
+                              onConfirm: async () => {
+                                await deleteVocabularyDeck(currentDeck.id);
+                                setSelectedDeckId(null);
+                                reload();
+                              },
+                            });
+                          }}
+                          hitSlop={8}
+                          style={{ padding: 4 }}
+                        >
+                          <TrashIcon color={colors.straw} size={15} />
+                        </Pressable>
+
+                        <Pressable
+                          onPress={() => {
+                            void Haptics.selectionAsync().catch(() => {});
+                            setTab('flashcards');
+                          }}
+                          style={{
+                            backgroundColor: colors.flameAmber,
+                            paddingHorizontal: 12,
+                            paddingVertical: 6,
+                            borderRadius: radius.pill,
+                          }}
+                        >
+                          <Text style={[typography.buttonLabel, { color: colors.primaryDark, fontSize: 11.5, fontWeight: '700' }]}>
+                            Study Deck →
+                          </Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  )}
+
+                  {/* Mastery Filter Bar (LEARN-02) */}
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={{ gap: 8, paddingBottom: spacing.sm, alignItems: 'center' }}
+                    style={{ marginBottom: spacing.sm }}
+                  >
+                    {(['all', 'due', 'learning', 'mastered', 'difficult', 'new'] as MasteryFilter[]).map(
+                      (filterKey) => {
+                        const isSelected = masteryFilter === filterKey;
+                        const count = filterCounts[filterKey];
+                        const label =
+                          filterKey === 'all'
+                            ? `All (${count})`
+                            : filterKey === 'due'
+                            ? `Due (${count})`
+                            : filterKey === 'learning'
+                            ? `Learning (${count})`
+                            : filterKey === 'mastered'
+                            ? `Mastered (${count})`
+                            : filterKey === 'difficult'
+                            ? `Difficult (${count})`
+                            : `New (${count})`;
+
+                        return (
+                          <Pressable
+                            key={filterKey}
+                            onPress={() => {
+                              void Haptics.selectionAsync().catch(() => {});
+                              setMasteryFilter(filterKey);
+                            }}
+                            style={[
+                              styles.filterChip,
+                              {
+                                backgroundColor: isSelected ? colors.primaryDark : colors.card,
+                                borderColor: isSelected ? colors.primaryDark : colors.hairline,
+                                borderRadius: radius.pill,
+                              },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                typography.eyebrowLabel,
+                                {
+                                  color: isSelected ? colors.parchment : colors.umber,
+                                  fontSize: 10,
+                                },
+                              ]}
+                            >
+                              {label.toUpperCase()}
+                            </Text>
+                          </Pressable>
+                        );
+                      },
+                    )}
+                  </ScrollView>
+                </>
+              ) : null}
+
               {pendingLookups.length > 0 ? (
                 <View
                   style={[
@@ -815,6 +1386,41 @@ export default function VocabularyScreen() {
               ) : null}
               {words.length === 0 && pendingLookups.length === 0 ? (
                 <EmptyPrompt variant="list" message="Words you save while reading will appear here." />
+              ) : Object.keys(groups).length === 0 && words.length > 0 ? (
+                <View
+                  style={[
+                    styles.collectionCard,
+                    {
+                      backgroundColor: colors.card,
+                      borderColor: colors.hairline,
+                      padding: spacing.lg,
+                      alignItems: 'center',
+                    },
+                  ]}
+                >
+                  <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 14, textAlign: 'center' }]}>
+                    No words matching "{masteryFilter.toUpperCase()}"
+                  </Text>
+                  <Text style={[typography.metadataCaption, { color: colors.umber, marginTop: 4, textAlign: 'center' }]}>
+                    Try selecting another filter or continue reading to add words.
+                  </Text>
+                  <Pressable
+                    onPress={() => setMasteryFilter('all')}
+                    style={{
+                      marginTop: 10,
+                      backgroundColor: colors.parchment,
+                      borderColor: colors.hairline,
+                      borderWidth: 1,
+                      borderRadius: radius.pill,
+                      paddingHorizontal: 12,
+                      paddingVertical: 5,
+                    }}
+                  >
+                    <Text style={[typography.eyebrowLabel, { color: colors.flameAmber, fontSize: 10 }]}>
+                      VIEW ALL WORDS
+                    </Text>
+                  </Pressable>
+                </View>
               ) : Object.entries(groups).map(([bookId, groupWords]) => {
               const book = getBook(bookId);
               const title = book?.title ?? bookId;
@@ -876,72 +1482,126 @@ export default function VocabularyScreen() {
 
                   {!isCollapsed ? (
                     <View style={styles.expandedContent}>
-                      {groupWords.map((word, index) => (
-                        <View
-                          key={word.id}
-                          style={[
-                            styles.wordRow,
-                            index < groupWords.length - 1 && [
-                              styles.itemDivider,
-                              { borderBottomColor: isLamp ? '#332E27' : '#EAE1D3' },
-                            ],
-                          ]}
-                        >
-                          <Pressable
-                            onPress={() =>
-                              router.push({
-                                pathname: '/reader/[bookId]',
-                                params: {
-                                  bookId: word.bookId,
-                                  jumpChapter: String(word.chapterIndex),
-                                  jumpPage: String(word.pageIndex),
-                                },
-                              })
-                            }
-                            style={styles.wordMainContent}
+                      {groupWords.map((word, index) => {
+                        const masteryInfo = getWordMasteryInfo(word);
+                        const stageColor =
+                          masteryInfo.primaryStage === 'mastered'
+                            ? colors.highlight.sage
+                            : masteryInfo.primaryStage === 'reviewing'
+                            ? colors.flameAmber
+                            : masteryInfo.primaryStage === 'learning'
+                            ? colors.highlight.amber
+                            : colors.fawn;
+
+                        return (
+                          <View
+                            key={word.id}
+                            style={[
+                              styles.wordRow,
+                              index < groupWords.length - 1 && [
+                                styles.itemDivider,
+                                { borderBottomColor: isLamp ? '#332E27' : '#EAE1D3' },
+                              ],
+                            ]}
                           >
-                            <View style={styles.wordHeaderLine}>
-                              <Text style={[typography.translatedWordInline, { color: colors.ink, fontSize: 15 }]}>
-                                {word.sourceWord}{' '}
-                                <Text style={[getNativeUiTextStyle(motherTongue, 'row'), { color: colors.fawn }]}>
-                                  → {word.translation}
+                            <Pressable
+                              onPress={() => {
+                                if (isMultiSelectMode) {
+                                  toggleWordSelection(word.id);
+                                } else {
+                                  setSelectedWordForDetail(word);
+                                }
+                              }}
+                              style={styles.wordMainContent}
+                            >
+                              <View style={styles.wordHeaderLine}>
+                                {isMultiSelectMode && (
+                                  <View
+                                    style={{
+                                      width: 18,
+                                      height: 18,
+                                      borderRadius: 9,
+                                      borderWidth: 1.5,
+                                      borderColor: selectedWordIds.has(word.id) ? colors.flameAmber : colors.fawn,
+                                      backgroundColor: selectedWordIds.has(word.id) ? colors.flameAmber : 'transparent',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      marginRight: 8,
+                                    }}
+                                  >
+                                    {selectedWordIds.has(word.id) && (
+                                      <Text style={{ color: colors.primaryDark, fontSize: 10, fontWeight: '800' }}>✓</Text>
+                                    )}
+                                  </View>
+                                )}
+                                <Text style={[typography.translatedWordInline, { color: colors.ink, fontSize: 15, flex: 1, marginRight: 6 }]}>
+                                  {word.sourceWord}{' '}
+                                  <Text style={[getNativeUiTextStyle(motherTongue, 'row'), { color: colors.fawn }]}>
+                                    → {word.translation}
+                                  </Text>
                                 </Text>
-                              </Text>
-                            </View>
+                                <View
+                                  style={[
+                                    styles.masteryPill,
+                                    {
+                                      backgroundColor:
+                                        masteryInfo.primaryStage === 'mastered'
+                                          ? 'rgba(127, 163, 122, 0.15)'
+                                          : masteryInfo.isDue
+                                          ? 'rgba(245, 166, 35, 0.15)'
+                                          : colors.parchment,
+                                      borderColor: colors.hairline,
+                                    },
+                                  ]}
+                                >
+                                  <Text
+                                    style={[
+                                      typography.eyebrowLabel,
+                                      {
+                                        color: stageColor,
+                                        fontSize: 8.5,
+                                      },
+                                    ]}
+                                  >
+                                    {masteryInfo.stageLabel.toUpperCase()}{masteryInfo.isDue ? ' · DUE' : ''}
+                                  </Text>
+                                </View>
+                              </View>
 
-                            {word.contextSentence ? (
-                              <Text
-                                numberOfLines={3}
-                                style={[
-                                  typography.metadataCaption,
-                                  styles.contextSentenceText,
-                                  { color: isLamp ? '#B3A898' : '#736B60' },
-                                ]}
+                              {word.contextSentence ? (
+                                <Text
+                                  numberOfLines={3}
+                                  style={[
+                                    typography.metadataCaption,
+                                    styles.contextSentenceText,
+                                    { color: isLamp ? '#B3A898' : '#736B60' },
+                                  ]}
+                                >
+                                  &ldquo;{sentenceContaining(word.contextSentence, word.sourceWord)}&rdquo;
+                                </Text>
+                              ) : null}
+                              <WordRowCluster word={word} />
+                            </Pressable>
+
+                            <View style={styles.itemActions}>
+                              <Pressable
+                                hitSlop={8}
+                                onPress={() => void speakWord(word.sourceWord, word.sourceLang)}
+                                style={styles.actionIconBtn}
                               >
-                                &ldquo;{sentenceContaining(word.contextSentence, word.sourceWord)}&rdquo;
-                              </Text>
-                            ) : null}
-                            <WordRowCluster word={word} />
-                          </Pressable>
-
-                          <View style={styles.itemActions}>
-                            <Pressable
-                              hitSlop={8}
-                              onPress={() => void speakWord(word.sourceWord, word.sourceLang)}
-                              style={styles.actionIconBtn}
-                            >
-                              <SpeakerIcon color={colors.flameAmber} size={16} />
-                            </Pressable>
-                            <Pressable
-                              hitSlop={8}
-                              onPress={() => confirmRemoveWord(word)}
-                              style={styles.actionIconBtn}
-                            >
-                              <TrashIcon color={colors.straw} size={16} />
-                            </Pressable>
+                                <SpeakerIcon color={colors.flameAmber} size={16} />
+                              </Pressable>
+                              <Pressable
+                                hitSlop={8}
+                                onPress={() => confirmRemoveWord(word)}
+                                style={styles.actionIconBtn}
+                              >
+                                <TrashIcon color={colors.straw} size={16} />
+                              </Pressable>
+                            </View>
                           </View>
-                        </View>
-                      ))}
+                        );
+                      })}
                     </View>
                   ) : null}
                 </View>
@@ -999,6 +1659,111 @@ export default function VocabularyScreen() {
         }}
         onCancel={() => setConfirm(null)}
       />
+
+      <WordDetailModal
+        visible={selectedWordForDetail != null}
+        word={selectedWordForDetail}
+        bookTitle={selectedWordForDetail ? bookTitle(selectedWordForDetail.bookId) : undefined}
+        onClose={() => setSelectedWordForDetail(null)}
+        onReadInBook={(w) => {
+          setSelectedWordForDetail(null);
+          router.push({
+            pathname: '/reader/[bookId]',
+            params: {
+              bookId: w.bookId,
+              jumpChapter: String(w.chapterIndex),
+              jumpPage: String(w.pageIndex),
+            },
+          });
+        }}
+        onDeleteWord={(w) => {
+          setSelectedWordForDetail(null);
+          confirmRemoveWord(w);
+        }}
+        onAddToDeck={(w) => {
+          setWordsForAddToDeck([w]);
+          setAddToDeckModalVisible(true);
+        }}
+      />
+
+      <MilestoneCelebrationModal
+        visible={activeMilestone != null}
+        milestone={activeMilestone}
+        isGuest={isGuestUser}
+        onClose={() => setActiveMilestone(null)}
+        onProtectAccount={() => router.push('/signup' as any)}
+      />
+
+      <AddToDeckModal
+        visible={addToDeckModalVisible}
+        words={wordsForAddToDeck}
+        onClose={() => {
+          setAddToDeckModalVisible(false);
+          setWordsForAddToDeck([]);
+        }}
+        onDecksUpdated={reload}
+      />
+
+      {/* Multi-Select Floating Action Bar */}
+      {isMultiSelectMode && (
+        <View
+          style={{
+            position: 'absolute',
+            bottom: insets.bottom + 16,
+            left: 20,
+            right: 20,
+            backgroundColor: colors.primaryDark,
+            borderRadius: radius.pill,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            paddingVertical: 10,
+            paddingHorizontal: 16,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.25,
+            shadowRadius: 10,
+            elevation: 6,
+          }}
+        >
+          <Text style={[typography.buttonLabel, { color: colors.parchment, fontSize: 13 }]}>
+            {selectedWordIds.size} {selectedWordIds.size === 1 ? 'word' : 'words'} selected
+          </Text>
+
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <Pressable
+              onPress={() => {
+                setIsMultiSelectMode(false);
+                setSelectedWordIds(new Set());
+              }}
+              style={{ paddingHorizontal: 8, paddingVertical: 4 }}
+            >
+              <Text style={[typography.buttonLabel, { color: colors.fawn, fontSize: 12.5 }]}>
+                Cancel
+              </Text>
+            </Pressable>
+
+            <Pressable
+              disabled={selectedWordIds.size === 0}
+              onPress={() => {
+                const wordsToAdd = words.filter((w) => selectedWordIds.has(w.id));
+                setWordsForAddToDeck(wordsToAdd);
+                setAddToDeckModalVisible(true);
+              }}
+              style={{
+                backgroundColor: selectedWordIds.size > 0 ? colors.flameAmber : 'rgba(245, 166, 35, 0.4)',
+                paddingHorizontal: 14,
+                paddingVertical: 6,
+                borderRadius: radius.pill,
+              }}
+            >
+              <Text style={[typography.buttonLabel, { color: colors.primaryDark, fontSize: 12.5, fontWeight: '700' }]}>
+                Add to Deck
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -1258,17 +2023,11 @@ function LockedReview({ totalSaved, recentBookId }: { totalSaved: number; recent
 }
 
 type QuizState = 'NO_ELIGIBLE_BOOKS' | 'BOOK_PICKER' | 'MODE_PICKER' | 'IN_QUIZ' | 'RESULT';
-type QuizMode = 'normal' | 'fresh' | 'synonyms';
-
-function weekKey(nowMs: number = Date.now()): string {
-  const date = new Date(nowMs);
-  const day = (date.getDay() + 6) % 7;
-  date.setDate(date.getDate() - day);
-  return localDateKey(date.getTime());
-}
 
 function QuizTab({ eligibility, books, words }: { eligibility: VocabularyEligibility; books: BookRow[]; words: SavedWord[] }) {
   const { colors, typography, spacing, radius } = useTheme();
+  const isPremiumUser = canUse('advanced_quiz');
+  const [weeklySampleUsed, setWeeklySampleUsed] = useState(false);
   const eligibleBooks = useMemo(
     () => eligibility.perBook.filter((entry) => entry.savedCount >= MIN_QUIZ_WORDS_PER_BOOK),
     [eligibility.perBook],
@@ -1279,6 +2038,13 @@ function QuizTab({ eligibility, books, words }: { eligibility: VocabularyEligibi
   const [quizWords, setQuizWords] = useState<SavedWord[]>([]);
   const [results, setResults] = useState<{ word: SavedWord; correct: boolean }[]>([]);
   const [accessMessage, setAccessMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    void (async () => {
+      const used = await hasUsedWeeklyQuizSample();
+      setWeeklySampleUsed(used);
+    })();
+  }, [state]);
 
   useEffect(() => {
     if (state === 'NO_ELIGIBLE_BOOKS' && eligibleBooks.length > 0) setState('BOOK_PICKER');
@@ -1302,6 +2068,7 @@ function QuizTab({ eligibility, books, words }: { eligibility: VocabularyEligibi
     const scopedWords = shuffledBookWords(wordsForSelectedBook);
     if (scopedWords.length === 0) return;
     setAccessMessage(null);
+    let hasCachedData = true;
     let compatibleWords = scopedWords;
     if (nextMode === 'synonyms') {
       compatibleWords = (
@@ -1312,24 +2079,47 @@ function QuizTab({ eligibility, books, words }: { eligibility: VocabularyEligibi
         }))
       ).filter((word): word is SavedWord => word != null);
       if (compatibleWords.length === 0) {
+        hasCachedData = false;
         setAccessMessage('Similar-word data is not ready for this book yet. Try From the book instead.');
         return;
       }
     }
-    if (nextMode !== 'normal') {
-      const sampleKey = `vocabulary.advanced_quiz_sample.${weekKey()}`;
-      if (await getSetting(sampleKey)) {
-        logEvent('paywall_viewed', { trigger: 'advanced_quiz_sample_used', feature: nextMode });
-        router.push('/paywall');
+
+    const gate = await evaluateQuizGate(nextMode, { hasCachedData });
+    if (!gate.allowed) {
+      if (gate.status === 'service_disabled') {
+        Alert.alert('Quizzes Unavailable', gate.reason ?? 'Vocabulary quizzes are temporarily unavailable.');
         return;
       }
-      await setSetting(sampleKey, '1');
+      if (gate.status === 'offline_unavailable') {
+        setAccessMessage(gate.reason ?? 'Internet connection required for this quiz mode.');
+        return;
+      }
+      if (gate.status === 'subscription_required') {
+        logEvent('paywall_viewed', { trigger: gate.trigger, feature: 'advanced_quiz', quiz_mode: nextMode });
+        router.push({
+          pathname: '/paywall',
+          params: { feature: 'advanced_quiz', trigger: gate.trigger, quiz_mode: nextMode } as any,
+        });
+        return;
+      }
+    }
+
+    if (gate.source === 'weekly_sample') {
+      await recordWeeklyQuizSampleUsed();
+      setWeeklySampleUsed(true);
       logEvent('premium_sample_used', { feature: nextMode });
     }
+
     setQuizWords(compatibleWords);
     setMode(nextMode);
     setState('IN_QUIZ');
-    logEvent('quiz_started', { book_id: selectedBookId ?? 'unknown', mode: nextMode, question_count: compatibleWords.length, entitlement_source: nextMode === 'normal' ? 'free' : 'sample' });
+    logEvent('quiz_started', {
+      book_id: selectedBookId ?? 'unknown',
+      mode: nextMode,
+      question_count: compatibleWords.length,
+      entitlement_source: gate.source ?? 'free',
+    });
   };
 
   const openBook = (entry: VocabularyEligibility['perBook'][number], latestWord?: SavedWord) => {
@@ -1402,8 +2192,24 @@ function QuizTab({ eligibility, books, words }: { eligibility: VocabularyEligibi
       <Text style={[typography.metadataCaption, { color: colors.fawn, marginTop: spacing.xs, marginBottom: spacing.lg }]}>Choose how you want to practice.</Text>
       {([
         ['normal', 'From the book', 'Original context cloze · Free'],
-        ['fresh', 'New sentence', 'A fresh context · one free session each week'],
-        ['synonyms', 'Similar words', 'Synonym and antonym choices · one free session each week'],
+        [
+          'fresh',
+          'New sentence',
+          isPremiumUser
+            ? 'A fresh context · Unlimited with Premium'
+            : weeklySampleUsed
+              ? 'A fresh context · Weekly sample used · Premium'
+              : 'A fresh context · 1 free sample this week',
+        ],
+        [
+          'synonyms',
+          'Similar words',
+          isPremiumUser
+            ? 'Synonym and antonym choices · Unlimited with Premium'
+            : weeklySampleUsed
+              ? 'Synonym and antonym choices · Weekly sample used · Premium'
+              : 'Synonym and antonym choices · 1 free sample this week',
+        ],
       ] as const).map(([nextMode, label, detail]) => (
         <Pressable key={nextMode} onPress={() => void startMode(nextMode)} style={[styles.quizMode, { backgroundColor: colors.card, borderColor: colors.hairline, borderRadius: radius.card }]}>
           <Text style={[typography.uiRowTitle, { color: colors.ink }]}>{label}</Text>
@@ -1436,6 +2242,7 @@ function FlashcardDeck({
   onNavigateToStudySynonyms,
   initialConfig,
   onClearInitialConfig,
+  onMilestone,
 }: {
   words: SavedWord[];
   books: BookRow[];
@@ -1444,6 +2251,7 @@ function FlashcardDeck({
   onNavigateToStudySynonyms?: (wordsToStudy: SavedWord[]) => void;
   initialConfig?: { phase: 'challenge'; mode: 'synonyms' } | null;
   onClearInitialConfig?: () => void;
+  onMilestone?: (milestone: MilestoneConfig) => void;
 }) {
   const { colors, typography, spacing, radius, scheme } = useTheme();
   const isLamp = scheme === 'lamp';
@@ -1696,6 +2504,11 @@ function FlashcardDeck({
           difficult: difficultWords.length + (rating === 'hard' ? 1 : 0),
           duration_ms: Date.now() - sessionStartTime,
         });
+        if (onMilestone) {
+          void checkAndTriggerMilestone('first_completed_review').then((m) => {
+            if (m) onMilestone(m);
+          });
+        }
       }
     }
     ratingLock.current = false;
@@ -1727,7 +2540,35 @@ function FlashcardDeck({
     setFlipped(false);
   };
 
-  const startQuiz = (mode: 'normal' | 'synonyms' = 'normal') => {
+  const startQuiz = async (mode: 'normal' | 'synonyms' = 'normal') => {
+    const gate = await evaluateQuizGate(mode);
+    if (!gate.allowed) {
+      if (gate.status === 'service_disabled') {
+        Alert.alert(
+          'Quizzes Unavailable',
+          gate.reason ?? 'Vocabulary quizzes are temporarily paused for service maintenance. Flashcard review remains fully available.',
+        );
+        return;
+      }
+      if (gate.status === 'offline_unavailable') {
+        Alert.alert('Connection Needed', gate.reason ?? 'Internet connection required for this quiz mode.');
+        return;
+      }
+      if (gate.status === 'subscription_required') {
+        logEvent('paywall_viewed', { trigger: gate.trigger, feature: 'advanced_quiz', quiz_mode: mode });
+        router.push({
+          pathname: '/paywall',
+          params: { feature: 'advanced_quiz', trigger: gate.trigger, quiz_mode: mode } as any,
+        });
+        return;
+      }
+    }
+
+    if (gate.source === 'weekly_sample') {
+      await recordWeeklyQuizSampleUsed();
+      logEvent('premium_sample_used', { feature: mode });
+    }
+
     const pool = completedWords.length > 0 ? completedWords : words;
     if (quizWords.length === 0) {
       setQuizWords(selectQuizWords(pool, difficultWords));
@@ -1788,7 +2629,7 @@ function FlashcardDeck({
     return (
       <ClozeResultScreen
         results={challengeResults}
-        onRetakeWithRelatedWords={() => startQuiz('synonyms')}
+        onRetakeWithRelatedWords={() => void startQuiz('synonyms')}
         onDone={() => {
           setQuizCompleted(true);
           setIsSessionComplete(true);
@@ -1842,7 +2683,7 @@ function FlashcardDeck({
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Take the fill-in-the-blank quiz"
-              onPress={() => startQuiz()}
+              onPress={() => void startQuiz()}
               style={[
                 styles.completionQuizButton,
                 { backgroundColor: colors.flameAmber, borderRadius: radius.pill },
@@ -2434,6 +3275,12 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
+  noteLocationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
   verseRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -2645,6 +3492,17 @@ const styles = StyleSheet.create({
   studyBannerBtn: {
     paddingHorizontal: 16,
     paddingVertical: 9,
+  },
+  filterChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderWidth: 1,
+  },
+  masteryPill: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
   },
 });
 

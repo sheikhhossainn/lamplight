@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BookSpine, isDarkSpineColor, spineColorForBook } from '@/components/BookSpine';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { ScreenStateView } from '@/components/ScreenStateView';
 import { CheckIcon, ChevronLeftIcon, TrashIcon } from '@/components/icons';
 import {
   fetchBanglaBookDetail,
@@ -119,11 +120,29 @@ export default function BanglaBookDetailScreen() {
     setIsDownloaded(false);
   };
 
-  if (loading || !detail) {
+  if (loading) {
     return (
-      <View style={[styles.loadingContainer, { backgroundColor: colors.parchment }]}>
-        <ActivityIndicator size="large" color={colors.flameAmber} />
-      </View>
+      <ScreenStateView
+        type="loading"
+        title="বই লোড হচ্ছে"
+        message="অধ্যায় ও বিবরণ সংগ্রহ করা হচ্ছে…"
+        fullScreen
+        canGoBack
+      />
+    );
+  }
+
+  if (!detail) {
+    return (
+      <ScreenStateView
+        type="error"
+        title="বই পাওয়া যায়নি"
+        message="এই বইটি খুঁজে পাওয়া যায়নি বা এটি সাময়িকভাবে অনুপলব্ধ।"
+        fullScreen
+        canGoBack
+        actionLabel="লাইব্রেরিতে ফিরে যান"
+        onAction={() => router.replace('/(tabs)/library')}
+      />
     );
   }
 

@@ -1,5 +1,6 @@
 import { getDb } from '@/db/client';
 import { generateId } from '@/lib/id';
+import { enqueueMutation } from './syncOutbox';
 
 export type Shelf = {
   id: string;
@@ -36,6 +37,9 @@ export async function createShelf(name: string, bookIds: string[]): Promise<Shel
     shelf.name,
     shelf.createdAt,
   ]);
+  try {
+    await enqueueMutation({ entityType: 'shelf', entityId: shelf.id, operation: 'upsert', payload: shelf }, db);
+  } catch { /* sync enqueue non-fatal */ }
   await setShelfBooks(shelf.id, bookIds);
   return shelf;
 }
@@ -43,12 +47,18 @@ export async function createShelf(name: string, bookIds: string[]): Promise<Shel
 export async function renameShelf(id: string, name: string): Promise<void> {
   const db = await getDb();
   await db.runAsync('UPDATE shelves SET name = ? WHERE id = ?', [name.trim(), id]);
+  try {
+    await enqueueMutation({ entityType: 'shelf', entityId: id, operation: 'upsert', payload: { id, name: name.trim() } }, db);
+  } catch { /* sync enqueue non-fatal */ }
 }
 
 export async function deleteShelf(id: string): Promise<void> {
   const db = await getDb();
   await db.runAsync('DELETE FROM shelf_items WHERE shelf_id = ?', [id]);
   await db.runAsync('DELETE FROM shelves WHERE id = ?', [id]);
+  try {
+    await enqueueMutation({ entityType: 'shelf', entityId: id, operation: 'delete', payload: { id } }, db);
+  } catch { /* sync enqueue non-fatal */ }
 }
 
 export async function addBookToShelf(shelfId: string, bookId: string): Promise<void> {
@@ -58,11 +68,17 @@ export async function addBookToShelf(shelfId: string, bookId: string): Promise<v
     bookId,
     Date.now(),
   ]);
+  try {
+    await enqueueMutation({ entityType: 'shelf_item', entityId: `${shelfId}:${bookId}`, operation: 'upsert', payload: { shelfId, bookId } }, db);
+  } catch { /* sync enqueue non-fatal */ }
 }
 
 export async function removeBookFromShelf(shelfId: string, bookId: string): Promise<void> {
   const db = await getDb();
   await db.runAsync('DELETE FROM shelf_items WHERE shelf_id = ? AND book_id = ?', [shelfId, bookId]);
+  try {
+    await enqueueMutation({ entityType: 'shelf_item', entityId: `${shelfId}:${bookId}`, operation: 'delete', payload: { shelfId, bookId } }, db);
+  } catch { /* sync enqueue non-fatal */ }
 }
 
 // Replace a shelf's membership with exactly `bookIds`.

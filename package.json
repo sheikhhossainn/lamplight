@@ -13,6 +13,7 @@
     "expo-audio": "~57.0.4",
     "expo-clipboard": "~57.0.2",
     "expo-constants": "~57.0.17",
+    "expo-dev-client": "~57.0.19",
     "expo-device": "~57.0.1",
     "expo-file-system": "~57.0.6",
     "expo-font": "~57.0.3",
@@ -35,6 +36,7 @@
     "react-dom": "19.2.3",
     "react-native": "0.86.3",
     "react-native-gesture-handler": "~2.32.0",
+    "react-native-purchases": "^10.10.2",
     "react-native-reanimated": "4.5.1",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "~4.26.0",
@@ -52,6 +54,7 @@
     "typescript": "~6.0.3"
   },
   "scripts": {
+    "test": "tsx --test tests/**/*.test.ts",
     "start": "expo start",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo start --android",
@@ -68,6 +71,7 @@
     "fetch:vedas": "node scripts/fetch-vedas.mjs",
     "seed:scripture": "node scripts/seed-scripture-verses.mjs",
     "upload:ambience": "node scripts/upload-ambience.mjs assets/nature-music/trimmed",
+    "analyze:feedback": "node scripts/analyze-feedback.mjs",
     "update": "eas update --branch preview"
   },
   "private": true

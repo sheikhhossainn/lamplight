@@ -90,6 +90,8 @@ export default function PrivacyPolicyScreen() {
             • <Text style={{ fontFamily: 'Manrope_700Bold' }}>Anonymous Guest Mode:</Text> You can read completely offline without creating an account or providing an email address.
             {'\n'}
             • <Text style={{ fontFamily: 'Manrope_700Bold' }}>Cloud Sync:</Text> Only when you choose to link or protect your account with an email are your reading positions, saved words, and reading session aggregates backed up to our secure Supabase cloud infrastructure.
+            {'\n'}
+            • <Text style={{ fontFamily: 'Manrope_700Bold' }}>Voice Queries:</Text> If you use the microphone for a scripture search or question, the short recording is sent securely to Lamplight's transcription service, processed by our configured speech provider, and retained only for the duration of the request.
           </Text>
         </View>
 
