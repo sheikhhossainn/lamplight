@@ -176,33 +176,42 @@ async function syncUser(event: RevenueCatEvent, ownerId: string): Promise<void> 
 Deno.serve(async (request) => {
   if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
 
-  if (!REVENUECAT_WEBHOOK_AUTH_TOKEN && !REVENUECAT_WEBHOOK_HMAC_SECRET) {
+  const rawBody = await request.text();
+  let payload: RevenueCatPayload | null = null;
+  try {
+    payload = JSON.parse(rawBody) as RevenueCatPayload;
+  } catch {
+    return json({ error: 'Invalid JSON body' }, 400);
+  }
+
+  const webhookAuthToken = Deno.env.get('REVENUECAT_WEBHOOK_AUTH_TOKEN');
+  const hmacSecret = Deno.env.get('REVENUECAT_WEBHOOK_HMAC_SECRET');
+  const appIdsList = (Deno.env.get('REVENUECAT_APP_IDS') ?? '').split(',').map((v) => v.trim()).filter(Boolean);
+  const appIds = new Set(appIdsList);
+
+  if (!webhookAuthToken && !hmacSecret) {
     return json({ error: 'RevenueCat webhook authentication is not configured' }, 503);
   }
 
-  if (REVENUECAT_WEBHOOK_AUTH_TOKEN) {
-    const authHeader = request.headers.get('authorization');
-    const token = REVENUECAT_WEBHOOK_AUTH_TOKEN.replace(/^Bearer\s+/i, '');
-    const headerToken = (authHeader ?? '').replace(/^Bearer\s+/i, '');
-    if (!authHeader || headerToken !== token) {
-      return json({ error: 'Unauthorized' }, 401);
-    }
+  const authHeader = request.headers.get('authorization') ?? request.headers.get('x-authorization');
+  const cleanToken = (webhookAuthToken ?? '').trim().replace(/^["']|["']$/g, '').replace(/^Bearer\s+/i, '');
+  const cleanHeader = (authHeader ?? '').trim().replace(/^["']|["']$/g, '').replace(/^Bearer\s+/i, '');
+
+  if (webhookAuthToken && cleanHeader !== cleanToken) {
+    return json({
+      error: 'Unauthorized',
+      hint: authHeader
+        ? 'Authorization header was received but did not match REVENUECAT_WEBHOOK_AUTH_TOKEN'
+        : 'No Authorization header was received. Please ensure the Authorization header value is set and saved in RevenueCat.',
+    }, 401);
   }
 
-  const rawBody = await request.text();
-  if (REVENUECAT_WEBHOOK_HMAC_SECRET) {
+  if (hmacSecret) {
     const sigHeader = request.headers.get('x-revenuecat-signature') ?? request.headers.get('x-revenuecat-webhook-signature');
     const tsHeader = request.headers.get('x-revenuecat-request-timestamp');
     if (!(await verifyHmac(rawBody, sigHeader, tsHeader))) {
       return json({ error: 'Invalid webhook signature' }, 401);
     }
-  }
-
-  let payload: RevenueCatPayload;
-  try {
-    payload = JSON.parse(rawBody) as RevenueCatPayload;
-  } catch {
-    return json({ error: 'Invalid JSON body' }, 400);
   }
 
   const event = payload.event;
@@ -214,7 +223,7 @@ Deno.serve(async (request) => {
     return json({ received: true, test: true });
   }
 
-  if (REVENUECAT_APP_IDS.size > 0 && event.app_id && !REVENUECAT_APP_IDS.has(event.app_id)) {
+  if (appIds.size > 0 && event.app_id && !appIds.has(event.app_id)) {
     return json({ error: 'Unknown RevenueCat app' }, 403);
   }
 
