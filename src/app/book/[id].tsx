@@ -26,6 +26,7 @@ import {
 } from '@/db/repositories/shelves';
 import { getReadingGoal, type ReadingGoal } from '@/db/repositories/readingGoals';
 import { ReadingCadenceModal } from '@/components/ReadingCadenceModal';
+import { cancelCadenceReminder } from '@/features/notifications/notificationService';
 import {
   estimateReadingTime,
   getEditionInfo,
@@ -242,7 +243,11 @@ export default function BookDetailScreen() {
     if (imported) {
       // The user's own imported EPUB — remove it entirely (row is guaranteed
       // local by deleteImportedBook's WHERE clause; catalog rows can't be hit).
-      await Promise.all([deleteImportedBook(book.id), deleteBookCache(book.id)]);
+      await Promise.all([
+        deleteImportedBook(book.id),
+        deleteBookCache(book.id),
+        cancelCadenceReminder(book.id),
+      ]);
     } else {
       // Catalog title — only free the on-device download. Never deletes the
       // shared catalog row or the reading progress; it just re-downloads on
