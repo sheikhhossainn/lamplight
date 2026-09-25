@@ -87,6 +87,9 @@ export default function LoginScreen() {
           localSnapshot,
         );
         if (mergeRes.success) {
+          const { refreshEntitlements } = await import('@/features/subscription/entitlementService');
+          await refreshEntitlements('account_merge');
+          void triggerSync({ forceImmediate: true });
           router.replace('/(tabs)/homescreen');
           return;
         } else {
@@ -98,6 +101,8 @@ export default function LoginScreen() {
       // Standard sign in
       const res = await verifyEmailOtp(email.trim().toLowerCase(), trimmedToken);
       if (res.success) {
+        const { refreshEntitlements } = await import('@/features/subscription/entitlementService');
+        await refreshEntitlements('account_login');
         void triggerSync({ forceImmediate: true });
         router.replace('/(tabs)/homescreen');
       } else {
@@ -250,6 +255,69 @@ export default function LoginScreen() {
               </>
             ) : (
               <>
+                {localSnapshot &&
+                  (localSnapshot.savedWordsCount > 0 ||
+                    localSnapshot.highlightsCount > 0 ||
+                    localSnapshot.booksCount > 0 ||
+                    localSnapshot.shelvesCount > 0) && (
+                    <View
+                      style={[
+                        styles.mergePreviewCard,
+                        { backgroundColor: colors.parchment, borderColor: colors.hairline },
+                      ]}
+                    >
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text style={{ fontSize: 13 }}>📚</Text>
+                        <Text
+                          style={[
+                            typography.eyebrowLabel,
+                            { color: colors.flameAmber, fontSize: 10, letterSpacing: 0.8 },
+                          ]}
+                        >
+                          LOCAL READING MERGE PREVIEW
+                        </Text>
+                      </View>
+                      <Text
+                        style={[
+                          typography.metadataCaption,
+                          { color: colors.umber, marginTop: 4, lineHeight: 17 },
+                        ]}
+                      >
+                        Your guest reading history will be combined into this account:
+                      </Text>
+                      <View style={{ marginTop: 6, gap: 2 }}>
+                        {localSnapshot.booksCount > 0 && (
+                          <Text style={[typography.metadataCaption, { color: colors.ink, fontSize: 12 }]}>
+                            • {localSnapshot.booksCount} reading position{localSnapshot.booksCount === 1 ? '' : 's'}
+                          </Text>
+                        )}
+                        {localSnapshot.savedWordsCount > 0 && (
+                          <Text style={[typography.metadataCaption, { color: colors.ink, fontSize: 12 }]}>
+                            • {localSnapshot.savedWordsCount} saved vocabulary word{localSnapshot.savedWordsCount === 1 ? '' : 's'}
+                          </Text>
+                        )}
+                        {localSnapshot.highlightsCount > 0 && (
+                          <Text style={[typography.metadataCaption, { color: colors.ink, fontSize: 12 }]}>
+                            • {localSnapshot.highlightsCount} saved quote{localSnapshot.highlightsCount === 1 ? '' : 's'} & highlight{localSnapshot.highlightsCount === 1 ? '' : 's'}
+                          </Text>
+                        )}
+                        {localSnapshot.shelvesCount > 0 && (
+                          <Text style={[typography.metadataCaption, { color: colors.ink, fontSize: 12 }]}>
+                            • {localSnapshot.shelvesCount} shelf{localSnapshot.shelvesCount === 1 ? '' : 'ves'}
+                          </Text>
+                        )}
+                      </View>
+                      <Text
+                        style={[
+                          typography.metadataCaption,
+                          { color: colors.fawn, fontSize: 11, marginTop: 6 },
+                        ]}
+                      >
+                        Existing cloud books and words will merge safely without loss.
+                      </Text>
+                    </View>
+                  )}
+
                 <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginBottom: 6 }]}>
                   6-DIGIT CODE
                 </Text>
@@ -409,5 +477,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  mergePreviewCard: {
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
   },
 });

@@ -32,6 +32,15 @@ Treat these as implemented foundations, not as fully release-verified features:
   - `src/features/reader/components/WordTranslationPopup.tsx`: Daily 50-translation cap routes with `feature=unlimited_learning&trigger=daily_translation_cap`.
   - `src/app/(tabs)/vocabulary.tsx`: Weekly quiz sample limit routes with `feature=advanced_quiz&trigger=advanced_quiz_sample_used`.
   - `src/components/ReadingCadenceModal.tsx`: Adaptive Anti-Guilt pacing routes with `feature=reading_insights&trigger=adaptive_pacing`.
+- Unified Account-Entry & Protection Flows (AUTH-02 / FULLAPP.md §6.3):
+  - `src/app/signup.tsx`: Supports `mode === 'protect'` parameter with dedicated title ("Protect Your Library") and reassuring copy explaining that reading progress is backed up without data loss.
+  - Displays high-clarity merge preview card (`styles.mergePreviewCard`) in OTP step when guest reader has local reading data (positions, saved words, quotes, shelves) to confirm safe merging before OTP code entry.
+  - After verification, refreshes entitlements (`refreshEntitlements('account_protect' | 'account_signup')`) and triggers forced immediate sync.
+  - `src/app/login.tsx`: Displays local reading merge preview card before OTP confirmation, calls `refreshEntitlements('account_login')`, and forces sync.
+  - `src/app/profile.tsx`:
+    - Guest readers: prominent "Protect Library" action routing to `/signup?mode=protect` (primary guest-upgrade flow) and "Sign in" routing to `/login` for existing accounts.
+    - Protected readers: "Sign Out" row in Data & Account Privacy prompting whether to keep local downloaded books/history or clear device data, invoking `signOutUser(keepLocalData)`, resetting entitlements via `resetEntitlementsToFree()`, and re-initializing a fresh anonymous guest session.
+  - Unit tests in `tests/authUnify.test.ts` (151/151 tests passing across test suite).
 - AI Reading Companion (COMPANION-01 / FULLAPP.md §16):
   - Protected Supabase Edge Function actions in `supabase/functions/literary-ai/index.ts`: `companion_explain`, `companion_simplify`, `companion_summary`, `companion_recap_characters`, `companion_reflective_questions`, and `companion_report_feedback`.
   - Server-side security and entitlement enforcement: requests checked against `is_premium_user(user.id)` and `ai_companion` entitlement; non-entitled requests rejected with 403 `requiresPremium: true`.

@@ -25,7 +25,7 @@ import { CalendarHeatmapCard } from '@/components/CalendarHeatmapCard';
 import { fetchCalendarHeatmapData, type CalendarHeatmapData } from '@/features/analytics/calendarHeatmap';
 import { computeUserReadingStats, type UserReadingStats } from '@/features/analytics/statsEngine';
 import { computeWeeklyDigest, type WeeklyDigest } from '@/features/analytics/weeklyDigest';
-import { canUse, isPremiumUser } from '@/features/subscription/subscriptionState';
+import { canUse, isPremiumUser, resetEntitlementsToFree } from '@/features/subscription/subscriptionState';
 import { useTheme } from '@/theme/ThemeProvider';
 import { LamplightColor } from '@/theme/tokens';
 
@@ -138,6 +138,48 @@ export default function ProfileScreen() {
       Alert.alert('Error', 'Network error during account deletion.');
     } finally {
       setDeletingAccount(false);
+    }
+  };
+
+  const handleSignOutPrompt = () => {
+    Alert.alert(
+      'Sign Out',
+      'Choose whether to keep downloaded books and reading history on this device or clear them.',
+      [
+        {
+          text: 'Keep Data on Device',
+          onPress: () => void executeSignOut(true),
+        },
+        {
+          text: 'Clear Device Data',
+          style: 'destructive',
+          onPress: () => void executeSignOut(false),
+        },
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+      ],
+    );
+  };
+
+  const executeSignOut = async (keepLocalData: boolean) => {
+    setLoading(true);
+    try {
+      await signOutUser(keepLocalData);
+      resetEntitlementsToFree();
+      await loadData();
+      Alert.alert(
+        'Signed Out',
+        keepLocalData
+          ? 'You have signed out. Your reading history was preserved locally.'
+          : 'You have signed out and local device data has been cleared.',
+      );
+    } catch (err) {
+      console.warn('[Profile] Sign out error:', err);
+      Alert.alert('Sign Out Failed', 'Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -304,16 +346,29 @@ export default function ProfileScreen() {
                   </View>
 
                   {!profile.isProtected ? (
-                    <Pressable onPress={() => router.push('/signup' as any)} hitSlop={6}>
-                      <Text
-                        style={[
-                          typography.uiRowTitle,
-                          { color: colors.flameAmber, fontSize: 11, textDecorationLine: 'underline' },
-                        ]}
-                      >
-                        Sign up to sync
-                      </Text>
-                    </Pressable>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <Pressable onPress={() => router.push('/signup?mode=protect' as any)} hitSlop={6}>
+                        <Text
+                          style={[
+                            typography.uiRowTitle,
+                            { color: colors.flameAmber, fontSize: 11, textDecorationLine: 'underline' },
+                          ]}
+                        >
+                          Protect Library
+                        </Text>
+                      </Pressable>
+                      <Text style={[typography.metadataCaption, { color: colors.hairline }]}>·</Text>
+                      <Pressable onPress={() => router.push('/login' as any)} hitSlop={6}>
+                        <Text
+                          style={[
+                            typography.uiRowTitle,
+                            { color: colors.fawn, fontSize: 11, textDecorationLine: 'underline' },
+                          ]}
+                        >
+                          Sign in
+                        </Text>
+                      </Pressable>
+                    </View>
                   ) : !isPremium ? (
                     <Pressable onPress={() => router.push('/paywall')} hitSlop={6}>
                       <Text
@@ -887,6 +942,43 @@ export default function ProfileScreen() {
               { backgroundColor: colors.card, borderColor: colors.hairline, borderRadius: radius.card },
             ]}
           >
+            {!profile.isProtected ? (
+              <>
+                <Pressable
+                  onPress={() => router.push('/signup?mode=protect' as any)}
+                  style={[styles.settingsRow, { paddingVertical: 12 }]}
+                >
+                  <View style={{ flex: 1, paddingRight: 8 }}>
+                    <Text style={[typography.uiRowTitle, { color: colors.flameAmber, fontSize: 13 }]}>
+                      Protect This Account
+                    </Text>
+                    <Text style={[typography.metadataCaption, { color: colors.umber, fontSize: 11, marginTop: 2 }]}>
+                      Back up books, vocabulary, and notes safely to the cloud
+                    </Text>
+                  </View>
+                  <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
+                    <Path d="M9 18l6-6-6-6" stroke={colors.flameAmber} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                  </Svg>
+                </Pressable>
+
+                <View style={[styles.divider, { borderBottomColor: colors.hairline }]} />
+
+                <Pressable
+                  onPress={() => router.push('/login' as any)}
+                  style={[styles.settingsRow, { paddingVertical: 10 }]}
+                >
+                  <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
+                    Sign in to Existing Account
+                  </Text>
+                  <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
+                    <Path d="M9 18l6-6-6-6" stroke={colors.straw} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                  </Svg>
+                </Pressable>
+
+                <View style={[styles.divider, { borderBottomColor: colors.hairline }]} />
+              </>
+            ) : null}
+
             <Pressable
               onPress={() => router.push('/terms' as any)}
               style={[styles.settingsRow, { paddingVertical: 10 }]}
@@ -915,6 +1007,19 @@ export default function ProfileScreen() {
 
             {profile.isProtected ? (
               <>
+                <View style={[styles.divider, { borderBottomColor: colors.hairline }]} />
+                <Pressable
+                  onPress={handleSignOutPrompt}
+                  style={[styles.settingsRow, { paddingVertical: 10 }]}
+                >
+                  <Text style={[typography.uiRowTitle, { color: colors.umber, fontSize: 13 }]}>
+                    Sign Out
+                  </Text>
+                  <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
+                    <Path d="M9 18l6-6-6-6" stroke={colors.fawn} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                  </Svg>
+                </Pressable>
+
                 <View style={[styles.divider, { borderBottomColor: colors.hairline }]} />
                 <Pressable
                   onPress={() => setDeleteModalVisible(true)}

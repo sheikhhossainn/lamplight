@@ -234,6 +234,10 @@ function updateSnapshot(newSnapshot: EntitlementSnapshot) {
   }
 }
 
+export function resetEntitlementsToFree(): void {
+  updateSnapshot(DEFAULT_FREE_SNAPSHOT);
+}
+
 export function canUse(feature: PremiumFeature): boolean {
   const snapshot = getEntitlementSnapshot();
   return Boolean(snapshot.features[feature]);
