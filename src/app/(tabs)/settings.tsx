@@ -993,7 +993,7 @@ export default function SettingsScreen() {
 
               <View style={{ flexDirection: 'row', gap: 6 }}>
                 <Pressable
-                  onPress={() => setRestoreDialogVisible(true)}
+                  onPress={() => router.push('/restore' as any)}
                   disabled={syncStatus === 'syncing'}
                   style={[
                     styles.upgradeButton,
