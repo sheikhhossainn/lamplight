@@ -6,8 +6,8 @@ import { getSetting, setSetting } from '@/db/repositories/appSettings';
 import { generateId } from '@/lib/id';
 import { logEvent } from '@/features/analytics/analytics';
 
-export type FeedbackCategory = 'general' | 'bug' | 'feature' | 'translation';
-export type FeedbackTargetType = 'app' | 'book' | 'translation';
+export type FeedbackCategory = 'general' | 'bug' | 'feature' | 'translation' | 'citation_issue';
+export type FeedbackTargetType = 'app' | 'book' | 'translation' | 'scripture_citation';
 
 export type FeedbackSubmission = {
   rating?: number; // 1 to 5

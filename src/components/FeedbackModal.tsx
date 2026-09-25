@@ -37,6 +37,7 @@ const CATEGORIES: Array<{ key: FeedbackCategory; label: string }> = [
   { key: 'bug', label: 'Bug' },
   { key: 'feature', label: 'Idea' },
   { key: 'translation', label: 'Translation' },
+  { key: 'citation_issue', label: 'Citation Issue' },
 ];
 
 const QUICK_TAGS: Record<FeedbackCategory, string[]> = {
@@ -44,6 +45,7 @@ const QUICK_TAGS: Record<FeedbackCategory, string[]> = {
   bug: ['App froze', 'Layout glitch', 'Audio stutter', 'Slow sync', 'Text cut off'],
   feature: ['More books', 'Offline dictionary', 'Reading stats', 'Audio downloads'],
   translation: ['Incorrect word', 'Context mismatch', 'Missing grammar note', 'Language gap'],
+  citation_issue: ['Wrong verse number', 'Context inaccuracy', 'Commentary error', 'Translation mismatch', 'Tradition misattribution'],
 };
 
 export function FeedbackModal({
