@@ -1,5 +1,6 @@
 import { getDb } from '@/db/client';
 import { generateId } from '@/lib/id';
+import { enqueueMutation } from './syncOutbox';
 
 export type ReadingSession = {
   id: string;
@@ -60,6 +61,9 @@ export async function insertReadingSession(session: {
       session.chapterIndex,
     ],
   );
+  try {
+    await enqueueMutation({ entityType: 'reading_session', entityId: id, operation: 'upsert', payload: { id, bookId: session.bookId, startedAt: session.startedAt, endedAt: session.endedAt ?? null, durationSeconds: session.durationSeconds, pagesRead: session.pagesRead, chapterIndex: session.chapterIndex } }, db);
+  } catch { /* sync enqueue non-fatal */ }
   return id;
 }
 
@@ -92,6 +96,9 @@ export async function updateReadingSession(
   params.push(id);
 
   await db.runAsync(`UPDATE reading_sessions SET ${sets.join(', ')} WHERE id = ?`, params);
+  try {
+    await enqueueMutation({ entityType: 'reading_session', entityId: id, operation: 'upsert', payload: { id, ...updates } }, db);
+  } catch { /* sync enqueue non-fatal */ }
 }
 
 export async function getRecentSessions(limit: number = 100): Promise<ReadingSession[]> {
@@ -119,3 +126,16 @@ export async function getSessionsForBook(bookId: string): Promise<ReadingSession
   );
   return rows.map(fromSqlRow);
 }
+
+export async function getSessionsInDateRange(
+  startTimestamp: number,
+  endTimestamp: number,
+): Promise<ReadingSession[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<ReadingSessionSqlRow>(
+    'SELECT * FROM reading_sessions WHERE started_at >= ? AND started_at <= ? ORDER BY started_at ASC',
+    [startTimestamp, endTimestamp],
+  );
+  return rows.map(fromSqlRow);
+}
+

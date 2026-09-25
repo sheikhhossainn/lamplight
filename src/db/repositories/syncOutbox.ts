@@ -14,7 +14,13 @@ export type OutboxEntityType =
   | 'highlight'
   | 'quiz_attempt'
   | 'scripture'
-  | 'reading_session';
+  | 'reading_session'
+  | 'vocabulary_deck'
+  | 'vocabulary_deck_item'
+  | 'bookmark'
+  | 'reader_note'
+  | 'reading_goal'
+  | 'book_favorite';
 
 export type SyncOutboxItem = {
   id: string;
@@ -89,7 +95,7 @@ export async function enqueueMutation(
   if (mutation.operation === 'delete') {
     // If deleting a saved word, highlight, or shelf item that was created locally
     // but not yet pushed to the server, collapse both into a no-op.
-    if (['saved_word', 'highlight', 'shelf_item', 'preference'].includes(mutation.entityType)) {
+    if (['saved_word', 'highlight', 'shelf_item', 'preference', 'bookmark', 'reader_note'].includes(mutation.entityType)) {
       const pendingCreate = await db.getFirstAsync<SyncOutboxSqlRow>(
         'SELECT id FROM sync_outbox WHERE entity_type = ? AND entity_id = ? AND operation = ?',
         [mutation.entityType, mutation.entityId, 'upsert'],
@@ -102,7 +108,7 @@ export async function enqueueMutation(
     }
   } else if (mutation.operation === 'upsert') {
     // For reading position, preference, and shelf edits: keep only the newest unsent mutation
-    if (['reading_position', 'preference', 'shelf'].includes(mutation.entityType)) {
+    if (['reading_position', 'preference', 'shelf', 'reading_goal', 'book_favorite'].includes(mutation.entityType)) {
       const pendingRow = await db.getFirstAsync<SyncOutboxSqlRow>(
         'SELECT id FROM sync_outbox WHERE entity_type = ? AND entity_id = ?',
         [mutation.entityType, mutation.entityId],
@@ -175,7 +181,14 @@ export async function fetchOutboxBatch(
        WHEN 'highlight' THEN 7
        WHEN 'quiz_attempt' THEN 8
        WHEN 'scripture' THEN 9
-       ELSE 10 END ASC, created_at ASC
+       WHEN 'bookmark' THEN 10
+       WHEN 'reader_note' THEN 11
+       WHEN 'reading_session' THEN 12
+       WHEN 'reading_goal' THEN 13
+       WHEN 'vocabulary_deck' THEN 14
+       WHEN 'vocabulary_deck_item' THEN 15
+       WHEN 'book_favorite' THEN 16
+       ELSE 20 END ASC, created_at ASC
      LIMIT ?`,
     [nowMs, MAX_BATCH_COUNT * 2], // Oversample slightly to handle byte slicing
   );

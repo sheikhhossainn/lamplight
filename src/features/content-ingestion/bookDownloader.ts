@@ -1,6 +1,11 @@
 import { Directory, File, Paths } from 'expo-file-system';
 
 import { BookFormatError, parseBookText, type IngestedBook } from '@/features/content-ingestion/textParser';
+import {
+  clearDownloadState,
+  listDownloadStates,
+  setDownloadState,
+} from '@/db/repositories/downloadStates';
 
 // Replaces the old getBundledBookText: instead of a book's full text being
 // bundled into the app binary, it's downloaded from its `text_url` (synced
@@ -320,5 +325,60 @@ export async function deleteBookCache(bookId: string): Promise<void> {
     } catch {
       // Non-fatal if DB update fails
     }
+  }
+
+  await clearDownloadState(cleanId).catch(() => {});
+}
+
+/**
+ * Reconciles the SQLite download_states records against the actual cached files on disk.
+ * 1. If a download was interrupted (stuck in 'downloading' or 'queued'), transitions it to 'failed' (errorCode: 'interrupted').
+ * 2. If a record is 'ready' but the cached file is missing, cleans up the stale download state.
+ * 3. If a cached file exists on disk, ensures the state is marked 'ready'.
+ */
+export async function reconcileDownloadStates(): Promise<void> {
+  try {
+    const states = await listDownloadStates();
+    const stateMap = new Map(states.map((s) => [s.bookId, s]));
+    const diskIds = new Set(listDownloadedBookIds());
+
+    for (const state of states) {
+      const existsOnDisk = diskIds.has(state.bookId) || isBookCached(state.bookId);
+      if (existsOnDisk) {
+        if (state.status !== 'ready') {
+          await setDownloadState({
+            bookId: state.bookId,
+            status: 'ready',
+            progress: 100,
+            errorCode: null,
+          });
+        }
+      } else {
+        if (state.status === 'downloading' || state.status === 'queued') {
+          await setDownloadState({
+            bookId: state.bookId,
+            status: 'failed',
+            progress: state.progress,
+            errorCode: 'interrupted',
+          });
+        } else if (state.status === 'ready') {
+          await clearDownloadState(state.bookId);
+        }
+      }
+    }
+
+    // For any books physically cached on disk without an entry in download_states, mark ready
+    for (const diskId of diskIds) {
+      if (!stateMap.has(diskId)) {
+        await setDownloadState({
+          bookId: diskId,
+          status: 'ready',
+          progress: 100,
+          errorCode: null,
+        });
+      }
+    }
+  } catch (err) {
+    console.warn('[bookDownloader] Failed to reconcile download states:', err);
   }
 }

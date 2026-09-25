@@ -80,6 +80,8 @@ type ReaderPageViewProps = {
     showEndHandle?: boolean;
   } | null;
   selectionColor: string;
+  // Temporary visual highlight when jumping to a search result
+  searchHighlight?: { paragraphIndex: number; start: number; end: number } | null;
   // Holding (long-press) a word opens the action menu. The payload carries
   // everything the caller needs for either choice: the word + its char range
   // (Translate + highlight + the initial Save-as-quote selection) and the page
@@ -551,6 +553,7 @@ function ReaderPageViewImpl({
   activeWordTextColor,
   selectionRange,
   selectionColor,
+  searchHighlight,
   onWordLongPress,
   onRangeEdgeDragStart,
   onRangeEdgeDrag,
@@ -944,12 +947,24 @@ function ReaderPageViewImpl({
       // Single-paragraph highlight: mark only the exact saved substring, not
       // the whole paragraph.
       let highlightRun: { start: number; end: number } | null = null;
-      if (highlightEntry?.quoteText) {
+      let effectiveHighlightColor = highlightWash;
+      if (searchHighlight && searchHighlight.paragraphIndex === paragraphIndex) {
+        highlightRun = { start: searchHighlight.start, end: searchHighlight.end };
+        effectiveHighlightColor = `${colors.flameAmber}70`;
+      } else if (highlightEntry?.quoteText) {
         const runStart = paragraph.indexOf(highlightEntry.quoteText);
         if (runStart !== -1) highlightRun = { start: runStart, end: runStart + highlightEntry.quoteText.length };
       } else if (highlightEntry) {
         highlightRun = { start: 0, end: paragraph.length };
       }
+
+      const effectiveFontSize = isBengaliText(paragraph)
+        ? Math.max(17, fontSize + 0.5)
+        : fontSize;
+      const effectiveLineHeight = isBengaliText(paragraph)
+        ? Math.round(effectiveFontSize * Math.max(1.95, lineHeight / (fontSize || 18)))
+        : lineHeight;
+
       return (
         <Text
           key={paragraphIndex}
@@ -959,8 +974,8 @@ function ReaderPageViewImpl({
             {
               color: layerTextColor,
               fontFamily: isBengaliText(paragraph) ? pageStyleConfig.banglaFont : pageStyleConfig.englishFont,
-              fontSize: isBengaliText(paragraph) ? pageStyleConfig.banglaFontSize : pageStyleConfig.fontSize,
-              lineHeight: isBengaliText(paragraph) ? pageStyleConfig.banglaLineHeight : pageStyleConfig.lineHeight,
+              fontSize: effectiveFontSize,
+              lineHeight: effectiveLineHeight,
               letterSpacing: isBengaliText(paragraph) ? pageStyleConfig.banglaLetterSpacing : pageStyleConfig.letterSpacing,
               marginBottom: paragraphIndex === page.paragraphs.length - 1 ? 0 : spacing.sm,
             },
@@ -1004,7 +1019,7 @@ function ReaderPageViewImpl({
             activeWordColor,
             activeWordTextColor,
             highlightRun,
-            highlightWash,
+            effectiveHighlightColor,
             paragraphIndex,
             page,
             onPagePress,

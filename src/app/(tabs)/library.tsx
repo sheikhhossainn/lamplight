@@ -1,5 +1,6 @@
 import { router, useFocusEffect } from 'expo-router';
 import { File } from 'expo-file-system';
+import * as Haptics from 'expo-haptics';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -19,7 +20,7 @@ import Svg, { Path, Rect } from 'react-native-svg';
 
 import { BookSpine } from '@/components/BookSpine';
 import { CultureEditionBanner } from '@/components/CultureEditionBanner';
-import { CloseIcon, FilterIcon, SearchIcon } from '@/components/icons';
+import { BookmarkIcon, CloseIcon, FilterIcon, SearchIcon } from '@/components/icons';
 import { logEvent } from '@/features/analytics/analytics';
 import { BOOK_CATEGORIES, categoriesForBook } from '@/features/content-ingestion/bookCategories';
 import { useLibrarySyncing } from '@/features/content-ingestion/librarySync';
@@ -41,7 +42,7 @@ import { VocabularyCalibrationModal } from '@/features/vocabulary/VocabularyCali
 import { ShelfEditorModal, type ShelfDraft } from '@/components/ShelfEditorModal';
 import { VocabReviewPrompt } from '@/components/VocabReviewPrompt';
 import { checkVocabReviewPrompt, markVocabReviewPrompted } from '@/features/vocabulary/reviewPrompt';
-import { type BookRow, listBooks } from '@/db/repositories/books';
+import { type BookRow, listBooks, setBookFavorite } from '@/db/repositories/books';
 import {
   hideFromContinueReading,
   listActiveReadingPositions,
@@ -58,6 +59,9 @@ import {
   type ShelfItem,
 } from '@/db/repositories/shelves';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { MilestoneCelebrationModal } from '@/components/MilestoneCelebrationModal';
+import { checkAndTriggerMilestone, type MilestoneConfig } from '@/features/milestones/milestoneService';
+import { getUserProfile } from '@/lib/supabaseAuth';
 import { isBookCached } from '@/features/content-ingestion/bookDownloader';
 import { importEpubFromFile } from '@/features/content-ingestion/epubImporter';
 import { targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
@@ -73,6 +77,7 @@ const ROW_ROTATIONS = [-2, 1.5, -1, 2.5, -2.5, 1, -1.5, 2];
 // Fixed slot width (BookSpine default 96 + Spacing.md gap) so the shelf
 // FlatList can compute scroll offsets without measuring every item.
 const SPINE_SLOT_WIDTH = 96 + 16;
+const FAVORITES_FILTER = '__favorites__';
 
 
 function getShelfSubtitle(): string {
@@ -171,6 +176,8 @@ export default function LibraryScreen() {
   const [editor, setEditor] = useState<{ visible: boolean; draft: ShelfDraft }>({ visible: false, draft: null });
   const [query, setQuery] = useState('');
   const [importing, setImporting] = useState(false);
+  const [activeMilestone, setActiveMilestone] = useState<MilestoneConfig | null>(null);
+  const [isGuestUser, setIsGuestUser] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [reviewPrompt, setReviewPrompt] = useState<{ wordCount: number } | null>(null);
@@ -214,6 +221,7 @@ export default function LibraryScreen() {
     setShelves(shelfRows);
     setShelfItems(shelfItemRows);
     setLoaded(true);
+    void getUserProfile().then((prof) => setIsGuestUser(!prof.isProtected)).catch(() => {});
 
     // Phase 2: Bangla catalog from Turso — network call, runs in background.
     // The shelf is already visible from Phase 1; this just updates the Bangla row.
@@ -335,6 +343,7 @@ export default function LibraryScreen() {
           gutenbergId: null,
           chapter1Anchor: null,
           categories: [b.genre],
+          isFavorite: false,
           source: 'bangla_api',
         }));
     } else if (motherTongue === 'ja') {
@@ -358,6 +367,7 @@ export default function LibraryScreen() {
           gutenbergId: null,
           chapter1Anchor: null,
           categories: [b.genre],
+          isFavorite: false,
           source: 'aozora_bunko',
         }));
     } else if (motherTongue === 'ko') {
@@ -381,6 +391,7 @@ export default function LibraryScreen() {
           gutenbergId: null,
           chapter1Anchor: null,
           categories: [b.genre],
+          isFavorite: false,
           source: 'gongu_korea',
         }));
     }
@@ -412,6 +423,16 @@ export default function LibraryScreen() {
     for (const ids of bookCategoryMap.values()) ids.forEach((id) => present.add(id));
     return BOOK_CATEGORIES.filter((c) => present.has(c.id));
   }, [bookCategoryMap]);
+  const hasFavorites = books.some((book) => book.isFavorite);
+  const favoriteBooks = useMemo(() => books.filter((b) => b.isFavorite), [books]);
+
+  const handleToggleFavorite = useCallback(async (bookId: string, next: boolean) => {
+    try {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch {}
+    setBooks((prev) => prev.map((b) => (b.id === bookId ? { ...b, isFavorite: next } : b)));
+    await setBookFavorite(bookId, next);
+  }, []);
 
   // Every in-progress book (most-recent first), paired with its book row.
   // "All books" still shows the full library — the continue list is a shortcut,
@@ -421,8 +442,10 @@ export default function LibraryScreen() {
     .filter((entry): entry is { position: ReadingPosition; book: BookRow } => entry.book !== undefined);
 
   // The "All books" shelf, narrowed to the active category filter (if any).
-  const shelfBooks = activeCategory
-    ? books.filter((b) => bookCategoryMap.get(b.id)?.includes(activeCategory))
+  const shelfBooks = activeCategory === FAVORITES_FILTER
+    ? books.filter((b) => b.isFavorite)
+    : activeCategory
+      ? books.filter((b) => bookCategoryMap.get(b.id)?.includes(activeCategory))
     : books;
 
   const booksOnShelf = (shelfId: string): BookRow[] => {
@@ -452,7 +475,12 @@ export default function LibraryScreen() {
       const book = await importEpubFromFile(file);
       logEvent('book_imported', { book_id: book.id });
       await load();
-      router.push({ pathname: '/book/[id]', params: { id: book.id } });
+      const milestone = await checkAndTriggerMilestone('first_imported_book');
+      if (milestone) {
+        setActiveMilestone(milestone);
+      } else {
+        router.push({ pathname: '/book/[id]', params: { id: book.id } });
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : '';
       if (!message.toLowerCase().includes('cancel')) {
@@ -602,7 +630,76 @@ export default function LibraryScreen() {
             {searchResults.length} {searchResults.length === 1 ? 'result' : 'results'}
           </Text>
           {searchResults.length > 0 ? (
-            renderShelf(searchResults, 'search')
+            <View style={{ gap: spacing.sm }}>
+              {searchResults.map((book, i) => {
+                const isBangla = book.source === 'bangla_api' || book.sourceLanguage === 'bn';
+                const handlePress = () => {
+                  if (isBangla) {
+                    const slug = book.id.startsWith('bn-') ? book.id.slice(3) : book.id;
+                    router.push({ pathname: '/bangla/[slug]', params: { slug } } as any);
+                  } else {
+                    router.push({ pathname: '/book/[id]', params: { id: book.id } });
+                  }
+                };
+                return (
+                  <Pressable
+                    key={book.id}
+                    onPress={handlePress}
+                    style={[
+                      styles.continueCard,
+                      {
+                        backgroundColor: colors.card,
+                        borderColor: colors.hairline,
+                        borderRadius: radius.card,
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                      },
+                    ]}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                      <BookSpine
+                        bookId={book.id}
+                        title={book.title}
+                        coverUrl={book.coverUrl}
+                        toneIndex={toneIndexById.get(book.id) ?? i}
+                        onPress={handlePress}
+                        width={44}
+                        height={64}
+                      />
+                      <View style={{ flex: 1, marginLeft: spacing.md, marginRight: spacing.sm }}>
+                        <Text
+                          style={[getNativeUiTextStyle(book.sourceLanguage, 'row'), { color: colors.ink }]}
+                          numberOfLines={1}
+                        >
+                          {book.title}
+                        </Text>
+                        <Text
+                          style={[typography.metadataCaption, { color: colors.umber, marginTop: 2 }]}
+                          numberOfLines={1}
+                        >
+                          {book.author} · {book.sourceLanguage.toUpperCase()}
+                        </Text>
+                      </View>
+                    </View>
+                    <Pressable
+                      hitSlop={12}
+                      accessibilityLabel={book.isFavorite ? `Remove ${book.title} from favorites` : `Add ${book.title} to favorites`}
+                      accessibilityRole="button"
+                      onPress={async () => {
+                        await handleToggleFavorite(book.id, !book.isFavorite);
+                      }}
+                      style={{ padding: spacing.sm }}
+                    >
+                      <BookmarkIcon
+                        size={18}
+                        color={book.isFavorite ? colors.flameAmber : colors.fawn}
+                        filled={book.isFavorite}
+                      />
+                    </Pressable>
+                  </Pressable>
+                );
+              })}
+            </View>
           ) : (
             <Text style={[typography.metadataCaption, { color: colors.fawn }]}>
               No books match &ldquo;{query.trim()}&rdquo;.
@@ -690,6 +787,23 @@ export default function LibraryScreen() {
         </>
       ) : null}
 
+      {favoriteBooks.length > 0 && activeCategory !== FAVORITES_FILTER ? (
+        <View style={{ marginTop: spacing.lg }}>
+          <View style={[styles.shelfHeader, { marginBottom: spacing.sm }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <BookmarkIcon color={colors.flameAmber} size={14} filled />
+              <Text style={[typography.eyebrowLabel, { color: colors.fawn }]}>
+                FAVORITES
+              </Text>
+            </View>
+            <Text style={[typography.metadataCaption, { color: colors.umber, fontSize: 11 }]}>
+              {favoriteBooks.length} {favoriteBooks.length === 1 ? 'book' : 'books'}
+            </Text>
+          </View>
+          {renderShelf(favoriteBooks, 'favorites')}
+        </View>
+      ) : null}
+
       <View style={[styles.shelfHeader, { marginTop: spacing.xl, marginBottom: spacing.md }]}>
         {/* Primary shelf doubles as the category filter when English catalog */}
         <Pressable
@@ -698,7 +812,9 @@ export default function LibraryScreen() {
           style={styles.filterHeader}
         >
           <Text style={[getNativeUiTextStyle(motherTongue, 'row'), { color: activeCategory ? colors.progressLabel : colors.fawn }]}>
-            {targetReadingLanguage === 'en'
+            {activeCategory === FAVORITES_FILTER
+              ? 'Favorites'
+              : targetReadingLanguage === 'en'
               ? motherTongueOption.libraryLabel
               : targetReadingOption.shelfTitle}
           </Text>
@@ -720,7 +836,11 @@ export default function LibraryScreen() {
           contentContainerStyle={styles.chipRow}
           style={{ marginBottom: spacing.md }}
         >
-          {[{ id: null as string | null, label: 'All' }, ...availableCategories].map((cat) => {
+          {[
+            { id: null as string | null, label: 'All' },
+            ...(hasFavorites ? [{ id: FAVORITES_FILTER, label: 'Favorites' }] : []),
+            ...availableCategories,
+          ].map((cat) => {
             const on = cat.id === activeCategory;
             return (
               <Pressable
@@ -735,6 +855,7 @@ export default function LibraryScreen() {
                   },
                 ]}
               >
+                {cat.id === FAVORITES_FILTER ? <BookmarkIcon color={on ? colors.primaryDark : colors.umber} size={14} filled /> : null}
                 <Text
                   style={[
                     typography.uiRowTitle,
@@ -971,16 +1092,28 @@ export default function LibraryScreen() {
       <View>
         <View style={[styles.shelfHeader, { marginBottom: spacing.md }]}>
           <Text style={[getNativeUiTextStyle(motherTongue, 'row'), { color: colors.fawn }]}>{scriptureLabels.sectionTitle}</Text>
-          <Pressable
-            onPress={() => {
-              void hapticOpenInquiry();
-              router.push('/mood-verses/ask');
-            }}
-            hitSlop={8}
-            style={styles.filterHeader}
-          >
-            <Text style={[getNativeUiTextStyle(motherTongue, 'metadata'), { color: colors.flameAmber }]}>{scriptureLabels.askLabel}</Text>
-          </Pressable>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <Pressable
+              onPress={() => {
+                void hapticOpenInquiry();
+                router.push('/mood-verses/reflect');
+              }}
+              hitSlop={8}
+              style={styles.filterHeader}
+            >
+              <Text style={[getNativeUiTextStyle(motherTongue, 'metadata'), { color: colors.fawn }]}>{scriptureLabels.reflectLabel}</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                void hapticOpenInquiry();
+                router.push('/mood-verses/ask');
+              }}
+              hitSlop={8}
+              style={styles.filterHeader}
+            >
+              <Text style={[getNativeUiTextStyle(motherTongue, 'metadata'), { color: colors.flameAmber }]}>{scriptureLabels.askLabel}</Text>
+            </Pressable>
+          </View>
         </View>
         <ScrollView
           horizontal
@@ -1126,6 +1259,13 @@ export default function LibraryScreen() {
         onCalibrated={() => {
           setIsCalibrationSkipped(false);
         }}
+      />
+      <MilestoneCelebrationModal
+        visible={activeMilestone != null}
+        milestone={activeMilestone}
+        isGuest={isGuestUser}
+        onClose={() => setActiveMilestone(null)}
+        onProtectAccount={() => router.push('/signup' as any)}
       />
     </View>
   );

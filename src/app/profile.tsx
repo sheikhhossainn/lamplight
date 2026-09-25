@@ -21,8 +21,11 @@ import {
   signOutUser,
   updateUserProfile,
 } from '@/lib/supabaseAuth';
+import { CalendarHeatmapCard } from '@/components/CalendarHeatmapCard';
+import { fetchCalendarHeatmapData, type CalendarHeatmapData } from '@/features/analytics/calendarHeatmap';
 import { computeUserReadingStats, type UserReadingStats } from '@/features/analytics/statsEngine';
-import { isPremiumUser } from '@/features/subscription/subscriptionState';
+import { computeWeeklyDigest, type WeeklyDigest } from '@/features/analytics/weeklyDigest';
+import { canUse, isPremiumUser } from '@/features/subscription/subscriptionState';
 import { useTheme } from '@/theme/ThemeProvider';
 import { LamplightColor } from '@/theme/tokens';
 
@@ -46,6 +49,8 @@ export default function ProfileScreen() {
   });
 
   const [stats, setStats] = useState<UserReadingStats | null>(null);
+  const [digest, setDigest] = useState<WeeklyDigest | null>(null);
+  const [heatmapData, setHeatmapData] = useState<CalendarHeatmapData | null>(null);
 
   // Edit Name Modal State
   const [editModalVisible, setEditModalVisible] = useState(false);
@@ -60,12 +65,16 @@ export default function ProfileScreen() {
 
   const loadData = useCallback(async () => {
     try {
-      const [prof, userStats] = await Promise.all([
+      const [prof, userStats, weeklyDigestData, calendarData] = await Promise.all([
         getUserProfile(),
         computeUserReadingStats(),
+        computeWeeklyDigest(),
+        fetchCalendarHeatmapData(52),
       ]);
       setProfile(prof);
       setStats(userStats);
+      setDigest(weeklyDigestData);
+      setHeatmapData(calendarData);
       setNameInput(prof.displayName);
     } catch (err) {
       console.warn('[Profile] Error loading data:', err);
@@ -81,6 +90,7 @@ export default function ProfileScreen() {
   );
 
   const isPremium = isPremiumUser();
+  const hasInsightsAccess = canUse('reading_insights');
 
   const handleSaveName = async () => {
     const trimmed = nameInput.trim();
@@ -400,6 +410,301 @@ export default function ProfileScreen() {
             </View>
           </View>
 
+          {/* Weekly Reading Digest (RET-03) */}
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: spacing.xl, marginBottom: spacing.sm }}>
+            <Text style={[typography.eyebrowLabel, { color: colors.fawn }]}>
+              WEEKLY READING DIGEST
+            </Text>
+            {digest?.weekLabel ? (
+              <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11 }]}>
+                {digest.weekLabel}
+              </Text>
+            ) : null}
+          </View>
+
+          {digest && !digest.hasActivity ? (
+            <View
+              style={[
+                styles.card,
+                {
+                  backgroundColor: colors.card,
+                  borderColor: colors.hairline,
+                  borderRadius: radius.card,
+                  paddingVertical: 20,
+                  alignItems: 'center',
+                },
+              ]}
+            >
+              <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 15, textAlign: 'center' }]}>
+                No Reading Sessions This Week
+              </Text>
+              <Text
+                style={[
+                  typography.metadataCaption,
+                  { color: colors.umber, textAlign: 'center', marginTop: 6, paddingHorizontal: 16, lineHeight: 18 },
+                ]}
+              >
+                Open any book in your library or explore classical texts to build your weekly habit digest.
+              </Text>
+              <Pressable
+                onPress={() => router.push('/' as any)}
+                style={{
+                  backgroundColor: colors.flameAmber,
+                  borderRadius: radius.pill,
+                  paddingVertical: 8,
+                  paddingHorizontal: 18,
+                  marginTop: 14,
+                }}
+              >
+                <Text style={[typography.eyebrowLabel, { color: colors.primaryDark, fontSize: 11 }]}>
+                  START READING
+                </Text>
+              </Pressable>
+            </View>
+          ) : digest ? (
+            <View
+              style={[
+                styles.card,
+                { backgroundColor: colors.card, borderColor: colors.hairline, borderRadius: radius.card },
+              ]}
+            >
+              {/* 4-Item Metric Summary */}
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                <View
+                  style={[
+                    styles.digestPill,
+                    { backgroundColor: colors.parchment, borderColor: colors.hairline },
+                  ]}
+                >
+                  <Text style={[typography.eyebrowLabel, { color: colors.fawn, fontSize: 9 }]}>
+                    READING TIME
+                  </Text>
+                  <Text style={[typography.wordmark, { color: colors.ink, fontSize: 18, marginTop: 2 }]}>
+                    {digest.readingMinutes}m
+                  </Text>
+                  <Text style={[typography.metadataCaption, { color: colors.umber, fontSize: 10, marginTop: 2 }]}>
+                    {digest.readingDays} of 7 days active
+                  </Text>
+                </View>
+
+                <View
+                  style={[
+                    styles.digestPill,
+                    { backgroundColor: colors.parchment, borderColor: colors.hairline },
+                  ]}
+                >
+                  <Text style={[typography.eyebrowLabel, { color: colors.fawn, fontSize: 9 }]}>
+                    PAGES READ
+                  </Text>
+                  <Text style={[typography.wordmark, { color: colors.ink, fontSize: 18, marginTop: 2 }]}>
+                    {digest.pagesRead}
+                  </Text>
+                  <Text style={[typography.metadataCaption, { color: colors.umber, fontSize: 10, marginTop: 2 }]}>
+                    Across all sessions
+                  </Text>
+                </View>
+
+                <View
+                  style={[
+                    styles.digestPill,
+                    { backgroundColor: colors.parchment, borderColor: colors.hairline },
+                  ]}
+                >
+                  <Text style={[typography.eyebrowLabel, { color: colors.fawn, fontSize: 9 }]}>
+                    WORDS STUDIED
+                  </Text>
+                  <Text style={[typography.wordmark, { color: colors.ink, fontSize: 18, marginTop: 2 }]}>
+                    {digest.wordsSaved}
+                  </Text>
+                  <Text style={[typography.metadataCaption, { color: colors.umber, fontSize: 10, marginTop: 2 }]}>
+                    {digest.wordsReviewed} cards reviewed
+                  </Text>
+                </View>
+
+                <View
+                  style={[
+                    styles.digestPill,
+                    { backgroundColor: colors.parchment, borderColor: colors.hairline },
+                  ]}
+                >
+                  <Text style={[typography.eyebrowLabel, { color: colors.fawn, fontSize: 9 }]}>
+                    PEAK RHYTHM
+                  </Text>
+                  <Text style={[typography.wordmark, { color: colors.ink, fontSize: 18, marginTop: 2 }]}>
+                    {digest.mostProductiveTime?.period ?? 'Flexible'}
+                  </Text>
+                  <Text style={[typography.metadataCaption, { color: colors.umber, fontSize: 10, marginTop: 2 }]}>
+                    {digest.mostProductiveTime?.timeRange ?? 'All hours'}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Current Book Progress */}
+              {digest.currentBook ? (
+                <View style={{ marginTop: 14 }}>
+                  <View style={[styles.divider, { borderBottomColor: colors.hairline, marginBottom: 12 }]} />
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <View style={{ flex: 1, marginRight: 10 }}>
+                      <Text style={[typography.eyebrowLabel, { color: colors.flameAmber, fontSize: 9 }]}>
+                        CURRENT BOOK PROGRESS
+                      </Text>
+                      <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 14, marginTop: 2 }]} numberOfLines={1}>
+                        {digest.currentBook.title}
+                      </Text>
+                      <Text style={[typography.metadataCaption, { color: colors.umber, fontSize: 11, marginTop: 1 }]}>
+                        {digest.currentBook.author} · {digest.currentBook.pagesReadThisWeek} pgs ({digest.currentBook.minutesReadThisWeek}m) this week
+                      </Text>
+                    </View>
+                    <Text style={[typography.uiRowTitle, { color: colors.flameAmber, fontSize: 13 }]}>
+                      {Math.round(digest.currentBook.percentComplete * 100)}%
+                    </Text>
+                  </View>
+                  <View style={[styles.progressBarTrack, { backgroundColor: colors.hairline, marginTop: 8 }]}>
+                    <View
+                      style={[
+                        styles.progressBarFill,
+                        {
+                          backgroundColor: colors.flameAmber,
+                          width: `${Math.min(100, Math.max(0, Math.round(digest.currentBook.percentComplete * 100)))}%`,
+                        },
+                      ]}
+                    />
+                  </View>
+                </View>
+              ) : null}
+
+              {/* Premium Habit Insights & Adaptive Goals */}
+              <View style={[styles.divider, { borderBottomColor: colors.hairline, marginVertical: 14 }]} />
+
+              {hasInsightsAccess ? (
+                <View>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                    <Text style={[typography.eyebrowLabel, { color: colors.flameAmber, fontSize: 10 }]}>
+                      PREMIUM HABIT INSIGHTS
+                    </Text>
+                    <View
+                      style={{
+                        backgroundColor: 'rgba(245, 166, 35, 0.15)',
+                        paddingHorizontal: 6,
+                        paddingVertical: 2,
+                        borderRadius: radius.pill,
+                      }}
+                    >
+                      <Text style={[typography.eyebrowLabel, { color: colors.flameAmber, fontSize: 9 }]}>
+                        ACTIVE
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Velocity Trend */}
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 4 }}>
+                    <Text style={[typography.metadataCaption, { color: colors.umber, fontSize: 12 }]}>
+                      Reading Velocity
+                    </Text>
+                    <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 12 }]}>
+                      {digest.speedTrend.pagesPerHour} pgs/hr ({digest.speedTrend.trendLabel})
+                    </Text>
+                  </View>
+
+                  {/* Vocabulary Growth */}
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 4 }}>
+                    <Text style={[typography.metadataCaption, { color: colors.umber, fontSize: 12 }]}>
+                      Vocabulary Growth
+                    </Text>
+                    <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 12 }]}>
+                      {digest.vocabularyGrowth.wordsSavedThisWeek} words ({digest.vocabularyGrowth.growthLabel})
+                    </Text>
+                  </View>
+
+                  {/* Completion Forecast */}
+                  {digest.completionForecast ? (
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 4 }}>
+                      <Text style={[typography.metadataCaption, { color: colors.umber, fontSize: 12 }]}>
+                        Completion Forecast
+                      </Text>
+                      <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 12 }]}>
+                        {digest.completionForecast.forecastLabel}
+                      </Text>
+                    </View>
+                  ) : null}
+
+                  {/* Adaptive Anti-Guilt Goal */}
+                  <View
+                    style={{
+                      backgroundColor: colors.parchment,
+                      borderColor: colors.hairline,
+                      borderWidth: 1,
+                      borderRadius: radius.card,
+                      padding: 12,
+                      marginTop: 10,
+                    }}
+                  >
+                    <Text style={[typography.eyebrowLabel, { color: colors.flameAmber, fontSize: 9 }]}>
+                      ADAPTIVE NEXT-WEEK GOAL
+                    </Text>
+                    <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13, marginTop: 2 }]}>
+                      {digest.adaptiveNextWeekGoal.suggestedDays} days · {digest.adaptiveNextWeekGoal.suggestedDailyMinutes} mins/day
+                    </Text>
+                    <Text style={[typography.metadataCaption, { color: colors.umber, fontSize: 11, marginTop: 4, lineHeight: 16 }]}>
+                      {digest.adaptiveNextWeekGoal.rationale}
+                    </Text>
+                  </View>
+                </View>
+              ) : (
+                <View
+                  style={{
+                    backgroundColor: colors.parchment,
+                    borderColor: colors.hairline,
+                    borderWidth: 1,
+                    borderRadius: radius.card,
+                    padding: 12,
+                  }}
+                >
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Text style={[typography.eyebrowLabel, { color: colors.fawn, fontSize: 9 }]}>
+                      PREMIUM HABIT INSIGHTS
+                    </Text>
+                    <Text style={[typography.eyebrowLabel, { color: colors.flameAmber, fontSize: 9 }]}>
+                      PLUS / SCHOLAR
+                    </Text>
+                  </View>
+                  <Text style={[typography.metadataCaption, { color: colors.umber, fontSize: 11, marginTop: 6, lineHeight: 16 }]}>
+                    Unlock reading velocity trends, book completion forecasting, vocabulary retention curves, and gentle adaptive goals.
+                  </Text>
+                  <Pressable
+                    onPress={() => router.push('/paywall?feature=reading_insights' as any)}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      marginTop: 10,
+                      paddingTop: 8,
+                      borderTopWidth: StyleSheet.hairlineWidth,
+                      borderTopColor: colors.hairline,
+                    }}
+                  >
+                    <Text style={[typography.uiRowTitle, { color: colors.flameAmber, fontSize: 12 }]}>
+                      Upgrade to view insights
+                    </Text>
+                    <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
+                      <Path d="M9 18l6-6-6-6" stroke={colors.flameAmber} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                    </Svg>
+                  </Pressable>
+                </View>
+              )}
+            </View>
+          ) : null}
+
+          {/* Calendar Reading Heatmap (INSIGHT-01) */}
+          <View style={{ marginTop: spacing.xl }}>
+            <CalendarHeatmapCard
+              data={heatmapData}
+              loading={loading}
+              hasInsightsAccess={hasInsightsAccess}
+              onUnlockPress={() => router.push('/paywall?feature=reading_insights&trigger=calendar_heatmap')}
+            />
+          </View>
+
           {/* Smart Reading Persona & Habits */}
           <Text
             style={[
@@ -422,7 +727,7 @@ export default function ProfileScreen() {
                   LITERARY PERSONA
                 </Text>
                 <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 16, marginTop: 2 }]}>
-                  {stats?.readingHabits.personaTitle ?? 'Candlelit Reader'}
+                  {stats?.readingHabits.personaTitle ?? 'Not enough reading history'}
                 </Text>
               </View>
               <View
@@ -432,7 +737,7 @@ export default function ProfileScreen() {
                 ]}
               >
                 <Text style={[typography.metadataCaption, { color: colors.umber, fontSize: 11 }]}>
-                  {stats?.readingHabits.favoriteTimeOfDay ?? 'Evenings'}
+                  {stats?.readingHabits.favoriteTimeOfDay ?? 'Awaiting first session'}
                 </Text>
               </View>
             </View>
@@ -454,7 +759,9 @@ export default function ProfileScreen() {
                   Avg Session
                 </Text>
                 <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 14, marginTop: 2 }]}>
-                  {stats?.readingHabits.averageSessionMinutes ?? 15} mins
+                  {stats && stats.readingHabits.averageSessionMinutes > 0
+                    ? `${stats.readingHabits.averageSessionMinutes} mins`
+                    : '—'}
                 </Text>
               </View>
 
@@ -463,7 +770,9 @@ export default function ProfileScreen() {
                   Estimated Pace
                 </Text>
                 <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 14, marginTop: 2 }]}>
-                  ~{stats?.readingHabits.pagesPerHour ?? 25} pgs/hr
+                  {stats && stats.readingHabits.pagesPerHour > 0
+                    ? `~${stats.readingHabits.pagesPerHour} pgs/hr`
+                    : '—'}
                 </Text>
               </View>
 
@@ -894,5 +1203,23 @@ const styles = StyleSheet.create({
   modalButton: {
     paddingHorizontal: 16,
     paddingVertical: 10,
+  },
+  digestPill: {
+    flex: 1,
+    minWidth: '45%',
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+  },
+  progressBarTrack: {
+    width: '100%',
+    height: 4,
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    borderRadius: 2,
   },
 });

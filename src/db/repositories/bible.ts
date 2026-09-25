@@ -1,6 +1,7 @@
 import type { HighlightColorKey } from '@/theme/tokens';
 import { getDb } from '@/db/client';
 import { generateId } from '@/lib/id';
+import { enqueueMutation } from './syncOutbox';
 
 export type BibleReadingPosition = {
   bookId: string;
@@ -56,6 +57,7 @@ export async function upsertBibleReadingPosition(
   position: Omit<BibleReadingPosition, 'updatedAt'>,
 ): Promise<void> {
   const db = await getDb();
+  const now = Date.now();
   await db.runAsync(
     `INSERT INTO bible_reading_position (book_id, chapter, verse, updated_at)
      VALUES (?, ?, ?, ?)
@@ -63,8 +65,11 @@ export async function upsertBibleReadingPosition(
        chapter = excluded.chapter,
        verse = excluded.verse,
        updated_at = excluded.updated_at`,
-    [position.bookId, position.chapter, position.verse, Date.now()],
+    [position.bookId, position.chapter, position.verse, now],
   );
+  try {
+    await enqueueMutation({ entityType: 'reading_position', entityId: `bible:${position.bookId}`, operation: 'upsert', payload: { tradition: 'bible', ...position, updatedAt: now } }, db);
+  } catch { /* sync enqueue non-fatal */ }
 }
 
 export type BibleHighlight = {
@@ -127,12 +132,19 @@ export async function createBibleHighlight(
      VALUES (?, ?, ?, ?, ?, ?)`,
     [id, input.bookId, input.chapter, input.verse, input.colorKey, createdAt],
   );
-  return { ...input, id, createdAt };
+  const highlight = { ...input, id, createdAt };
+  try {
+    await enqueueMutation({ entityType: 'highlight', entityId: id, operation: 'upsert', payload: { ...highlight, tradition: 'bible' } }, db);
+  } catch { /* sync enqueue non-fatal */ }
+  return highlight;
 }
 
 export async function deleteBibleHighlight(id: string): Promise<void> {
   const db = await getDb();
   await db.runAsync('DELETE FROM bible_highlights WHERE id = ?', [id]);
+  try {
+    await enqueueMutation({ entityType: 'highlight', entityId: id, operation: 'delete', payload: { id, tradition: 'bible' } }, db);
+  } catch { /* sync enqueue non-fatal */ }
 }
 
 export type BibleSavedWord = {
@@ -202,10 +214,17 @@ export async function saveBibleWord(
       createdAt,
     ],
   );
-  return { ...input, id, createdAt };
+  const word = { ...input, id, createdAt };
+  try {
+    await enqueueMutation({ entityType: 'saved_word', entityId: id, operation: 'upsert', payload: { ...word, tradition: 'bible' } }, db);
+  } catch { /* sync enqueue non-fatal */ }
+  return word;
 }
 
 export async function deleteBibleSavedWord(id: string): Promise<void> {
   const db = await getDb();
   await db.runAsync('DELETE FROM bible_saved_words WHERE id = ?', [id]);
+  try {
+    await enqueueMutation({ entityType: 'saved_word', entityId: id, operation: 'delete', payload: { id, tradition: 'bible' } }, db);
+  } catch { /* sync enqueue non-fatal */ }
 }

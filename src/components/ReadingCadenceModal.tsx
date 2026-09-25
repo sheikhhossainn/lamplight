@@ -1,3 +1,4 @@
+import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
   Modal,
@@ -18,7 +19,7 @@ import {
   type ReadingGoal,
 } from '@/db/repositories/readingGoals';
 import { formatHourMinute } from '@/features/reading-goal/cadenceScheduler';
-import { isPremiumUser } from '@/features/subscription/subscriptionState';
+import { canUse } from '@/features/subscription/subscriptionState';
 import { useTheme } from '@/theme/ThemeProvider';
 
 export type ReadingCadenceModalProps = {
@@ -51,7 +52,7 @@ export function ReadingCadenceModal({
 }: ReadingCadenceModalProps) {
   const { colors, typography, spacing, radius, scheme } = useTheme();
   const isLamp = scheme === 'lamp';
-  const isPremium = isPremiumUser();
+  const isPremium = canUse('reading_insights');
 
   const [selectedDays, setSelectedDays] = useState<number>(14);
   const [selectedMinutes, setSelectedMinutes] = useState<number>(25);
@@ -337,7 +338,17 @@ export function ReadingCadenceModal({
               </Text>
 
               {/* Adaptive Anti-Guilt Hook */}
-              <View style={{ borderTopColor: colors.hairline, borderTopWidth: 1, marginTop: 10, paddingTop: 8 }}>
+              <Pressable
+                disabled={isPremium}
+                onPress={() => {
+                  onClose();
+                  router.push({
+                    pathname: '/paywall',
+                    params: { feature: 'reading_insights', trigger: 'adaptive_pacing' },
+                  });
+                }}
+                style={{ borderTopColor: colors.hairline, borderTopWidth: 1, marginTop: 10, paddingTop: 8 }}
+              >
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                   <View style={{ flex: 1, paddingRight: 8 }}>
                     <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 12 }]}>
@@ -362,7 +373,7 @@ export function ReadingCadenceModal({
                     </Text>
                   </View>
                 </View>
-              </View>
+              </Pressable>
             </View>
 
             {/* Action Buttons */}

@@ -1,4 +1,5 @@
 import { getDb } from '@/db/client';
+import { enqueueMutation } from './syncOutbox';
 
 export type BookRow = {
   id: string;
@@ -15,6 +16,7 @@ export type BookRow = {
   // Raw Gutendex subjects/bookshelves for this book; mapped to canonical
   // filter buckets by features/content-ingestion/bookCategories.ts.
   categories: string[];
+  isFavorite: boolean;
   source?: string;
 };
 
@@ -31,6 +33,7 @@ type BookSqlRow = {
   gutenberg_id: number | null;
   chapter1_anchor: string | null;
   categories: string | null;
+  is_favorite?: number | null;
   source?: string | null;
 };
 
@@ -59,6 +62,7 @@ function fromSqlRow(row: BookSqlRow): BookRow {
     gutenbergId: row.gutenberg_id,
     chapter1Anchor: row.chapter1_anchor,
     categories: parseCategories(row.categories),
+    isFavorite: row.is_favorite === 1,
     source: row.source ?? 'catalog',
   };
 }
@@ -79,6 +83,14 @@ export async function getBook(bookId: string): Promise<BookRow | null> {
   const db = await getDb();
   const row = await db.getFirstAsync<BookSqlRow>('SELECT * FROM books WHERE id = ?', [bookId]);
   return row ? fromSqlRow(row) : null;
+}
+
+export async function setBookFavorite(bookId: string, isFavorite: boolean): Promise<void> {
+  const db = await getDb();
+  await db.runAsync('UPDATE books SET is_favorite = ? WHERE id = ?', [isFavorite ? 1 : 0, bookId]);
+  try {
+    await enqueueMutation({ entityType: 'book_favorite', entityId: bookId, operation: 'upsert', payload: { bookId, isFavorite } }, db);
+  } catch { /* sync enqueue non-fatal */ }
 }
 
 // A user-imported EPUB has no Supabase catalog row and no text_url to
@@ -110,6 +122,7 @@ export async function createLocalBook(input: {
     gutenbergId: null,
     chapter1Anchor: null,
     categories: [],
+    isFavorite: false,
   };
 }
 
@@ -129,6 +142,13 @@ export async function deleteImportedBook(bookId: string): Promise<void> {
   const db = await getDb();
   await db.runAsync("DELETE FROM books WHERE id = ? AND text_url = ''", [bookId]);
   await db.runAsync('DELETE FROM reading_positions WHERE book_id = ?', [bookId]);
+
+  try {
+    const { deleteRemoteEpubBackup } = await import('@/features/sync/epubBackupService');
+    void deleteRemoteEpubBackup(bookId).catch(() => {});
+  } catch {
+    // Non-fatal
+  }
 }
 
 // Bulk-imported books (scripts/sync-bulk-catalog.mjs) don't get a real
@@ -203,6 +223,7 @@ export async function upsertBanglaBook(input: {
     gutenbergId: null,
     chapter1Anchor: null,
     categories: input.categories ?? [],
+    isFavorite: false,
     source: 'bangla_api',
   };
 }
@@ -330,6 +351,7 @@ export async function upsertJapaneseBook(input: {
     gutenbergId: null,
     chapter1Anchor: null,
     categories: input.categories ?? [],
+    isFavorite: false,
     source: 'aozora_bunko',
   };
 }
@@ -455,6 +477,7 @@ export async function upsertKoreanBook(input: {
     gutenbergId: null,
     chapter1Anchor: null,
     categories: input.categories ?? [],
+    isFavorite: false,
     source: 'gongu_korea',
   };
 }

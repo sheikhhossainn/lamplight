@@ -66,6 +66,11 @@ export async function saveReadingGoal(
     setSetting(ACTIVE_GOAL_KEY, goal.bookId),
   ]);
 
+  try {
+    const { enqueueMutation } = await import('./syncOutbox');
+    await enqueueMutation({ entityType: 'reading_goal', entityId: goal.bookId, operation: 'upsert', payload: fullGoal });
+  } catch { /* sync enqueue non-fatal */ }
+
   return fullGoal;
 }
 
@@ -78,6 +83,10 @@ export async function deleteReadingGoal(bookId: string): Promise<void> {
   if (activeBookId === bookId) {
     await setSetting(ACTIVE_GOAL_KEY, '');
   }
+  try {
+    const { enqueueMutation } = await import('./syncOutbox');
+    await enqueueMutation({ entityType: 'reading_goal', entityId: bookId, operation: 'delete', payload: { bookId } });
+  } catch { /* sync enqueue non-fatal */ }
 }
 
 /**

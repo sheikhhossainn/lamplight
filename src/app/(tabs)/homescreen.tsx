@@ -23,8 +23,10 @@ import { getSetting, setSetting } from '@/db/repositories/appSettings';
 import {
   hideFromContinueReading,
   listActiveReadingPositions,
+  listAllReadingPositions,
   type ReadingPosition,
 } from '@/db/repositories/readingPosition';
+import { getRecentSessions } from '@/db/repositories/readingSessions';
 import {
   fetchBanglaBooks,
   type BanglaBookSummary,
@@ -58,13 +60,34 @@ import {
   useTargetReadingLanguage,
 } from '@/features/settings/targetReadingLanguage';
 import { getLiteraryTheme } from '@/features/settings/literaryTheme';
+import {
+  getLocalRecommendations,
+  getDismissedBookIds,
+  dismissRecommendation,
+  type LocalRecommendation,
+} from '@/features/discovery/localRecommendations';
+import { MilestoneCelebrationModal } from '@/components/MilestoneCelebrationModal';
+import {
+  checkAndTriggerMilestone,
+  evaluateReadingStatsMilestones,
+  type MilestoneConfig,
+} from '@/features/milestones/milestoneService';
+import { computeUserReadingStats } from '@/features/analytics/statsEngine';
+import { getUserProfile } from '@/lib/supabaseAuth';
+import { logEvent } from '@/features/analytics/analytics';
+import { LapseReturnCard } from '@/components/LapseReturnCard';
+import {
+  dismissLapseRecovery,
+  getLapseRecoveryPrompt,
+  recordLapseRecoveryAction,
+  type LapseAction,
+  type LapsePrompt,
+} from '@/features/retention/lapseRecovery';
 
 const { width: screenWidth } = Dimensions.get('window');
 const EASE_OUT = Easing.bezier(0.23, 1, 0.32, 1);
 
 const HOME_GUIDE_SEEN_KEY = 'home_guide_shown_once';
-// Set to true to always show Home Guide on every start in development / testing.
-const ALWAYS_SHOW_HOME_GUIDE_IN_DEV = true;
 
 function getEnglishGenre(genre?: string): string {
   if (!genre) return 'Classic Literature';
@@ -223,6 +246,7 @@ export default function Homescreen() {
   const [loading, setLoading] = useState(true);
   const [latestBook, setLatestBook] = useState<BookRow | null>(null);
   const [latestPosition, setLatestPosition] = useState<ReadingPosition | null>(null);
+  const [localRecommendations, setLocalRecommendations] = useState<LocalRecommendation[]>([]);
   const [readyBook, setReadyBook] = useState<BookRow | null>(null);
   const [calibratedBook, setCalibratedBook] = useState<CalibratedStartingBook | null>(null);
   const [isCalibrationSkipped, setIsCalibrationSkipped] = useState(false);
@@ -231,6 +255,9 @@ export default function Homescreen() {
   const [sparkIndex, setSparkIndex] = useState(0);
   const [cadenceGoal, setCadenceGoal] = useState<ReadingGoal | null>(null);
   const [cadenceModalVisible, setCadenceModalVisible] = useState(false);
+  const [activeMilestone, setActiveMilestone] = useState<MilestoneConfig | null>(null);
+  const [isGuestUser, setIsGuestUser] = useState(false);
+  const [lapsePrompt, setLapsePrompt] = useState<LapsePrompt | null>(null);
   const [srsMetrics, setSrsMetrics] = useState<{
     totalWords: number;
     dueToday: number;
@@ -345,7 +372,26 @@ export default function Homescreen() {
       const metrics = await getSrsMetrics();
       setSrsMetrics(metrics);
 
-      const positions = await listActiveReadingPositions();
+      const [dismissedIds, recentSessions, positions, allPositions, catalogBooks] = await Promise.all([
+        getDismissedBookIds(),
+        getRecentSessions(10),
+        listActiveReadingPositions(),
+        listAllReadingPositions(),
+        listBooks(),
+      ]);
+      const recommendations = getLocalRecommendations(catalogBooks, allPositions, {
+        targetLanguage: targetReadingLanguage,
+        recentSessions,
+        dismissedBookIds: dismissedIds,
+        limit: 4,
+      });
+      setLocalRecommendations(recommendations);
+      if (recommendations.length > 0) {
+        logEvent('recommendation_impression', {
+          source: 'local_reading_rhythm',
+          book_ids: recommendations.map(({ book }) => book.id),
+        });
+      }
       if (positions.length > 0) {
         const sorted = [...positions].sort((a, b) => b.updatedAt - a.updatedAt);
         const topPos = sorted[0];
@@ -441,14 +487,61 @@ export default function Homescreen() {
       void (async () => {
         if (!guideDismissedInSessionRef.current) {
           const seen = await getSetting(HOME_GUIDE_SEEN_KEY);
-          const shouldShow = (__DEV__ && ALWAYS_SHOW_HOME_GUIDE_IN_DEV) || seen !== '1';
+          const shouldShow = seen !== '1';
           if (isFocused && shouldShow && !guideDismissedInSessionRef.current) {
             setGuideVisible(true);
-          } else if (seen === '1' && !(__DEV__ && ALWAYS_SHOW_HOME_GUIDE_IN_DEV)) {
+          } else if (seen === '1') {
             guideDismissedInSessionRef.current = true;
           }
         }
         await loadProgress();
+
+        // Evaluate reading stats milestones & ownership milestones
+        try {
+          const [prof, userStats] = await Promise.all([
+            getUserProfile(),
+            computeUserReadingStats(),
+          ]);
+          if (isFocused) {
+            setIsGuestUser(!prof.isProtected);
+          }
+
+          // 1. Check stats milestones (30 minutes, 7 days)
+          const statsMilestone = await evaluateReadingStatsMilestones({
+            cumulativeReadingMinutes: Math.floor(userStats.totalReadingSeconds / 60),
+            distinctReadingDays: new Set(userStats.weeklyActivity.filter((d) => d.hasRead).map((d) => d.dateStr)).size,
+            isBookCompleted: userStats.booksCompletedCount > 0,
+          });
+
+          if (isFocused && statsMilestone) {
+            setActiveMilestone(statsMilestone);
+            return;
+          }
+
+          // 2. Check first saved word milestone (if at least one word was saved)
+          if (userStats.totalSavedWords >= 1) {
+            const wordMilestone = await checkAndTriggerMilestone('first_saved_word');
+            if (isFocused && wordMilestone) {
+              setActiveMilestone(wordMilestone);
+              return;
+            }
+          }
+
+          // 3. Check gentle lapse recovery prompt
+          const lapse = await getLapseRecoveryPrompt();
+          if (isFocused && lapse) {
+            setLapsePrompt(lapse);
+            logEvent('lapse_recovery_displayed', {
+              stage: lapse.stage,
+              days_since_last_read: lapse.daysSinceLastRead,
+              action_type: lapse.primaryAction.type,
+            });
+          } else if (isFocused) {
+            setLapsePrompt(null);
+          }
+        } catch {
+          // Graceful fallback
+        }
       })();
       return () => {
         isFocused = false;
@@ -482,6 +575,31 @@ export default function Homescreen() {
 
   const handleExploreLibrary = () => {
     router.push('/(tabs)/library' as any);
+  };
+
+  const handleDismissRecommendation = useCallback(async (bookId: string) => {
+    logEvent('recommendation_dismissed', { source: 'local_reading_rhythm', book_id: bookId });
+    setLocalRecommendations((prev) => prev.filter((r) => r.book.id !== bookId));
+    await dismissRecommendation(bookId);
+  }, []);
+
+  const handleLapseAction = (action: LapseAction) => {
+    if (lapsePrompt) {
+      void recordLapseRecoveryAction(lapsePrompt);
+    }
+    setLapsePrompt(null);
+    if (action.type === 'current_book' && action.bookId) {
+      handleOpenBook(action.bookId);
+    } else {
+      router.push(action.route as any);
+    }
+  };
+
+  const handleDismissLapse = () => {
+    if (lapsePrompt) {
+      void dismissLapseRecovery(lapsePrompt);
+    }
+    setLapsePrompt(null);
   };
 
   const renderCalibratedCard = () => {
@@ -669,60 +787,46 @@ export default function Homescreen() {
               {calibratedBook.reason}
             </Text>
 
-            <Pressable
-              onPress={() => handleOpenBook(calibratedBook.id)}
-              style={[
-                styles.continueButton,
-                { backgroundColor: colors.flameAmber, borderRadius: radius.pill, marginTop: spacing.md },
-              ]}
-            >
-              <Text style={[typography.buttonLabel, { color: colors.primaryDark, fontSize: 14 }]}>
-                Start Reading Chapter 1
-              </Text>
-              <View style={{ marginLeft: 6 }}>
-                <ChevronRightIcon color={colors.primaryDark} size={15} />
-              </View>
-            </Pressable>
-          </View>
-
-          {/* Retroactive Calibration Prompt */}
-          {isCalibrationSkipped ? (
-            <Pressable
-              onPress={() => setCalibrationModalVisible(true)}
-              style={{
-                marginTop: spacing.sm,
-                paddingVertical: 8,
-                paddingHorizontal: 12,
-                borderRadius: radius.card,
-                backgroundColor: isLamp ? '#232023' : 'rgba(245, 166, 35, 0.08)',
-                borderColor: 'rgba(245, 166, 35, 0.25)',
-                borderWidth: 1,
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-              }}
-            >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
-                <Text style={{ color: colors.flameAmber, fontSize: 12 }}>✦</Text>
-                <Text
-                  style={[
-                    typography.metadataCaption,
-                    { color: colors.ink, fontSize: 11.5, fontWeight: '500' },
-                  ]}
-                >
-                  Want exact reading comprehension scores?
-                </Text>
-              </View>
-              <Text
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: spacing.md }}>
+              <Pressable
+                onPress={() => router.push('/library')}
                 style={[
-                  typography.eyebrowLabel,
-                  { color: colors.flameAmber, fontSize: 11, fontWeight: '600' },
+                  styles.continueButton,
+                  {
+                    flex: 1,
+                    backgroundColor: 'transparent',
+                    borderWidth: 1,
+                    borderColor: colors.hairline,
+                    borderRadius: radius.pill,
+                    marginTop: 0,
+                  },
                 ]}
               >
-                Take 30s Check →
-              </Text>
-            </Pressable>
-          ) : null}
+                <Text style={[typography.buttonLabel, { color: colors.ink, fontSize: 13 }]}>
+                  Explore Library
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => handleOpenBook(calibratedBook.id)}
+                style={[
+                  styles.continueButton,
+                  {
+                    flex: 1.4,
+                    backgroundColor: colors.flameAmber,
+                    borderRadius: radius.pill,
+                    marginTop: 0,
+                  },
+                ]}
+              >
+                <Text style={[typography.buttonLabel, { color: colors.primaryDark, fontSize: 13 }]}>
+                  Start Reading
+                </Text>
+                <View style={{ marginLeft: 4 }}>
+                  <ChevronRightIcon color={colors.primaryDark} size={14} />
+                </View>
+              </Pressable>
+            </View>
+          </View>
         </Pressable>
       </View>
     );
@@ -766,6 +870,15 @@ export default function Homescreen() {
           </View>
           <CultureEditionBanner targetReadingLanguage={targetReadingLanguage} />
         </View>
+
+        {/* Gentle Lapse Recovery Welcome Card */}
+        {lapsePrompt && (
+          <LapseReturnCard
+            prompt={lapsePrompt}
+            onAction={handleLapseAction}
+            onDismiss={handleDismissLapse}
+          />
+        )}
 
         {/* Active Reader / Welcome State */}
         {loading ? (
@@ -961,9 +1074,6 @@ export default function Homescreen() {
                 </Pressable>
               </View>
             </Pressable>
-
-            {/* If user skipped calibration, show curated 3-door shelf and check prompt right below */}
-            {isCalibrationSkipped && calibratedBook ? renderCalibratedCard() : null}
           </View>
         ) : calibratedBook ? (
           renderCalibratedCard()
@@ -1486,6 +1596,90 @@ export default function Homescreen() {
           </View>
         ) : null}
 
+        {localRecommendations.length > 0 ? (
+          <View style={{ marginTop: spacing.xl }}>
+            <View style={styles.sectionHeader}>
+              <Text style={[typography.eyebrowLabel, { color: colors.fawn }]}>
+                FROM YOUR READING RHYTHM
+              </Text>
+              <Pressable onPress={handleExploreLibrary} hitSlop={8}>
+                <Text style={[typography.buttonLabel, { color: colors.flameAmber, fontSize: 13 }]}>
+                  Library →
+                </Text>
+              </Pressable>
+            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ gap: spacing.sm, paddingTop: spacing.sm }}
+            >
+              {localRecommendations.map(({ book, reason }, index) => (
+                <View
+                  key={book.id}
+                  style={[
+                    styles.localRecommendationCard,
+                    {
+                      backgroundColor: colors.card,
+                      borderColor: colors.hairline,
+                      borderRadius: radius.card,
+                      position: 'relative',
+                    },
+                  ]}
+                >
+                  <Pressable
+                    hitSlop={8}
+                    accessibilityLabel={`Dismiss recommendation for ${book.title}`}
+                    accessibilityRole="button"
+                    onPress={() => handleDismissRecommendation(book.id)}
+                    style={{
+                      position: 'absolute',
+                      top: 6,
+                      right: 6,
+                      zIndex: 2,
+                      width: 20,
+                      height: 20,
+                      borderRadius: 10,
+                      backgroundColor: colors.hairline,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <CloseIcon size={10} color={colors.fawn} />
+                  </Pressable>
+                  <Pressable
+                    onPress={() => {
+                      logEvent('recommendation_opened', { source: 'local_reading_rhythm', book_id: book.id });
+                      handleOpenBook(book.id);
+                    }}
+                  >
+                    <BookSpine
+                      bookId={book.id}
+                      title={book.title}
+                      coverUrl={book.coverUrl}
+                      toneIndex={index + 2}
+                      onPress={() => {
+                        logEvent('recommendation_opened', { source: 'local_reading_rhythm', book_id: book.id });
+                        handleOpenBook(book.id);
+                      }}
+                      width={56}
+                      height={82}
+                    />
+                    <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13, marginTop: 8 }]} numberOfLines={2}>
+                      {book.title}
+                    </Text>
+                    <Text style={[typography.metadataCaption, { color: colors.umber, fontSize: 11, marginTop: 2 }]} numberOfLines={1}>
+                      {book.author}
+                    </Text>
+                    <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 10, lineHeight: 14, marginTop: 7 }]} numberOfLines={2}>
+                      {reason}
+                    </Text>
+                  </Pressable>
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        ) : null}
+
         {/* Discover Curated Collections */}
         <View style={{ marginTop: spacing.xl }}>
           <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginBottom: spacing.md }]}>
@@ -1597,6 +1791,14 @@ export default function Homescreen() {
           }}
         />
       ) : null}
+
+      <MilestoneCelebrationModal
+        visible={activeMilestone != null}
+        milestone={activeMilestone}
+        isGuest={isGuestUser}
+        onClose={() => setActiveMilestone(null)}
+        onProtectAccount={() => router.push('/signup' as any)}
+      />
     </View>
   );
 }
@@ -1707,6 +1909,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   spotlightCard: {},
+  localRecommendationCard: {
+    width: 142,
+    minHeight: 194,
+    borderWidth: 1,
+    padding: 10,
+  },
   spotlightRow: {
     flexDirection: 'row',
   },

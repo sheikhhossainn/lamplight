@@ -1,5 +1,6 @@
+import { router } from 'expo-router';
 import { useRef } from 'react';
-import { LayoutChangeEvent, PanResponder, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, LayoutChangeEvent, PanResponder, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 
@@ -11,7 +12,9 @@ import {
   useAmbienceTrackId,
   useAmbienceVolume,
 } from '@/features/ambience/ambiencePreference';
-import { AMBIENCE_TRACKS } from '@/features/ambience/tracks';
+import { AMBIENCE_TRACKS, type AmbienceTrack } from '@/features/ambience/tracks';
+import { useAppFlag } from '@/features/config/appConfig';
+import { canUse } from '@/features/subscription/subscriptionState';
 import { hapticFlashcardAction } from '@/lib/haptics';
 import { useTheme } from '@/theme/ThemeProvider';
 
@@ -90,9 +93,10 @@ export function AmbiencePicker({ visible, onClose }: AmbiencePickerProps) {
   const { colors, typography, spacing, radius } = useTheme();
   const insets = useSafeAreaInsets();
   const selectedId = useAmbienceTrackId();
+  const ambientSoundsEnabled = useAppFlag('ambient_sounds_enabled');
 
-  const rows: { id: string | null; label: string; hint: string }[] = [
-    { id: null, label: 'Off', hint: 'Read in silence' },
+  const rows: { id: string | null; label: string; hint: string; isPremium?: boolean }[] = [
+    { id: null, label: 'Off', hint: 'Read in silence', isPremium: false },
     ...AMBIENCE_TRACKS,
   ];
 
@@ -131,6 +135,23 @@ export function AmbiencePicker({ visible, onClose }: AmbiencePickerProps) {
             overScrollMode="never"
             contentContainerStyle={{ paddingBottom: 12 }}
           >
+            {!ambientSoundsEnabled ? (
+              <View
+                style={{
+                  padding: 10,
+                  borderRadius: radius.card,
+                  backgroundColor: colors.card,
+                  marginBottom: spacing.sm,
+                  borderWidth: 1,
+                  borderColor: colors.hairline,
+                }}
+              >
+                <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 12 }]}>
+                  Ambient sound playback is temporarily paused for service maintenance. Core reading remains fully available.
+                </Text>
+              </View>
+            ) : null}
+
             {/* Background Ambience / Music Section */}
             <View style={{ marginBottom: spacing.sm }}>
               <Text
@@ -143,10 +164,38 @@ export function AmbiencePicker({ visible, onClose }: AmbiencePickerProps) {
               </Text>
               {rows.map((row) => {
                 const on = row.id === selectedId;
+                const isLocked = Boolean(row.isPremium && !canUse('full_ambience'));
                 return (
                   <Pressable
                     key={row.id ?? 'off'}
                     onPress={() => {
+                      if (!ambientSoundsEnabled && row.id !== null) {
+                        Alert.alert(
+                          'Ambient Sounds Paused',
+                          'Ambient audio playback is temporarily undergoing service maintenance. Core reading remains fully available.',
+                        );
+                        return;
+                      }
+                      if (isLocked) {
+                        Alert.alert(
+                          'Atmospheric Soundscapes',
+                          'Rain on the path and additional ambient tracks are part of Lamplight Premium.',
+                          [
+                            { text: 'Not Now', style: 'cancel' },
+                            {
+                              text: 'View Premium',
+                              onPress: () => {
+                                requestClose();
+                                router.push({
+                                  pathname: '/paywall',
+                                  params: { feature: 'full_ambience', trigger: 'ambience_track' },
+                                });
+                              },
+                            },
+                          ],
+                        );
+                        return;
+                      }
                       void hapticFlashcardAction('graduate');
                       setAmbienceTrackId(row.id);
                     }}
@@ -157,9 +206,25 @@ export function AmbiencePicker({ visible, onClose }: AmbiencePickerProps) {
                     ]}
                   >
                     <View style={{ flex: 1, marginRight: spacing.sm }}>
-                      <Text style={[typography.uiRowTitle, { color: on ? colors.pairPillText : colors.ink, fontSize: 14 }]}>
-                        {row.label}
-                      </Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text style={[typography.uiRowTitle, { color: on ? colors.pairPillText : colors.ink, fontSize: 14 }]}>
+                          {row.label}
+                        </Text>
+                        {isLocked ? (
+                          <View
+                            style={{
+                              paddingHorizontal: 6,
+                              paddingVertical: 1,
+                              borderRadius: radius.pill,
+                              backgroundColor: 'rgba(245, 166, 35, 0.15)',
+                            }}
+                          >
+                            <Text style={[typography.eyebrowLabel, { color: colors.flameAmber, fontSize: 8.5 }]}>
+                              PREMIUM
+                            </Text>
+                          </View>
+                        ) : null}
+                      </View>
                       <Text
                         style={[
                           typography.metadataCaption,

@@ -10,7 +10,7 @@ import { AddToShelfSheet } from '@/components/AddToShelfSheet';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { BookmarkIcon, ChevronLeftIcon, ChevronRightIcon, MoreHorizontalIcon } from '@/components/icons';
 import { deleteBookCache, isBookCached } from '@/features/content-ingestion/bookDownloader';
-import { deleteImportedBook, getBook, isImportedBook, type BookRow } from '@/db/repositories/books';
+import { deleteImportedBook, getBook, isImportedBook, setBookFavorite, type BookRow } from '@/db/repositories/books';
 import { listHighlightsForBook } from '@/db/repositories/highlights';
 import { getReadingPosition, type ReadingPosition } from '@/db/repositories/readingPosition';
 import { listSavedWordsForBook, type SavedWord } from '@/db/repositories/savedWords';
@@ -273,6 +273,16 @@ export default function BookDetailScreen() {
       openReader();
     }
   };
+  const handleToggleFavorite = async () => {
+    if (!book) return;
+    const nextValue = !book.isFavorite;
+    setBook({ ...book, isFavorite: nextValue });
+    try {
+      await setBookFavorite(book.id, nextValue);
+    } catch {
+      setBook({ ...book, isFavorite: !nextValue });
+    }
+  };
   const percent = position ? position.percentComplete : 0;
   const chapterLabel = position
     ? book.totalChapters > 0
@@ -302,14 +312,24 @@ export default function BookDetailScreen() {
         <Pressable onPress={() => router.back()} hitSlop={12}>
           <ChevronLeftIcon color={colors.ink} />
         </Pressable>
-        {/* Only show the menu when there's actually an action: an imported book
-            to delete, or a download to remove. A catalog book that's never been
-            opened has nothing to manage, so no dots. */}
-        {imported || downloaded ? (
-          <Pressable onPress={handleMoreOptions} hitSlop={12}>
-            <MoreHorizontalIcon color={colors.ink} />
+        <View style={styles.topActions}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={book.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+            onPress={() => void handleToggleFavorite()}
+            hitSlop={12}
+          >
+            <BookmarkIcon color={book.isFavorite ? colors.flameAmber : colors.fawn} size={21} filled={book.isFavorite} />
           </Pressable>
-        ) : null}
+          {/* Only show the menu when there's actually an action: an imported book
+              to delete, or a download to remove. A catalog book that's never been
+              opened has nothing to manage, so no dots. */}
+          {imported || downloaded ? (
+            <Pressable onPress={handleMoreOptions} hitSlop={12}>
+              <MoreHorizontalIcon color={colors.ink} />
+            </Pressable>
+          ) : null}
+        </View>
       </View>
 
       <View style={[styles.cover, { backgroundColor: coverColor }]}>
@@ -614,6 +634,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 16,
+  },
+  topActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 18,
   },
   cover: {
     width: 132,

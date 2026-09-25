@@ -1,6 +1,7 @@
 import type { HighlightColorKey } from '@/theme/tokens';
 import { getDb } from '@/db/client';
 import { generateId } from '@/lib/id';
+import { enqueueMutation } from './syncOutbox';
 
 export type QuranReadingPosition = {
   surahNumber: number;
@@ -53,14 +54,18 @@ export async function upsertQuranReadingPosition(
   position: Omit<QuranReadingPosition, 'updatedAt'>,
 ): Promise<void> {
   const db = await getDb();
+  const now = Date.now();
   await db.runAsync(
     `INSERT INTO quran_reading_position (surah_number, verse_number, updated_at)
      VALUES (?, ?, ?)
      ON CONFLICT(surah_number) DO UPDATE SET
        verse_number = excluded.verse_number,
        updated_at = excluded.updated_at`,
-    [position.surahNumber, position.verseNumber, Date.now()],
+    [position.surahNumber, position.verseNumber, now],
   );
+  try {
+    await enqueueMutation({ entityType: 'reading_position', entityId: `quran:${position.surahNumber}`, operation: 'upsert', payload: { tradition: 'quran', ...position, updatedAt: now } }, db);
+  } catch { /* sync enqueue non-fatal */ }
 }
 
 export type QuranHighlight = {
@@ -119,12 +124,19 @@ export async function createQuranHighlight(
      VALUES (?, ?, ?, ?, ?)`,
     [id, input.surahNumber, input.verseNumber, input.colorKey, createdAt],
   );
-  return { ...input, id, createdAt };
+  const highlight = { ...input, id, createdAt };
+  try {
+    await enqueueMutation({ entityType: 'highlight', entityId: id, operation: 'upsert', payload: { ...highlight, tradition: 'quran' } }, db);
+  } catch { /* sync enqueue non-fatal */ }
+  return highlight;
 }
 
 export async function deleteQuranHighlight(id: string): Promise<void> {
   const db = await getDb();
   await db.runAsync('DELETE FROM quran_highlights WHERE id = ?', [id]);
+  try {
+    await enqueueMutation({ entityType: 'highlight', entityId: id, operation: 'delete', payload: { id, tradition: 'quran' } }, db);
+  } catch { /* sync enqueue non-fatal */ }
 }
 
 export type QuranSavedWord = {
@@ -190,10 +202,17 @@ export async function saveQuranWord(
       createdAt,
     ],
   );
-  return { ...input, id, createdAt };
+  const word = { ...input, id, createdAt };
+  try {
+    await enqueueMutation({ entityType: 'saved_word', entityId: id, operation: 'upsert', payload: { ...word, tradition: 'quran' } }, db);
+  } catch { /* sync enqueue non-fatal */ }
+  return word;
 }
 
 export async function deleteQuranSavedWord(id: string): Promise<void> {
   const db = await getDb();
   await db.runAsync('DELETE FROM quran_saved_words WHERE id = ?', [id]);
+  try {
+    await enqueueMutation({ entityType: 'saved_word', entityId: id, operation: 'delete', payload: { id, tradition: 'quran' } }, db);
+  } catch { /* sync enqueue non-fatal */ }
 }

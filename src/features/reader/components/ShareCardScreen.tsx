@@ -1,7 +1,7 @@
 import * as Haptics from 'expo-haptics';
 import * as Sharing from 'expo-sharing';
 import { router } from 'expo-router';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Alert,
   PanResponder,
@@ -17,41 +17,21 @@ import Svg, { Circle, Defs, Line, LinearGradient, Path, Polygon, RadialGradient,
 import { captureRef } from 'react-native-view-shot';
 
 import { CloseIcon } from '@/components/icons';
+import { canUse } from '@/features/subscription/subscriptionState';
 import { useTheme } from '@/theme/ThemeProvider';
 import { FontFamily } from '@/theme/typography';
 
-export type Variant =
-  | 'parchment'
-  | 'gradient'
-  | 'foldSplit'
-  | 'editorial'
-  | 'midnightGold'
-  | 'washi'
-  | 'cyanotype'
-  | 'broadside'
-  | 'tanzaku';
-
-export type TemplateCategory = 'classic' | 'premium';
-
-export interface TemplateInfo {
-  id: Variant;
-  name: string;
-  category: TemplateCategory;
-}
-
-export const TEMPLATES: TemplateInfo[] = [
-  { id: 'parchment', name: 'Parchment', category: 'classic' },
-  { id: 'gradient', name: 'Amber Glow', category: 'classic' },
-  { id: 'foldSplit', name: 'Fold Split', category: 'classic' },
-  { id: 'editorial', name: 'Ex Libris', category: 'premium' },
-  { id: 'midnightGold', name: 'Clothbound', category: 'premium' },
-  { id: 'washi', name: 'Archive', category: 'premium' },
-  { id: 'cyanotype', name: 'Atelier', category: 'premium' },
-  { id: 'broadside', name: 'Broadside', category: 'premium' },
-  { id: 'tanzaku', name: 'Tanzaku', category: 'premium' },
-];
-
-export const VARIANTS: Variant[] = TEMPLATES.map((t) => t.id);
+export * from './quoteTemplates';
+import {
+  type Variant,
+  type TemplateCategory,
+  type TemplateInfo,
+  TEMPLATES,
+  VARIANTS,
+  calculateQuoteStyles,
+  getQuoteCardExportResolution,
+  buildQuoteCardDeepLink,
+} from './quoteTemplates';
 
 const FLAME_PATH =
   'M100 46 C 78 78, 70 100, 84 122 C 84 108, 92 98, 100 92 C 108 98, 116 108, 116 122 C 130 100, 122 78, 100 46 Z';
@@ -123,97 +103,6 @@ function GoldCornerBrackets({ width, height }: { width: number; height: number }
   );
 }
 
-export type ScriptType = 'bangla' | 'arabic' | 'devanagari' | 'latin';
-
-export function detectScript(str: string): ScriptType {
-  if (/[\u0980-\u09FF]/.test(str)) return 'bangla';
-  if (/[\u0600-\u06FF]/.test(str)) return 'arabic';
-  if (/[\u0900-\u097F]/.test(str)) return 'devanagari';
-  return 'latin';
-}
-
-export function getScriptFont(script: ScriptType, isItalic = true): string {
-  switch (script) {
-    case 'bangla':
-      return FontFamily.atmaSemiBold;
-    case 'arabic':
-      return FontFamily.amiriBold;
-    case 'devanagari':
-      return FontFamily.kalamBold;
-    case 'latin':
-    default:
-      return isItalic ? FontFamily.loraItalicMedium : FontFamily.loraRegular;
-  }
-}
-
-export function getLineHeightMultiplier(script: ScriptType): number {
-  switch (script) {
-    case 'bangla':
-    case 'devanagari':
-      return 1.68;
-    case 'arabic':
-      return 1.76;
-    case 'latin':
-    default:
-      return 1.48;
-  }
-}
-
-function calculateQuoteStyles(text: string, translation?: string) {
-  const quoteScript = detectScript(text);
-  const quoteMult = getLineHeightMultiplier(quoteScript);
-  const quoteFont = getScriptFont(quoteScript, true);
-
-  const hasTranslation = Boolean(translation && translation.trim().length > 0);
-  const totalLen = text.length + (hasTranslation ? (translation?.length ?? 0) : 0);
-
-  let quoteSize: number;
-  let transSize: number;
-
-  if (!hasTranslation) {
-    if (totalLen <= 60) quoteSize = 22;
-    else if (totalLen <= 120) quoteSize = 19.5;
-    else if (totalLen <= 200) quoteSize = 17.5;
-    else if (totalLen <= 300) quoteSize = 15.5;
-    else if (totalLen <= 420) quoteSize = 14;
-    else quoteSize = 12.5;
-    transSize = 12;
-  } else {
-    if (totalLen <= 100) {
-      quoteSize = 18;
-      transSize = 13.5;
-    } else if (totalLen <= 180) {
-      quoteSize = 16;
-      transSize = 12.5;
-    } else if (totalLen <= 280) {
-      quoteSize = 14.5;
-      transSize = 11.5;
-    } else {
-      quoteSize = 13;
-      transSize = 10.5;
-    }
-  }
-
-  const transScript = hasTranslation ? detectScript(translation ?? '') : 'latin';
-  const transMult = getLineHeightMultiplier(transScript);
-  const transFont = getScriptFont(transScript, false);
-
-  return {
-    quote: {
-      fontSize: quoteSize,
-      lineHeight: Math.round(quoteSize * quoteMult),
-      fontFamily: quoteFont,
-      isRtl: quoteScript === 'arabic',
-    },
-    translation: {
-      fontSize: transSize,
-      lineHeight: Math.round(transSize * transMult),
-      fontFamily: transFont,
-      isRtl: transScript === 'arabic',
-    },
-    hasTranslation,
-  };
-}
 
 function QuoteGlyph({ color, size = 40 }: { color: string; size?: number }) {
   const h = Math.round(size * 0.85);
@@ -308,6 +197,8 @@ function ShareCard({
   translation,
   width,
   height,
+  condensed = false,
+  deepLink,
 }: {
   variant: Variant;
   text: string;
@@ -315,9 +206,11 @@ function ShareCard({
   translation?: string;
   width: number;
   height: number;
+  condensed?: boolean;
+  deepLink?: string;
 }) {
   const { radius } = useTheme();
-  const metrics = calculateQuoteStyles(text, translation);
+  const metrics = calculateQuoteStyles(text, translation, condensed);
 
   if (variant === 'parchment') {
     return (
@@ -338,9 +231,9 @@ function ShareCard({
         <View style={[styles.quoteBlock, { bottom: 90, paddingHorizontal: 28, zIndex: 10, elevation: 4 }]}>
           <QuoteGlyph color="rgba(180,134,58,0.35)" />
           <Text
-            numberOfLines={metrics.hasTranslation ? 7 : 12}
+            numberOfLines={metrics.maxQuoteLines}
             adjustsFontSizeToFit
-            minimumFontScale={0.72}
+            minimumFontScale={0.65}
             style={[
               styles.quoteText,
               {
@@ -361,9 +254,9 @@ function ShareCard({
             <>
               <View style={[styles.dividerBar, { backgroundColor: 'rgba(180,134,58,0.35)' }]} />
               <Text
-                numberOfLines={5}
+                numberOfLines={metrics.maxTranslationLines}
                 adjustsFontSizeToFit
-                minimumFontScale={0.72}
+                minimumFontScale={0.65}
                 style={[
                   styles.translationText,
                   {
@@ -442,9 +335,9 @@ function ShareCard({
         >
           <QuoteGlyph color="rgba(180,134,58,0.35)" />
           <Text
-            numberOfLines={metrics.hasTranslation ? 6 : 9}
+            numberOfLines={metrics.condensed ? (metrics.hasTranslation ? 8 : 12) : (metrics.hasTranslation ? 6 : 9)}
             adjustsFontSizeToFit
-            minimumFontScale={0.72}
+            minimumFontScale={0.65}
             style={[
               styles.quoteText,
               {
@@ -478,9 +371,9 @@ function ShareCard({
           >
             <View style={[styles.dividerBar, { backgroundColor: 'rgba(245,166,35,0.45)' }]} />
             <Text
-              numberOfLines={4}
+              numberOfLines={metrics.maxTranslationLines}
               adjustsFontSizeToFit
-              minimumFontScale={0.72}
+              minimumFontScale={0.65}
               style={[
                 styles.translationText,
                 {
@@ -594,9 +487,9 @@ function ShareCard({
         {/* Quote Content */}
         <View style={[styles.quoteBlock, { top: 68, bottom: 85, paddingHorizontal: 28, zIndex: 10, elevation: 4 }]}>
           <Text
-            numberOfLines={metrics.hasTranslation ? 7 : 12}
+            numberOfLines={metrics.maxQuoteLines}
             adjustsFontSizeToFit
-            minimumFontScale={0.72}
+            minimumFontScale={0.65}
             style={[
               styles.quoteText,
               {
@@ -616,9 +509,9 @@ function ShareCard({
             <>
               <View style={[styles.dividerBar, { backgroundColor: 'rgba(54, 46, 39, 0.20)', marginVertical: 10 }]} />
               <Text
-                numberOfLines={4}
+                numberOfLines={metrics.maxTranslationLines}
                 adjustsFontSizeToFit
-                minimumFontScale={0.72}
+                minimumFontScale={0.65}
                 style={[
                   styles.translationText,
                   {
@@ -846,9 +739,9 @@ function ShareCard({
           </Text>
 
           <Text
-            numberOfLines={metrics.hasTranslation ? 7 : 12}
+            numberOfLines={metrics.maxQuoteLines}
             adjustsFontSizeToFit
-            minimumFontScale={0.72}
+            minimumFontScale={0.65}
             style={[
               styles.quoteText,
               {
@@ -876,9 +769,9 @@ function ShareCard({
                 }}
               />
               <Text
-                numberOfLines={4}
+                numberOfLines={metrics.maxTranslationLines}
                 adjustsFontSizeToFit
-                minimumFontScale={0.72}
+                minimumFontScale={0.65}
                 style={[
                   styles.translationText,
                   {
@@ -1065,9 +958,9 @@ function ShareCard({
         {/* Quote Content */}
         <View style={[styles.quoteBlock, { top: 68, bottom: 85, paddingHorizontal: 26, zIndex: 10, elevation: 4 }]}>
           <Text
-            numberOfLines={metrics.hasTranslation ? 7 : 12}
+            numberOfLines={metrics.maxQuoteLines}
             adjustsFontSizeToFit
-            minimumFontScale={0.72}
+            minimumFontScale={0.65}
             style={[
               styles.quoteText,
               {
@@ -1087,9 +980,9 @@ function ShareCard({
             <>
               <View style={[styles.dividerBar, { backgroundColor: '#A83220', marginVertical: 10 }]} />
               <Text
-                numberOfLines={4}
+                numberOfLines={metrics.maxTranslationLines}
                 adjustsFontSizeToFit
-                minimumFontScale={0.72}
+                minimumFontScale={0.65}
                 style={[
                   styles.translationText,
                   {
@@ -1382,9 +1275,9 @@ function ShareCard({
           </Text>
 
           <Text
-            numberOfLines={metrics.hasTranslation ? 7 : 12}
+            numberOfLines={metrics.maxQuoteLines}
             adjustsFontSizeToFit
-            minimumFontScale={0.72}
+            minimumFontScale={0.65}
             style={[
               styles.quoteText,
               {
@@ -1413,9 +1306,9 @@ function ShareCard({
                 }}
               />
               <Text
-                numberOfLines={4}
+                numberOfLines={metrics.maxTranslationLines}
                 adjustsFontSizeToFit
-                minimumFontScale={0.72}
+                minimumFontScale={0.65}
                 style={[
                   styles.translationText,
                   {
@@ -1613,9 +1506,9 @@ function ShareCard({
           ]}
         >
           <Text
-            numberOfLines={metrics.hasTranslation ? 7 : 12}
+            numberOfLines={metrics.maxQuoteLines}
             adjustsFontSizeToFit
-            minimumFontScale={0.72}
+            minimumFontScale={0.65}
             style={[
               styles.quoteText,
               {
@@ -1646,9 +1539,9 @@ function ShareCard({
                 <Text style={{ fontSize: 6, color: 'rgba(43, 37, 33, 0.40)' }}>◆</Text>
               </View>
               <Text
-                numberOfLines={4}
+                numberOfLines={metrics.maxTranslationLines}
                 adjustsFontSizeToFit
-                minimumFontScale={0.72}
+                minimumFontScale={0.65}
                 style={[
                   styles.translationText,
                   {
@@ -1780,9 +1673,9 @@ function ShareCard({
         {/* Quote Content */}
         <View style={[styles.quoteBlock, { top: 58, bottom: 82, paddingHorizontal: 26, zIndex: 10, elevation: 4 }]}>
           <Text
-            numberOfLines={metrics.hasTranslation ? 7 : 12}
+            numberOfLines={metrics.maxQuoteLines}
             adjustsFontSizeToFit
-            minimumFontScale={0.72}
+            minimumFontScale={0.65}
             style={[
               styles.quoteText,
               {
@@ -1802,9 +1695,9 @@ function ShareCard({
             <>
               <View style={[styles.dividerBar, { backgroundColor: 'rgba(184, 50, 38, 0.25)', marginVertical: 10 }]} />
               <Text
-                numberOfLines={4}
+                numberOfLines={metrics.maxTranslationLines}
                 adjustsFontSizeToFit
-                minimumFontScale={0.72}
+                minimumFontScale={0.65}
                 style={[
                   styles.translationText,
                   {
@@ -1920,9 +1813,9 @@ function ShareCard({
       <View style={[styles.quoteBlock, { bottom: 90, paddingHorizontal: 28, zIndex: 10, elevation: 4 }]}>
         <FlameMark size={34} />
         <Text
-          numberOfLines={metrics.hasTranslation ? 7 : 12}
+          numberOfLines={metrics.maxQuoteLines}
           adjustsFontSizeToFit
-          minimumFontScale={0.72}
+          minimumFontScale={0.65}
           style={[
             styles.quoteText,
             {
@@ -1943,9 +1836,9 @@ function ShareCard({
           <>
             <View style={[styles.dividerBar, { backgroundColor: 'rgba(245,166,35,0.40)' }]} />
             <Text
-              numberOfLines={5}
+              numberOfLines={metrics.maxTranslationLines}
               adjustsFontSizeToFit
-              minimumFontScale={0.72}
+              minimumFontScale={0.65}
               style={[
                 styles.translationText,
                 {
@@ -1972,6 +1865,8 @@ function ShareCard({
 export type ShareCardScreenProps = {
   text: string;
   attribution: string;
+  bookId?: string;
+  sourceUrl?: string;
   translation?: string;
   onToggleTranslation?: () => void;
   hasTranslationAvailable?: boolean;
@@ -1981,6 +1876,8 @@ export type ShareCardScreenProps = {
 export function ShareCardScreen({
   text,
   attribution,
+  bookId,
+  sourceUrl,
   translation,
   onToggleTranslation,
   hasTranslationAvailable,
@@ -1991,17 +1888,43 @@ export function ShareCardScreen({
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
 
   // Responsive card sizing calculated per viewport
-  // Responsive card sizing calculated per viewport
   const cardWidth = Math.max(Math.min(windowWidth - 48, 320), 1);
   const maxAvailableCardHeight = Math.max(windowHeight - insets.top - insets.bottom - 220, 1);
   const cardHeight = Math.min(Math.round((cardWidth * 16) / 9), maxAvailableCardHeight);
 
+  const isPremiumUser = canUse('premium_quote_cards');
   const [variant, setVariant] = useState<Variant>('parchment');
   const [sharing, setSharing] = useState(false);
+  const [condensedLayout, setCondensedLayout] = useState(text.length > 340);
   const cardRef = useRef<View>(null);
 
   const currentTemplate = TEMPLATES.find((t) => t.id === variant) ?? TEMPLATES[0];
   const activeCategory = currentTemplate.category;
+
+  const metrics = calculateQuoteStyles(text, translation, condensedLayout);
+  const deepLink = buildQuoteCardDeepLink(bookId);
+
+  // Restore saved preset on mount if entitled
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        const { getSetting } = await import('@/db/repositories/appSettings');
+        const saved = await getSetting('preferred_quote_template');
+        if (saved && VARIANTS.includes(saved as Variant) && isMounted) {
+          const tmpl = TEMPLATES.find((t) => t.id === saved);
+          if (tmpl && (tmpl.category === 'classic' || canUse('premium_quote_cards'))) {
+            setVariant(saved as Variant);
+          }
+        }
+      } catch {
+        // Fallback to default
+      }
+    })();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const handleSelectCategory = (cat: TemplateCategory) => {
     void Haptics.selectionAsync();
@@ -2034,15 +1957,52 @@ export function ShareCardScreen({
 
   const onShare = async () => {
     if (sharing) return;
+    if (currentTemplate.category === 'premium' && !canUse('premium_quote_cards')) {
+      Alert.alert(
+        'Artisan Quote Cards',
+        `${currentTemplate.name} and high-definition card themes are part of Lamplight Premium.`,
+        [
+          { text: 'Keep Classic', style: 'cancel' },
+          {
+            text: 'Unlock Premium',
+            onPress: () =>
+              router.push({
+                pathname: '/paywall',
+                params: { feature: 'premium_quote_cards', trigger: 'quote_card_export' },
+              }),
+          },
+        ],
+      );
+      return;
+    }
+
     setSharing(true);
     try {
+      const resolution = getQuoteCardExportResolution(isPremiumUser, cardWidth, cardHeight);
       const uri = await captureRef(cardRef, {
         format: 'png',
-        quality: 1,
+        quality: resolution.quality,
         result: 'tmpfile',
+        width: resolution.width,
+        height: resolution.height,
       });
+
+      // Persist chosen preset for future cards
+      try {
+        const { setSetting } = await import('@/db/repositories/appSettings');
+        await setSetting('preferred_quote_template', variant);
+      } catch {
+        // Non-blocking
+      }
+
       if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(uri, { mimeType: 'image/png', dialogTitle: 'Share Quote' });
+        const dialogTitle = deepLink
+          ? `Quote from ${attribution} (${deepLink})`
+          : `Quote from ${attribution}`;
+        await Sharing.shareAsync(uri, {
+          mimeType: 'image/png',
+          dialogTitle,
+        });
       } else {
         Alert.alert('Sharing unavailable', 'This device cannot share files directly.');
       }
@@ -2069,37 +2029,67 @@ export function ShareCardScreen({
       ]}
     >
       <View style={styles.topBar}>
-        {hasTranslationAvailable ? (
-          <Pressable
-            onPress={() => {
-              void Haptics.selectionAsync();
-              onToggleTranslation?.();
-            }}
-            hitSlop={8}
-            style={[
-              styles.translationPill,
-              {
-                backgroundColor: Boolean(translation) ? colors.flameAmber : 'rgba(240,230,214,0.10)',
-                borderColor: Boolean(translation) ? colors.flameAmber : 'rgba(240,230,214,0.18)',
-              },
-            ]}
-          >
-            <Text
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          {hasTranslationAvailable && (
+            <Pressable
+              onPress={() => {
+                void Haptics.selectionAsync();
+                onToggleTranslation?.();
+              }}
+              hitSlop={8}
               style={[
-                typography.metadataCaption,
+                styles.translationPill,
                 {
-                  color: Boolean(translation) ? colors.primaryDark : colors.lampText,
-                  fontWeight: '600',
-                  fontSize: 11.5,
+                  backgroundColor: Boolean(translation) ? colors.flameAmber : 'rgba(240,230,214,0.10)',
+                  borderColor: Boolean(translation) ? colors.flameAmber : 'rgba(240,230,214,0.18)',
                 },
               ]}
             >
-              {isTranslating ? 'Translating…' : Boolean(translation) ? '✓ Translation' : '+ Translation'}
-            </Text>
-          </Pressable>
-        ) : (
-          <View style={{ width: 40 }} />
-        )}
+              <Text
+                style={[
+                  typography.metadataCaption,
+                  {
+                    color: Boolean(translation) ? colors.primaryDark : colors.lampText,
+                    fontWeight: '600',
+                    fontSize: 11.5,
+                  },
+                ]}
+              >
+                {isTranslating ? 'Translating…' : Boolean(translation) ? '✓ Translation' : '+ Translation'}
+              </Text>
+            </Pressable>
+          )}
+
+          {metrics.isLongQuote && (
+            <Pressable
+              onPress={() => {
+                void Haptics.selectionAsync();
+                setCondensedLayout((prev) => !prev);
+              }}
+              hitSlop={8}
+              style={[
+                styles.translationPill,
+                {
+                  backgroundColor: condensedLayout ? 'rgba(245,166,35,0.18)' : 'rgba(240,230,214,0.08)',
+                  borderColor: condensedLayout ? colors.flameAmber : 'rgba(240,230,214,0.15)',
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  typography.metadataCaption,
+                  {
+                    color: condensedLayout ? colors.flameAmber : 'rgba(240,230,214,0.7)',
+                    fontWeight: '600',
+                    fontSize: 11.5,
+                  },
+                ]}
+              >
+                {condensedLayout ? 'Compact' : 'Standard'}
+              </Text>
+            </Pressable>
+          )}
+        </View>
 
         <Pressable
           onPress={() => router.back()}
@@ -2111,6 +2101,26 @@ export function ShareCardScreen({
         </Pressable>
       </View>
 
+      {metrics.isLongQuote && (
+        <Pressable
+          onPress={() => {
+            Alert.alert(
+              'Quote Length Guide',
+              metrics.lengthExplanation ??
+                'Quotes under 350 characters fit the best on quote cards. Condensed typography has been applied to prevent clipping.',
+              [{ text: 'Understood' }],
+            );
+          }}
+          style={styles.lengthNoticeBar}
+        >
+          <Text style={[typography.metadataCaption, styles.lengthNoticeText]} numberOfLines={1}>
+            {metrics.isExcessive
+              ? `⚠ Long passage (${metrics.totalLength} chars) · Tap for guide`
+              : `ℹ Condensed typography active (${metrics.totalLength} chars)`}
+          </Text>
+        </Pressable>
+      )}
+
       <View style={styles.cardWrap} {...panResponder.panHandlers}>
         <View ref={cardRef} collapsable={false}>
           <ShareCard
@@ -2120,6 +2130,8 @@ export function ShareCardScreen({
             translation={translation}
             width={cardWidth}
             height={cardHeight}
+            condensed={condensedLayout}
+            deepLink={deepLink}
           />
         </View>
       </View>
@@ -2240,7 +2252,13 @@ export function ShareCardScreen({
             { color: shareButtonIsDark ? colors.lampText : colors.primaryDark, marginLeft: 8 },
           ]}
         >
-          {sharing ? 'Preparing high-res…' : 'Share card'}
+          {sharing
+            ? isPremiumUser
+              ? 'Exporting High-Res (1080p)…'
+              : 'Exporting…'
+            : isPremiumUser
+              ? 'Share Card (HD 1080p)'
+              : 'Share Card'}
         </Text>
       </Pressable>
     </View>
@@ -2267,6 +2285,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 11,
     borderRadius: 14,
     borderWidth: 1,
+  },
+  lengthNoticeBar: {
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: 'rgba(245, 166, 35, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(245, 166, 35, 0.25)',
+    marginBottom: 6,
+    alignSelf: 'center',
+  },
+  lengthNoticeText: {
+    color: '#F5A623',
+    fontSize: 11,
+    letterSpacing: 0.2,
   },
   cardWrap: {
     flex: 1,

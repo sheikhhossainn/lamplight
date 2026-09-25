@@ -25,6 +25,8 @@ type AuthResponse = {
   };
 };
 
+let sessionInFlight: Promise<{ accessToken: string; userId: string }> | null = null;
+
 async function persistSession(auth: AuthResponse): Promise<void> {
   const expiresAt = Math.floor(Date.now() / 1000) + auth.expires_in;
   const isAnonymous = Boolean(auth.user.is_anonymous ?? !auth.user.email);
@@ -106,6 +108,16 @@ export async function getUserId(): Promise<string | null> {
  * — never worth blocking the UI over.
  */
 export async function getSession(): Promise<{ accessToken: string; userId: string }> {
+  if (sessionInFlight) return sessionInFlight;
+  sessionInFlight = resolveSession();
+  try {
+    return await sessionInFlight;
+  } finally {
+    sessionInFlight = null;
+  }
+}
+
+async function resolveSession(): Promise<{ accessToken: string; userId: string }> {
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
     throw new Error('EXPO_PUBLIC_SUPABASE_URL / EXPO_PUBLIC_SUPABASE_ANON_KEY are not set.');
   }

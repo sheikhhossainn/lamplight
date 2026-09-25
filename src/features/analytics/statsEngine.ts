@@ -207,11 +207,14 @@ export async function computeUserReadingStats(): Promise<UserReadingStats> {
     maxBucketVal = timeBuckets.evening;
   }
 
-  let personaTitle = 'Candlelit Reader';
-  let personaDescription = 'Reads whenever quiet moments appear.';
-  let favoriteTimeOfDay = 'Quiet Hours';
+  let personaTitle = 'Not enough reading history';
+  let personaDescription = 'Open a book and your reading rhythm will appear here.';
+  let favoriteTimeOfDay = 'Awaiting first session';
 
-  if (highestBucket === 'night') {
+  if (sessionRows.length === 0) {
+    // Keep the empty state honest; there is no meaningful persona before the
+    // first tracked reading session.
+  } else if (highestBucket === 'night') {
     personaTitle = 'Night Owl Reader';
     personaDescription = 'Most active when the world is quiet and the lamp burns warm (10 PM – 3 AM).';
     favoriteTimeOfDay = 'Late Night';
@@ -229,10 +232,12 @@ export async function computeUserReadingStats(): Promise<UserReadingStats> {
     favoriteTimeOfDay = 'Evening';
   }
 
-  const sessionCount = Math.max(1, sessionRows.length);
-  const averageSessionMinutes = Math.round(totalReadingSeconds / sessionCount / 60) || 12;
+  const sessionCount = sessionRows.length;
+  const averageSessionMinutes = sessionCount > 0
+    ? Math.round(totalReadingSeconds / sessionCount / 60)
+    : 0;
   const totalHours = totalReadingSeconds / 3600;
-  const pagesPerHour = totalHours > 0 ? Math.round(totalPagesRead / totalHours) : 28;
+  const pagesPerHour = totalHours > 0 ? Math.round(totalPagesRead / totalHours) : 0;
 
   // Last 7 days weekly rhythm
   const weeklyActivity: UserReadingStats['weeklyActivity'] = [];
@@ -265,7 +270,7 @@ export async function computeUserReadingStats(): Promise<UserReadingStats> {
       personaTitle,
       personaDescription,
       averageSessionMinutes,
-      pagesPerHour: Math.max(15, pagesPerHour),
+      pagesPerHour,
       favoriteTimeOfDay,
     },
     weeklyActivity,
