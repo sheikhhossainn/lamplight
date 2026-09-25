@@ -62,8 +62,14 @@ function constantTimeEqual(left: string, right: string): boolean {
   return difference === 0;
 }
 
-async function verifyHmac(rawBody: string, header: string | null, timestampHeader?: string | null): Promise<boolean> {
-  if (!REVENUECAT_WEBHOOK_HMAC_SECRET) return true;
+async function verifyHmac(
+  rawBody: string,
+  header: string | null,
+  timestampHeader?: string | null,
+  secret?: string | null,
+): Promise<boolean> {
+  const hmacSecret = secret ?? Deno.env.get('REVENUECAT_WEBHOOK_HMAC_SECRET');
+  if (!hmacSecret) return true;
   if (!header) return false;
 
   let timestamp: string | undefined;
@@ -88,7 +94,7 @@ async function verifyHmac(rawBody: string, header: string | null, timestampHeade
 
   const key = await crypto.subtle.importKey(
     'raw',
-    new TextEncoder().encode(REVENUECAT_WEBHOOK_HMAC_SECRET),
+    new TextEncoder().encode(hmacSecret),
     { name: 'HMAC', hash: 'SHA-256' },
     false,
     ['sign'],
@@ -209,7 +215,7 @@ Deno.serve(async (request) => {
   if (hmacSecret) {
     const sigHeader = request.headers.get('x-revenuecat-signature') ?? request.headers.get('x-revenuecat-webhook-signature');
     const tsHeader = request.headers.get('x-revenuecat-request-timestamp');
-    if (!(await verifyHmac(rawBody, sigHeader, tsHeader))) {
+    if (!(await verifyHmac(rawBody, sigHeader, tsHeader, hmacSecret))) {
       return json({ error: 'Invalid webhook signature' }, 401);
     }
   }
