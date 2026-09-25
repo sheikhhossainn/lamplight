@@ -62,15 +62,24 @@ function constantTimeEqual(left: string, right: string): boolean {
   return difference === 0;
 }
 
-async function verifyHmac(rawBody: string, header: string | null): Promise<boolean> {
+async function verifyHmac(rawBody: string, header: string | null, timestampHeader?: string | null): Promise<boolean> {
   if (!REVENUECAT_WEBHOOK_HMAC_SECRET) return true;
   if (!header) return false;
 
-  const values = Object.fromEntries(
-    header.split(',').map((part) => part.trim().split('=').map((value) => value.trim())),
-  );
-  const timestamp = values.t;
-  const receivedSignature = values.v1;
+  let timestamp: string | undefined;
+  let receivedSignature: string | undefined;
+
+  if (header.includes('=')) {
+    const values = Object.fromEntries(
+      header.split(',').map((part) => part.trim().split('=').map((value) => value.trim())),
+    );
+    timestamp = values.t;
+    receivedSignature = values.v1 ?? values.v0;
+  } else {
+    timestamp = timestampHeader ?? undefined;
+    receivedSignature = header.trim();
+  }
+
   if (!timestamp || !receivedSignature) return false;
   const timestampSeconds = Number(timestamp);
   if (!Number.isFinite(timestampSeconds) || Math.abs(Date.now() / 1000 - timestampSeconds) > SIGNATURE_TOLERANCE_SECONDS) {
@@ -110,7 +119,10 @@ function candidateUserIds(event: RevenueCatEvent): string[] {
 }
 
 async function getSubscriber(appUserId: string): Promise<SubscriberEntitlement | null> {
-  if (!REVENUECAT_SECRET_API_KEY) throw new Error('RevenueCat secret API key is not configured.');
+  if (!REVENUECAT_SECRET_API_KEY) {
+    console.warn('REVENUECAT_SECRET_API_KEY is not configured');
+    return null;
+  }
   const response = await fetch(`https://api.revenuecat.com/v1/subscribers/${encodeURIComponent(appUserId)}`, {
     headers: { Authorization: `Bearer ${REVENUECAT_SECRET_API_KEY}` },
   });
@@ -121,7 +133,12 @@ async function getSubscriber(appUserId: string): Promise<SubscriberEntitlement |
 
 async function syncUser(event: RevenueCatEvent, ownerId: string): Promise<void> {
   const environment = String(event.environment ?? 'PRODUCTION').toUpperCase();
-  if (environment !== 'PRODUCTION') return;
+  if (environment !== 'PRODUCTION' && environment !== 'SANDBOX') return;
+
+  if (!REVENUECAT_SECRET_API_KEY) {
+    console.warn('REVENUECAT_SECRET_API_KEY is not configured; skipping profile sync for user', ownerId);
+    return;
+  }
 
   const entitlement = await getSubscriber(ownerId);
   const expiresAt = entitlement?.expires_date ? new Date(entitlement.expires_date) : null;
@@ -158,18 +175,27 @@ async function syncUser(event: RevenueCatEvent, ownerId: string): Promise<void> 
 
 Deno.serve(async (request) => {
   if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
-  if (!REVENUECAT_SECRET_API_KEY || !REVENUECAT_WEBHOOK_AUTH_TOKEN || !REVENUECAT_WEBHOOK_HMAC_SECRET || REVENUECAT_APP_IDS.size === 0) {
-    return json({ error: 'RevenueCat webhook is not configured' }, 503);
+
+  if (!REVENUECAT_WEBHOOK_AUTH_TOKEN && !REVENUECAT_WEBHOOK_HMAC_SECRET) {
+    return json({ error: 'RevenueCat webhook authentication is not configured' }, 503);
   }
 
-  const authorization = REVENUECAT_WEBHOOK_AUTH_TOKEN;
-  if (authorization && request.headers.get('authorization') !== authorization) {
-    return json({ error: 'Unauthorized' }, 401);
+  if (REVENUECAT_WEBHOOK_AUTH_TOKEN) {
+    const authHeader = request.headers.get('authorization');
+    const token = REVENUECAT_WEBHOOK_AUTH_TOKEN.replace(/^Bearer\s+/i, '');
+    const headerToken = (authHeader ?? '').replace(/^Bearer\s+/i, '');
+    if (!authHeader || headerToken !== token) {
+      return json({ error: 'Unauthorized' }, 401);
+    }
   }
 
   const rawBody = await request.text();
-  if (!(await verifyHmac(rawBody, request.headers.get('x-revenuecat-webhook-signature')))) {
-    return json({ error: 'Invalid webhook signature' }, 401);
+  if (REVENUECAT_WEBHOOK_HMAC_SECRET) {
+    const sigHeader = request.headers.get('x-revenuecat-signature') ?? request.headers.get('x-revenuecat-webhook-signature');
+    const tsHeader = request.headers.get('x-revenuecat-request-timestamp');
+    if (!(await verifyHmac(rawBody, sigHeader, tsHeader))) {
+      return json({ error: 'Invalid webhook signature' }, 401);
+    }
   }
 
   let payload: RevenueCatPayload;
@@ -180,10 +206,15 @@ Deno.serve(async (request) => {
   }
 
   const event = payload.event;
-  if (!event?.id || !event.type || !event.app_id || !event.environment) {
+  if (!event?.id || !event.type) {
     return json({ error: 'Incomplete RevenueCat event' }, 400);
   }
-  if (!REVENUECAT_APP_IDS.has(event.app_id)) {
+
+  if (event.type === 'TEST') {
+    return json({ received: true, test: true });
+  }
+
+  if (REVENUECAT_APP_IDS.size > 0 && event.app_id && !REVENUECAT_APP_IDS.has(event.app_id)) {
     return json({ error: 'Unknown RevenueCat app' }, 403);
   }
 
@@ -197,7 +228,7 @@ Deno.serve(async (request) => {
   const { error: eventError } = await supabase.from('revenuecat_webhook_events').upsert({
     event_id: event.id,
     event_type: event.type,
-    environment: event.environment,
+    environment: event.environment ?? 'PRODUCTION',
     app_user_id: event.app_user_id ?? null,
     payload,
   }, { onConflict: 'event_id' });
