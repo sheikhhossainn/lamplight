@@ -121,6 +121,236 @@ export function getScriptureLabels(code: MotherTongueCode = currentMotherTongue)
   return SCRIPTURE_LABELS[code];
 }
 
+export type HomepageLabels = {
+  greetingMorning: string;
+  greetingMorningSub: string;
+  greetingAfternoon: string;
+  greetingAfternoonSub: string;
+  greetingEvening: string;
+  greetingEveningSub: string;
+  greetingNight: string;
+  greetingNightSub: string;
+  currentlyReading: string;
+  placeKept: string;
+  continueReading: string;
+  setTargetDays: string;
+  cadenceStatus: (daysRemaining: number, requiredChaptersToday: number) => string;
+  setGoal: string;
+  adjustGoal: string;
+  readyToRead: string;
+  downloadedOnDevice: string;
+  startReadingNow: string;
+  beginJourney: string;
+  exploreLibraries: string;
+  dailyMemoryHabit: string;
+  dailyFlameLit: string;
+  reviewDueWords: string;
+  openFlashcardStudio: string;
+  dailySpark: string;
+  nextQuote: string;
+  curatorsPick: string;
+  viewBook: string;
+  fromReadingRhythm: string;
+  library: string;
+  discoverCollections: string;
+  curatedForTaste: string;
+  calibratedForYou: string;
+  exploreLibrary: string;
+  startReading: string;
+};
+
+const HOMEPAGE_LABELS: Record<MotherTongueCode, HomepageLabels> = {
+  bn: {
+    greetingMorning: 'শুভ সকাল',
+    greetingMorningSub: 'প্রশান্তির একটি পাতা দিয়ে দিন শুরু করুন',
+    greetingAfternoon: 'শুভ অপরাহ্ন',
+    greetingAfternoonSub: 'দিনের ব্যস্ততায় এক মুহূর্তের প্রশান্তি',
+    greetingEvening: 'শুভ সন্ধ্যা',
+    greetingEveningSub: 'প্রদীপের আলো স্নিগ্ধ ও প্রস্তুত',
+    greetingNight: 'রাত্রিকালীন পাঠ',
+    greetingNightSub: 'রাত একটি পাতা, আর প্রদীপ তার একমাত্র আলো',
+    currentlyReading: 'পড়া চলছে',
+    placeKept: 'আপনার স্থান সংরক্ষিত',
+    continueReading: 'পড়া চালিয়ে যান',
+    setTargetDays: 'লক্ষ্য দিন ও দৈনিক গতি নির্ধারণ',
+    cadenceStatus: (days, ch) => `পাঠ ছন্দ: ${days} দিন বাকি · ${ch} অধ্যায়/দিন`,
+    setGoal: 'লক্ষ্য নির্ধারণ →',
+    adjustGoal: 'পরিবর্তন →',
+    readyToRead: 'পড়ার জন্য প্রস্তুত',
+    downloadedOnDevice: 'ডিভাইসে সংরক্ষিত',
+    startReadingNow: 'এখনই পড়া শুরু করুন',
+    beginJourney: 'যাত্রা শুরু করুন',
+    exploreLibraries: 'গ্রন্থাগার দেখুন',
+    dailyMemoryHabit: 'দৈনিক স্মৃতি অভ্যাস',
+    dailyFlameLit: 'দৈনিক শিখা প্রজ্বলিত',
+    reviewDueWords: 'পঠিত শব্দ অনুশীলন করুন',
+    openFlashcardStudio: 'ফ্ল্যাশকার্ড স্টুডিও খুলুন',
+    dailySpark: 'দৈনিক উদ্দীপনা',
+    nextQuote: '✦ পরবর্তী উদ্ধৃতি',
+    curatorsPick: 'বাছাই করা পাঠ',
+    viewBook: 'বইটি দেখুন',
+    fromReadingRhythm: 'আপনার পাঠ ছন্দ থেকে',
+    library: 'গ্রন্থাগার →',
+    discoverCollections: 'বাছাইকৃত সংকলনসমূহ',
+    curatedForTaste: 'আপনার পছন্দের জন্য বাছাইকৃত',
+    calibratedForYou: 'আপনার জন্য পরিমাপকৃত',
+    exploreLibrary: 'গ্রন্থাগার দেখুন',
+    startReading: 'পড়া শুরু করুন',
+  },
+  en: {
+    greetingMorning: 'Good morning',
+    greetingMorningSub: 'Start your day with a page of calm',
+    greetingAfternoon: 'Good afternoon',
+    greetingAfternoonSub: 'A quiet pause in your day',
+    greetingEvening: 'Good evening',
+    greetingEveningSub: 'The lamp is trimmed and glowing',
+    greetingNight: 'Night reading',
+    greetingNightSub: 'The night is a page, and the lamp its only light',
+    currentlyReading: 'Currently Reading',
+    placeKept: 'Your place is kept',
+    continueReading: 'Continue Reading',
+    setTargetDays: 'Set target days & daily reading pace',
+    cadenceStatus: (days, ch) => `Cadence: ${days} days left · ${ch} ch/day`,
+    setGoal: 'Set Goal →',
+    adjustGoal: 'Adjust →',
+    readyToRead: 'Ready to Read',
+    downloadedOnDevice: 'Downloaded on device',
+    startReadingNow: 'Start Reading Now',
+    beginJourney: 'Begin Your Journey',
+    exploreLibraries: 'Explore Libraries',
+    dailyMemoryHabit: 'DAILY MEMORY HABIT',
+    dailyFlameLit: 'DAILY FLAME LIT',
+    reviewDueWords: 'Review Due Words Now',
+    openFlashcardStudio: 'Open Flashcard Studio',
+    dailySpark: 'DAILY SPARK',
+    nextQuote: '✦ Next Quote',
+    curatorsPick: "CURATOR'S PICK",
+    viewBook: 'View Book',
+    fromReadingRhythm: 'FROM YOUR READING RHYTHM',
+    library: 'Library →',
+    discoverCollections: 'Discover Curated Collections',
+    curatedForTaste: 'CURATED FOR YOUR TASTE',
+    calibratedForYou: 'CALIBRATED FOR YOU',
+    exploreLibrary: 'Explore Library',
+    startReading: 'Start Reading',
+  },
+  ja: {
+    greetingMorning: 'おはようございます',
+    greetingMorningSub: '静かな1ページから一日を始めましょう',
+    greetingAfternoon: 'こんにちは',
+    greetingAfternoonSub: '一日の穏やかなひととき',
+    greetingEvening: 'こんばんは',
+    greetingEveningSub: '灯火が静かにともっています',
+    greetingNight: '夜の読書',
+    greetingNightSub: '夜は1つの頁、ランプはその唯一の光',
+    currentlyReading: '読書中',
+    placeKept: 'しおりを挟んでいます',
+    continueReading: '続きを読む',
+    setTargetDays: '目標日数と日々のペースを設定',
+    cadenceStatus: (days, ch) => `ペース: 残り${days}日 · 1日${ch}章`,
+    setGoal: '目標を設定 →',
+    adjustGoal: '変更 →',
+    readyToRead: '読書可能',
+    downloadedOnDevice: '端末に保存済み',
+    startReadingNow: '今すぐ読み始める',
+    beginJourney: '読書の旅を始める',
+    exploreLibraries: '図書館を見る',
+    dailyMemoryHabit: '日々の記憶習慣',
+    dailyFlameLit: '灯火が灯りました',
+    reviewDueWords: '単語を復習する',
+    openFlashcardStudio: '単語帳を開く',
+    dailySpark: '今日の一言',
+    nextQuote: '✦ 次の名言',
+    curatorsPick: '厳選された作品',
+    viewBook: '本を見る',
+    fromReadingRhythm: 'あなたの読書リズムから',
+    library: '書棚 →',
+    discoverCollections: 'おすすめの選集',
+    curatedForTaste: 'あなたにおすすめの作品',
+    calibratedForYou: 'あなたへのおすすめ',
+    exploreLibrary: '書棚を見る',
+    startReading: '読み始める',
+  },
+  ko: {
+    greetingMorning: '좋은 아침입니다',
+    greetingMorningSub: '차분한 한 페이지로 하루를 시작하세요',
+    greetingAfternoon: '좋은 오후입니다',
+    greetingAfternoonSub: '하루 속 고요한 휴식',
+    greetingEvening: '좋은 저녁입니다',
+    greetingEveningSub: '등불이 따뜻하게 켜졌습니다',
+    greetingNight: '밤의 독서',
+    greetingNightSub: '밤은 한 페이지, 등불은 유일한 빛',
+    currentlyReading: '읽는 중',
+    placeKept: '읽던 곳이 보관되어 있습니다',
+    continueReading: '계속 읽기',
+    setTargetDays: '목표 일수 및 일일 독서량 설정',
+    cadenceStatus: (days, ch) => `페이스: ${days}일 남음 · 하루 ${ch}장`,
+    setGoal: '목표 설정 →',
+    adjustGoal: '수정 →',
+    readyToRead: '읽을 준비 완료',
+    downloadedOnDevice: '기기에 저장됨',
+    startReadingNow: '지금 읽기 시작',
+    beginJourney: '여정을 시작하세요',
+    exploreLibraries: '서재 둘러보기',
+    dailyMemoryHabit: '일일 기억 습관',
+    dailyFlameLit: '오늘의 불꽃이 켜졌습니다',
+    reviewDueWords: '복습 단어 확인하기',
+    openFlashcardStudio: '플래시카드 열기',
+    dailySpark: '오늘의 문장',
+    nextQuote: '✦ 다음 문장',
+    curatorsPick: '추천 작품',
+    viewBook: '책 보기',
+    fromReadingRhythm: '나의 독서 리듬에서',
+    library: '서재 →',
+    discoverCollections: '엄선된 컬렉션',
+    curatedForTaste: '취향 맞춤 도서',
+    calibratedForYou: '맞춤 추천',
+    exploreLibrary: '서재 둘러보기',
+    startReading: '읽기 시작',
+  },
+  ar: {
+    greetingMorning: 'صباح الخير',
+    greetingMorningSub: 'ابدأ يومك بصفحة من الهدوء',
+    greetingAfternoon: 'مساء الخير',
+    greetingAfternoonSub: 'لحظة هدوء في يومك',
+    greetingEvening: 'مساء النور',
+    greetingEveningSub: 'المصباح جاهز ومضيء',
+    greetingNight: 'قراءة ليلية',
+    greetingNightSub: 'الليل صفحة، والمصباح نوره الوحيد',
+    currentlyReading: 'قيد القراءة',
+    placeKept: 'مكانك محفوظ',
+    continueReading: 'تابع القراءة',
+    setTargetDays: 'حدد الأيام ومعدل القراءة اليومي',
+    cadenceStatus: (days, ch) => `المعدل: بقي ${days} أيام · ${ch} فصول/يوم`,
+    setGoal: 'حدد الهدف ←',
+    adjustGoal: 'تعديل ←',
+    readyToRead: 'جاهز للقراءة',
+    downloadedOnDevice: 'محمل على الجهاز',
+    startReadingNow: 'ابدأ القراءة الآن',
+    beginJourney: 'ابدأ رحلتك',
+    exploreLibraries: 'استكشف المكتبات',
+    dailyMemoryHabit: 'عادة الذاكرة اليومية',
+    dailyFlameLit: 'أُضيء المصباح اليومي',
+    reviewDueWords: 'راجع الكلمات المستحقة',
+    openFlashcardStudio: 'افتح البطاقات التعليمية',
+    dailySpark: 'قبس اليوم',
+    nextQuote: '✦ الاقتباس التالي',
+    curatorsPick: 'مختارات الأدب',
+    viewBook: 'عرض الكتاب',
+    fromReadingRhythm: 'من وتيرة قراءتك',
+    library: 'المكتبة ←',
+    discoverCollections: 'اكتشف المجموعات المختارة',
+    curatedForTaste: 'مختارات تناسب ذوقك',
+    calibratedForYou: 'مخصص لك',
+    exploreLibrary: 'استكشف المكتبة',
+    startReading: 'ابدأ القراءة',
+  },
+};
+
+export function getHomepageLabels(code: MotherTongueCode = currentMotherTongue): HomepageLabels {
+  return HOMEPAGE_LABELS[code] ?? HOMEPAGE_LABELS.en;
+}
+
 export const MOTHER_TONGUES: MotherTongueOption[] = [
   {
     code: 'bn',

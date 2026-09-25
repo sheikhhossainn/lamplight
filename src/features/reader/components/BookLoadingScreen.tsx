@@ -3,7 +3,6 @@ import { StyleSheet, Text, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { Image } from 'expo-image';
 
-import { FlameGlow } from '@/components/FlameGlow';
 import { useTheme } from '@/theme/ThemeProvider';
 import { isBengaliText } from '@/theme/typography';
 
@@ -96,7 +95,6 @@ export function BookLoadingScreen({
       <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.primaryDark, opacity: coverUrl ? 0.9 : 0 }]} />
 
       <View style={styles.content}>
-        <FlameGlow size={52} variant="flicker" />
 
         {coverUrl ? (
           <Image

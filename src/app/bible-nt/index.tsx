@@ -117,7 +117,7 @@ export default function BibleNtBookListScreen() {
               style={({ pressed }) => [
                 styles.row,
                 { borderBottomColor: colors.hairline },
-                isLastRead && { backgroundColor: `${colors.pairPillBackground}25` },
+                isLastRead && { backgroundColor: `${colors.pairPillBackground}40`, borderLeftWidth: 3, borderLeftColor: colors.flameAmber },
                 pressed && { opacity: 0.7 },
               ]}
             >

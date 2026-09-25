@@ -33,7 +33,7 @@ import {
 } from '@/features/content-ingestion/banglaApi';
 import { AOZORA_JAPANESE_BOOKS } from '@/features/content-ingestion/japaneseApi';
 import { GONGU_KOREAN_BOOKS } from '@/features/content-ingestion/koreanApi';
-import { getMotherTongueOption, getScriptureLabels, useMotherTongue } from '@/features/settings/motherTongue';
+import { getHomepageLabels, getMotherTongueOption, getScriptureLabels, useMotherTongue, type HomepageLabels } from '@/features/settings/motherTongue';
 import { targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
 import { getNativeUiTextStyle, isBengaliText, isJapaneseText, isKoreanText } from '@/theme/typography';
 import { hapticOpenInquiry } from '@/lib/haptics';
@@ -55,6 +55,7 @@ import {
   type CadencePacing,
 } from '@/db/repositories/readingGoals';
 import { ReadingCadenceModal } from '@/components/ReadingCadenceModal';
+import { FlameGlow } from '@/components/FlameGlow';
 import {
   getTargetReadingLanguage,
   useTargetReadingLanguage,
@@ -219,18 +220,18 @@ const LITERARY_SPARKS: LiterarySpark[] = [
   },
 ];
 
-function getGreeting(): { title: string; subtitle: string } {
+function getGreeting(labels: HomepageLabels): { title: string; subtitle: string } {
   const hour = new Date().getHours();
   if (hour >= 5 && hour < 12) {
-    return { title: 'Good morning', subtitle: 'Start your day with a page of calm' };
+    return { title: labels.greetingMorning, subtitle: labels.greetingMorningSub };
   }
   if (hour >= 12 && hour < 17) {
-    return { title: 'Good afternoon', subtitle: 'A quiet pause in your day' };
+    return { title: labels.greetingAfternoon, subtitle: labels.greetingAfternoonSub };
   }
   if (hour >= 17 && hour < 21) {
-    return { title: 'Good evening', subtitle: 'The lamp is trimmed and glowing' };
+    return { title: labels.greetingEvening, subtitle: labels.greetingEveningSub };
   }
-  return { title: 'Night reading', subtitle: 'The night is a page, and the lamp its only light' };
+  return { title: labels.greetingNight, subtitle: labels.greetingNightSub };
 }
 
 export default function Homescreen() {
@@ -242,6 +243,7 @@ export default function Homescreen() {
   const motherTongue = useMotherTongue();
   const motherTongueOption = getMotherTongueOption(motherTongue);
   const scriptureLabels = getScriptureLabels(motherTongue);
+  const homeLabels = getHomepageLabels(motherTongue);
 
   const [loading, setLoading] = useState(true);
   const [latestBook, setLatestBook] = useState<BookRow | null>(null);
@@ -549,7 +551,7 @@ export default function Homescreen() {
     }, [loadProgress]),
   );
 
-  const greeting = getGreeting();
+  const greeting = getGreeting(homeLabels);
 
   const handleOpenBook = (bookId: string) => {
     if (latestBook?.id === bookId) {
@@ -638,7 +640,7 @@ export default function Homescreen() {
                   { color: colors.flameAmber, fontSize: 11, letterSpacing: 0.8 },
                 ]}
               >
-                {isCalibrationSkipped ? 'CURATED FOR YOUR TASTE' : 'CALIBRATED FOR YOU'}
+                {isCalibrationSkipped ? homeLabels.curatedForTaste : homeLabels.calibratedForYou}
               </Text>
             </View>
 
@@ -803,7 +805,7 @@ export default function Homescreen() {
                 ]}
               >
                 <Text style={[typography.buttonLabel, { color: colors.ink, fontSize: 13 }]}>
-                  Explore Library
+                  {homeLabels.exploreLibrary}
                 </Text>
               </Pressable>
               <Pressable
@@ -819,7 +821,7 @@ export default function Homescreen() {
                 ]}
               >
                 <Text style={[typography.buttonLabel, { color: colors.primaryDark, fontSize: 13 }]}>
-                  Start Reading
+                  {homeLabels.startReading}
                 </Text>
                 <View style={{ marginLeft: 4 }}>
                   <ChevronRightIcon color={colors.primaryDark} size={14} />
@@ -890,11 +892,11 @@ export default function Homescreen() {
           <View style={{ marginTop: spacing.lg }}>
             <View style={styles.sectionHeader}>
               <Text style={[typography.eyebrowLabel, { color: colors.fawn }]}>
-                Currently Reading
+                {homeLabels.currentlyReading}
               </Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <Text style={[typography.metadataCaption, { color: colors.flameAmber, fontSize: 12 }]}>
-                  Your place is kept
+                  {homeLabels.placeKept}
                 </Text>
                 <Pressable
                   onPress={handleClearCurrentReading}
@@ -1004,7 +1006,11 @@ export default function Homescreen() {
                 }}
               >
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
-                  <Text style={{ fontSize: 13 }}>{cadenceGoal ? '🕯️' : '⏳'}</Text>
+                  {cadenceGoal ? (
+                    <FlameGlow size={16} showTile={false} variant="static" />
+                  ) : (
+                    <FlameGlow size={16} showTile={false} lit={false} variant="static" />
+                  )}
                   <Text
                     style={[
                       typography.metadataCaption,
@@ -1017,8 +1023,8 @@ export default function Homescreen() {
                     numberOfLines={1}
                   >
                     {cadencePacing
-                      ? `Cadence: ${cadencePacing.daysRemaining} days left · ${cadencePacing.requiredChaptersToday} ch/day`
-                      : 'Set target days & daily reading pace'}
+                      ? homeLabels.cadenceStatus(cadencePacing.daysRemaining, cadencePacing.requiredChaptersToday)
+                      : homeLabels.setTargetDays}
                   </Text>
                 </View>
                 <Text
@@ -1033,7 +1039,7 @@ export default function Homescreen() {
                     },
                   ]}
                 >
-                  {cadenceGoal ? 'Adjust →' : 'Set Goal →'}
+                  {cadenceGoal ? homeLabels.adjustGoal : homeLabels.setGoal}
                 </Text>
               </Pressable>
 
@@ -1066,7 +1072,7 @@ export default function Homescreen() {
                   ]}
                 >
                   <Text style={[typography.buttonLabel, { color: colors.primaryDark, fontSize: 14 }]}>
-                    Continue Reading
+                    {homeLabels.continueReading}
                   </Text>
                   <View style={{ marginLeft: 6 }}>
                     <ChevronRightIcon color={colors.primaryDark} size={15} />
@@ -1082,10 +1088,10 @@ export default function Homescreen() {
           <View style={{ marginTop: spacing.lg }}>
             <View style={styles.sectionHeader}>
               <Text style={[typography.eyebrowLabel, { color: colors.fawn }]}>
-                Ready to Read
+                {homeLabels.readyToRead}
               </Text>
               <Text style={[typography.metadataCaption, { color: colors.flameAmber, fontSize: 12 }]}>
-                Downloaded on device
+                {homeLabels.downloadedOnDevice}
               </Text>
             </View>
 
@@ -1177,7 +1183,7 @@ export default function Homescreen() {
                   ]}
                 >
                   <Text style={[typography.buttonLabel, { color: colors.primaryDark, fontSize: 14 }]}>
-                    Start Reading Now
+                    {homeLabels.startReadingNow}
                   </Text>
                   <View style={{ marginLeft: 6 }}>
                     <ChevronRightIcon color={colors.primaryDark} size={15} />
@@ -1211,7 +1217,7 @@ export default function Homescreen() {
                   { color: colors.ink, textAlign: 'center', fontSize: 22 },
                 ]}
               >
-                Begin Your Journey
+                {homeLabels.beginJourney}
               </Text>
               <Text
                 style={[
@@ -1237,7 +1243,7 @@ export default function Homescreen() {
                 ]}
               >
                 <Text style={[typography.buttonLabel, { color: colors.primaryDark, fontSize: 15 }]}>
-                  Explore Libraries
+                  {homeLabels.exploreLibraries}
                 </Text>
                 <View style={{ marginLeft: 6 }}>
                   <ChevronRightIcon color={colors.primaryDark} size={16} />
@@ -1273,7 +1279,7 @@ export default function Homescreen() {
                   }}
                 />
                 <Text style={[typography.eyebrowLabel, { color: colors.flameAmber, fontSize: 11 }]}>
-                  {srsMetrics.dueToday > 0 ? 'DAILY MEMORY HABIT' : 'DAILY FLAME LIT'}
+                  {srsMetrics.dueToday > 0 ? homeLabels.dailyMemoryHabit : homeLabels.dailyFlameLit}
                 </Text>
               </View>
               <View
@@ -1319,7 +1325,7 @@ export default function Homescreen() {
                   { color: srsMetrics.dueToday > 0 ? colors.primaryDark : colors.flameAmber, fontSize: 13 },
                 ]}
               >
-                {srsMetrics.dueToday > 0 ? 'Review Due Words Now' : 'Open Flashcard Studio'}
+                {srsMetrics.dueToday > 0 ? homeLabels.reviewDueWords : homeLabels.openFlashcardStudio}
               </Text>
               <View style={{ marginLeft: 6 }}>
                 <ChevronRightIcon
@@ -1350,7 +1356,7 @@ export default function Homescreen() {
           <View style={styles.sparkHeader}>
             <View style={styles.sparkTagRow}>
               <Text style={[typography.eyebrowLabel, { color: colors.flameAmber, fontSize: 12 }]}>
-                DAILY SPARK
+                {homeLabels.dailySpark}
               </Text>
             </View>
             <Pressable
@@ -1362,7 +1368,7 @@ export default function Homescreen() {
               ]}
             >
               <Text style={[typography.buttonLabel, { color: colors.flameAmber, fontSize: 12 }]}>
-                ✦ Next Quote
+                {homeLabels.nextQuote}
               </Text>
             </Pressable>
           </View>
@@ -1487,7 +1493,7 @@ export default function Homescreen() {
           <View style={{ marginTop: spacing.xl }}>
             <View style={styles.sectionHeader}>
               <Text style={[typography.eyebrowLabel, { color: colors.fawn }]}>
-                CURATOR'S PICK · {motherTongueOption.shelfTitle.toUpperCase()}
+                {`${homeLabels.curatorsPick} · ${motherTongueOption.shelfTitle}`}
               </Text>
               <Pressable
                 onPress={spotlight.onAllPress}
@@ -1587,7 +1593,7 @@ export default function Homescreen() {
                 </Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                   <Text style={[typography.buttonLabel, { color: colors.flameAmber, fontSize: 14 }]}>
-                    View Book
+                    {homeLabels.viewBook}
                   </Text>
                   <ChevronRightIcon color={colors.flameAmber} size={14} />
                 </View>
@@ -1600,11 +1606,11 @@ export default function Homescreen() {
           <View style={{ marginTop: spacing.xl }}>
             <View style={styles.sectionHeader}>
               <Text style={[typography.eyebrowLabel, { color: colors.fawn }]}>
-                FROM YOUR READING RHYTHM
+                {homeLabels.fromReadingRhythm}
               </Text>
               <Pressable onPress={handleExploreLibrary} hitSlop={8}>
                 <Text style={[typography.buttonLabel, { color: colors.flameAmber, fontSize: 13 }]}>
-                  Library →
+                  {homeLabels.library}
                 </Text>
               </Pressable>
             </View>
@@ -1683,7 +1689,7 @@ export default function Homescreen() {
         {/* Discover Curated Collections */}
         <View style={{ marginTop: spacing.xl }}>
           <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginBottom: spacing.md }]}>
-            Discover Curated Collections
+            {homeLabels.discoverCollections}
           </Text>
 
           <Pressable

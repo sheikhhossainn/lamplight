@@ -11,8 +11,8 @@ import { scheduleOnRN } from 'react-native-worklets';
 // The single canonical theme transition driver for the entire app.
 // 0 = day, 1 = lamp/night.
 // 260ms smooth cubic bezier for buttery-smooth 60/120fps motion.
-export const THEME_TRANSITION_DURATION = 260;
-export const THEME_TRANSITION_EASING = Easing.bezier(0.25, 1, 0.5, 1);
+export const THEME_TRANSITION_DURATION = 360;
+export const THEME_TRANSITION_EASING = Easing.inOut(Easing.cubic);
 export const themeTransitionProgress = makeMutable(getReadingTheme() === 'lamp' ? 1 : 0);
 
 type Runner = (next: ReadingTheme) => void;
@@ -26,9 +26,6 @@ export function requestThemeChange(next: ReadingTheme): void {
   const target = next === 'lamp' ? 1 : 0;
   if (next === getReadingTheme() && Math.abs(themeTransitionProgress.value - target) < 0.001) return;
 
-  // Immediately update reading theme so React synchronizes tokens cleanly
-  setReadingTheme(next);
-
   cancelAnimation(themeTransitionProgress);
   themeTransitionProgress.value = withTiming(
     target,
@@ -36,6 +33,11 @@ export function requestThemeChange(next: ReadingTheme): void {
       duration: THEME_TRANSITION_DURATION,
       easing: THEME_TRANSITION_EASING,
       reduceMotion: ReduceMotion.System,
+    },
+    (finished) => {
+      if (finished) {
+        scheduleOnRN(setReadingTheme, next);
+      }
     },
   );
 }

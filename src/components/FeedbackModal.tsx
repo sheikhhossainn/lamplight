@@ -397,9 +397,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
     marginBottom: 10,
+    flexWrap: 'wrap',
   },
   categoryPill: {
-    flex: 1,
+    paddingHorizontal: 10,
     paddingVertical: 7,
     borderWidth: 1,
     alignItems: 'center',

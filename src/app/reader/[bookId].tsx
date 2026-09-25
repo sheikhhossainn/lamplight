@@ -2830,6 +2830,13 @@ export default function ReaderScreen() {
     );
   }
 
+  const readerContentOpacity = useSharedValue(0);
+  const readerFadeStyle = useAnimatedStyle(() => ({ opacity: readerContentOpacity.value }));
+  
+  useEffect(() => {
+    readerContentOpacity.value = withTiming(1, { duration: 120 });
+  }, []);
+
   const currentTranslation =
     translation && currentPage && translation.pageGlobalIndex === currentPage.globalIndex ? translation : null;
 
@@ -2844,7 +2851,8 @@ export default function ReaderScreen() {
           crossfading whenever `mode` flips. Light uses the authentic antique paper
           texture so any rapid paging cell boundary never flashes white; dark fades in
           with matching midnight antique paper. */}
-      <View style={StyleSheet.absoluteFill} pointerEvents="none">
+      <Animated.View style={[StyleSheet.absoluteFill, readerFadeStyle]}>
+        <View style={StyleSheet.absoluteFill} pointerEvents="none">
         <Image
           source={ANTIQUE_PAPER_DAY}
           style={StyleSheet.absoluteFill}
@@ -2910,6 +2918,7 @@ export default function ReaderScreen() {
           ) : null}
         </>
       )}
+      </Animated.View>
 
       {/* One theme-aware top bar for both modes — back, chapter, progress. */}
       <Animated.View
