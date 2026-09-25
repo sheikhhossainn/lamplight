@@ -2,37 +2,16 @@ import { getDb } from '@/db/client';
 import { generateId } from '@/lib/id';
 import type { SQLiteDatabase } from 'expo-sqlite';
 
-export type OutboxOperation = 'upsert' | 'delete';
+import type {
+  OutboxOperation,
+  OutboxEntityType,
+  SyncOutboxItem,
+} from '@/features/sync/syncTypes';
 
-export type OutboxEntityType =
-  | 'preference'
-  | 'shelf'
-  | 'shelf_item'
-  | 'reading_position'
-  | 'saved_word'
-  | 'review_event'
-  | 'highlight'
-  | 'quiz_attempt'
-  | 'scripture'
-  | 'reading_session'
-  | 'vocabulary_deck'
-  | 'vocabulary_deck_item'
-  | 'bookmark'
-  | 'reader_note'
-  | 'reading_goal'
-  | 'book_favorite';
-
-export type SyncOutboxItem = {
-  id: string;
-  entityType: OutboxEntityType;
-  entityId: string;
-  operation: OutboxOperation;
-  payloadJson: string;
-  idempotencyKey: string;
-  createdAt: number;
-  attemptCount: number;
-  nextAttemptAt: number | null;
-  lastErrorCode: string | null;
+export type {
+  OutboxOperation,
+  OutboxEntityType,
+  SyncOutboxItem,
 };
 
 type SyncOutboxSqlRow = {
