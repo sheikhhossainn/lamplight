@@ -8,8 +8,14 @@ import { CheckIcon, ChevronLeftIcon, TrashIcon } from '@/components/icons';
 import { SkeletonRows } from '@/components/SkeletonRows';
 import { listBooks, type BookRow } from '@/db/repositories/books';
 import { deleteReadingPosition } from '@/db/repositories/readingPosition';
-import { clearDownloadState, listDownloadStates, type DownloadState } from '@/db/repositories/downloadStates';
-import { deleteBookCache, listDownloadedBookIds, reconcileDownloadStates } from '@/features/content-ingestion/bookDownloader';
+import { clearDownloadState, listDownloadStates, setDownloadState, type DownloadState } from '@/db/repositories/downloadStates';
+import {
+  cancelBookDownload,
+  deleteBookCache,
+  getBookText,
+  listDownloadedBookIds,
+  reconcileDownloadStates,
+} from '@/features/content-ingestion/bookDownloader';
 import { useTheme } from '@/theme/ThemeProvider';
 
 // Storage manager: every book whose text is cached on this device, with
@@ -24,6 +30,7 @@ export default function SavedBooksScreen() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loaded, setLoaded] = useState(false);
   const [confirmVisible, setConfirmVisible] = useState(false);
+  const [activeActionBookId, setActiveActionBookId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     await reconcileDownloadStates().catch(() => {});
@@ -36,7 +43,7 @@ export default function SavedBooksScreen() {
       all
         .filter((book) => {
           const state = stateByBook.get(book.id);
-          return Boolean(state && (state.status === 'failed' || state.status === 'downloading')) && !ids.has(book.id);
+          return Boolean(state && (state.status === 'failed' || state.status === 'downloading' || state.status === 'paused')) && !ids.has(book.id);
         })
         .map((book) => ({ book, state: stateByBook.get(book.id)! })),
     );
@@ -48,6 +55,31 @@ export default function SavedBooksScreen() {
     await clearDownloadState(bookId).catch(() => {});
     setDownloadIssues((prev) => prev.filter((item) => item.book.id !== bookId));
   }, []);
+
+  const handleCancelDownload = useCallback(async (bookId: string) => {
+    setActiveActionBookId(bookId);
+    try {
+      cancelBookDownload(bookId);
+      await setDownloadState({ bookId, status: 'failed', errorCode: 'cancelled' }).catch(() => {});
+      await load();
+    } finally {
+      setActiveActionBookId(null);
+    }
+  }, [load]);
+
+  const handleRetryDownload = useCallback(async (book: BookRow) => {
+    setActiveActionBookId(book.id);
+    try {
+      await setDownloadState({ bookId: book.id, status: 'downloading', progress: 0 });
+      await getBookText(book.id, book.title, book.textUrl, book.chapter1Anchor ?? undefined);
+      await setDownloadState({ bookId: book.id, status: 'ready', progress: 100, errorCode: null });
+      await load();
+    } catch {
+      await load();
+    } finally {
+      setActiveActionBookId(null);
+    }
+  }, [load]);
 
   useFocusEffect(
     useCallback(() => {
@@ -110,32 +142,64 @@ export default function SavedBooksScreen() {
       {loaded && downloadIssues.length > 0 ? (
         <View style={[styles.issueCard, { backgroundColor: colors.card, borderColor: colors.hairline, borderRadius: radius.card }]}>
           <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginBottom: 6 }]}>DOWNLOADS NEEDING ATTENTION</Text>
-          {downloadIssues.map(({ book, state }) => (
-            <View key={book.id} style={styles.issueRow}>
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Text numberOfLines={1} style={[typography.uiRowTitle, { color: colors.ink, fontSize: 14 }]}>{book.title}</Text>
-                <Text style={[typography.metadataCaption, { color: colors.fawn, marginTop: 2 }]}>
-                  {state.status === 'downloading' ? 'Download interrupted — try again' : 'Download failed — try again'}
-                </Text>
+          {downloadIssues.map(({ book, state }) => {
+            const isProcessing = activeActionBookId === book.id;
+            return (
+              <View key={book.id} style={styles.issueRow}>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text numberOfLines={1} style={[typography.uiRowTitle, { color: colors.ink, fontSize: 14 }]}>
+                    {book.title}
+                  </Text>
+                  <Text style={[typography.metadataCaption, { color: colors.fawn, marginTop: 2 }]}>
+                    {state.status === 'downloading'
+                      ? 'Downloading…'
+                      : state.errorCode === 'cancelled'
+                        ? 'Download cancelled'
+                        : state.status === 'failed'
+                          ? 'Download failed — try again'
+                          : 'Download paused'}
+                  </Text>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginLeft: 10 }}>
+                  {state.status === 'downloading' ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Cancel download for ${book.title}`}
+                      disabled={isProcessing}
+                      onPress={() => void handleCancelDownload(book.id)}
+                      hitSlop={8}
+                      style={[styles.dismissButton, { borderColor: colors.hairline, borderRadius: radius.pill }]}
+                    >
+                      <Text style={[typography.buttonLabel, { color: colors.fawn, fontSize: 12 }]}>Cancel</Text>
+                    </Pressable>
+                  ) : (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Dismiss download issue for ${book.title}`}
+                      disabled={isProcessing}
+                      onPress={() => void handleDismissIssue(book.id)}
+                      hitSlop={8}
+                      style={[styles.dismissButton, { borderColor: colors.hairline, borderRadius: radius.pill }]}
+                    >
+                      <Text style={[typography.buttonLabel, { color: colors.fawn, fontSize: 12 }]}>Dismiss</Text>
+                    </Pressable>
+                  )}
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Retry download for ${book.title}`}
+                    disabled={isProcessing}
+                    onPress={() => void handleRetryDownload(book)}
+                    hitSlop={8}
+                    style={[styles.retryButton, { borderColor: colors.flameAmber, borderRadius: radius.pill }]}
+                  >
+                    <Text style={[typography.buttonLabel, { color: colors.flameAmber, fontSize: 12 }]}>
+                      {isProcessing ? '…' : 'Retry'}
+                    </Text>
+                  </Pressable>
+                </View>
               </View>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginLeft: 10 }}>
-                <Pressable
-                  onPress={() => void handleDismissIssue(book.id)}
-                  hitSlop={8}
-                  style={[styles.dismissButton, { borderColor: colors.hairline, borderRadius: radius.pill }]}
-                >
-                  <Text style={[typography.buttonLabel, { color: colors.fawn, fontSize: 12 }]}>Dismiss</Text>
-                </Pressable>
-                <Pressable
-                  onPress={() => router.push({ pathname: '/reader/[bookId]', params: { bookId: book.id, bookTitle: book.title, bookCoverUrl: book.coverUrl ?? '' } })}
-                  hitSlop={8}
-                  style={[styles.retryButton, { borderColor: colors.flameAmber, borderRadius: radius.pill }]}
-                >
-                  <Text style={[typography.buttonLabel, { color: colors.flameAmber, fontSize: 12 }]}>Retry</Text>
-                </Pressable>
-              </View>
-            </View>
-          ))}
+            );
+          })}
         </View>
       ) : null}
 

@@ -1,6 +1,6 @@
 import { getDb } from '@/db/client';
 
-export type DownloadStateStatus = 'queued' | 'downloading' | 'failed' | 'ready' | 'unavailable';
+export type DownloadStateStatus = 'queued' | 'downloading' | 'paused' | 'failed' | 'ready' | 'unavailable';
 
 export type DownloadState = {
   bookId: string;
@@ -48,6 +48,12 @@ export async function setDownloadState(input: {
     [input.bookId, input.status, progress, input.errorCode ?? null, now],
   );
   return { bookId: input.bookId, status: input.status, progress, errorCode: input.errorCode ?? null, updatedAt: now };
+}
+
+export async function getDownloadState(bookId: string): Promise<DownloadState | null> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<DownloadStateSqlRow>('SELECT * FROM download_states WHERE book_id = ?', [bookId]);
+  return row ? fromSqlRow(row) : null;
 }
 
 export async function listDownloadStates(): Promise<DownloadState[]> {
