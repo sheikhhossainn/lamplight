@@ -18,6 +18,11 @@ import {
   listBooks as listVedasBooks,
 } from '../src/features/vedas-content/vedasData';
 import { getTraditionSourceAttribution } from '../src/features/scripture-qa/curatedScriptureQA';
+import {
+  bibleChapterNarrationUrl,
+  quranAyahRecitationUrl,
+  BIBLE_AUDIO_STEMS,
+} from '../src/features/scripture-audio/scriptureAudioUrls';
 
 test('SCRIPTURE-01: Bundled text integrity across all 5 scripture traditions', () => {
   // 1. Quran: 114 Surahs
@@ -143,3 +148,41 @@ test('SCRIPTURE-01: Deep link target route format consistency', () => {
     verse ? `/vedas/${bookId}?jumpChapter=${chapter}&jumpVerse=${verse}` : `/vedas/${bookId}?jumpChapter=${chapter}`;
   assert.equal(buildVedaLink('RV01', 1, 1), '/vedas/RV01?jumpChapter=1&jumpVerse=1');
 });
+
+test('SCRIPTURE-01: Audio narration and recitation parity matrix rules', () => {
+  // Genesis narration: chapters 1 through 50
+  const gen1 = bibleChapterNarrationUrl('GEN', 1);
+  assert.equal(gen1, 'https://ebible.org/engwebu/mp3/02_GEN_01.mp3');
+  const gen50 = bibleChapterNarrationUrl('GEN', 50);
+  assert.equal(gen50, 'https://ebible.org/engwebu/mp3/02_GEN_50.mp3');
+
+  // New Testament narration: all 27 books supported
+  const mat1 = bibleChapterNarrationUrl('MAT', 1);
+  assert.equal(mat1, 'https://ebible.org/engwebu/mp3/WEB-070-Matt_01.mp3');
+  const jhn3 = bibleChapterNarrationUrl('JHN', 3);
+  assert.equal(jhn3, 'https://ebible.org/engwebu/mp3/WEB-073-John_03.mp3');
+  const rev22 = bibleChapterNarrationUrl('REV', 22);
+  assert.equal(rev22, 'https://ebible.org/engwebu/mp3/WEB-096-REV_22.mp3');
+
+  const ntBookIds = [
+    'MAT', 'MRK', 'LUK', 'JHN', 'ACT', 'ROM', '1CO', '2CO', 'GAL', 'EPH',
+    'PHP', 'COL', '1TH', '2TH', '1TI', '2TI', 'TIT', 'PHM', 'HEB', 'JAS',
+    '1PE', '2PE', '1JN', '2JN', '3JN', 'JUD', 'REV',
+  ];
+  for (const id of ntBookIds) {
+    const url = bibleChapterNarrationUrl(id, 1);
+    assert.ok(url && url.startsWith('https://ebible.org/engwebu/mp3/'), `NT book ${id} must have valid narration URL`);
+  }
+
+  // Unsupported books deliberately return null (no fake or TTS substitution)
+  assert.equal(bibleChapterNarrationUrl('EXO', 1), null);
+  assert.equal(bibleChapterNarrationUrl('PSA', 23), null);
+  assert.equal(bibleChapterNarrationUrl('RV01', 1), null);
+
+  // Quran recitation: verified Alafasy recitation endpoints
+  assert.equal(quranAyahRecitationUrl(1, 1), 'https://cdn.islamic.network/quran/audio/128/ar.alafasy/1.mp3');
+  assert.equal(quranAyahRecitationUrl(1, 7), 'https://cdn.islamic.network/quran/audio/128/ar.alafasy/7.mp3');
+  // Surah 2 Ayah 1 is overall ayah #8
+  assert.equal(quranAyahRecitationUrl(2, 1), 'https://cdn.islamic.network/quran/audio/128/ar.alafasy/8.mp3');
+});
+
