@@ -1,4 +1,10 @@
 import { getSetting, setSetting } from '@/db/repositories/appSettings';
+import {
+  clearCredentials,
+  getCredentials,
+  migrateLegacyCredentials,
+  saveCredentials,
+} from '@/features/account/credentialStore';
 
 // Anonymous Supabase Auth session, kept alive across app restarts — plain
 // fetch against the Auth REST API, matching remoteCatalog.ts's convention of
@@ -6,13 +12,6 @@ import { getSetting, setSetting } from '@/db/repositories/appSettings';
 // row a stable auth.uid() (RLS requires it) without a signup screen.
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-
-const KEY_ACCESS_TOKEN = 'supabase_access_token';
-const KEY_REFRESH_TOKEN = 'supabase_refresh_token';
-const KEY_USER_ID = 'supabase_user_id';
-const KEY_EXPIRES_AT = 'supabase_expires_at';
-const KEY_USER_EMAIL = 'supabase_user_email';
-const KEY_IS_ANONYMOUS = 'supabase_is_anonymous';
 
 type AuthResponse = {
   access_token: string;
@@ -30,14 +29,14 @@ let sessionInFlight: Promise<{ accessToken: string; userId: string }> | null = n
 async function persistSession(auth: AuthResponse): Promise<void> {
   const expiresAt = Math.floor(Date.now() / 1000) + auth.expires_in;
   const isAnonymous = Boolean(auth.user.is_anonymous ?? !auth.user.email);
-  await Promise.all([
-    setSetting(KEY_ACCESS_TOKEN, auth.access_token),
-    setSetting(KEY_REFRESH_TOKEN, auth.refresh_token),
-    setSetting(KEY_USER_ID, auth.user.id),
-    setSetting(KEY_EXPIRES_AT, String(expiresAt)),
-    setSetting(KEY_IS_ANONYMOUS, String(isAnonymous)),
-    setSetting(KEY_USER_EMAIL, auth.user.email ?? ''),
-  ]);
+  await saveCredentials({
+    accessToken: auth.access_token,
+    refreshToken: auth.refresh_token,
+    userId: auth.user.id,
+    expiresAt,
+    isAnonymous,
+    email: auth.user.email ?? null,
+  });
 }
 
 async function signInAnonymously(): Promise<AuthResponse> {
@@ -79,27 +78,27 @@ async function refreshSession(refreshToken: string): Promise<AuthResponse> {
  * rather than a temporary anonymous guest.
  */
 export async function isAuthenticatedAccount(): Promise<boolean> {
-  const [userId, isAnon, email] = await Promise.all([
-    getSetting(KEY_USER_ID),
-    getSetting(KEY_IS_ANONYMOUS),
-    getSetting(KEY_USER_EMAIL),
-  ]);
-  return Boolean(userId && isAnon === 'false' && email);
+  await migrateLegacyCredentials();
+  const creds = await getCredentials();
+  return Boolean(creds && creds.userId && !creds.isAnonymous && creds.email);
 }
 
 /**
  * Returns the current authenticated account's email, or null if guest.
  */
 export async function getUserEmail(): Promise<string | null> {
-  const email = await getSetting(KEY_USER_EMAIL);
-  return email && email.length > 0 ? email : null;
+  await migrateLegacyCredentials();
+  const creds = await getCredentials();
+  return creds?.email ?? null;
 }
 
 /**
  * Returns the stable user ID for telemetry and local indexing.
  */
 export async function getUserId(): Promise<string | null> {
-  return getSetting(KEY_USER_ID);
+  await migrateLegacyCredentials();
+  const creds = await getCredentials();
+  return creds?.userId ?? null;
 }
 
 /**
@@ -122,19 +121,25 @@ async function resolveSession(): Promise<{ accessToken: string; userId: string }
     throw new Error('EXPO_PUBLIC_SUPABASE_URL / EXPO_PUBLIC_SUPABASE_ANON_KEY are not set.');
   }
 
-  const [accessToken, refreshToken, userId, expiresAt] = await Promise.all([
-    getSetting(KEY_ACCESS_TOKEN),
-    getSetting(KEY_REFRESH_TOKEN),
-    getSetting(KEY_USER_ID),
-    getSetting(KEY_EXPIRES_AT),
-  ]);
+  // Idempotently migrate legacy credentials if present from SQLite
+  await migrateLegacyCredentials();
 
-  const stillValid = accessToken && userId && expiresAt && Number(expiresAt) - 60 > Date.now() / 1000;
+  const creds = await getCredentials();
+  const stillValid =
+    creds &&
+    creds.accessToken &&
+    creds.userId &&
+    creds.expiresAt &&
+    creds.expiresAt - 60 > Date.now() / 1000;
+
   if (stillValid) {
-    return { accessToken: accessToken!, userId: userId! };
+    return { accessToken: creds.accessToken, userId: creds.userId };
   }
 
-  const auth = refreshToken ? await refreshSession(refreshToken) : await signInAnonymously();
+  const auth = creds?.refreshToken
+    ? await refreshSession(creds.refreshToken).catch(() => signInAnonymously())
+    : await signInAnonymously();
+
   await persistSession(auth);
   return { accessToken: auth.access_token, userId: auth.user.id };
 }
@@ -331,15 +336,8 @@ export async function verifyGuestEmailLink(
  * Signs out the current account, prompting whether to keep or remove local reading data.
  */
 export async function signOutUser(keepLocalData: boolean = true): Promise<void> {
-  // 1. Clear session tokens
-  await Promise.all([
-    setSetting(KEY_ACCESS_TOKEN, ''),
-    setSetting(KEY_REFRESH_TOKEN, ''),
-    setSetting(KEY_USER_ID, ''),
-    setSetting(KEY_EXPIRES_AT, ''),
-    setSetting(KEY_IS_ANONYMOUS, 'true'),
-    setSetting(KEY_USER_EMAIL, ''),
-  ]);
+  // 1. Clear session tokens from secure storage (AUTH-01)
+  await clearCredentials();
 
   // 2. If user chooses to remove local data from this device, wipe user-owned tables
   if (!keepLocalData) {
