@@ -24,6 +24,7 @@ let currentStatus: SyncStatus = 'guest';
 let isSyncRunning = false;
 let pendingReRun = false;
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+let syncAborted = false;
 
 export function getSyncStatus(): SyncStatus {
   return currentStatus;
@@ -170,10 +171,10 @@ export async function triggerSync(options?: { forceImmediate?: boolean }): Promi
 
   try {
     let continueLoop = true;
-    while (continueLoop) {
+    while (continueLoop && !syncAborted) {
       pendingReRun = false;
       await runSyncIteration(options?.forceImmediate ?? false);
-      continueLoop = pendingReRun;
+      continueLoop = pendingReRun && !syncAborted;
     }
 
     const pendingCount = await getPendingMutationCount();
@@ -197,7 +198,26 @@ export async function triggerSync(options?: { forceImmediate?: boolean }): Promi
   }
 }
 
+/**
+ * Gracefully aborts or finishes the current sync iteration before an identity switch or sign-out.
+ */
+export async function pauseOrFinishSync(timeoutMs = 3000): Promise<void> {
+  syncAborted = true;
+  pendingReRun = false;
+  if (debounceTimer) {
+    clearTimeout(debounceTimer);
+    debounceTimer = null;
+  }
+  const startTime = Date.now();
+  while (isSyncRunning && Date.now() - startTime < timeoutMs) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  syncAborted = false;
+  setSyncStatus('guest');
+}
+
 async function runSyncIteration(forceImmediate: boolean): Promise<void> {
+  if (syncAborted) return;
   let session: { accessToken: string; userId: string } | null = null;
   try {
     session = await getSession();

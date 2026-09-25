@@ -15,7 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 
 import { FlameGlow } from '@/components/FlameGlow';
-import { sendEmailOtp, verifyEmailOtp } from '@/lib/supabaseAuth';
+import { getSession, sendEmailOtp, verifyEmailOtp } from '@/lib/supabaseAuth';
 import {
   executeAccountMerge,
   snapshotLocalData,
@@ -87,9 +87,6 @@ export default function LoginScreen() {
           localSnapshot,
         );
         if (mergeRes.success) {
-          const { refreshEntitlements } = await import('@/features/subscription/entitlementService');
-          await refreshEntitlements('account_merge');
-          void triggerSync({ forceImmediate: true });
           router.replace('/(tabs)/homescreen');
           return;
         } else {
@@ -101,9 +98,13 @@ export default function LoginScreen() {
       // Standard sign in
       const res = await verifyEmailOtp(email.trim().toLowerCase(), trimmedToken);
       if (res.success) {
-        const { refreshEntitlements } = await import('@/features/subscription/entitlementService');
-        await refreshEntitlements('account_login');
-        void triggerSync({ forceImmediate: true });
+        const { coordinateAuthTransition } = await import('@/features/account/accountSessionCoordinator');
+        const session = await getSession();
+        await coordinateAuthTransition({
+          newUserId: session.userId,
+          type: 'login',
+          preserveOutbox: false,
+        });
         router.replace('/(tabs)/homescreen');
       } else {
         setErrorMessage(res.message || 'Invalid or expired code.');

@@ -36,6 +36,7 @@ import { hydrateReadingTypography } from '@/features/settings/readingPrefs';
 import { cleanupPartialDownloads } from '@/features/storage/storageManager';
 import { reconcileDownloadStates } from '@/features/content-ingestion/bookDownloader';
 import { hydrateEntitlements } from '@/features/subscription/entitlementService';
+import { reconcilePendingMergeJournals } from '@/features/account/accountSessionCoordinator';
 import { BillingProvider } from '@/features/billing/BillingProvider';
 import { LamplightThemeProvider, useTheme } from '@/theme/ThemeProvider';
 import { ThemeTransitionOverlay } from '@/theme/ThemeTransitionOverlay';
@@ -83,6 +84,7 @@ export default function RootLayout() {
       reconcileDownloadStates().catch(() => {}),
       seedJapaneseCatalog(),
       seedKoreanCatalog(),
+      reconcilePendingMergeJournals().catch(() => {}),
     ]);
   }, []);
 

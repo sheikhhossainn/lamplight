@@ -15,7 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 
 import { FlameGlow } from '@/components/FlameGlow';
-import { sendEmailOtp, updateUserProfile, verifyEmailOtp } from '@/lib/supabaseAuth';
+import { getSession, sendEmailOtp, updateUserProfile, verifyEmailOtp } from '@/lib/supabaseAuth';
 import {
   executeAccountMerge,
   snapshotLocalData,
@@ -117,9 +117,13 @@ export default function SignupScreen() {
         await updateUserProfile(displayName.trim());
       }
 
-      const { refreshEntitlements } = await import('@/features/subscription/entitlementService');
-      await refreshEntitlements(isProtectMode ? 'account_protect' : 'account_signup');
-      void triggerSync({ forceImmediate: true });
+      const { coordinateAuthTransition } = await import('@/features/account/accountSessionCoordinator');
+      const session = await getSession();
+      await coordinateAuthTransition({
+        newUserId: session.userId,
+        type: isProtectMode ? 'protect' : 'login',
+        preserveOutbox: true,
+      });
       router.replace('/(tabs)/homescreen');
     } catch {
       setErrorMessage('Account creation failed. Please try again.');

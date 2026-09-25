@@ -166,8 +166,8 @@ export default function ProfileScreen() {
   const executeSignOut = async (keepLocalData: boolean) => {
     setLoading(true);
     try {
-      await signOutUser(keepLocalData);
-      resetEntitlementsToFree();
+      const { coordinateSignOut } = await import('@/features/account/accountSessionCoordinator');
+      await coordinateSignOut(keepLocalData);
       await loadData();
       Alert.alert(
         'Signed Out',

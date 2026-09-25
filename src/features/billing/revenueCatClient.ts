@@ -58,6 +58,16 @@ export function isConfigured(): boolean {
   return configured;
 }
 
+export async function logOutBilling(): Promise<void> {
+  if (!isBillingSupported() || !configured) return;
+  try {
+    await Purchases.logOut();
+    configuredUserId = null;
+  } catch (err) {
+    console.warn('[RevenueCat] Log out error:', err);
+  }
+}
+
 export function addCustomerInfoListener(listener: (info: CustomerInfo) => void): () => void {
   if (!configured) return () => {};
   Purchases.addCustomerInfoUpdateListener(listener);

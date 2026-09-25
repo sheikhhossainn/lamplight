@@ -41,6 +41,14 @@ Treat these as implemented foundations, not as fully release-verified features:
     - Guest readers: prominent "Protect Library" action routing to `/signup?mode=protect` (primary guest-upgrade flow) and "Sign in" routing to `/login` for existing accounts.
     - Protected readers: "Sign Out" row in Data & Account Privacy prompting whether to keep local downloaded books/history or clear device data, invoking `signOutUser(keepLocalData)`, resetting entitlements via `resetEntitlementsToFree()`, and re-initializing a fresh anonymous guest session.
   - Unit tests in `tests/authUnify.test.ts` (151/151 tests passing across test suite).
+- Account-Session Coordinator & Sync Identity Transitions (AUTH-03 / FULLAPP.md §6.4):
+  - Centralized coordinator `src/features/account/accountSessionCoordinator.ts` executing auth identity transitions in strict order per FULLAPP §6.4 item 2: RevenueCat identity -> reset sync cursors -> pending outbox ownership -> refresh entitlements -> forced immediate sync -> telemetry event.
+  - Outbox ownership preservation: preserves pending local mutations during guest account protection or cloud merges (`preserveOutbox: true`), while purging stale unmerged outbox mutations on clean logins (`preserveOutbox: false`) to guarantee no mutation is ever uploaded under the wrong owner ID.
+  - Graceful sync abortion: `pauseOrFinishSync` in `src/features/sync/syncWorker.ts` cleanly pauses running sync loops and clears pending debounced timers before identity teardowns.
+  - Clean sign-out coordination: `coordinateSignOut` pauses sync, clears account-bound cursors, executes session cleanup / optional table wipe, re-initializes anonymous session, configures matching RevenueCat anonymous identity, resets entitlements to free, and logs `account_signed_out`.
+  - Cold-start merge journal recovery: `reconcilePendingMergeJournals` integrated into `src/app/_layout.tsx` launch hydration, detecting incomplete journals surviving app termination and marking them failed with telemetry (`recovered_incomplete_journal_after_restart`) so readers never get stuck.
+  - Telemetry without email leaks: records `account_protected`, `account_login_completed`, `account_merge_completed`, `account_merge_failed`, and `account_signed_out` strictly omitting email addresses.
+  - Unit tests in `tests/accountSessionCoordinator.test.ts` (155/155 tests passing across test suite).
 - AI Reading Companion (COMPANION-01 / FULLAPP.md §16):
   - Protected Supabase Edge Function actions in `supabase/functions/literary-ai/index.ts`: `companion_explain`, `companion_simplify`, `companion_summary`, `companion_recap_characters`, `companion_reflective_questions`, and `companion_report_feedback`.
   - Server-side security and entitlement enforcement: requests checked against `is_premium_user(user.id)` and `ai_companion` entitlement; non-entitled requests rejected with 403 `requiresPremium: true`.
