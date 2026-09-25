@@ -1430,3 +1430,57 @@ on conflict (id) do update set
   categories = excluded.categories,
   source = excluded.source,
   is_active = true;
+
+-- ============================================================================
+-- Custom vocabulary study decks (LEARN-03)
+-- ============================================================================
+create table if not exists public.vocabulary_decks (
+  id uuid primary key default gen_random_uuid(),
+  owner_id uuid not null references auth.users(id) on delete cascade,
+  name text not null,
+  created_at timestamptz not null default timezone('utc'::text, now()),
+  updated_at timestamptz not null default timezone('utc'::text, now())
+);
+
+alter table public.vocabulary_decks enable row level security;
+
+create policy "Users can manage their own vocabulary decks"
+  on public.vocabulary_decks
+  for all
+  to authenticated
+  using (auth.uid() = owner_id)
+  with check (auth.uid() = owner_id);
+
+create table if not exists public.vocabulary_deck_items (
+  deck_id uuid not null references public.vocabulary_decks(id) on delete cascade,
+  word_id uuid not null references public.saved_words(id) on delete cascade,
+  owner_id uuid not null references auth.users(id) on delete cascade,
+  added_at timestamptz not null default timezone('utc'::text, now()),
+  primary key (deck_id, word_id)
+);
+
+alter table public.vocabulary_deck_items enable row level security;
+
+create policy "Users can manage their own vocabulary deck items"
+  on public.vocabulary_deck_items
+  for all
+  to authenticated
+  using (auth.uid() = owner_id)
+  with check (auth.uid() = owner_id);
+
+-- ============================================================================
+-- User imported EPUB backup storage bucket (SYNC-02)
+-- ============================================================================
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'user_epubs',
+  'user_epubs',
+  false,
+  26214400, -- 25MB in bytes
+  array['application/epub+zip', 'application/zip', 'application/octet-stream']
+)
+on conflict (id) do update set
+  public = false,
+  file_size_limit = 26214400,
+  allowed_mime_types = array['application/epub+zip', 'application/zip', 'application/octet-stream'];
+
