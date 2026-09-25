@@ -3,6 +3,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const GROQ_API_KEY = Deno.env.get('GROQ_API_KEY');
+const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
 
 const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
 const GROQ_MODELS = [
@@ -12,10 +13,66 @@ const GROQ_MODELS = [
   'mixtral-8x7b-32768',
 ];
 
+const GEMINI_MODELS = [
+  'gemini-2.5-flash',
+  'gemini-1.5-flash',
+];
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, apikey, content-type',
 };
+
+async function callGemini(
+  system: string,
+  user: string,
+  maxTokens = 450,
+  temperature = 0.2,
+): Promise<string | null> {
+  if (!GEMINI_API_KEY) return null;
+
+  for (const model of GEMINI_MODELS) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 12000);
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          systemInstruction: {
+            parts: [{ text: system }],
+          },
+          contents: [
+            {
+              role: 'user',
+              parts: [{ text: user }],
+            },
+          ],
+          generationConfig: {
+            temperature,
+            maxOutputTokens: maxTokens,
+            responseMimeType: 'application/json',
+          },
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+
+      if (!res.ok) {
+        console.warn(`[literary-ai] Gemini ${model} returned status ${res.status}`);
+        continue;
+      }
+
+      const data = await res.json();
+      const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (content) return content;
+    } catch (err) {
+      console.warn(`[literary-ai] Gemini ${model} error:`, err);
+    }
+  }
+  return null;
+}
 
 async function callGroq(
   system: string,
@@ -65,6 +122,37 @@ async function callGroq(
     }
   }
   return null;
+}
+
+type AiCallResult = {
+  content: string | null;
+  provider: 'gemini' | 'groq' | null;
+  model: string | null;
+};
+
+async function callAi(
+  system: string,
+  user: string,
+  maxTokens = 450,
+  temperature = 0.2,
+): Promise<AiCallResult> {
+  // 1. Try Gemini first if available (fast, structured JSON, high quality literary reasoning)
+  if (GEMINI_API_KEY) {
+    const geminiText = await callGemini(system, user, maxTokens, temperature);
+    if (geminiText) {
+      return { content: geminiText, provider: 'gemini', model: 'gemini-flash' };
+    }
+  }
+
+  // 2. Fall back to Groq
+  if (GROQ_API_KEY) {
+    const groqText = await callGroq(system, user, maxTokens, temperature);
+    if (groqText) {
+      return { content: groqText, provider: 'groq', model: 'groq-llama' };
+    }
+  }
+
+  return { content: null, provider: null, model: null };
 }
 
 const TONGUE_NAMES: Record<string, string> = {
@@ -224,7 +312,7 @@ Provide a faithful, elegant literary translation that sounds natural and capture
 Return a JSON object with key "translations" containing an array of translated strings with the exact same count and sequence as the input sentences:
 {"translations": ["...", "..."]}`;
 
-    const raw = await callGroq(system, JSON.stringify(sentences), 1500, 0.2);
+    const { content: raw } = await callAi(system, JSON.stringify(sentences), 1500, 0.2);
     if (raw) {
       try {
         const parsed = JSON.parse(raw);
@@ -273,7 +361,7 @@ Return a JSON object with key "translations" containing an array of translated s
       ? `Word: "${word}"\nPrevious sentence context: "${contextSentence}"`
       : `Word: "${word}"\nSentence: "${contextSentence}"`;
 
-    const raw = await callGroq(system, userPrompt, 350, 0.3);
+    const { content: raw } = await callAi(system, userPrompt, 350, 0.3);
     if (raw) {
       try {
         const parsed = JSON.parse(raw) as { sentence?: string; answer?: string; distractors?: unknown };
@@ -358,7 +446,7 @@ Return a JSON object with key "translations" containing an array of translated s
 
     const userPrompt = `English word: "${word}"\nTranslation: "${translation}"`;
 
-    const raw = await callGroq(system, userPrompt, 450, 0.3);
+    const { content: raw } = await callAi(system, userPrompt, 450, 0.3);
     if (raw) {
       try {
         const parsed = JSON.parse(raw) as Record<string, unknown>;
@@ -442,7 +530,7 @@ Return a JSON object with key "translations" containing an array of translated s
       (bookTitle ? `Book: "${bookTitle}" by ${bookAuthor || 'Classic Author'}\n` : '') +
       `Source Language: ${fromLang}\nTarget Language: ${toLang}`;
 
-    const raw = await callGroq(system, userPrompt, 500, 0.2);
+    const { content: raw } = await callAi(system, userPrompt, 500, 0.2);
     if (raw) {
       try {
         const parsed = JSON.parse(raw) as Record<string, unknown>;
@@ -736,8 +824,10 @@ Return a JSON object with key "translations" containing an array of translated s
       maxTokens = 550;
     }
 
-    // 5. Call Groq
-    const raw = await callGroq(systemPrompt, userPrompt, maxTokens, 0.25);
+    // 5. Call AI (Gemini or Groq)
+    const { content: raw, provider } = await callAi(systemPrompt, userPrompt, maxTokens, 0.25);
+    const companionVersion = `v1-${provider || 'ai'}-companion`;
+
     if (raw) {
       try {
         const parsed = JSON.parse(raw);
@@ -747,7 +837,7 @@ Return a JSON object with key "translations" containing an array of translated s
           await supabase.from('companion_cache').upsert({
             cache_key: cacheKey,
             action,
-            model_version: 'v1-groq-companion',
+            model_version: companionVersion,
             response: parsed,
           });
         } catch {
@@ -773,7 +863,7 @@ Return a JSON object with key "translations" containing an array of translated s
             book_id: body.bookId ? String(body.bookId) : null,
             chapter_index: chapterIndex,
             token_estimate: maxTokens,
-            cost_estimate_cents: 0.0006,
+            cost_estimate_cents: provider === 'gemini' ? 0.0004 : 0.0006,
             success: true,
           });
         } catch {
@@ -785,7 +875,7 @@ Return a JSON object with key "translations" containing an array of translated s
             success: true,
             cached: false,
             data: parsed,
-            version: 'v1-groq-companion',
+            version: companionVersion,
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
         );
