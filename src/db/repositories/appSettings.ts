@@ -25,3 +25,11 @@ export async function deleteSetting(key: string): Promise<void> {
   const db = await loadDb();
   await db.runAsync('DELETE FROM app_settings WHERE key = ?', [key]);
 }
+
+export async function getSettingsByPrefix(prefix: string): Promise<Array<{ key: string; value: string }>> {
+  const db = await loadDb();
+  return await db.getAllAsync<{ key: string; value: string }>(
+    'SELECT key, value FROM app_settings WHERE key LIKE ?',
+    [`${prefix}%`],
+  );
+}

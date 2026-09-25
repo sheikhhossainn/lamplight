@@ -9,7 +9,11 @@ import {
 } from '@expo-google-fonts/lora';
 import { Manrope_400Regular, Manrope_600SemiBold, Manrope_700Bold } from '@expo-google-fonts/manrope';
 import { useFonts } from 'expo-font';
-import { Stack, usePathname } from 'expo-router';
+import { Stack, usePathname, useRouter } from 'expo-router';
+import {
+  reconcileScheduledNotifications,
+  setupNotificationResponseListener,
+} from '@/features/notifications/notificationService';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as SplashScreen from 'expo-splash-screen';
 import * as SystemUI from 'expo-system-ui';
@@ -114,6 +118,19 @@ export default function RootLayout() {
       subscription.remove();
     };
   }, []);
+
+  const router = useRouter();
+
+  // Reconcile notifications on launch and listen for notification taps (RET-01, RET-02)
+  useEffect(() => {
+    void reconcileScheduledNotifications().catch(() => {});
+    const cleanup = setupNotificationResponseListener((url) => {
+      router.push(url as any);
+    });
+    return () => {
+      cleanup?.();
+    };
+  }, [router]);
 
   useEffect(() => {
     if (ready) {

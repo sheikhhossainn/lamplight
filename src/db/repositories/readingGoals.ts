@@ -1,4 +1,4 @@
-import { getSetting, setSetting } from './appSettings';
+import { getSetting, setSetting, getSettingsByPrefix } from './appSettings';
 
 export type ReadingGoal = {
   bookId: string;
@@ -49,6 +49,28 @@ export async function getReadingGoal(bookId: string): Promise<ReadingGoal | null
   } catch (err) {
     console.warn('[ReadingGoals] Failed to parse goal for book:', bookId, err);
     return null;
+  }
+}
+
+/**
+ * Retrieve all persisted reading goals across books.
+ */
+export async function listAllReadingGoals(): Promise<ReadingGoal[]> {
+  try {
+    const rows = await getSettingsByPrefix(STORAGE_PREFIX);
+    const goals: ReadingGoal[] = [];
+    for (const r of rows) {
+      if (!r.value) continue;
+      try {
+        const parsed = JSON.parse(r.value) as ReadingGoal;
+        if (parsed && parsed.bookId) {
+          goals.push(parsed);
+        }
+      } catch {}
+    }
+    return goals;
+  } catch {
+    return [];
   }
 }
 

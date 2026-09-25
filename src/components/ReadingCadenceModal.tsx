@@ -20,6 +20,10 @@ import {
 } from '@/db/repositories/readingGoals';
 import { formatHourMinute } from '@/features/reading-goal/cadenceScheduler';
 import { canUse } from '@/features/subscription/subscriptionState';
+import {
+  scheduleCadenceReminder,
+  cancelCadenceReminder,
+} from '@/features/notifications/notificationService';
 import { useTheme } from '@/theme/ThemeProvider';
 
 export type ReadingCadenceModalProps = {
@@ -129,6 +133,16 @@ export function ReadingCadenceModal({
       notificationsEnabled,
       isAdaptive,
     });
+    if (notificationsEnabled) {
+      await scheduleCadenceReminder({
+        goal: saved,
+        bookTitle,
+        currentChapterIndex,
+        totalChapters,
+      });
+    } else {
+      await cancelCadenceReminder(bookId);
+    }
     onGoalSaved?.(saved);
     onClose();
   };
@@ -136,6 +150,7 @@ export function ReadingCadenceModal({
   const handleDelete = async () => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     await deleteReadingGoal(bookId);
+    await cancelCadenceReminder(bookId);
     onClose();
   };
 
