@@ -108,6 +108,8 @@ import { setTargetLanguage, targetLanguageLabel, useTargetLanguage } from '@/fea
 import { getReadingFontSize, getReadingLineHeight, useReadingTypography, resetReadingTypographyPrefs, READING_FONT_SIZE_PX, READING_LINE_HEIGHT_PX } from '@/features/settings/readingPrefs';
 import { getReadingTheme, setReadingTheme, useReadingTheme } from '@/features/settings/readingTheme';
 import { canUse } from '@/features/subscription/subscriptionState';
+import { getBookLimit } from '@/features/subscription/bookLimits';
+import { AccountProtectionModal, type AccountTriggerReason } from '@/components/AccountProtectionModal';
 import { checkTranslationCap, recordTranslationUsage, translationProvider } from '@/features/translation';
 import { batchTranslateSentences, splitSentences } from '@/features/translation/interlinearParser';
 import { updatePassiveVocabularyEstimate } from '@/features/vocabulary/calibration';
@@ -874,6 +876,8 @@ export default function ReaderScreen() {
   const [feedbackModalVisible, setFeedbackModalVisible] = useState(false);
   const [activeMilestone, setActiveMilestone] = useState<MilestoneConfig | null>(null);
   const [isGuestUser, setIsGuestUser] = useState(false);
+  const [accountModalVisible, setAccountModalVisible] = useState(false);
+  const [accountModalTrigger, setAccountModalTrigger] = useState<AccountTriggerReason>('general');
 
   useEffect(() => {
     void getUserProfile().then((prof) => {
@@ -2059,6 +2063,7 @@ export default function ReaderScreen() {
     const premium = canUse('unlimited_learning');
     const cap = await checkTranslationCap(premium);
     if (!cap.allowed) {
+      setIsGuestUser(cap.isGuest);
       setTranslation({ pageGlobalIndex, status: 'capped' });
       scheduleAutoHide();
       return;
@@ -2427,22 +2432,29 @@ export default function ReaderScreen() {
   const handleSaveWord = useCallback(
     async (translation: string) => {
       if (!book || !activeWord) return;
-      if (!canUse('unlimited_learning') && savedWords.length >= 30) {
-        Alert.alert(
-          'Vocabulary Limit Reached',
-          'Free accounts can save up to 30 words per book. Upgrade to Premium for unlimited vocabulary.',
-          [
-            { text: 'Not Now', style: 'cancel' },
-            {
-              text: 'View Premium',
-              onPress: () =>
-                router.push({
-                  pathname: '/paywall',
-                  params: { feature: 'unlimited_learning', trigger: 'vocab_limit' },
-                }),
-            },
-          ],
-        );
+      const premium = canUse('unlimited_learning');
+      const limitCheck = await getBookLimit('vocabulary', premium);
+      if (savedWords.length >= limitCheck.limit) {
+        if (limitCheck.isGuest) {
+          setAccountModalTrigger('vocab_limit');
+          setAccountModalVisible(true);
+        } else {
+          Alert.alert(
+            'Vocabulary Limit Reached',
+            'Free accounts can save up to 30 words per book. Upgrade to Premium for unlimited vocabulary.',
+            [
+              { text: 'Not Now', style: 'cancel' },
+              {
+                text: 'View Premium',
+                onPress: () =>
+                  router.push({
+                    pathname: '/paywall',
+                    params: { feature: 'unlimited_learning', trigger: 'vocab_limit' },
+                  }),
+              },
+            ],
+          );
+        }
         return;
       }
       void hapticSaveWord();
@@ -2491,22 +2503,29 @@ export default function ReaderScreen() {
   // Highlights are always the app's single amber accent — no color picker.
   const handleSaveQuote = useCallback(async () => {
     if (!book || !selection) return;
-    if (!canUse('unlimited_learning') && highlights.length >= 15) {
-      Alert.alert(
-        'Quotes Limit Reached',
-        'Free accounts can save up to 15 quotes per book. Upgrade to Premium for unlimited quotes.',
-        [
-          { text: 'Not Now', style: 'cancel' },
-          {
-            text: 'View Premium',
-            onPress: () =>
-              router.push({
-                pathname: '/paywall',
-                params: { feature: 'unlimited_learning', trigger: 'quotes_limit' },
-              }),
-          },
-        ],
-      );
+    const premium = canUse('unlimited_learning');
+    const limitCheck = await getBookLimit('quotes', premium);
+    if (highlights.length >= limitCheck.limit) {
+      if (limitCheck.isGuest) {
+        setAccountModalTrigger('quotes_limit');
+        setAccountModalVisible(true);
+      } else {
+        Alert.alert(
+          'Quotes Limit Reached',
+          'Free accounts can save up to 15 quotes per book. Upgrade to Premium for unlimited quotes.',
+          [
+            { text: 'Not Now', style: 'cancel' },
+            {
+              text: 'View Premium',
+              onPress: () =>
+                router.push({
+                  pathname: '/paywall',
+                  params: { feature: 'unlimited_learning', trigger: 'quotes_limit' },
+                }),
+            },
+          ],
+        );
+      }
       setSelection(null);
       return;
     }
@@ -3179,11 +3198,21 @@ export default function ReaderScreen() {
             <View style={[styles.hintAccent, { backgroundColor: colors.flameAmber }]} />
             <View style={styles.hintTextCol}>
               <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
-                Today's free translations are used up
+                {isGuestUser ? "Today's 20 guest lookups reached" : "Today's free translations are used up"}
               </Text>
-              <Pressable onPress={() => router.push('/paywall')} hitSlop={4}>
+              <Pressable
+                onPress={() => {
+                  if (isGuestUser) {
+                    setAccountModalTrigger('translation_cap');
+                    setAccountModalVisible(true);
+                  } else {
+                    router.push('/paywall');
+                  }
+                }}
+                hitSlop={4}
+              >
                 <Text style={[typography.metadataCaption, { color: colors.flameAmber, fontSize: 11.5, marginTop: 2 }]}>
-                  Keep the lamp lit
+                  {isGuestUser ? 'Unlock 50/day (Free Account)' : 'Keep the lamp lit'}
                 </Text>
               </Pressable>
             </View>
@@ -3530,6 +3559,16 @@ export default function ReaderScreen() {
         onFeedback={() => {
           setActiveMilestone(null);
           setFeedbackModalVisible(true);
+        }}
+      />
+
+      <AccountProtectionModal
+        visible={accountModalVisible}
+        trigger={accountModalTrigger}
+        onClose={() => setAccountModalVisible(false)}
+        onSuccess={() => {
+          setIsGuestUser(false);
+          setAccountModalVisible(false);
         }}
       />
     </View>

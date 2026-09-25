@@ -120,3 +120,21 @@ test('LEARN-01 weekly sample key is deterministic across week boundaries', () =>
 
   assert.equal(getWeeklySampleStorageKey(wedDate), 'vocabulary.advanced_quiz_sample.2026-09-21');
 });
+
+test('GUEST-01 guest users must authenticate to unlock weekly quizzes across all modes', () => {
+  const modes: QuizMode[] = ['normal', 'fresh', 'synonyms'];
+  for (const mode of modes) {
+    const result = evaluateQuizGateSync(mode, {
+      isGuest: true,
+      isPremium: false,
+      isServiceEnabled: true,
+      isOnline: true,
+    });
+
+    assert.equal(result.status, 'auth_required');
+    assert.equal(result.allowed, false);
+    assert.equal(result.trigger, 'guest_quiz_locked');
+    assert.match(result.reason ?? '', /free account to unlock/i);
+  }
+});
+

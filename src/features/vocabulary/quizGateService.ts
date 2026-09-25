@@ -1,5 +1,6 @@
 import { canUse } from '@/features/subscription/entitlementService';
 import { getAppFlag } from '@/features/config/appConfig';
+import { isAuthenticatedAccount } from '@/lib/supabaseAuth';
 
 export type QuizMode = 'normal' | 'fresh' | 'synonyms';
 
@@ -7,14 +8,15 @@ export type QuizGateStatus =
   | 'allowed'
   | 'subscription_required'
   | 'offline_unavailable'
-  | 'service_disabled';
+  | 'service_disabled'
+  | 'auth_required';
 
 export type QuizGateResult = {
   status: QuizGateStatus;
   allowed: boolean;
   source?: 'free_mode' | 'premium' | 'weekly_sample';
   reason?: string;
-  trigger?: 'advanced_quiz_sample_used' | 'advanced_quiz_locked';
+  trigger?: 'advanced_quiz_sample_used' | 'advanced_quiz_locked' | 'guest_quiz_locked';
   mode: QuizMode;
 };
 
@@ -78,6 +80,7 @@ export type QuizGateEvaluationOptions = {
   isOnline?: boolean;
   hasCachedData?: boolean;
   hasUsedSample?: boolean;
+  isGuest?: boolean;
   nowMs?: number;
 };
 
@@ -89,7 +92,18 @@ export function evaluateQuizGateSync(
   mode: QuizMode,
   options: QuizGateEvaluationOptions,
 ): QuizGateResult {
-  // 1. Normal mode is always 100% free, unlimited, and offline-compatible
+  // 1. Guest check: Guest readers must create a free account to unlock weekly reviews
+  if (options.isGuest) {
+    return {
+      status: 'auth_required',
+      allowed: false,
+      reason: 'Sign in or create a free account to unlock weekly vocabulary quizzes.',
+      trigger: 'guest_quiz_locked',
+      mode,
+    };
+  }
+
+  // 2. Normal mode is always 100% free, unlimited, and offline-compatible for authenticated accounts
   if (mode === 'normal') {
     return {
       status: 'allowed',
@@ -99,7 +113,7 @@ export function evaluateQuizGateSync(
     };
   }
 
-  // 2. Emergency kill switch check
+  // 3. Emergency kill switch check
   if (options.isServiceEnabled === false) {
     return {
       status: 'service_disabled',
@@ -110,7 +124,7 @@ export function evaluateQuizGateSync(
     };
   }
 
-  // 3. Premium entitlement check
+  // 4. Premium entitlement check
   if (options.isPremium) {
     // Check offline availability if required
     if (options.isOnline === false && options.hasCachedData === false) {
@@ -131,7 +145,7 @@ export function evaluateQuizGateSync(
     };
   }
 
-  // 4. Free user logic
+  // 5. Free user logic
   // Offline check for free user attempting advanced mode without cached data
   if (options.isOnline === false && options.hasCachedData === false) {
     return {
@@ -173,11 +187,14 @@ export async function evaluateQuizGate(
     isOnline?: boolean;
     hasCachedData?: boolean;
     nowMs?: number;
+    isGuest?: boolean;
   },
 ): Promise<QuizGateResult> {
   const isPremium = canUse('advanced_quiz');
   const isServiceEnabled = getAppFlag('weekly_quiz_enabled');
   const nowMs = options?.nowMs ?? Date.now();
+  const isAuth = await isAuthenticatedAccount();
+  const isGuest = options?.isGuest ?? !isAuth;
 
   let hasUsedSample = false;
   if (!isPremium && mode !== 'normal') {
@@ -190,6 +207,7 @@ export async function evaluateQuizGate(
     isOnline: options?.isOnline ?? true,
     hasCachedData: options?.hasCachedData ?? true,
     hasUsedSample,
+    isGuest,
     nowMs,
   });
 }
