@@ -665,3 +665,54 @@ export function StarIcon({
     </Svg>
   );
 }
+
+export function ShieldIcon({ size = 24, color = '#000' }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M12 2L4 5v6.09c0 5.05 3.41 9.76 8 10.91 4.59-1.15 8-5.86 8-10.91V5l-8-3z"
+        stroke={color}
+        strokeWidth={1.8}
+        strokeLinejoin="round"
+        fill={`${color}15`}
+      />
+      <Path
+        d="M9 12l2 2 4-4"
+        stroke={color}
+        strokeWidth={1.8}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
+export function CompanionIcon({ size = 24, color = '#000' }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"
+        stroke={color}
+        strokeWidth={1.8}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path
+        d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"
+        stroke={color}
+        strokeWidth={1.8}
+        strokeLinejoin="round"
+      />
+      <Path
+        d="M15 5l.5 1.5L17 7l-1.5.5L15 9l-.5-1.5L13 7l1.5-.5L15 5z"
+        fill={color}
+        opacity={0.7}
+      />
+      <Path
+        d="M11 10l.3.9.9.3-.9.3-.3.9-.3-.9-.9-.3.9-.3.3-.9z"
+        fill={color}
+        opacity={0.5}
+      />
+    </Svg>
+  );
+}

@@ -2,7 +2,9 @@ import React, { useEffect, useState, useMemo } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
+  Keyboard,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -12,7 +14,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { LamplightClassicThemeIcon } from '@/components/icons';
+import { LamplightClassicThemeIcon, CompanionIcon, ShieldIcon } from '@/components/icons';
 import { canUse } from '@/features/subscription/subscriptionState';
 import { LamplightColor, Spacing } from '@/theme/tokens';
 import { LamplightTypography } from '@/theme/typography';
@@ -97,6 +99,15 @@ export function ReadingCompanionModal({
   const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
 
   const isPremium = canUse('ai_companion');
+
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  useEffect(() => {
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvt, (e) => setKeyboardHeight(e.endCoordinates?.height ?? 0));
+    const hideSub = Keyboard.addListener(hideEvt, () => setKeyboardHeight(0));
+    return () => { showSub.remove(); hideSub.remove(); };
+  }, []);
 
   const selectedWordCount = useMemo(() => {
     if (!selectedText) return 0;
@@ -242,7 +253,8 @@ export function ReadingCompanionModal({
             {
               backgroundColor: colors.libraryBackground,
               borderColor: colors.hairline,
-              paddingBottom: Math.max(insets.bottom, 20),
+              paddingBottom: Math.max(insets.bottom, 20) + keyboardHeight,
+              maxHeight: screenHeight * 0.82 - keyboardHeight,
             },
           ]}
         >
@@ -254,7 +266,7 @@ export function ReadingCompanionModal({
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.headerTitleRow}>
-              <LamplightClassicThemeIcon color={colors.flameAmber} size={20} />
+              <CompanionIcon color={colors.flameAmber} size={20} />
               <Text style={[styles.sectionTitle, { color: colors.lampText, marginLeft: 8, fontSize: 18 }]}>
                 AI Reading Companion
               </Text>
@@ -269,13 +281,13 @@ export function ReadingCompanionModal({
           </View>
 
           {/* Scope and Spoiler Badge */}
-          <View style={[styles.scopeBanner, { backgroundColor: colors.card, borderColor: colors.hairline }]}>
+          <View style={[styles.scopeBanner, { backgroundColor: colors.flameAmber + '10', borderColor: colors.flameAmber + '30', borderWidth: 1, borderRadius: 8 }]}>
             <Text style={[typography.metadataCaption, { color: colors.lampText, fontWeight: '600' }]} numberOfLines={1}>
               {scopeLabel}
             </Text>
             <View style={styles.shieldRow}>
-              <Text style={styles.shieldIcon}>🛡️</Text>
-              <Text style={[typography.metadataCaption, { color: colors.flameAmber, fontSize: 11, fontWeight: '700' }]}>
+              <ShieldIcon size={14} color={colors.flameAmber} />
+              <Text style={[typography.metadataCaption, { color: colors.flameAmber, fontSize: 11, fontWeight: '700', marginLeft: 4 }]}>
                 Spoiler-Safe Scope
               </Text>
             </View>
@@ -675,7 +687,6 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   sheetContainer: {
-    maxHeight: screenHeight * 0.82,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     borderTopWidth: 1,
@@ -721,10 +732,6 @@ const styles = StyleSheet.create({
   shieldRow: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  shieldIcon: {
-    fontSize: 12,
-    marginRight: 4,
   },
   tabContainer: {
     flexDirection: 'row',

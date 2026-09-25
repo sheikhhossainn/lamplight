@@ -1,5 +1,5 @@
-import React from 'react';
-import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { Dimensions, FlatList, Keyboard, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CloseIcon, SearchIcon } from '@/components/icons';
@@ -40,6 +40,15 @@ export function ReaderSearchModal({
   const insets = useSafeAreaInsets();
   const trimmedQuery = query.trim();
 
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  useEffect(() => {
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvt, (e) => setKeyboardHeight(e.endCoordinates?.height ?? 0));
+    const hideSub = Keyboard.addListener(hideEvt, () => setKeyboardHeight(0));
+    return () => { showSub.remove(); hideSub.remove(); };
+  }, []);
+
   return (
     <ReaderOverlay visible={visible} onClosed={onClose} variant="bottomSheet">
       {({ requestClose }) => (
@@ -49,7 +58,8 @@ export function ReaderSearchModal({
             {
               backgroundColor: colors.card,
               borderColor: colors.hairline,
-              paddingBottom: Math.max(insets.bottom + 12, 24),
+              paddingBottom: Math.max(insets.bottom + 12, 24) + keyboardHeight,
+              maxHeight: Dimensions.get('window').height * 0.86 - keyboardHeight,
             },
           ]}
         >
@@ -174,7 +184,6 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     paddingHorizontal: 20,
     paddingTop: 10,
-    maxHeight: '86%',
   },
   grabber: {
     alignItems: 'center',

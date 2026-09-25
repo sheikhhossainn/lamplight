@@ -802,12 +802,11 @@ export default function SettingsScreen() {
       <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginBottom: spacing.sm }]}>
         Account
       </Text>
-      <View
+      <Animated.View
         style={[
           styles.card,
+          animatedCardStyle,
           {
-            backgroundColor: isLamp ? colors.card : colors.primaryDark,
-            borderColor: isLamp ? colors.hairline : colors.primaryDark,
             borderRadius: radius.card,
             marginBottom: spacing.xl,
           },
@@ -817,7 +816,7 @@ export default function SettingsScreen() {
         <View style={styles.settingsRow}>
           <View style={{ flex: 1, minWidth: 0, paddingRight: spacing.sm }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Text style={[typography.uiRowTitle, { color: isLamp ? colors.ink : colors.lampText, fontSize: 13 }]}>
+              <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
                 {isProtected
                   ? isPremium
                     ? 'Premium Plan'
@@ -828,7 +827,7 @@ export default function SettingsScreen() {
                 style={{
                   backgroundColor: isProtected
                     ? (isPremium ? colors.flameAmber : 'rgba(127, 163, 122, 0.25)')
-                    : 'rgba(245, 237, 225, 0.12)',
+                    : (isLamp ? 'rgba(245, 237, 225, 0.12)' : 'rgba(0, 0, 0, 0.06)'),
                   paddingHorizontal: 7,
                   paddingVertical: 2,
                   borderRadius: radius.pill,
@@ -851,7 +850,7 @@ export default function SettingsScreen() {
             <Text
               style={[
                 typography.metadataCaption,
-                { color: isLamp ? colors.fawn : colors.mutedOnDark, fontSize: 11, marginTop: 3 },
+                { color: colors.fawn, fontSize: 11, marginTop: 3 },
               ]}
               numberOfLines={1}
             >
@@ -887,7 +886,7 @@ export default function SettingsScreen() {
               style={[
                 styles.upgradeButton,
                 {
-                  backgroundColor: isLamp ? '#3A342D' : colors.segmentedTrack,
+                  backgroundColor: colors.segmentedTrack,
                   borderRadius: radius.pill,
                   paddingHorizontal: 12,
                   paddingVertical: 6,
@@ -900,13 +899,13 @@ export default function SettingsScreen() {
         </View>
 
         {/* View Profile & Reading Stats */}
-        <View style={[styles.itemDivider, { borderBottomColor: isLamp ? colors.hairline : LamplightColor.ember }]} />
+        <View style={[styles.itemDivider, { borderBottomColor: colors.hairline }]} />
         <Pressable
           onPress={() => router.push('/profile' as any)}
           style={[styles.settingsRow, { paddingVertical: 10 }]}
         >
           <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={[typography.uiRowTitle, { color: isLamp ? colors.ink : colors.lampText, fontSize: 13 }]}>
+            <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
               Profile & Reading Stats
             </Text>
             <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11, marginTop: 1 }]}>
@@ -914,20 +913,20 @@ export default function SettingsScreen() {
             </Text>
           </View>
           <View style={{ width: 15, height: 15, alignItems: 'center', justifyContent: 'center' }}>
-            <ChevronRightIcon color={isLamp ? colors.straw : colors.fawn} size={14} />
+            <ChevronRightIcon color={colors.fawn} size={14} />
           </View>
         </Pressable>
 
         {/* Sign in with existing account (for guests) */}
         {!isProtected ? (
           <>
-            <View style={[styles.itemDivider, { borderBottomColor: isLamp ? colors.hairline : '#2B2621' }]} />
+            <View style={[styles.itemDivider, { borderBottomColor: colors.hairline }]} />
             <Pressable
               onPress={() => router.push('/login' as any)}
               style={[styles.settingsRow, { paddingVertical: 10 }]}
             >
               <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={[typography.uiRowTitle, { color: isLamp ? colors.ink : colors.lampText, fontSize: 13 }]}>
+                <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
                   Sign in with existing account
                 </Text>
                 <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11, marginTop: 1 }]}>
@@ -944,10 +943,10 @@ export default function SettingsScreen() {
         {/* Copyable Support ID Row */}
         {userId ? (
           <>
-            <View style={[styles.itemDivider, { borderBottomColor: isLamp ? colors.hairline : '#2B2621' }]} />
+            <View style={[styles.itemDivider, { borderBottomColor: colors.hairline }]} />
             <View style={[styles.settingsRow, { paddingVertical: 8 }]}>
               <View style={{ flex: 1, minWidth: 0, paddingRight: spacing.sm }}>
-                <Text style={[typography.uiRowTitle, { color: isLamp ? colors.ink : colors.lampText, fontSize: 12 }]}>
+                <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 12 }]}>
                   Support ID
                 </Text>
                 <Text
@@ -963,14 +962,14 @@ export default function SettingsScreen() {
                 style={[
                   styles.upgradeButton,
                   {
-                    backgroundColor: isLamp ? colors.segmentedTrack : 'rgba(245, 237, 225, 0.08)',
+                    backgroundColor: colors.segmentedTrack,
                     borderRadius: radius.pill,
                     paddingHorizontal: 10,
                     paddingVertical: 4,
                   },
                 ]}
               >
-                <Text style={[typography.uiRowTitle, { color: isLamp ? colors.ink : colors.lampText, fontSize: 11 }]}>
+                <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 11 }]}>
                   {copiedToast ? 'Copied!' : 'Copy'}
                 </Text>
               </Pressable>
@@ -981,10 +980,10 @@ export default function SettingsScreen() {
         {/* Cloud Backup & Sync (for protected accounts) */}
         {isProtected ? (
           <>
-            <View style={[styles.itemDivider, { borderBottomColor: isLamp ? colors.hairline : '#2B2621' }]} />
+            <View style={[styles.itemDivider, { borderBottomColor: colors.hairline }]} />
             <View style={[styles.settingsRow, { paddingVertical: 8 }]}>
               <View style={{ flex: 1, minWidth: 0, paddingRight: spacing.sm }}>
-                <Text style={[typography.uiRowTitle, { color: isLamp ? colors.ink : colors.lampText, fontSize: 12 }]}>
+                <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 12 }]}>
                   Cloud Backup & Sync
                 </Text>
                 <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11, marginTop: 1 }]}>
@@ -999,14 +998,14 @@ export default function SettingsScreen() {
                   style={[
                     styles.upgradeButton,
                     {
-                      backgroundColor: isLamp ? colors.segmentedTrack : 'rgba(245, 237, 225, 0.08)',
+                      backgroundColor: colors.segmentedTrack,
                       borderRadius: radius.pill,
                       paddingHorizontal: 10,
                       paddingVertical: 5,
                     },
                   ]}
                 >
-                  <Text style={[typography.uiRowTitle, { color: isLamp ? colors.ink : colors.lampText, fontSize: 11 }]}>
+                  <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 11 }]}>
                     Restore
                   </Text>
                 </Pressable>
@@ -1041,14 +1040,14 @@ export default function SettingsScreen() {
         ) : null}
 
         {/* Export Reading Data */}
-        <View style={[styles.itemDivider, { borderBottomColor: isLamp ? colors.hairline : '#2B2621' }]} />
+        <View style={[styles.itemDivider, { borderBottomColor: colors.hairline }]} />
         <Pressable
           onPress={handleExportData}
           disabled={exportingData}
           style={[styles.settingsRow, { paddingVertical: 10 }]}
         >
           <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={[typography.uiRowTitle, { color: isLamp ? colors.ink : colors.lampText, fontSize: 13 }]}>
+            <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
               Export reading data
             </Text>
             <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11, marginTop: 1 }]}>
@@ -1059,18 +1058,18 @@ export default function SettingsScreen() {
             <ActivityIndicator size="small" color={colors.flameAmber} />
           ) : (
             <View style={{ width: 15, height: 15, alignItems: 'center', justifyContent: 'center' }}>
-              <ChevronRightIcon color={isLamp ? colors.straw : colors.fawn} size={14} />
+              <ChevronRightIcon color={colors.fawn} size={14} />
             </View>
           )}
         </Pressable>
 
         {/* Redeem promo code */}
-        <View style={[styles.itemDivider, { borderBottomColor: isLamp ? colors.hairline : '#2B2621' }]} />
+        <View style={[styles.itemDivider, { borderBottomColor: colors.hairline }]} />
         <Pressable
           onPress={() => setPromoModalVisible(true)}
           style={[styles.settingsRow, { paddingVertical: 10 }]}
         >
-          <Text style={[typography.uiRowTitle, { color: isLamp ? colors.ink : colors.lampText, fontSize: 13 }]}>
+          <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
             Redeem promo code
           </Text>
           <View style={{ width: 15, height: 15, alignItems: 'center', justifyContent: 'center' }}>
@@ -1081,7 +1080,7 @@ export default function SettingsScreen() {
         {/* Sign Out (Protected accounts only) */}
         {isProtected ? (
           <>
-            <View style={[styles.itemDivider, { borderBottomColor: isLamp ? colors.hairline : '#2B2621' }]} />
+            <View style={[styles.itemDivider, { borderBottomColor: colors.hairline }]} />
             <Pressable
               onPress={() => setSignOutDialogVisible(true)}
               style={[styles.settingsRow, { paddingVertical: 10 }]}
@@ -1095,7 +1094,7 @@ export default function SettingsScreen() {
             </Pressable>
           </>
         ) : null}
-      </View>
+      </Animated.View>
 
       <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginTop: spacing.xl, marginBottom: spacing.sm }]}>
         Support & Feedback

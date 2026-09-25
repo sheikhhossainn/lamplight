@@ -14,7 +14,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 
-import { FlameGlow } from '@/components/FlameGlow';
+import { AuthBackgroundAnimation } from '@/components/AuthBackgroundAnimation';
 import { getSession, sendEmailOtp, updateUserProfile, verifyEmailOtp } from '@/lib/supabaseAuth';
 import {
   executeAccountMerge,
@@ -26,7 +26,8 @@ import { useTheme } from '@/theme/ThemeProvider';
 
 export default function SignupScreen() {
   const insets = useSafeAreaInsets();
-  const { colors, typography, radius, spacing } = useTheme();
+  const { colors, typography, radius, spacing, scheme } = useTheme();
+  const isLamp = scheme === 'lamp';
   const { mode } = useLocalSearchParams<{ mode?: string }>();
   const isProtectMode = mode === 'protect';
 
@@ -134,6 +135,8 @@ export default function SignupScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.parchment }]}>
+      <AuthBackgroundAnimation />
+
       {/* Top Header */}
       <View
         style={[
@@ -178,14 +181,10 @@ export default function SignupScreen() {
           ]}
           keyboardShouldPersistTaps="handled"
         >
-          <View style={styles.glowWrap}>
-            <FlameGlow size={48} variant="flicker" />
-          </View>
-
           <Text
             style={[
               typography.wordmark,
-              { color: colors.ink, fontSize: 26, lineHeight: 32, textAlign: 'center', marginTop: 12 },
+              { color: colors.ink, fontSize: 26, lineHeight: 32, textAlign: 'center', marginTop: 16 },
             ]}
           >
             {step === 'details'
@@ -214,9 +213,14 @@ export default function SignupScreen() {
               styles.card,
               {
                 backgroundColor: colors.card,
-                borderColor: colors.hairline,
+                borderColor: isLamp ? 'rgba(245, 166, 35, 0.22)' : colors.hairline,
                 borderRadius: radius.card,
                 marginTop: spacing.xl,
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 6 },
+                shadowOpacity: isLamp ? 0.35 : 0.06,
+                shadowRadius: 16,
+                elevation: 4,
               },
             ]}
           >
