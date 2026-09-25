@@ -25,6 +25,12 @@ import { CalendarHeatmapCard } from '@/components/CalendarHeatmapCard';
 import { fetchCalendarHeatmapData, type CalendarHeatmapData } from '@/features/analytics/calendarHeatmap';
 import { computeUserReadingStats, type UserReadingStats } from '@/features/analytics/statsEngine';
 import { computeWeeklyDigest, type WeeklyDigest } from '@/features/analytics/weeklyDigest';
+import {
+  computeHabitReport,
+  type HabitPeriod,
+  type HabitReport,
+} from '@/features/analytics/habitReports';
+import { ReadingReportCard } from '@/features/analytics/ReadingReportCard';
 import { canUse, isPremiumUser, resetEntitlementsToFree } from '@/features/subscription/subscriptionState';
 import { useTheme } from '@/theme/ThemeProvider';
 import { LamplightColor } from '@/theme/tokens';
@@ -51,6 +57,9 @@ export default function ProfileScreen() {
   const [stats, setStats] = useState<UserReadingStats | null>(null);
   const [digest, setDigest] = useState<WeeklyDigest | null>(null);
   const [heatmapData, setHeatmapData] = useState<CalendarHeatmapData | null>(null);
+  const [habitPeriod, setHabitPeriod] = useState<HabitPeriod>('month');
+  const [habitReport, setHabitReport] = useState<HabitReport | null>(null);
+  const [loadingReport, setLoadingReport] = useState(false);
 
   // Edit Name Modal State
   const [editModalVisible, setEditModalVisible] = useState(false);
@@ -65,23 +74,38 @@ export default function ProfileScreen() {
 
   const loadData = useCallback(async () => {
     try {
-      const [prof, userStats, weeklyDigestData, calendarData] = await Promise.all([
+      const [prof, userStats, weeklyDigestData, calendarData, habitData] = await Promise.all([
         getUserProfile(),
         computeUserReadingStats(),
         computeWeeklyDigest(),
         fetchCalendarHeatmapData(52),
+        computeHabitReport({ period: habitPeriod }),
       ]);
       setProfile(prof);
       setStats(userStats);
       setDigest(weeklyDigestData);
       setHeatmapData(calendarData);
+      setHabitReport(habitData);
       setNameInput(prof.displayName);
     } catch (err) {
       console.warn('[Profile] Error loading data:', err);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [habitPeriod]);
+
+  const handlePeriodChange = async (newPeriod: HabitPeriod) => {
+    setHabitPeriod(newPeriod);
+    setLoadingReport(true);
+    try {
+      const rep = await computeHabitReport({ period: newPeriod });
+      setHabitReport(rep);
+    } catch (err) {
+      console.warn('[Profile] Error changing report period:', err);
+    } finally {
+      setLoadingReport(false);
+    }
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -758,6 +782,186 @@ export default function ProfileScreen() {
               hasInsightsAccess={hasInsightsAccess}
               onUnlockPress={() => router.push('/paywall?feature=reading_insights&trigger=calendar_heatmap')}
             />
+          </View>
+
+          {/* Habit Reports & Exportable Card (FULLAPP §12.3 & §12.4 INSIGHT-02) */}
+          <View style={{ marginTop: spacing.xl }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm }}>
+              <Text style={[typography.eyebrowLabel, { color: colors.fawn, letterSpacing: 0.8 }]}>
+                LITERARY REPORTS & EXPORT
+              </Text>
+
+              {/* Period selector */}
+              <View style={{ flexDirection: 'row', gap: 6 }}>
+                {(['month', 'year'] as const).map((p) => {
+                  const active = habitPeriod === p;
+                  return (
+                    <Pressable
+                      key={p}
+                      onPress={() => void handlePeriodChange(p)}
+                      style={{
+                        paddingHorizontal: 10,
+                        paddingVertical: 4,
+                        borderRadius: radius.pill,
+                        backgroundColor: active ? colors.flameAmber : colors.card,
+                        borderWidth: 1,
+                        borderColor: active ? colors.flameAmber : colors.hairline,
+                      }}
+                    >
+                      <Text
+                        style={[
+                          typography.eyebrowLabel,
+                          {
+                            color: active ? colors.primaryDark : colors.ink,
+                            fontSize: 10,
+                            fontWeight: active ? '700' : '500',
+                          },
+                        ]}
+                      >
+                        {p === 'month' ? 'Month' : 'Year'}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+
+            {hasInsightsAccess ? (
+              <View
+                style={[
+                  styles.card,
+                  { backgroundColor: colors.card, borderColor: colors.hairline, borderRadius: radius.card, padding: 14 },
+                ]}
+              >
+                {/* Period label & summary */}
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                  <View>
+                    <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 15 }]}>
+                      {habitReport?.periodLabel ?? 'Reading Report'}
+                    </Text>
+                    <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11, marginTop: 1 }]}>
+                      {habitReport?.dateRangeLabel ?? ''}
+                    </Text>
+                  </View>
+                  <View style={{ alignItems: 'flex-end' }}>
+                    <Text style={[typography.uiRowTitle, { color: colors.flameAmber, fontSize: 14 }]}>
+                      {habitReport ? formatHoursMinutes(habitReport.totalReadingMinutes) : '0m'}
+                    </Text>
+                    <Text style={[typography.metadataCaption, { color: colors.straw, fontSize: 10 }]}>
+                      {habitReport?.totalPagesRead ?? 0} pages
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Time Distribution Breakdown */}
+                {habitReport && habitReport.hasSufficientData ? (
+                  <View style={{ marginTop: 8, paddingVertical: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.hairline }}>
+                    <Text style={[typography.eyebrowLabel, { color: colors.fawn, fontSize: 9.5, marginBottom: 8 }]}>
+                      READING TIME DISTRIBUTION
+                    </Text>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 6 }}>
+                      {[
+                        { label: 'Morning', mins: habitReport.timeDistribution.morningMinutes },
+                        { label: 'Afternoon', mins: habitReport.timeDistribution.afternoonMinutes },
+                        { label: 'Evening', mins: habitReport.timeDistribution.eveningMinutes },
+                        { label: 'Night', mins: habitReport.timeDistribution.nightMinutes },
+                      ].map((item) => (
+                        <View key={item.label} style={{ flex: 1, alignItems: 'center', padding: 6, borderRadius: 6, backgroundColor: colors.parchment }}>
+                          <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 9.5 }]}>
+                            {item.label}
+                          </Text>
+                          <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 12, marginTop: 2 }]}>
+                            {item.mins}m
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                ) : null}
+
+                {/* Speed by Language */}
+                {habitReport && habitReport.speedByLanguage.length > 0 ? (
+                  <View style={{ marginTop: 8, paddingVertical: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.hairline }}>
+                    <Text style={[typography.eyebrowLabel, { color: colors.fawn, fontSize: 9.5, marginBottom: 6 }]}>
+                      READING VELOCITY BY LANGUAGE
+                    </Text>
+                    {habitReport.speedByLanguage.map((item) => (
+                      <View key={item.language} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 3 }}>
+                        <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 12 }]}>
+                          {item.languageLabel}
+                        </Text>
+                        <Text style={[typography.metadataCaption, { color: colors.umber, fontSize: 11 }]}>
+                          ~{item.pagesPerHour} pgs/hr · {formatHoursMinutes(item.minutesRead)}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
+
+                {/* Goal Adherence Note */}
+                {habitReport?.goalAdherence.hasActiveGoal ? (
+                  <View style={{ marginTop: 8, padding: 10, borderRadius: 8, backgroundColor: colors.parchment, borderColor: colors.hairline, borderWidth: 1 }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Text style={[typography.eyebrowLabel, { color: colors.fawn, fontSize: 9 }]}>
+                        DAILY GOAL ADHERENCE
+                      </Text>
+                      <Text style={[typography.uiRowTitle, { color: colors.flameAmber, fontSize: 12 }]}>
+                        {habitReport.goalAdherence.adherencePercentage}% met
+                      </Text>
+                    </View>
+                    <Text style={[typography.metadataCaption, { color: colors.umber, fontSize: 11, marginTop: 4, lineHeight: 15 }]}>
+                      {habitReport.goalAdherence.pacingNote}
+                    </Text>
+                  </View>
+                ) : null}
+
+                {/* Reading Report Card Export View */}
+                <ReadingReportCard report={habitReport} readerName={profile.displayName} />
+              </View>
+            ) : (
+              <View
+                style={[
+                  styles.card,
+                  {
+                    backgroundColor: colors.card,
+                    borderColor: colors.hairline,
+                    borderRadius: radius.card,
+                    padding: 14,
+                  },
+                ]}
+              >
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text style={[typography.eyebrowLabel, { color: colors.fawn, fontSize: 9 }]}>
+                    PREMIUM REPORTS & EXPORT
+                  </Text>
+                  <Text style={[typography.eyebrowLabel, { color: colors.flameAmber, fontSize: 9 }]}>
+                    PLUS / SCHOLAR
+                  </Text>
+                </View>
+                <Text style={[typography.metadataCaption, { color: colors.umber, fontSize: 11, marginTop: 6, lineHeight: 16 }]}>
+                  Unlock detailed monthly & annual reviews, multi-language reading pace, time-of-day distributions, and high-resolution exportable report cards.
+                </Text>
+                <Pressable
+                  onPress={() => router.push('/paywall?feature=reading_insights&trigger=reading_report' as any)}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    marginTop: 10,
+                    paddingTop: 8,
+                    borderTopWidth: StyleSheet.hairlineWidth,
+                    borderTopColor: colors.hairline,
+                  }}
+                >
+                  <Text style={[typography.uiRowTitle, { color: colors.flameAmber, fontSize: 12 }]}>
+                    Upgrade to unlock reports
+                  </Text>
+                  <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
+                    <Path d="M9 18l6-6-6-6" stroke={colors.flameAmber} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                  </Svg>
+                </Pressable>
+              </View>
+            )}
           </View>
 
           {/* Smart Reading Persona & Habits */}

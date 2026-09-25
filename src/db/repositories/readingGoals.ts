@@ -29,6 +29,15 @@ export type CadencePacing = {
 const STORAGE_PREFIX = 'reading_goal_';
 const ACTIVE_GOAL_KEY = 'active_reading_goal_book_id';
 
+export async function getActiveReadingGoalBookId(): Promise<string | null> {
+  try {
+    const raw = await getSetting(ACTIVE_GOAL_KEY);
+    return raw || null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Retrieve a reading goal for a specific book.
  */
