@@ -48,11 +48,18 @@ import { ambienceTrackById } from '@/features/ambience/tracks';
 import { useAmbiencePlayer } from '@/features/ambience/useAmbiencePlayer';
 import { usePageTurnSound } from '@/features/reader/usePageTurnSound';
 import { getPageTurnSoundEnabled, setPageTurnSoundEnabled, usePageTurnSoundEnabled } from '@/features/settings/soundPrefs';
-import { BookLoadingScreen } from '@/features/reader/components/BookLoadingScreen';
+import { BookLoadingScreen, type ReaderLoadingStage } from '@/features/reader/components/BookLoadingScreen';
 import { BookPageFrame } from '@/features/reader/components/BookPageFrame';
+import { ReaderFailureScreen } from '@/features/reader/components/ReaderFailureScreen';
 import { ReaderPageView } from '@/features/reader/components/ReaderPageView';
 import { WordActionMenu } from '@/features/reader/components/WordActionMenu';
 import { WordTranslationPopup } from '@/features/reader/components/WordTranslationPopup';
+import { File } from 'expo-file-system';
+import {
+  classifyReaderError,
+  type ReaderFailureDetails,
+  type ReaderRecoveryActionType,
+} from '@/features/reader/readerFailureHandler';
 import { hapticPageTurn, hapticSaveWord } from '@/lib/haptics';
 import {
   findGlobalIndex,
@@ -98,7 +105,7 @@ import { ReaderSearchModal, type ReaderSearchResult } from '@/features/reader/co
 import { getPageStyleConfig } from '@/features/reader/pageStyles';
 import { usePageStyle } from '@/features/settings/pageStylePrefs';
 import { setTargetLanguage, targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
-import { getReadingFontSize, getReadingLineHeight, useReadingTypography, READING_FONT_SIZE_PX, READING_LINE_HEIGHT_PX } from '@/features/settings/readingPrefs';
+import { getReadingFontSize, getReadingLineHeight, useReadingTypography, resetReadingTypographyPrefs, READING_FONT_SIZE_PX, READING_LINE_HEIGHT_PX } from '@/features/settings/readingPrefs';
 import { getReadingTheme, setReadingTheme, useReadingTheme } from '@/features/settings/readingTheme';
 import { canUse } from '@/features/subscription/subscriptionState';
 import { checkTranslationCap, recordTranslationUsage, translationProvider } from '@/features/translation';
@@ -118,26 +125,6 @@ const READER_GUIDE_SEEN_KEY = 'reader_guide_shown_once';
 const READER_HINT_SETTING_KEY = 'reader_gesture_hint_v4';
 const READER_BACK_HINT_SETTING_KEY = 'reader_back_gesture_hint_v1';
 const NOOP_RANGE_DRAG = () => {};
-
-function classifyReaderFailure(error: unknown): { code: 'network' | 'malformed_content' | 'unknown'; message: string } {
-  const raw = error instanceof Error ? error.message.toLowerCase() : '';
-  if (raw.includes('failed to download') || raw.includes('network') || raw.includes('fetch') || raw.includes('timeout')) {
-    return {
-      code: 'network',
-      message: 'We could not download this book. Check your connection and try again.',
-    };
-  }
-  if (raw.includes('json') || raw.includes('parse') || raw.includes('chapter') || raw.includes('content')) {
-    return {
-      code: 'malformed_content',
-      message: 'This book file could not be prepared. Try again to rebuild the download.',
-    };
-  }
-  return {
-    code: 'unknown',
-    message: 'This book could not be prepared right now. Please try again.',
-  };
-}
 
 // The reading surface is a deliberate reading experience, pinned to fixed
 // literals rather than the (theme-reactive) tokens — so the page stays legible
@@ -737,11 +724,12 @@ export default function ReaderScreen() {
   // null, which was fine when getBundledBookText was instant and synchronous,
   // but a real download can take several seconds and needs its own UI state.
   const [bookTextState, setBookTextState] = useState<
-    | { status: 'loading' }
+    | { status: 'loading'; stage?: ReaderLoadingStage }
     | { status: 'ready'; book: IngestedBook }
-    | { status: 'unavailable'; message?: string }
-    | { status: 'error'; message: string }
-  >({ status: 'loading' });
+    | { status: 'unavailable'; message?: string; failure?: ReaderFailureDetails }
+    | { status: 'error'; message: string; failure?: ReaderFailureDetails }
+  >({ status: 'loading', stage: 'downloading' });
+  const [reportIssueModalVisible, setReportIssueModalVisible] = useState(false);
   const [startPosition, setStartPosition] = useState<{ chapterIndex: number; pageIndex: number } | null>(
     null,
   );
@@ -1450,18 +1438,29 @@ export default function ReaderScreen() {
       }
 
       if (!bookRow && !isRegional) {
-        await setDownloadState({ bookId, status: 'unavailable', errorCode: 'missing_catalog_entry' });
-        setBookTextState({ status: 'unavailable' });
+        const failure = classifyReaderError(new Error('missing download'), {
+          bookId,
+          isCustomEpub: Boolean(bookId.startsWith('custom-')),
+          hasTextUrl: false,
+        });
+        await setDownloadState({ bookId, status: 'unavailable', errorCode: failure.code });
+        setBookTextState({ status: 'unavailable', message: failure.message, failure });
         return;
       }
 
       if (bookRow && !bookRow.textUrl && !isBookCached(bookRow.id) && !isRegional) {
-        await setDownloadState({ bookId: bookRow.id, status: 'unavailable', errorCode: 'missing_text_source' });
-        setBookTextState({ status: 'unavailable' });
+        const failure = classifyReaderError(new Error('missing download'), {
+          bookId: bookRow.id,
+          isCustomEpub: Boolean(bookRow.id.startsWith('custom-')),
+          hasTextUrl: false,
+        });
+        await setDownloadState({ bookId: bookRow.id, status: 'unavailable', errorCode: failure.code });
+        setBookTextState({ status: 'unavailable', message: failure.message, failure });
         return;
       }
 
       try {
+        setBookTextState({ status: 'loading', stage: 'downloading' });
         await setDownloadState({ bookId: bookRow?.id ?? bookId, status: 'downloading', progress: 0 });
         const ingested = await getBookText(
           bookRow?.id ?? bookId,
@@ -1470,11 +1469,18 @@ export default function ReaderScreen() {
           bookRow?.chapter1Anchor ?? undefined,
         );
         if (cancelled) return;
+        setBookTextState({ status: 'loading', stage: 'parsing' });
         if (!ingested.chapters || ingested.chapters.length === 0) {
-          await setDownloadState({ bookId: bookRow?.id ?? bookId, status: 'unavailable', errorCode: 'empty_content' });
+          const failure = classifyReaderError(new Error('empty chapters'), {
+            bookId: bookRow?.id ?? bookId,
+            isCustomEpub: Boolean(bookRow?.id.startsWith('custom-')),
+            hasTextUrl: Boolean(bookRow?.textUrl),
+          });
+          await setDownloadState({ bookId: bookRow?.id ?? bookId, status: 'unavailable', errorCode: failure.code });
           setBookTextState({
             status: 'unavailable',
-            message: isBangla ? 'বইটিতে পড়ার মতো কোনো বিষয়বস্তু নেই।' : `${bookRow?.title ?? 'This book'} has no readable content.`,
+            message: failure.message,
+            failure,
           });
           return;
         }
@@ -1491,23 +1497,25 @@ export default function ReaderScreen() {
         }
       } catch (err) {
         if (cancelled) return;
-        // A format error (README stub / not a Gutenberg text) is permanent —
-        // show "unavailable", not a retryable "download failed".
-        if (err instanceof BookFormatError) {
-          await setDownloadState({ bookId: bookRow?.id ?? bookId, status: 'unavailable', errorCode: 'unsupported_format' });
-          setBookTextState({ status: 'unavailable', message: err.message });
-        } else {
-          const failure = classifyReaderFailure(err);
-          await setDownloadState({ bookId: bookRow?.id ?? bookId, status: 'failed', errorCode: failure.code });
-          if (failure.code === 'malformed_content' && bookRow?.textUrl) {
-            await deleteBookCache(bookRow.id).catch(() => {});
-          }
-          logEvent('reader_error', { book_id: bookRow?.id ?? bookId, code: failure.code });
-          setBookTextState({
-            status: 'error',
-            message: failure.message,
-          });
+        const failure = classifyReaderError(err, {
+          bookId: bookRow?.id ?? bookId,
+          isCustomEpub: Boolean(bookRow?.id.startsWith('custom-')),
+          hasTextUrl: Boolean(bookRow?.textUrl),
+        });
+        await setDownloadState({
+          bookId: bookRow?.id ?? bookId,
+          status: failure.code === 'unsupported_format' ? 'unavailable' : 'failed',
+          errorCode: failure.code,
+        });
+        if ((failure.code === 'malformed_epub' || failure.code === 'empty_chapters') && bookRow?.textUrl) {
+          await deleteBookCache(bookRow.id).catch(() => {});
         }
+        logEvent('reader_error', { book_id: bookRow?.id ?? bookId, code: failure.code });
+        setBookTextState({
+          status: 'error',
+          message: failure.message,
+          failure,
+        });
       }
     })();
     return () => {
@@ -1546,16 +1554,29 @@ export default function ReaderScreen() {
     const bookText = bookTextState.book;
     let cancelled = false;
     if (pages.length === 0) {
-      const paginated = paginateBook(bookText, {
-        contentWidthPx,
-        contentHeightPx,
-        fontSizePx: readingFontSizePx,
-        lineHeightPx: readingLineHeight,
-        paragraphGapPx: Spacing.sm,
-        chapterTitleExtraPx,
-        measuredCharsPerLine,
-      });
-      setPages(paginated);
+      try {
+        const paginated = paginateBook(bookText, {
+          contentWidthPx,
+          contentHeightPx,
+          fontSizePx: readingFontSizePx,
+          lineHeightPx: readingLineHeight,
+          paragraphGapPx: Spacing.sm,
+          chapterTitleExtraPx,
+          measuredCharsPerLine,
+        });
+        if (paginated.length === 0 && bookText.chapters.length > 0) {
+          throw new Error('pagination failure: zero pages');
+        }
+        setPages(paginated);
+      } catch (pErr) {
+        const failure = classifyReaderError(pErr, {
+          bookId: book?.id ?? bookId,
+          isCustomEpub: Boolean(book?.id.startsWith('custom-')),
+          hasTextUrl: Boolean(book?.textUrl),
+        });
+        logEvent('reader_error', { book_id: book?.id ?? bookId, code: failure.code });
+        setBookTextState({ status: 'error', message: failure.message, failure });
+      }
       return;
     }
 
@@ -1577,40 +1598,53 @@ export default function ReaderScreen() {
 
     const taskId = schedule(() => {
       if (cancelled) return;
-      const paginated = paginateBook(bookText, {
-        contentWidthPx,
-        contentHeightPx,
-        fontSizePx: readingFontSizePx,
-        lineHeightPx: readingLineHeight,
-        paragraphGapPx: Spacing.sm,
-        chapterTitleExtraPx,
-        measuredCharsPerLine,
-      });
-      setPages(paginated);
-
-      if (anchor && paginated.length > 0) {
-        let targetIdx = -1;
-        if (anchor.paragraphText) {
-          targetIdx = paginated.findIndex(
-            (p) =>
-              p.chapterIndex === anchor.chapterIndex &&
-              p.paragraphs.some(
-                (para) => para.includes(anchor.paragraphText) || anchor.paragraphText.includes(para),
-              ),
-          );
+      try {
+        const paginated = paginateBook(bookText, {
+          contentWidthPx,
+          contentHeightPx,
+          fontSizePx: readingFontSizePx,
+          lineHeightPx: readingLineHeight,
+          paragraphGapPx: Spacing.sm,
+          chapterTitleExtraPx,
+          measuredCharsPerLine,
+        });
+        if (paginated.length === 0 && bookText.chapters.length > 0) {
+          throw new Error('pagination failure: zero pages');
         }
-        if (targetIdx === -1) {
-          const chapterPages = paginated.filter((p) => p.chapterIndex === anchor.chapterIndex);
-          if (chapterPages.length > 0) {
-            const clamped = chapterPages[Math.min(anchor.pageIndexInChapter, chapterPages.length - 1)];
-            targetIdx = clamped.globalIndex;
+        setPages(paginated);
+
+        if (anchor && paginated.length > 0) {
+          let targetIdx = -1;
+          if (anchor.paragraphText) {
+            targetIdx = paginated.findIndex(
+              (p) =>
+                p.chapterIndex === anchor.chapterIndex &&
+                p.paragraphs.some(
+                  (para) => para.includes(anchor.paragraphText) || anchor.paragraphText.includes(para),
+                ),
+            );
+          }
+          if (targetIdx === -1) {
+            const chapterPages = paginated.filter((p) => p.chapterIndex === anchor.chapterIndex);
+            if (chapterPages.length > 0) {
+              const clamped = chapterPages[Math.min(anchor.pageIndexInChapter, chapterPages.length - 1)];
+              targetIdx = clamped.globalIndex;
+            }
+          }
+          if (targetIdx >= 0 && targetIdx < paginated.length) {
+            setCurrentIndex(targetIdx);
+            listRef.current?.scrollToIndex({ index: targetIdx, animated: false });
+            scrollX.value = targetIdx * pageWidth;
           }
         }
-        if (targetIdx >= 0 && targetIdx < paginated.length) {
-          setCurrentIndex(targetIdx);
-          listRef.current?.scrollToIndex({ index: targetIdx, animated: false });
-          scrollX.value = targetIdx * pageWidth;
-        }
+      } catch (pErr) {
+        const failure = classifyReaderError(pErr, {
+          bookId: book?.id ?? bookId,
+          isCustomEpub: Boolean(book?.id.startsWith('custom-')),
+          hasTextUrl: Boolean(book?.textUrl),
+        });
+        logEvent('reader_error', { book_id: book?.id ?? bookId, code: failure.code });
+        setBookTextState({ status: 'error', message: failure.message, failure });
       }
     });
     return () => {
@@ -2077,7 +2111,8 @@ export default function ReaderScreen() {
         bilingualParagraphs,
       });
       scheduleAutoHide();
-    } catch {
+    } catch (err) {
+      logEvent('reader_error', { book_id: book?.id ?? bookId, code: 'translation_failure' });
       setTranslation({ pageGlobalIndex, status: 'error' });
       scheduleAutoHide();
     }
@@ -2090,32 +2125,88 @@ export default function ReaderScreen() {
       (typeof bookId === 'string' && bookId.startsWith('bn-'));
     if (!book && !isBangla) return;
     if (!isBangla && !book?.textUrl) return;
-    setBookTextState({ status: 'loading' });
+    setBookTextState({ status: 'loading', stage: 'downloading' });
     try {
       const targetId = book?.id ?? bookId;
       const targetTitle = book?.title ?? 'বাংলা গ্রন্থ';
       await setDownloadState({ bookId: targetId, status: 'downloading', progress: 0 });
       const ingested = await getBookText(targetId, targetTitle, book?.textUrl, book?.chapter1Anchor ?? undefined);
+      setBookTextState({ status: 'loading', stage: 'parsing' });
+      if (!ingested.chapters || ingested.chapters.length === 0) {
+        const failure = classifyReaderError(new Error('empty chapters'), {
+          bookId: targetId,
+          isCustomEpub: Boolean(book?.id.startsWith('custom-')),
+          hasTextUrl: Boolean(book?.textUrl),
+        });
+        await setDownloadState({ bookId: targetId, status: 'unavailable', errorCode: failure.code });
+        setBookTextState({ status: 'unavailable', message: failure.message, failure });
+        return;
+      }
       await setDownloadState({ bookId: targetId, status: 'ready', progress: 100, errorCode: null });
       setBookTextState({ status: 'ready', book: ingested });
       if (book && book.totalChapters === 0 && ingested.chapters.length > 0) {
         updateBookTotalChapters(book.id, ingested.chapters.length);
       }
     } catch (err) {
-      if (err instanceof BookFormatError) {
-        await setDownloadState({ bookId: book?.id ?? bookId, status: 'unavailable', errorCode: 'unsupported_format' });
-        setBookTextState({ status: 'unavailable', message: err.message });
-      } else {
-        const failure = classifyReaderFailure(err);
-        await setDownloadState({ bookId: book?.id ?? bookId, status: 'failed', errorCode: failure.code });
-        if (failure.code === 'malformed_content' && book?.textUrl) {
-          await deleteBookCache(book.id).catch(() => {});
-        }
-        logEvent('reader_error', { book_id: book?.id ?? bookId, code: failure.code });
-        setBookTextState({ status: 'error', message: failure.message });
+      const failure = classifyReaderError(err, {
+        bookId: book?.id ?? bookId,
+        isCustomEpub: Boolean(book?.id.startsWith('custom-')),
+        hasTextUrl: Boolean(book?.textUrl),
+      });
+      await setDownloadState({
+        bookId: book?.id ?? bookId,
+        status: failure.code === 'unsupported_format' ? 'unavailable' : 'failed',
+        errorCode: failure.code,
+      });
+      if ((failure.code === 'malformed_epub' || failure.code === 'empty_chapters') && book?.textUrl) {
+        await deleteBookCache(book.id).catch(() => {});
       }
+      logEvent('reader_error', { book_id: book?.id ?? bookId, code: failure.code });
+      setBookTextState({ status: 'error', message: failure.message, failure });
     }
   }, [book, bookId]);
+
+  const handleRecoveryAction = useCallback(
+    async (actionType: ReaderRecoveryActionType) => {
+      switch (actionType) {
+        case 'retry':
+        case 'redownload':
+          await retryDownload();
+          break;
+        case 'library':
+          router.back();
+          break;
+        case 'reset_typography':
+          resetReadingTypographyPrefs();
+          if (book && isBookCached(book.id)) {
+            setPages([]);
+            setInitialIndex(null);
+            void retryDownload();
+          }
+          break;
+        case 'choose_file':
+          try {
+            const picked = await File.pickFileAsync(undefined, 'application/epub+zip');
+            const file = Array.isArray(picked) ? picked[0] : picked;
+            if (!file) return;
+            const { importEpubFromFile } = await import('@/features/content-ingestion/epubImporter');
+            const imported = await importEpubFromFile(file);
+            logEvent('book_imported', { book_id: imported.id });
+            router.replace({ pathname: '/reader/[bookId]', params: { bookId: imported.id } });
+          } catch (pickErr) {
+            const pickMsg = pickErr instanceof Error ? pickErr.message : '';
+            if (!pickMsg.toLowerCase().includes('cancel')) {
+              Alert.alert('Import failed', pickMsg || 'Could not import this EPUB file.');
+            }
+          }
+          break;
+        case 'report_issue':
+          setReportIssueModalVisible(true);
+          break;
+      }
+    },
+    [retryDownload, book, bookId],
+  );
 
   const handleWordLongPress = useCallback(
     (payload: {
@@ -2648,61 +2739,48 @@ export default function ReaderScreen() {
   );
 
   if (bookTextState.status === 'loading') {
-    return <BookLoadingScreen title={book?.title ?? bookTitle ?? 'বইটি লোড হচ্ছে…'} coverUrl={book?.coverUrl ?? bookCoverUrl} />;
-  }
-
-  if (bookTextState.status === 'unavailable') {
     return (
-      <View style={[styles.centered, { backgroundColor: colors.parchment, padding: 24 }]}>
-        <Text style={[typography.uiRowTitle, { color: colors.ink, textAlign: 'center' }]}>
-          {bookTextState.message ?? `${book?.title ?? 'This book'} isn't available to read yet.`}
-        </Text>
-        <Text style={[typography.metadataCaption, { color: colors.fawn, textAlign: 'center', marginTop: 10 }]}>
-          {isBangla
-            ? 'এই বইটির কোনো পাঠযোগ্য বিষয়বস্তু পাওয়া যায়নি।'
-            : 'This title has no readable text edition on Project Gutenberg.'}
-        </Text>
-        <Pressable
-          onPress={() => router.back()}
-          style={[styles.selectionSave, { backgroundColor: colors.libraryBackground, borderColor: colors.hairline, borderWidth: 1, marginTop: 18 }]}
-        >
-          <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>Return to Library</Text>
-        </Pressable>
-      </View>
+      <BookLoadingScreen
+        title={book?.title ?? bookTitle ?? 'বইটি লোড হচ্ছে…'}
+        coverUrl={book?.coverUrl ?? bookCoverUrl}
+        stage={bookTextState.stage}
+      />
     );
   }
 
-  if (bookTextState.status === 'error') {
+  if (bookTextState.status === 'unavailable' || bookTextState.status === 'error') {
+    const fallbackFailure: ReaderFailureDetails = {
+      code: bookTextState.status === 'unavailable' ? 'unsupported_format' : 'unknown',
+      title: bookTextState.status === 'unavailable' ? 'Book Edition Unavailable' : 'Unable to Prepare Book',
+      message: bookTextState.message ?? 'This title could not be opened right now.',
+      primaryAction: {
+        type: bookTextState.status === 'unavailable' ? 'library' : 'retry',
+        label: bookTextState.status === 'unavailable' ? 'Return to Library' : 'Try Again',
+      },
+      secondaryAction: {
+        type: 'report_issue',
+        label: 'Report Issue',
+      },
+    };
+
     return (
-      <View style={[styles.centered, { backgroundColor: colors.parchment, padding: 24 }]}>
-        <Text style={[typography.uiRowTitle, { color: colors.ink, textAlign: 'center', marginBottom: 4 }]}>
-          Couldn't download {book?.title ?? 'this book'}.
-        </Text>
-        {bookTextState.message ? (
-          <Text
-            style={[
-              typography.metadataCaption,
-              { color: colors.fawn, textAlign: 'center', marginBottom: 16 },
-            ]}
-          >
-            {bookTextState.message}
-          </Text>
-        ) : null}
-        <View style={{ flexDirection: 'row', gap: 10 }}>
-          <Pressable
-            onPress={() => router.back()}
-            style={[styles.selectionSave, { backgroundColor: colors.libraryBackground, borderColor: colors.hairline, borderWidth: 1 }]}
-          >
-            <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>Library</Text>
-          </Pressable>
-          <Pressable
-            onPress={retryDownload}
-            style={[styles.selectionSave, { backgroundColor: colors.flameAmber }]}
-          >
-            <Text style={[typography.uiRowTitle, { color: colors.primaryDark, fontSize: 13 }]}>Try again</Text>
-          </Pressable>
-        </View>
-      </View>
+      <>
+        <ReaderFailureScreen
+          failure={bookTextState.failure ?? fallbackFailure}
+          bookTitle={book?.title ?? bookTitle}
+          coverUrl={book?.coverUrl ?? bookCoverUrl}
+          onAction={handleRecoveryAction}
+        />
+        <FeedbackModal
+          visible={reportIssueModalVisible}
+          onClose={() => setReportIssueModalVisible(false)}
+          initialCategory="bug"
+          targetType="book"
+          targetId={book?.id ?? (typeof bookId === 'string' ? bookId : undefined)}
+          title="Report Book Issue"
+          subtitle="Tell us what went wrong so we can fix this title."
+        />
+      </>
     );
   }
 
@@ -2710,7 +2788,11 @@ export default function ReaderScreen() {
     return (
       <View style={styles.container}>
         {measurement}
-        <BookLoadingScreen title={bookTitle ?? 'বইটি প্রস্তুত হচ্ছে…'} coverUrl={bookCoverUrl} />
+        <BookLoadingScreen
+          title={bookTitle ?? 'বইটি প্রস্তুত হচ্ছে…'}
+          coverUrl={bookCoverUrl}
+          stage="preparing"
+        />
       </View>
     );
   }
@@ -2720,7 +2802,11 @@ export default function ReaderScreen() {
     return (
       <View style={styles.container}>
         {measurement}
-        <BookLoadingScreen title={book.title ?? bookTitle ?? 'বইটি প্রস্তুত হচ্ছে…'} coverUrl={book.coverUrl ?? bookCoverUrl} />
+        <BookLoadingScreen
+          title={book.title ?? bookTitle ?? 'বইটি প্রস্তুত হচ্ছে…'}
+          coverUrl={book.coverUrl ?? bookCoverUrl}
+          stage="paginating"
+        />
       </View>
     );
   }
@@ -3099,6 +3185,52 @@ export default function ReaderScreen() {
                 <Text style={[typography.metadataCaption, { color: colors.flameAmber, fontSize: 11.5, marginTop: 2 }]}>
                   Keep the lamp lit
                 </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      ) : null}
+
+      {currentTranslation?.status === 'error' ? (
+        <View
+          style={[
+            styles.hintCard,
+            { top: insets.top + 72, backgroundColor: colors.card, borderColor: colors.hairline },
+          ]}
+        >
+          <View style={styles.hintRow}>
+            <View style={[styles.hintAccent, { backgroundColor: colors.flameAmber }]} />
+            <View style={styles.hintTextCol}>
+              <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
+                Translation Unavailable
+              </Text>
+              <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11.5, marginTop: 2 }]}>
+                Could not translate this passage.
+              </Text>
+            </View>
+            <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Dismiss translation error"
+                onPress={() => setTranslation(null)}
+                hitSlop={8}
+                style={{ paddingHorizontal: 6, paddingVertical: 4 }}
+              >
+                <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 12 }]}>Dismiss</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Retry translation"
+                onPress={() => toggleTranslation()}
+                hitSlop={8}
+                style={{
+                  backgroundColor: colors.flameAmber,
+                  paddingHorizontal: 10,
+                  paddingVertical: 5,
+                  borderRadius: 4,
+                }}
+              >
+                <Text style={[typography.uiRowTitle, { color: colors.primaryDark, fontSize: 12 }]}>Retry</Text>
               </Pressable>
             </View>
           </View>
