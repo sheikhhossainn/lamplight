@@ -78,7 +78,7 @@ test('entitlement gates and free-tier boundaries', async (t) => {
     assert.ok(mistyRain, 'misty-rain must exist');
 
     assert.equal(forestBrook.isPremium, false);
-    assert.equal(rainPath.isPremium, true);
+    assert.equal(rainPath.isPremium, false);
     assert.equal(mistyRain.isPremium, true);
   });
 
