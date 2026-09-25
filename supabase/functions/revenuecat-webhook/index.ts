@@ -125,12 +125,13 @@ function candidateUserIds(event: RevenueCatEvent): string[] {
 }
 
 async function getSubscriber(appUserId: string): Promise<SubscriberEntitlement | null> {
-  if (!REVENUECAT_SECRET_API_KEY) {
+  const secretKey = Deno.env.get('REVENUECAT_SECRET_API_KEY');
+  if (!secretKey) {
     console.warn('REVENUECAT_SECRET_API_KEY is not configured');
     return null;
   }
   const response = await fetch(`https://api.revenuecat.com/v1/subscribers/${encodeURIComponent(appUserId)}`, {
-    headers: { Authorization: `Bearer ${REVENUECAT_SECRET_API_KEY}` },
+    headers: { Authorization: `Bearer ${secretKey}` },
   });
   if (!response.ok) throw new Error(`RevenueCat subscriber refresh failed: ${response.status}`);
   const payload = await response.json() as SubscriberResponse;
@@ -141,7 +142,8 @@ async function syncUser(event: RevenueCatEvent, ownerId: string): Promise<void> 
   const environment = String(event.environment ?? 'PRODUCTION').toUpperCase();
   if (environment !== 'PRODUCTION' && environment !== 'SANDBOX') return;
 
-  if (!REVENUECAT_SECRET_API_KEY) {
+  const secretKey = Deno.env.get('REVENUECAT_SECRET_API_KEY');
+  if (!secretKey) {
     console.warn('REVENUECAT_SECRET_API_KEY is not configured; skipping profile sync for user', ownerId);
     return;
   }
