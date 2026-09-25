@@ -5,6 +5,7 @@ import { ActivityIndicator, Dimensions, Modal, Pressable, StyleSheet, Text, View
 import Svg, { Path, Rect } from 'react-native-svg';
 
 import { ReloadIcon } from '@/components/icons';
+import { AccountProtectionModal } from '@/components/AccountProtectionModal';
 import { speakWord } from '@/features/audio/pronunciationEngine';
 import { logEvent } from '@/features/analytics/analytics';
 import { targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
@@ -87,6 +88,8 @@ export function WordTranslationPopup({
   const [contextEnrichment, setContextEnrichment] = useState<ContextEnrichment | null>(null);
   const [loadingContext, setLoadingContext] = useState(false);
   const [cardWidth, setCardWidth] = useState(MIN_CARD_WIDTH);
+  const [capInfo, setCapInfo] = useState<{ isGuest: boolean; limit: number }>({ isGuest: false, limit: 50 });
+  const [accountModalVisible, setAccountModalVisible] = useState(false);
   const targetLanguage = useTargetLanguage();
 
   // Show below the word by default; flip above it when the tap is low enough
@@ -117,6 +120,7 @@ export function WordTranslationPopup({
     (async () => {
       const premium = canUse('unlimited_learning');
       const cap = await checkTranslationCap(premium);
+      setCapInfo({ isGuest: cap.isGuest, limit: cap.limit });
       if (!cap.allowed) {
         if (!cancelled) setState({ status: 'capped' });
         return;
@@ -166,7 +170,8 @@ export function WordTranslationPopup({
   }, [word, targetLanguage, sourceLang, contextSentence, bookTitle, bookAuthor]);
 
   return (
-    <Modal visible={word != null} transparent animationType="fade" onRequestClose={onClose}>
+    <>
+      <Modal visible={word != null} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose}>
         <View
           style={[styles.cardWrap, { left: cardLeft }, positionStyle]}
@@ -224,20 +229,26 @@ export function WordTranslationPopup({
             {state.status === 'capped' ? (
               <>
                 <Text style={[typography.metadataCaption, { color: colors.lampText, marginTop: spacing.sm }]}>
-                  You've reached today's free translation limit.
+                  {capInfo.isGuest
+                    ? "You've reached today's 20 guest translations."
+                    : "You've reached today's 50 free translations."}
                 </Text>
                 <Pressable
                   style={[styles.actionButton, { backgroundColor: colors.flameAmber, marginTop: 12 }]}
                   onPress={() => {
-                    onClose();
-                    router.push({
-                      pathname: '/paywall',
-                      params: { feature: 'unlimited_learning', trigger: 'daily_translation_cap' },
-                    });
+                    if (capInfo.isGuest) {
+                      setAccountModalVisible(true);
+                    } else {
+                      onClose();
+                      router.push({
+                        pathname: '/paywall',
+                        params: { feature: 'unlimited_learning', trigger: 'daily_translation_cap' },
+                      });
+                    }
                   }}
                 >
                   <Text style={[typography.uiRowTitle, { color: colors.primaryDark, fontSize: 11 }]}>
-                    Keep the lamp lit
+                    {capInfo.isGuest ? 'Unlock 50/day (Free Account)' : 'Keep the lamp lit'}
                   </Text>
                 </Pressable>
               </>
@@ -409,6 +420,19 @@ export function WordTranslationPopup({
         </View>
       </Pressable>
     </Modal>
+      <AccountProtectionModal
+        visible={accountModalVisible}
+        trigger="translation_cap"
+        onClose={() => {
+          setAccountModalVisible(false);
+          onClose();
+        }}
+        onSuccess={() => {
+          setAccountModalVisible(false);
+          onClose();
+        }}
+      />
+    </>
   );
 }
 

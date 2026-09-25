@@ -58,6 +58,7 @@ import {
   checkCachedTranslationCap,
   checkTranslationCap,
   FREE_DAILY_TRANSLATION_LIMIT,
+  GUEST_DAILY_TRANSLATION_LIMIT,
 } from '@/features/translation';
 import type { CapCheck } from '@/features/translation/capPolicy';
 import { LanguagePicker } from '@/components/LanguagePicker';
@@ -358,7 +359,7 @@ export default function SettingsScreen() {
   // full daily limit so the screen paints immediately without an infinite
   // "Checking translations left…" hang, which cached/server reads then refine.
   const [translationsLeft, setTranslationsLeft] = useState<number | null | undefined>(
-    canUse('unlimited_learning') ? null : FREE_DAILY_TRANSLATION_LIMIT,
+    canUse('unlimited_learning') ? null : GUEST_DAILY_TRANSLATION_LIMIT,
   );
   const [languagePickerVisible, setLanguagePickerVisible] = useState(false);
   const [motherTonguePickerVisible, setMotherTonguePickerVisible] = useState(false);
@@ -575,7 +576,7 @@ export default function SettingsScreen() {
         .then(apply)
         .catch(() => {
           if (!cancelled) {
-            setTranslationsLeft((prev) => prev ?? FREE_DAILY_TRANSLATION_LIMIT);
+            setTranslationsLeft((prev) => prev ?? (isProtected ? FREE_DAILY_TRANSLATION_LIMIT : GUEST_DAILY_TRANSLATION_LIMIT));
           }
         });
       loadStorage();
@@ -856,9 +857,9 @@ export default function SettingsScreen() {
             >
               {isProtected
                 ? userEmail
-                  ? `${userEmail} · ${isPremium ? (entitlement.expiresAt ? `Renews ${new Date(entitlement.expiresAt).toLocaleDateString()}` : 'Active') : 'Free Plan'}`
+                  ? `${userEmail} · ${isPremium ? (entitlement.expiresAt ? `Renews ${new Date(entitlement.expiresAt).toLocaleDateString()}` : 'Active') : 'Free Plan (50 lookups/day)'}`
                   : 'Free Plan · Protected'
-                : 'Your library is only on this device'}
+                : 'Guest mode · 20 lookups/day · Unsynced'}
             </Text>
           </View>
 

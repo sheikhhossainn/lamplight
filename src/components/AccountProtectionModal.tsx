@@ -18,10 +18,56 @@ import {
 import { triggerSync } from '@/features/sync/syncWorker';
 import { useTheme } from '@/theme/ThemeProvider';
 
+export type AccountTriggerReason =
+  | 'vocab_limit'
+  | 'quotes_limit'
+  | 'translation_cap'
+  | 'quiz_gate'
+  | 'general';
+
+const TRIGGER_CONTENT: Record<
+  AccountTriggerReason,
+  { title: string; subtitle: string; highlight: string }
+> = {
+  vocab_limit: {
+    title: 'Expand Your Vocabulary Sanctuary',
+    subtitle:
+      "Guest readers can save up to 15 words per book. Create a free account to unlock 30 words per book, weekly flashcard quizzes, and automatic cloud backup.",
+    highlight: 'Unlock 30 words per book & weekly reviews',
+  },
+  quotes_limit: {
+    title: 'Keep More Memorable Passages',
+    subtitle:
+      "Guest readers can save up to 5 quotes per book. Create a free account to save up to 15 quotes per book and sync them across all your devices.",
+    highlight: 'Unlock 15 quotes per book & cloud sync',
+  },
+  translation_cap: {
+    title: "Today's Guest Lookups Reached",
+    subtitle:
+      "Guest readers receive 20 translations per day. Create a free account to expand to 50 translations daily, unlock weekly reviews, and save your progress.",
+    highlight: 'Unlock 50 daily translations & weekly quizzes',
+  },
+  quiz_gate: {
+    title: 'Unlock Weekly Vocabulary Reviews',
+    subtitle:
+      'Turn your reading into lifelong memory with gentle weekly quizzes. Create a free account to unlock your personalized quiz shelf and cloud sync.',
+    highlight: 'Unlock personalized quizzes & 50 daily lookups',
+  },
+  general: {
+    title: 'Protect and sync your library',
+    subtitle:
+      'Link an email to back up your saved words, reading positions, and highlights across devices with free cloud sync.',
+    highlight: 'Free cloud backup & 50 daily translations',
+  },
+};
+
 type AccountProtectionModalProps = {
   visible: boolean;
   onClose: () => void;
   onSuccess?: () => void;
+  trigger?: AccountTriggerReason;
+  customTitle?: string;
+  customSubtitle?: string;
 };
 
 type Step = 'email' | 'merge_prompt' | 'otp';
@@ -30,6 +76,9 @@ export function AccountProtectionModal({
   visible,
   onClose,
   onSuccess,
+  trigger = 'general',
+  customTitle,
+  customSubtitle,
 }: AccountProtectionModalProps) {
   const { colors, typography, radius, spacing } = useTheme();
 
@@ -159,6 +208,10 @@ export function AccountProtectionModal({
     onClose();
   };
 
+  const activeConfig = TRIGGER_CONTENT[trigger ?? 'general'];
+  const title = customTitle ?? activeConfig.title;
+  const subtitle = customSubtitle ?? activeConfig.subtitle;
+
   return (
     <Modal visible={visible} transparent animationType="fade" statusBarTranslucent onRequestClose={handleClose}>
       <Pressable style={styles.backdrop} onPress={handleClose}>
@@ -172,11 +225,46 @@ export function AccountProtectionModal({
           {step === 'email' && (
             <>
               <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 16 }]}>
-                Protect and sync your library
+                {title}
               </Text>
               <Text style={[typography.metadataCaption, { color: colors.umber, marginTop: spacing.xs, lineHeight: 18 }]}>
-                Link an email to back up your saved words, reading positions, and highlights across devices.
+                {subtitle}
               </Text>
+
+              <View
+                style={{
+                  backgroundColor: colors.parchment,
+                  borderColor: colors.hairline,
+                  borderWidth: 1,
+                  borderRadius: radius.card,
+                  padding: spacing.md,
+                  marginTop: spacing.sm,
+                  marginBottom: spacing.xs,
+                }}
+              >
+                <Text
+                  style={[
+                    typography.eyebrowLabel,
+                    { color: colors.flameAmber, fontSize: 9, marginBottom: 6 },
+                  ]}
+                >
+                  FREE ACCOUNT INCLUDES
+                </Text>
+                <View style={{ gap: 4 }}>
+                  <Text style={[typography.metadataCaption, { color: colors.ink, fontSize: 11 }]}>
+                    ⚡ 50 daily translations (up from 20)
+                  </Text>
+                  <Text style={[typography.metadataCaption, { color: colors.ink, fontSize: 11 }]}>
+                    📖 30 words & 15 quotes saved per book
+                  </Text>
+                  <Text style={[typography.metadataCaption, { color: colors.ink, fontSize: 11 }]}>
+                    🧠 Weekly vocabulary review & quizzes
+                  </Text>
+                  <Text style={[typography.metadataCaption, { color: colors.ink, fontSize: 11 }]}>
+                    ☁️ Seamless cross-device reading sync
+                  </Text>
+                </View>
+              </View>
 
               <TextInput
                 style={[

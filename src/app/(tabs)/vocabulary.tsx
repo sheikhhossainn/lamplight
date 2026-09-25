@@ -19,6 +19,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { AccountProtectionModal, type AccountTriggerReason } from '@/components/AccountProtectionModal';
 import { BookSpine } from '@/components/BookSpine';
 import { CultureEditionBanner } from '@/components/CultureEditionBanner';
 import { ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, SpeakerIcon, TrashIcon } from '@/components/icons';
@@ -212,6 +213,8 @@ export default function VocabularyScreen() {
   const [selectedWordForDetail, setSelectedWordForDetail] = useState<SavedWord | null>(null);
   const [activeMilestone, setActiveMilestone] = useState<MilestoneConfig | null>(null);
   const [isGuestUser, setIsGuestUser] = useState(false);
+  const [accountModalVisible, setAccountModalVisible] = useState(false);
+  const [accountModalTrigger, setAccountModalTrigger] = useState<AccountTriggerReason>('quiz_gate');
   const [decks, setDecks] = useState<VocabularyDeckWithCount[]>([]);
   const [selectedDeckId, setSelectedDeckId] = useState<string | null>(null);
   const [deckWords, setDeckWords] = useState<SavedWord[] | null>(null);
@@ -648,7 +651,20 @@ export default function VocabularyScreen() {
           />
         )
       ) : tab === 'quiz' ? (
-        !loaded || !eligibility ? <SkeletonRows /> : <QuizTab eligibility={eligibility} books={books} words={wordsToFilter} />
+        !loaded || !eligibility ? (
+          <SkeletonRows />
+        ) : (
+          <QuizTab
+            eligibility={eligibility}
+            books={books}
+            words={wordsToFilter}
+            isGuest={isGuestUser}
+            onUnlockQuiz={() => {
+              setAccountModalTrigger('quiz_gate');
+              setAccountModalVisible(true);
+            }}
+          />
+        )
       ) : tab === 'quotes' ? (
         <ScrollView
           contentContainerStyle={{ paddingTop: spacing.sm, paddingBottom: 48 }}
@@ -1694,6 +1710,17 @@ export default function VocabularyScreen() {
         onProtectAccount={() => router.push('/signup' as any)}
       />
 
+      <AccountProtectionModal
+        visible={accountModalVisible}
+        trigger={accountModalTrigger}
+        onClose={() => setAccountModalVisible(false)}
+        onSuccess={() => {
+          setIsGuestUser(false);
+          setAccountModalVisible(false);
+          reload();
+        }}
+      />
+
       <AddToDeckModal
         visible={addToDeckModalVisible}
         words={wordsForAddToDeck}
@@ -2024,8 +2051,21 @@ function LockedReview({ totalSaved, recentBookId }: { totalSaved: number; recent
 
 type QuizState = 'NO_ELIGIBLE_BOOKS' | 'BOOK_PICKER' | 'MODE_PICKER' | 'IN_QUIZ' | 'RESULT';
 
-function QuizTab({ eligibility, books, words }: { eligibility: VocabularyEligibility; books: BookRow[]; words: SavedWord[] }) {
-  const { colors, typography, spacing, radius } = useTheme();
+function QuizTab({
+  eligibility,
+  books,
+  words,
+  isGuest = false,
+  onUnlockQuiz,
+}: {
+  eligibility: VocabularyEligibility;
+  books: BookRow[];
+  words: SavedWord[];
+  isGuest?: boolean;
+  onUnlockQuiz?: () => void;
+}) {
+  const { colors, typography, spacing, radius, scheme } = useTheme();
+  const isLamp = scheme === 'lamp';
   const isPremiumUser = canUse('advanced_quiz');
   const [weeklySampleUsed, setWeeklySampleUsed] = useState(false);
   const eligibleBooks = useMemo(
@@ -2085,8 +2125,12 @@ function QuizTab({ eligibility, books, words }: { eligibility: VocabularyEligibi
       }
     }
 
-    const gate = await evaluateQuizGate(nextMode, { hasCachedData });
+    const gate = await evaluateQuizGate(nextMode, { hasCachedData, isGuest });
     if (!gate.allowed) {
+      if (gate.status === 'auth_required') {
+        onUnlockQuiz?.();
+        return;
+      }
       if (gate.status === 'service_disabled') {
         Alert.alert('Quizzes Unavailable', gate.reason ?? 'Vocabulary quizzes are temporarily unavailable.');
         return;
@@ -2155,6 +2199,120 @@ function QuizTab({ eligibility, books, words }: { eligibility: VocabularyEligibi
       </Pressable>
     );
   });
+
+  if (isGuest) {
+    return (
+      <ScrollView
+        contentContainerStyle={{ paddingTop: spacing.md, paddingBottom: 48 }}
+        showsVerticalScrollIndicator={false}
+      >
+        <View
+          style={{
+            backgroundColor: colors.card,
+            borderColor: colors.hairline,
+            borderWidth: 1,
+            borderRadius: radius.card,
+            padding: spacing.xl,
+            alignItems: 'center',
+          }}
+        >
+          <View style={{ marginBottom: spacing.md, alignItems: 'center' }}>
+            <FlashcardsIllustration />
+          </View>
+
+          <Text
+            style={[
+              typography.translatedWordPopup,
+              { color: colors.ink, textAlign: 'center', fontSize: 20, marginBottom: spacing.xs },
+            ]}
+          >
+            Unlock Weekly Vocabulary Quizzes
+          </Text>
+
+          <Text
+            style={[
+              typography.readingBody,
+              {
+                color: colors.fawn,
+                textAlign: 'center',
+                fontSize: 14,
+                lineHeight: 21,
+                marginBottom: spacing.lg,
+              },
+            ]}
+          >
+            Turn words discovered in your books into lasting memory through gentle cloze quizzes and weekly spaced review.
+          </Text>
+
+          {/* Value Props Box */}
+          <View
+            style={{
+              width: '100%',
+              backgroundColor: isLamp ? '#231F27' : '#F2ECE4',
+              borderRadius: radius.card,
+              borderWidth: 1,
+              borderColor: colors.hairline,
+              padding: spacing.md,
+              marginBottom: spacing.xl,
+              gap: spacing.sm,
+            }}
+          >
+            <Text
+              style={[
+                typography.eyebrowLabel,
+                { color: colors.flameAmber, fontSize: 10, letterSpacing: 1.2, marginBottom: 2 },
+              ]}
+            >
+              FREE ACCOUNT INCLUDES
+            </Text>
+            {[
+              'Weekly Spaced-Repetition Quizzes',
+              '50 Daily Translations (up from 20)',
+              'Save 30 Words & 15 Quotes per Book',
+              'Automatic Cloud Sync Across Devices',
+            ].map((perk, i) => (
+              <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text style={{ color: colors.flameAmber, fontSize: 13 }}>✦</Text>
+                <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
+                  {perk}
+                </Text>
+              </View>
+            ))}
+          </View>
+
+          <Pressable
+            onPress={onUnlockQuiz}
+            style={{
+              width: '100%',
+              backgroundColor: colors.flameAmber,
+              paddingVertical: 14,
+              borderRadius: radius.pill,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Text
+              style={[
+                typography.buttonLabel,
+                { color: colors.primaryDark, fontSize: 14, fontWeight: '700' },
+              ]}
+            >
+              Create Free Account to Unlock
+            </Text>
+          </Pressable>
+
+          <Text
+            style={[
+              typography.metadataCaption,
+              { color: colors.fawn, textAlign: 'center', marginTop: spacing.md, fontSize: 12 },
+            ]}
+          >
+            Free forever · No credit card required
+          </Text>
+        </View>
+      </ScrollView>
+    );
+  }
 
   if (state === 'IN_QUIZ') {
     return <ClozeChallenge words={quizWords} mode={mode} maxQuestions={QUIZ_QUESTION_LIMIT} onDone={(nextResults) => { setResults(nextResults); setState('RESULT'); }} />;
