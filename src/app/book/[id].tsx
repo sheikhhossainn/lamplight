@@ -26,6 +26,11 @@ import {
 } from '@/db/repositories/shelves';
 import { getReadingGoal, type ReadingGoal } from '@/db/repositories/readingGoals';
 import { ReadingCadenceModal } from '@/components/ReadingCadenceModal';
+import {
+  estimateReadingTime,
+  getEditionInfo,
+  getReadingPaceContext,
+} from '@/features/discovery/editionEstimates';
 import { targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
 import { useTheme } from '@/theme/ThemeProvider';
 
@@ -322,6 +327,12 @@ export default function BookDetailScreen() {
   const coverTextColor = coverIsDark ? colors.lampText : colors.ink;
   const coverCurlTint = coverIsDark ? 'rgba(245,237,225,0.22)' : 'rgba(43,38,33,0.2)';
 
+  const editionInfo = getEditionInfo(book);
+  const readingEstimate = estimateReadingTime(book.totalChapters, percent);
+  const paceContext = cadenceGoal
+    ? getReadingPaceContext(cadenceGoal.dailyMinutes, readingEstimate.totalMinutes, percent)
+    : null;
+
   return (
     <ScrollView
       style={{ backgroundColor: colors.parchment }}
@@ -473,9 +484,39 @@ export default function BookDetailScreen() {
           ]}
         />
       </View>
-      <Text style={[typography.uiRowTitle, { color: colors.progressLabel, fontSize: 12, marginTop: 6 }]}>
-        {chapterLabel}
-      </Text>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 }}>
+        <Text style={[typography.uiRowTitle, { color: colors.progressLabel, fontSize: 12 }]}>
+          {chapterLabel}
+        </Text>
+        <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 12 }]}>
+          ⏱ {readingEstimate.remainingLabel}
+        </Text>
+      </View>
+
+      <View
+        style={[
+          styles.editionCard,
+          {
+            backgroundColor: colors.card,
+            borderColor: colors.hairline,
+            borderRadius: radius.card,
+            marginTop: spacing.md,
+            padding: spacing.md,
+          },
+        ]}
+      >
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Text style={[typography.eyebrowLabel, { color: colors.flameAmber, fontSize: 11 }]}>
+            {editionInfo.edition}
+          </Text>
+          <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11 }]}>
+            {editionInfo.formatLabel}
+          </Text>
+        </View>
+        <Text style={[typography.metadataCaption, { color: colors.progressLabel, marginTop: 4, fontSize: 12 }]}>
+          {editionInfo.provenance} · Estimated {readingEstimate.totalLabel} total
+        </Text>
+      </View>
 
       <Text style={[typography.readingBody, { color: colors.ink, marginTop: spacing.lg }]}>
         {book.synopsis}
@@ -558,39 +599,50 @@ export default function BookDetailScreen() {
       </Pressable>
 
       {isAvailable ? (
-        <Pressable
-          onPress={() => setCadenceModalVisible(true)}
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'center',
-            paddingVertical: 12,
-            paddingHorizontal: spacing.md,
-            marginTop: spacing.sm,
-            borderRadius: radius.pill,
-            borderWidth: 1,
-            borderColor: cadenceGoal ? colors.flameAmber : colors.hairline,
-            backgroundColor: cadenceGoal
-              ? 'rgba(245, 166, 35, 0.08)'
-              : 'transparent',
-          }}
-        >
-          <Text style={{ fontSize: 14, marginRight: 8 }}>{cadenceGoal ? '🕯️' : '⏱️'}</Text>
-          <Text
-            style={[
-              typography.buttonLabel,
-              {
-                color: cadenceGoal ? colors.flameAmber : colors.ink,
-                fontSize: 13,
-                fontWeight: '600',
-              },
-            ]}
+        <View style={{ marginTop: spacing.sm }}>
+          <Pressable
+            onPress={() => setCadenceModalVisible(true)}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              paddingVertical: 12,
+              paddingHorizontal: spacing.md,
+              borderRadius: radius.pill,
+              borderWidth: 1,
+              borderColor: cadenceGoal ? colors.flameAmber : colors.hairline,
+              backgroundColor: cadenceGoal
+                ? 'rgba(245, 166, 35, 0.08)'
+                : 'transparent',
+            }}
           >
-            {cadenceGoal
-              ? `Reading Cadence: ${cadenceGoal.targetDays} Days · ${cadenceGoal.dailyMinutes}m/day`
-              : 'Set Reading Cadence & Daily Goal'}
-          </Text>
-        </Pressable>
+            <Text style={{ fontSize: 14, marginRight: 8 }}>{cadenceGoal ? '🕯️' : '⏱️'}</Text>
+            <Text
+              style={[
+                typography.buttonLabel,
+                {
+                  color: cadenceGoal ? colors.flameAmber : colors.ink,
+                  fontSize: 13,
+                  fontWeight: '600',
+                },
+              ]}
+            >
+              {cadenceGoal
+                ? `Reading Cadence: ${cadenceGoal.targetDays} Days · ${cadenceGoal.dailyMinutes}m/day`
+                : 'Set Reading Cadence & Daily Goal'}
+            </Text>
+          </Pressable>
+          {cadenceGoal && paceContext ? (
+            <Text
+              style={[
+                typography.metadataCaption,
+                { color: colors.fawn, textAlign: 'center', marginTop: 6, fontSize: 12 },
+              ]}
+            >
+              {paceContext.paceSummary}
+            </Text>
+          ) : null}
+        </View>
       ) : null}
 
       <ConfirmDialog
@@ -713,6 +765,9 @@ const styles = StyleSheet.create({
   savedCard: {
     borderWidth: 1,
     paddingHorizontal: 14,
+  },
+  editionCard: {
+    borderWidth: 1,
   },
   savedRow: {
     flexDirection: 'row',
