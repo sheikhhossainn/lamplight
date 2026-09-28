@@ -1,7 +1,7 @@
 import Constants from 'expo-constants';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   Easing,
   Extrapolation,
@@ -26,6 +26,7 @@ import { getStorageUsage, clearTemporaryCache, getUnsyncedSafetyStatus, type Sto
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { RedeemPromoModal } from '@/components/RedeemPromoModal';
 import { FeedbackModal } from '@/components/FeedbackModal';
+import { AccountProtectionModal } from '@/components/AccountProtectionModal';
 import { setTargetLanguage, targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
 import { useReadingTheme } from '@/features/settings/readingTheme';
 import {
@@ -40,6 +41,7 @@ import {
   isPremiumUser,
   getEntitlementSnapshot,
   subscribeToEntitlements,
+  restorePurchases,
   type EntitlementSnapshot,
 } from '@/features/subscription/subscriptionState';
 import {
@@ -358,7 +360,31 @@ export default function SettingsScreen() {
   const [syncAndClearDialogVisible, setSyncAndClearDialogVisible] = useState(false);
   const [offlineBlockedDialogVisible, setOfflineBlockedDialogVisible] = useState(false);
   const [unsyncedCount, setUnsyncedCount] = useState(0);
-  const [accountProtectionDialogVisible, setAccountProtectionDialogVisible] = useState(false);
+  const [accountProtectionModalVisible, setAccountProtectionModalVisible] = useState(false);
+  const [restoringPurchases, setRestoringPurchases] = useState(false);
+
+  const handleRestorePurchases = async () => {
+    if (restoringPurchases) return;
+    setRestoringPurchases(true);
+    try {
+      const res = await restorePurchases();
+      if (res.success) {
+        Alert.alert('Purchases Restored', res.message);
+      } else {
+        const title =
+          res.code === 'clock_desync'
+            ? 'Clock Out of Sync'
+            : res.code === 'offline'
+            ? 'Connection Required'
+            : 'Restore Purchases';
+        Alert.alert(title, res.message);
+      }
+    } catch {
+      Alert.alert('Restore Failed', 'Unable to reach the verification service. Please try again.');
+    } finally {
+      setRestoringPurchases(false);
+    }
+  };
   const [promoModalVisible, setPromoModalVisible] = useState(false);
   const [feedbackModalVisible, setFeedbackModalVisible] = useState(false);
   const [entitlement, setEntitlement] = useState<EntitlementSnapshot>(getEntitlementSnapshot());
@@ -725,6 +751,25 @@ export default function SettingsScreen() {
             <ChevronRightIcon color={colors.flameAmber} size={14} />
           </View>
         </Pressable>
+
+        <View style={[styles.itemDivider, { borderBottomColor: isLamp ? colors.hairline : '#2B2621' }]} />
+
+        <Pressable
+          disabled={restoringPurchases}
+          onPress={handleRestorePurchases}
+          style={[styles.settingsRow, { paddingVertical: 10 }]}
+        >
+          <Text style={[typography.uiRowTitle, { color: isLamp ? colors.ink : colors.lampText, fontSize: 13 }]}>
+            Restore purchases
+          </Text>
+          <View style={{ width: 15, height: 15, alignItems: 'center', justifyContent: 'center' }}>
+            {restoringPurchases ? (
+              <ActivityIndicator size="small" color={colors.flameAmber} />
+            ) : (
+              <ChevronRightIcon color={colors.flameAmber} size={14} />
+            )}
+          </View>
+        </Pressable>
       </View>
 
       <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginTop: spacing.xl, marginBottom: spacing.sm }]}>
@@ -751,7 +796,7 @@ export default function SettingsScreen() {
         <Pressable
           onPress={() => {
             if (syncStatus === 'guest') {
-              setAccountProtectionDialogVisible(true);
+              setAccountProtectionModalVisible(true);
             } else {
               void triggerSync({ forceImmediate: true });
             }
@@ -928,14 +973,13 @@ export default function SettingsScreen() {
         onCancel={() => setOfflineBlockedDialogVisible(false)}
       />
 
-      <ConfirmDialog
-        visible={accountProtectionDialogVisible}
-        title="Log In to Sync"
-        message="Cloud Sync requires an authenticated account to back up and sync your reading progress, vocabulary, and highlights across devices. All your data is safely saved on this device."
-        confirmLabel="Understood"
-        cancelLabel="Close"
-        onConfirm={() => setAccountProtectionDialogVisible(false)}
-        onCancel={() => setAccountProtectionDialogVisible(false)}
+      <AccountProtectionModal
+        visible={accountProtectionModalVisible}
+        onClose={() => setAccountProtectionModalVisible(false)}
+        onSuccess={() => {
+          loadStorage();
+          void triggerSync({ forceImmediate: true });
+        }}
       />
     </Animated.ScrollView>
   );

@@ -1,4 +1,5 @@
 import { getSetting, setSetting } from '@/db/repositories/appSettings';
+import { secureStorage, migrateTokensFromSqlite } from '@/lib/secureStorage';
 
 // Anonymous Supabase Auth session, kept alive across app restarts — plain
 // fetch against the Auth REST API, matching remoteCatalog.ts's convention of
@@ -29,8 +30,8 @@ async function persistSession(auth: AuthResponse): Promise<void> {
   const expiresAt = Math.floor(Date.now() / 1000) + auth.expires_in;
   const isAnonymous = Boolean(auth.user.is_anonymous ?? !auth.user.email);
   await Promise.all([
-    setSetting(KEY_ACCESS_TOKEN, auth.access_token),
-    setSetting(KEY_REFRESH_TOKEN, auth.refresh_token),
+    secureStorage.setItem(KEY_ACCESS_TOKEN, auth.access_token),
+    secureStorage.setItem(KEY_REFRESH_TOKEN, auth.refresh_token),
     setSetting(KEY_USER_ID, auth.user.id),
     setSetting(KEY_EXPIRES_AT, String(expiresAt)),
     setSetting(KEY_IS_ANONYMOUS, String(isAnonymous)),
@@ -110,9 +111,11 @@ export async function getSession(): Promise<{ accessToken: string; userId: strin
     throw new Error('EXPO_PUBLIC_SUPABASE_URL / EXPO_PUBLIC_SUPABASE_ANON_KEY are not set.');
   }
 
+  await migrateTokensFromSqlite();
+
   const [accessToken, refreshToken, userId, expiresAt] = await Promise.all([
-    getSetting(KEY_ACCESS_TOKEN),
-    getSetting(KEY_REFRESH_TOKEN),
+    secureStorage.getItem(KEY_ACCESS_TOKEN),
+    secureStorage.getItem(KEY_REFRESH_TOKEN),
     getSetting(KEY_USER_ID),
     getSetting(KEY_EXPIRES_AT),
   ]);

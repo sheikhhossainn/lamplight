@@ -1,9 +1,11 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Alert, Dimensions, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Dimensions, Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Defs, Path, RadialGradient, Rect, Stop } from 'react-native-svg';
+import * as Haptics from 'expo-haptics';
 
 import { FlameGlow } from '@/components/FlameGlow';
+import { restorePurchases } from '@/features/subscription/subscriptionState';
 import { useTheme } from '@/theme/ThemeProvider';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
@@ -27,9 +29,37 @@ function CheckIcon() {
 export default function PaywallScreen() {
   const { colors, typography, spacing, radius, layout } = useTheme();
   const [plan, setPlan] = useState<Plan>('yearly');
+  const [restoring, setRestoring] = useState(false);
 
   const startPremium = () => {
     Alert.alert('Not yet available', 'Billing is coming in a later milestone.');
+  };
+
+  const handleRestore = async () => {
+    if (restoring) return;
+    setRestoring(true);
+    try {
+      const res = await restorePurchases();
+      if (res.success) {
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        Alert.alert('Purchases Restored', res.message, [
+          { text: 'Continue', onPress: () => router.back() },
+        ]);
+      } else {
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        const title =
+          res.code === 'clock_desync'
+            ? 'Clock Out of Sync'
+            : res.code === 'offline'
+            ? 'Connection Required'
+            : 'Restore Purchases';
+        Alert.alert(title, res.message);
+      }
+    } catch {
+      Alert.alert('Restore Failed', 'Unable to reach the verification service. Please try again.');
+    } finally {
+      setRestoring(false);
+    }
   };
 
   return (
@@ -127,6 +157,20 @@ export default function PaywallScreen() {
             Start Premium — $3.33/mo
           </Text>
         </Pressable>
+        <Pressable
+          disabled={restoring}
+          onPress={handleRestore}
+          style={styles.restoreBtn}
+        >
+          {restoring ? (
+            <ActivityIndicator size="small" color={colors.flameAmber} />
+          ) : (
+            <Text style={[typography.metadataCaption, { color: colors.flameAmber, fontSize: 13, fontWeight: '600' }]}>
+              Restore Purchases
+            </Text>
+          )}
+        </Pressable>
+
         <Pressable onPress={() => router.back()} style={styles.maybeLater}>
           <Text style={[typography.uiRowTitle, { color: colors.fawn, fontSize: 12 }]}>Maybe later</Text>
         </Pressable>
@@ -180,7 +224,13 @@ const styles = StyleSheet.create({
   cta: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 14,
+    marginBottom: 10,
+  },
+  restoreBtn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    marginBottom: 6,
   },
   maybeLater: {
     alignItems: 'center',
