@@ -339,11 +339,11 @@ export default function PaywallScreen() {
           </Pressable>
         ) : null}
         <View style={styles.legalRow}>
-          <Pressable onPress={() => router.push('/terms')} hitSlop={6}>
+          <Pressable onPress={() => router.push('/terms' as any)} hitSlop={6}>
             <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11 }]}>Terms</Text>
           </Pressable>
           <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11 }]}> · </Text>
-          <Pressable onPress={() => router.push('/privacy')} hitSlop={6}>
+          <Pressable onPress={() => router.push('/privacy' as any)} hitSlop={6}>
             <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11 }]}>Privacy</Text>
           </Pressable>
         </View>

@@ -486,3 +486,55 @@ export async function redeemPromoCode(
     return { success: false, message: (err as Error)?.message || 'Failed to connect to redemption server.' };
   }
 }
+
+export type RestoreResult = {
+  success: boolean;
+  code: 'restored' | 'no_active_plan' | 'clock_desync' | 'offline' | 'error';
+  message: string;
+  snapshot: EntitlementSnapshot;
+};
+
+/**
+ * Restores purchases with non-punitive, clear feedback.
+ */
+export async function restorePurchases(): Promise<RestoreResult> {
+  if (isClockTampered) {
+    return {
+      success: false,
+      code: 'clock_desync',
+      message: 'Your device clock appears out of sync. Please verify system date & time.',
+      snapshot: getEntitlementSnapshot(),
+    };
+  }
+
+  try {
+    const refreshed = await refreshEntitlements('restore');
+    if (refreshed.status === 'premium' || refreshed.status === 'trial' || refreshed.status === 'grace') {
+      return {
+        success: true,
+        code: 'restored',
+        message: 'Welcome back! Your Lamplight Premium access has been restored.',
+        snapshot: refreshed,
+      };
+    } else {
+      return {
+        success: false,
+        code: 'no_active_plan',
+        message:
+          'No active subscription or grant found for this account. If you purchased recently, please ensure you are signed into the correct account.',
+        snapshot: refreshed,
+      };
+    }
+  } catch (err) {
+    const isNetwork = (err as Error)?.message?.includes('Network') || (err as Error)?.name === 'AbortError';
+    return {
+      success: false,
+      code: isNetwork ? 'offline' : 'error',
+      message: isNetwork
+        ? 'Please connect to the internet to verify your subscription.'
+        : 'Unable to restore purchases at this moment. Please try again.',
+      snapshot: getEntitlementSnapshot(),
+    };
+  }
+}
+

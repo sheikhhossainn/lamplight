@@ -13,7 +13,18 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Circle, Defs, Line, LinearGradient, Path, Polygon, RadialGradient, Rect, Stop } from 'react-native-svg';
+import Svg, {
+  Circle,
+  Defs,
+  G,
+  Line,
+  LinearGradient,
+  Path,
+  Polygon,
+  RadialGradient,
+  Rect,
+  Stop,
+} from 'react-native-svg';
 import { captureRef } from 'react-native-view-shot';
 
 import { CloseIcon } from '@/components/icons';
@@ -44,65 +55,381 @@ function FlameMark({ size, color = '#F5A623' }: { size: number; color?: string }
   );
 }
 
-function CinnabarSeal({ size = 32 }: { size?: number }) {
+function GildedFiligreeFrame({ width, height }: { width: number; height: number }) {
+  const margin = 10;
+  const stroke = '#C59B27';
+  const innerMargin = 14;
   return (
-    <View
-      style={{
-        width: size,
-        height: size,
-        borderRadius: 8,
-        borderWidth: 1.2,
-        borderColor: 'rgba(194, 84, 56, 0.55)',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: 'rgba(194, 84, 56, 0.08)',
-      }}
-    >
-      <FlameMark size={Math.round(size * 0.58)} color="#C25438" />
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+      <Svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
+        <Rect
+          x={margin}
+          y={margin}
+          width={width - margin * 2}
+          height={height - margin * 2}
+          stroke={stroke}
+          strokeWidth={1.2}
+          fill="none"
+          opacity={0.8}
+        />
+        <Rect
+          x={innerMargin}
+          y={innerMargin}
+          width={width - innerMargin * 2}
+          height={height - innerMargin * 2}
+          stroke={stroke}
+          strokeWidth={0.6}
+          fill="none"
+          opacity={0.45}
+        />
+        {/* Top-Left Corner Filigree Flourish */}
+        <Path
+          d={`M ${margin} ${margin + 18} C ${margin} ${margin + 8} ${margin + 8} ${margin} ${margin + 18} ${margin}`}
+          stroke={stroke}
+          strokeWidth={1.2}
+          fill="none"
+        />
+        <Circle cx={margin + 16} cy={margin + 16} r={2.2} fill={stroke} opacity={0.85} />
+
+        {/* Top-Right Corner Filigree Flourish */}
+        <Path
+          d={`M ${width - margin - 18} ${margin} C ${width - margin - 8} ${margin} ${width - margin} ${margin + 8} ${width - margin} ${margin + 18}`}
+          stroke={stroke}
+          strokeWidth={1.2}
+          fill="none"
+        />
+        <Circle cx={width - margin - 16} cy={margin + 16} r={2.2} fill={stroke} opacity={0.85} />
+
+        {/* Bottom-Left Corner Filigree Flourish */}
+        <Path
+          d={`M ${margin} ${height - margin - 18} C ${margin} ${height - margin - 8} ${margin + 8} ${height - margin} ${margin + 18} ${height - margin}`}
+          stroke={stroke}
+          strokeWidth={1.2}
+          fill="none"
+        />
+        <Circle cx={margin + 16} cy={height - margin - 16} r={2.2} fill={stroke} opacity={0.85} />
+
+        {/* Bottom-Right Corner Filigree Flourish */}
+        <Path
+          d={`M ${width - margin - 18} ${height - margin} C ${width - margin - 8} ${height - margin} ${width - margin} ${height - margin - 8} ${width - margin} ${height - margin - 18}`}
+          stroke={stroke}
+          strokeWidth={1.2}
+          fill="none"
+        />
+        <Circle cx={width - margin - 16} cy={height - margin - 16} r={2.2} fill={stroke} opacity={0.85} />
+      </Svg>
     </View>
   );
 }
 
-function GoldCornerBrackets({ width, height }: { width: number; height: number }) {
-  const inset = 12;
-  const size = 14;
+function MoroccoLeatherFrame({ width, height }: { width: number; height: number }) {
+  const margin = 10;
   const stroke = '#D4AF37';
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
       <Svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
-        <Path
-          d={`M${inset + size} ${inset} H${inset} V${inset + size}`}
+        <Defs>
+          <LinearGradient id="moroccoBg" x1="0%" y1="0%" x2="100%" y2="100%">
+            <Stop offset="0%" stopColor="#360E16" />
+            <Stop offset="50%" stopColor="#22070D" />
+            <Stop offset="100%" stopColor="#150307" />
+          </LinearGradient>
+          <RadialGradient id="moroccoGlow" cx="50%" cy="40%" r="65%">
+            <Stop offset="0%" stopColor="#631C28" stopOpacity={0.25} />
+            <Stop offset="100%" stopColor="#0F0205" stopOpacity={0.65} />
+          </RadialGradient>
+        </Defs>
+        <Rect x={0} y={0} width={width} height={height} fill="url(#moroccoBg)" />
+        <Rect x={0} y={0} width={width} height={height} fill="url(#moroccoGlow)" />
+
+        <Rect
+          x={margin}
+          y={margin}
+          width={width - margin * 2}
+          height={height - margin * 2}
           stroke={stroke}
-          strokeWidth={1.2}
+          strokeWidth={1.4}
           fill="none"
-          opacity={0.65}
+          opacity={0.85}
         />
-        <Path
-          d={`M${width - inset - size} ${inset} H${width - inset} V${inset + size}`}
-          stroke={stroke}
-          strokeWidth={1.2}
+        <Rect
+          x={margin + 4}
+          y={margin + 4}
+          width={width - (margin + 4) * 2}
+          height={height - (margin + 4) * 2}
+          stroke="rgba(0,0,0,0.5)"
+          strokeWidth={0.8}
           fill="none"
-          opacity={0.65}
         />
-        <Path
-          d={`M${inset} ${height - inset - size} V${height - inset} H${inset + size}`}
-          stroke={stroke}
-          strokeWidth={1.2}
-          fill="none"
-          opacity={0.65}
+
+        {[
+          { cx: margin + 7, cy: margin + 7 },
+          { cx: width - margin - 7, cy: margin + 7 },
+          { cx: margin + 7, cy: height - margin - 7 },
+          { cx: width - margin - 7, cy: height - margin - 7 },
+        ].map((pt, i) => (
+          <G key={i}>
+            <Circle cx={pt.cx} cy={pt.cy} r={3} fill="#D4AF37" opacity={0.9} />
+            <Circle cx={pt.cx} cy={pt.cy} r={1.2} fill="#360E16" />
+          </G>
+        ))}
+
+        <Rect x={0} y={0} width={4} height={height} fill="#D4AF37" opacity={0.6} />
+      </Svg>
+    </View>
+  );
+}
+
+function CelestialStarMap({ width, height }: { width: number; height: number }) {
+  const moonX = Math.round(width * 0.82);
+  const moonY = Math.round(height * 0.12);
+  return (
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+      <Svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
+        <Defs>
+          <LinearGradient id="celestialSky" x1="0%" y1="0%" x2="0%" y2="100%">
+            <Stop offset="0%" stopColor="#0B101E" />
+            <Stop offset="45%" stopColor="#121B2F" />
+            <Stop offset="100%" stopColor="#080C14" />
+          </LinearGradient>
+          <RadialGradient id="celestialNebula" cx="45%" cy="38%" r="55%">
+            <Stop offset="0%" stopColor="#2E446B" stopOpacity={0.28} />
+            <Stop offset="60%" stopColor="#141E34" stopOpacity={0.12} />
+            <Stop offset="100%" stopColor="#0B101E" stopOpacity={0} />
+          </RadialGradient>
+        </Defs>
+        <Rect x={0} y={0} width={width} height={height} fill="url(#celestialSky)" />
+        <Rect x={0} y={0} width={width} height={height} fill="url(#celestialNebula)" />
+
+        <Line
+          x1={width * 0.1}
+          y1={height * 0.28}
+          x2={width * 0.9}
+          y2={height * 0.28}
+          stroke="#C9A050"
+          strokeWidth={0.6}
+          strokeDasharray="3,4"
+          opacity={0.22}
         />
-        <Path
-          d={`M${width - inset - size} ${height - inset} H${width - inset} V${height - inset - size}`}
-          stroke={stroke}
-          strokeWidth={1.2}
+        <Line
+          x1={width * 0.1}
+          y1={height * 0.72}
+          x2={width * 0.9}
+          y2={height * 0.72}
+          stroke="#C9A050"
+          strokeWidth={0.6}
+          strokeDasharray="3,4"
+          opacity={0.22}
+        />
+        <Line
+          x1={width * 0.5}
+          y1={height * 0.08}
+          x2={width * 0.5}
+          y2={height * 0.92}
+          stroke="#C9A050"
+          strokeWidth={0.5}
+          strokeDasharray="2,5"
+          opacity={0.18}
+        />
+
+        <Circle
+          cx={width * 0.5}
+          cy={height * 0.45}
+          r={width * 0.42}
+          stroke="#C9A050"
+          strokeWidth={0.6}
+          strokeDasharray="4,6"
           fill="none"
-          opacity={0.65}
+          opacity={0.15}
+        />
+
+        {/* Ursa Major asterism (top left) */}
+        <Line x1={28} y1={52} x2={52} y2={46} stroke="#E5C158" strokeWidth={0.7} opacity={0.4} />
+        <Line x1={52} y1={46} x2={78} y2={58} stroke="#E5C158" strokeWidth={0.7} opacity={0.4} />
+        <Line x1={78} y1={58} x2={90} y2={76} stroke="#E5C158" strokeWidth={0.7} opacity={0.4} />
+        <Circle cx={28} cy={52} r={1.6} fill="#FFF" opacity={0.9} />
+        <Circle cx={52} cy={46} r={1.8} fill="#FFEDBA" opacity={0.95} />
+        <Circle cx={78} cy={58} r={1.5} fill="#FFF" opacity={0.85} />
+        <Circle cx={90} cy={76} r={1.7} fill="#FFF" opacity={0.9} />
+
+        {/* Cassiopeia segment (mid right) */}
+        <Line
+          x1={width - 70}
+          y1={height * 0.65}
+          x2={width - 50}
+          y2={height * 0.68}
+          stroke="#E5C158"
+          strokeWidth={0.7}
+          opacity={0.4}
+        />
+        <Line
+          x1={width - 50}
+          y1={height * 0.68}
+          x2={width - 32}
+          y2={height * 0.64}
+          stroke="#E5C158"
+          strokeWidth={0.7}
+          opacity={0.4}
+        />
+        <Circle cx={width - 70} cy={height * 0.65} r={1.5} fill="#FFF" opacity={0.8} />
+        <Circle cx={width - 50} cy={height * 0.68} r={1.7} fill="#FFEDBA" opacity={0.9} />
+        <Circle cx={width - 32} cy={height * 0.64} r={1.5} fill="#FFF" opacity={0.85} />
+
+        {/* Elegant Gold Starlight Crescent Moon */}
+        <Path
+          d={`M ${moonX} ${moonY - 14} C ${moonX + 10} ${moonY - 8} ${moonX + 10} ${moonY + 8} ${moonX} ${moonY + 14} C ${moonX + 5} ${moonY + 8} ${moonX + 5} ${moonY - 8} ${moonX} ${moonY - 14} Z`}
+          fill="#E5C158"
+          opacity={0.85}
+        />
+        <Circle cx={moonX + 3} cy={moonY} r={1} fill="#FFF" opacity={0.9} />
+
+        {/* Scattered Starlight Points */}
+        <Circle cx={width * 0.18} cy={height * 0.18} r={1.2} fill="#FFF" opacity={0.65} />
+        <Circle cx={width * 0.88} cy={height * 0.32} r={1.4} fill="#FFEDBA" opacity={0.7} />
+        <Circle cx={width * 0.14} cy={height * 0.6} r={1.1} fill="#FFF" opacity={0.5} />
+        <Circle cx={width * 0.84} cy={height * 0.8} r={1.3} fill="#FFF" opacity={0.6} />
+        <Circle cx={width * 0.26} cy={height * 0.82} r={1.2} fill="#FFEDBA" opacity={0.55} />
+
+        {/* Corner Starburst */}
+        <Path
+          d={`M ${width * 0.24} ${height * 0.12 - 4} L ${width * 0.24} ${height * 0.12 + 4} M ${width * 0.24 - 4} ${height * 0.12} L ${width * 0.24 + 4} ${height * 0.12}`}
+          stroke="#E5C158"
+          strokeWidth={0.8}
+          opacity={0.7}
         />
       </Svg>
     </View>
   );
 }
 
+function BotanicalFrame({ width, height }: { width: number; height: number }) {
+  const margin = 10;
+  const stroke = '#3D4D3A';
+  return (
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+      <Svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
+        <Rect
+          x={margin}
+          y={margin}
+          width={width - margin * 2}
+          height={height - margin * 2}
+          stroke={stroke}
+          strokeWidth={1}
+          fill="none"
+          opacity={0.4}
+        />
+        <Rect
+          x={margin + 3}
+          y={margin + 3}
+          width={width - (margin + 3) * 2}
+          height={height - (margin + 3) * 2}
+          stroke={stroke}
+          strokeWidth={0.5}
+          fill="none"
+          opacity={0.2}
+        />
+
+        {/* Top-Left Botanical Laurel Sprig */}
+        <Path
+          d={`M ${margin + 4} ${margin + 24} Q ${margin + 6} ${margin + 12} ${margin + 20} ${margin + 6}`}
+          stroke={stroke}
+          strokeWidth={1.2}
+          fill="none"
+          opacity={0.7}
+        />
+        <Path
+          d={`M ${margin + 8} ${margin + 18} C ${margin + 4} ${margin + 14} ${margin + 8} ${margin + 12} ${margin + 12} ${margin + 16} Z`}
+          fill={stroke}
+          opacity={0.55}
+        />
+        <Path
+          d={`M ${margin + 16} ${margin + 11} C ${margin + 14} ${margin + 6} ${margin + 19} ${margin + 6} ${margin + 19} ${margin + 10} Z`}
+          fill={stroke}
+          opacity={0.55}
+        />
+
+        {/* Top-Right Botanical Laurel Sprig */}
+        <Path
+          d={`M ${width - margin - 4} ${margin + 24} Q ${width - margin - 6} ${margin + 12} ${width - margin - 20} ${margin + 6}`}
+          stroke={stroke}
+          strokeWidth={1.2}
+          fill="none"
+          opacity={0.7}
+        />
+        <Path
+          d={`M ${width - margin - 8} ${margin + 18} C ${width - margin - 4} ${margin + 14} ${width - margin - 8} ${margin + 12} ${width - margin - 12} ${margin + 16} Z`}
+          fill={stroke}
+          opacity={0.55}
+        />
+        <Path
+          d={`M ${width - margin - 16} ${margin + 11} C ${width - margin - 14} ${margin + 6} ${width - margin - 19} ${margin + 6} ${width - margin - 19} ${margin + 10} Z`}
+          fill={stroke}
+          opacity={0.55}
+        />
+
+        {/* Bottom-Left Sprig */}
+        <Path
+          d={`M ${margin + 4} ${height - margin - 24} Q ${margin + 6} ${height - margin - 12} ${margin + 20} ${height - margin - 6}`}
+          stroke={stroke}
+          strokeWidth={1.2}
+          fill="none"
+          opacity={0.7}
+        />
+        {/* Bottom-Right Sprig */}
+        <Path
+          d={`M ${width - margin - 4} ${height - margin - 24} Q ${width - margin - 6} ${height - margin - 12} ${width - margin - 20} ${height - margin - 6}`}
+          stroke={stroke}
+          strokeWidth={1.2}
+          fill="none"
+          opacity={0.7}
+        />
+      </Svg>
+    </View>
+  );
+}
+
+function ObsidianEmberFrame({ width, height }: { width: number; height: number }) {
+  return (
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+      <Svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
+        <Defs>
+          <RadialGradient id="obsidianGlow" cx="50%" cy="42%" r="58%">
+            <Stop offset="0%" stopColor="#F5A623" stopOpacity={0.24} />
+            <Stop offset="45%" stopColor="#F5A623" stopOpacity={0.07} />
+            <Stop offset="100%" stopColor="#121114" stopOpacity={0} />
+          </RadialGradient>
+          <LinearGradient id="obsidianBase" x1="0%" y1="0%" x2="100%" y2="100%">
+            <Stop offset="0%" stopColor="#17151A" />
+            <Stop offset="60%" stopColor="#121114" />
+            <Stop offset="100%" stopColor="#0B0A0C" />
+          </LinearGradient>
+        </Defs>
+        <Rect x={0} y={0} width={width} height={height} fill="url(#obsidianBase)" />
+        <Rect x={0} y={0} width={width} height={height} fill="url(#obsidianGlow)" />
+
+        {/* Floating Amber Embers */}
+        <Circle cx={width * 0.16} cy={height * 0.22} r={1.6} fill="#F5A623" opacity={0.65} />
+        <Circle cx={width * 0.84} cy={height * 0.26} r={1.4} fill="#FFB84D" opacity={0.75} />
+        <Circle cx={width * 0.12} cy={height * 0.62} r={1.2} fill="#F5A623" opacity={0.5} />
+        <Circle cx={width * 0.88} cy={height * 0.58} r={1.8} fill="#FFC966" opacity={0.65} />
+        <Circle cx={width * 0.22} cy={height * 0.78} r={1.5} fill="#F5A623" opacity={0.6} />
+        <Circle cx={width * 0.78} cy={height * 0.75} r={1.3} fill="#FFB84D" opacity={0.55} />
+
+        <Rect
+          x={10}
+          y={10}
+          width={width - 20}
+          height={height - 20}
+          stroke="#F5A623"
+          strokeWidth={0.8}
+          fill="none"
+          opacity={0.3}
+          rx={6}
+        />
+      </Svg>
+    </View>
+  );
+}
 
 function QuoteGlyph({ color, size = 40 }: { color: string; size?: number }) {
   const h = Math.round(size * 0.85);
@@ -121,7 +448,7 @@ function CardCredit({
   tone,
 }: {
   attribution: string;
-  tone: 'dark' | 'light' | 'gold' | 'cinnabar' | 'editorial' | 'gilt' | 'vermillion';
+  tone: 'dark' | 'light' | 'gold' | 'cinnabar' | 'editorial' | 'gilt' | 'vermillion' | 'botanical';
 }) {
   let attributionColor: string;
   let ruleColor: string;
@@ -136,7 +463,7 @@ function CardCredit({
       flameColor = '#F5A623';
       break;
     case 'gold':
-      attributionColor = '#D4AF37';
+      attributionColor = '#E8C868';
       ruleColor = 'rgba(212,175,55,0.40)';
       brandColor = '#D4AF37';
       flameColor = '#D4AF37';
@@ -154,14 +481,18 @@ function CardCredit({
       flameColor = '#161518';
       break;
     case 'gilt':
-      // Rich antique charcoal ink on vellum — gold rule, deep burnished brand
       attributionColor = '#3D3124';
       ruleColor = '#C59B27';
       brandColor = '#9A7416';
       flameColor = '#C59B27';
       break;
+    case 'botanical':
+      attributionColor = 'rgba(35, 43, 33, 0.75)';
+      ruleColor = 'rgba(61, 77, 58, 0.35)';
+      brandColor = '#3D4D3A';
+      flameColor = '#4E634A';
+      break;
     case 'vermillion':
-      // Luminous warm cream on garnet velvet with cinnabar accent
       attributionColor = 'rgba(250, 242, 234, 0.82)';
       ruleColor = 'rgba(217, 78, 48, 0.50)';
       brandColor = '#E0684B';
@@ -228,7 +559,7 @@ function ShareCard({
           },
         ]}
       >
-        <View style={[styles.quoteBlock, { bottom: 90, paddingHorizontal: 28, zIndex: 10, elevation: 4 }]}>
+        <View style={[styles.quoteBlock, { top: 28, bottom: 98, paddingHorizontal: 28, zIndex: 10, elevation: 4 }]}>
           <QuoteGlyph color="rgba(180,134,58,0.35)" />
           <Text
             numberOfLines={metrics.maxQuoteLines}
@@ -282,13 +613,10 @@ function ShareCard({
   }
 
   if (variant === 'foldSplit') {
-    // One continuous paper plane. The former split used a cropped rectangle
-    // and a separate oversized triangle, so the fold could detach or look
-    // inverted on taller card sizes.
-    const foldLeftY = Math.round(height * (metrics.hasTranslation ? 0.56 : 0.62));
-    const foldRise = Math.min(Math.round(height * 0.1), 52);
+    const foldLeftY = Math.round(height * (metrics.hasTranslation ? 0.52 : 0.58));
+    const foldRise = Math.min(Math.round(height * 0.09), 48);
     const foldRightY = foldLeftY - foldRise;
-    const foldShadow = 7;
+    const foldShadow = 8;
     return (
       <View
         style={[
@@ -296,44 +624,39 @@ function ShareCard({
           {
             width,
             height,
-            backgroundColor: '#201D24',
+            backgroundColor: '#1E1B22',
             borderRadius: radius.card,
             overflow: 'hidden',
             borderWidth: 1.5,
-            borderColor: 'rgba(245, 166, 35, 0.28)',
+            borderColor: 'rgba(245, 166, 35, 0.32)',
           },
         ]}
       >
-        {/* The cream page and its shadow are drawn in one coordinate system so
-            the diagonal always terminates exactly at both card edges. */}
-        <View
-          style={StyleSheet.absoluteFill}
-          pointerEvents="none"
-        >
+        <View style={StyleSheet.absoluteFill} pointerEvents="none">
           <Svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
             <Polygon points={`0,0 ${width},0 ${width},${foldRightY} 0,${foldLeftY}`} fill="#F5EDE1" />
             <Polygon
               points={`0,${foldLeftY} ${width},${foldRightY} ${width},${foldRightY + foldShadow} 0,${foldLeftY + foldShadow}`}
-              fill="rgba(12,10,15,0.22)"
+              fill="rgba(10,8,12,0.30)"
             />
           </Svg>
         </View>
 
-        {/* Upper cream area: Primary quote in dark ink */}
+        {/* Upper cream area: Primary quote */}
         <View
           style={{
             position: 'absolute',
             top: 24,
             left: 24,
             right: 24,
-            maxHeight: Math.max(foldRightY - 48, 1),
+            bottom: height - foldRightY + 12,
             alignItems: 'center',
             justifyContent: 'center',
             zIndex: 10,
             elevation: 4,
           }}
         >
-          <QuoteGlyph color="rgba(180,134,58,0.35)" />
+          <QuoteGlyph color="rgba(180,134,58,0.35)" size={32} />
           <Text
             numberOfLines={metrics.condensed ? (metrics.hasTranslation ? 8 : 12) : (metrics.hasTranslation ? 6 : 9)}
             adjustsFontSizeToFit
@@ -355,21 +678,22 @@ function ShareCard({
           </Text>
         </View>
 
-        {/* Lower dark area: Translation (if present) in glowing cream */}
-        {metrics.hasTranslation && (
+        {/* Lower dark area: Translation OR Illuminated Seal Medallion */}
+        {metrics.hasTranslation ? (
           <View
             style={{
               position: 'absolute',
-              bottom: 82,
+              top: foldLeftY + 18,
               left: 24,
               right: 24,
-              maxHeight: Math.round(height * 0.28),
+              bottom: 74,
               alignItems: 'center',
+              justifyContent: 'center',
               zIndex: 10,
               elevation: 4,
             }}
           >
-            <View style={[styles.dividerBar, { backgroundColor: 'rgba(245,166,35,0.45)' }]} />
+            <View style={[styles.dividerBar, { backgroundColor: 'rgba(245,166,35,0.45)', marginBottom: 8 }]} />
             <Text
               numberOfLines={metrics.maxTranslationLines}
               adjustsFontSizeToFit
@@ -389,7 +713,528 @@ function ShareCard({
               {translation}
             </Text>
           </View>
+        ) : (
+          <View
+            style={{
+              position: 'absolute',
+              top: foldLeftY + 16,
+              left: 24,
+              right: 24,
+              bottom: 76,
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 10,
+              elevation: 4,
+            }}
+          >
+            <View
+              style={{
+                width: 38,
+                height: 38,
+                borderRadius: 19,
+                borderWidth: 1.2,
+                borderColor: 'rgba(245, 166, 35, 0.45)',
+                backgroundColor: 'rgba(245, 166, 35, 0.08)',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: 8,
+              }}
+            >
+              <FlameMark size={20} color="#F5A623" />
+            </View>
+            <Text
+              style={{
+                fontFamily: 'Manrope_700Bold',
+                fontSize: 8.5,
+                letterSpacing: 2,
+                textTransform: 'uppercase',
+                color: 'rgba(245, 166, 35, 0.75)',
+              }}
+            >
+              LAMPLIGHT FOLIO • 1890
+            </Text>
+          </View>
         )}
+
+        <CardCredit attribution={attribution} tone="dark" />
+      </View>
+    );
+  }
+
+  if (variant === 'botanical') {
+    // BOTANICAL HERBARIUM — Pressed Flora & Naturalist Monograph
+    return (
+      <View
+        style={[
+          styles.card,
+          {
+            width,
+            height,
+            backgroundColor: '#F3F5EE',
+            borderRadius: radius.card,
+            overflow: 'hidden',
+            borderWidth: 1.5,
+            borderColor: '#3D4D3A',
+          },
+        ]}
+      >
+        <BotanicalFrame width={width} height={height} />
+
+        <View style={{ paddingTop: 18, alignItems: 'center', zIndex: 10, elevation: 4 }}>
+          <View
+            style={{
+              paddingHorizontal: 12,
+              paddingVertical: 2.5,
+              borderWidth: 1,
+              borderColor: '#3D4D3A',
+              borderRadius: 2,
+              backgroundColor: 'rgba(61, 77, 58, 0.06)',
+            }}
+          >
+            <Text
+              style={{
+                fontFamily: 'Manrope_700Bold',
+                fontSize: 7.8,
+                letterSpacing: 2,
+                textTransform: 'uppercase',
+                color: '#3D4D3A',
+              }}
+            >
+              HERBARIUM • MONOGRAPH
+            </Text>
+          </View>
+          <Text
+            style={{
+              fontFamily: 'Manrope_600SemiBold',
+              fontSize: 7.2,
+              letterSpacing: 1,
+              textTransform: 'uppercase',
+              color: 'rgba(61, 77, 58, 0.65)',
+              marginTop: 4,
+            }}
+          >
+            LAMPLIGHT BOTANICAL COLLECTION • 1892
+          </Text>
+        </View>
+
+        <View style={[styles.quoteBlock, { top: 62, bottom: 84, paddingHorizontal: 28, zIndex: 10, elevation: 4 }]}>
+          <QuoteGlyph color="rgba(61, 77, 58, 0.35)" size={32} />
+          <Text
+            numberOfLines={metrics.hasTranslation ? 7 : 12}
+            adjustsFontSizeToFit
+            minimumFontScale={0.72}
+            style={[
+              styles.quoteText,
+              {
+                fontFamily: metrics.quote.fontFamily,
+                fontSize: metrics.quote.fontSize,
+                lineHeight: metrics.quote.lineHeight,
+                color: '#232B20',
+                marginTop: 8,
+                textAlign: metrics.quote.isRtl ? 'right' : 'center',
+                writingDirection: metrics.quote.isRtl ? 'rtl' : 'ltr',
+              },
+            ]}
+          >
+            {text}
+          </Text>
+
+          {metrics.hasTranslation && (
+            <>
+              <View style={[styles.dividerBar, { backgroundColor: 'rgba(61, 77, 58, 0.30)', marginVertical: 8 }]} />
+              <Text
+                numberOfLines={4}
+                adjustsFontSizeToFit
+                minimumFontScale={0.72}
+                style={[
+                  styles.translationText,
+                  {
+                    fontFamily: metrics.translation.fontFamily,
+                    fontSize: metrics.translation.fontSize,
+                    lineHeight: metrics.translation.lineHeight,
+                    color: 'rgba(35, 43, 32, 0.72)',
+                    textAlign: metrics.translation.isRtl ? 'right' : 'center',
+                    writingDirection: metrics.translation.isRtl ? 'rtl' : 'ltr',
+                  },
+                ]}
+              >
+                {translation}
+              </Text>
+            </>
+          )}
+        </View>
+
+        <CardCredit attribution={attribution} tone="botanical" />
+      </View>
+    );
+  }
+
+  if (variant === 'gildedVellum') {
+    // GILDED VELLUM — 15th-Century Illuminated Manuscript
+    return (
+      <View
+        style={[
+          styles.card,
+          {
+            width,
+            height,
+            backgroundColor: '#FAF4E7',
+            borderRadius: radius.card,
+            overflow: 'hidden',
+            borderWidth: 1.5,
+            borderColor: '#C59B27',
+          },
+        ]}
+      >
+        <GildedFiligreeFrame width={width} height={height} />
+
+        <View style={{ paddingTop: 18, alignItems: 'center', zIndex: 10, elevation: 4 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <FlameMark size={11} color="#C59B27" />
+            <Text
+              style={{
+                fontFamily: 'Manrope_700Bold',
+                fontSize: 7.8,
+                letterSpacing: 2.2,
+                textTransform: 'uppercase',
+                color: '#9A7416',
+              }}
+            >
+              ILLUMINATED FOLIO • 1492
+            </Text>
+            <FlameMark size={11} color="#C59B27" />
+          </View>
+          <View style={{ width: 34, height: 1, backgroundColor: 'rgba(197, 155, 39, 0.40)', marginTop: 5 }} />
+        </View>
+
+        <View style={[styles.quoteBlock, { top: 58, bottom: 84, paddingHorizontal: 28, zIndex: 10, elevation: 4 }]}>
+          <FlameMark size={22} color="#C59B27" />
+          <Text
+            numberOfLines={metrics.hasTranslation ? 7 : 12}
+            adjustsFontSizeToFit
+            minimumFontScale={0.72}
+            style={[
+              styles.quoteText,
+              {
+                fontFamily: metrics.quote.fontFamily,
+                fontSize: metrics.quote.fontSize,
+                lineHeight: metrics.quote.lineHeight,
+                color: '#261E16',
+                marginTop: 8,
+                textAlign: metrics.quote.isRtl ? 'right' : 'center',
+                writingDirection: metrics.quote.isRtl ? 'rtl' : 'ltr',
+              },
+            ]}
+          >
+            {text}
+          </Text>
+
+          {metrics.hasTranslation && (
+            <>
+              <View style={[styles.dividerBar, { backgroundColor: 'rgba(197, 155, 39, 0.45)', marginVertical: 8 }]} />
+              <Text
+                numberOfLines={4}
+                adjustsFontSizeToFit
+                minimumFontScale={0.72}
+                style={[
+                  styles.translationText,
+                  {
+                    fontFamily: metrics.translation.fontFamily,
+                    fontSize: metrics.translation.fontSize,
+                    lineHeight: metrics.translation.lineHeight,
+                    color: 'rgba(38, 30, 22, 0.72)',
+                    textAlign: metrics.translation.isRtl ? 'right' : 'center',
+                    writingDirection: metrics.translation.isRtl ? 'rtl' : 'ltr',
+                  },
+                ]}
+              >
+                {translation}
+              </Text>
+            </>
+          )}
+        </View>
+
+        <CardCredit attribution={attribution} tone="gilt" />
+      </View>
+    );
+  }
+
+  if (variant === 'morocco') {
+    // OXFORD MOROCCO — Gilt-Tooled Crimson Morocco Binding
+    return (
+      <View
+        style={[
+          styles.card,
+          {
+            width,
+            height,
+            backgroundColor: '#20070D',
+            borderRadius: radius.card,
+            overflow: 'hidden',
+            borderWidth: 1.5,
+            borderColor: '#D4AF37',
+          },
+        ]}
+      >
+        <MoroccoLeatherFrame width={width} height={height} />
+
+        <View style={{ paddingTop: 18, alignItems: 'center', zIndex: 10, elevation: 4 }}>
+          <Text
+            style={{
+              fontFamily: 'Manrope_700Bold',
+              fontSize: 7.8,
+              letterSpacing: 2.4,
+              textTransform: 'uppercase',
+              color: '#E8C868',
+            }}
+          >
+            OXFORD MOROCCO • DE LUXE
+          </Text>
+          <View style={{ width: 32, height: 1, backgroundColor: 'rgba(212, 175, 55, 0.35)', marginTop: 5 }} />
+        </View>
+
+        <View style={[styles.quoteBlock, { top: 58, bottom: 84, paddingHorizontal: 28, zIndex: 10, elevation: 4 }]}>
+          <Text
+            style={{
+              fontFamily: FontFamily.loraSemiBold,
+              fontSize: 22,
+              lineHeight: 22,
+              color: '#D4AF37',
+              marginBottom: 4,
+              opacity: 0.9,
+            }}
+          >
+            “
+          </Text>
+          <Text
+            numberOfLines={metrics.hasTranslation ? 7 : 12}
+            adjustsFontSizeToFit
+            minimumFontScale={0.72}
+            style={[
+              styles.quoteText,
+              {
+                fontFamily: metrics.quote.fontFamily,
+                fontSize: metrics.quote.fontSize,
+                lineHeight: metrics.quote.lineHeight,
+                color: '#FDF8F0',
+                textAlign: metrics.quote.isRtl ? 'right' : 'center',
+                writingDirection: metrics.quote.isRtl ? 'rtl' : 'ltr',
+              },
+            ]}
+          >
+            {text}
+          </Text>
+
+          {metrics.hasTranslation && (
+            <>
+              <View style={[styles.dividerBar, { backgroundColor: 'rgba(212, 175, 55, 0.40)', marginVertical: 8 }]} />
+              <Text
+                numberOfLines={4}
+                adjustsFontSizeToFit
+                minimumFontScale={0.72}
+                style={[
+                  styles.translationText,
+                  {
+                    fontFamily: metrics.translation.fontFamily,
+                    fontSize: metrics.translation.fontSize,
+                    lineHeight: metrics.translation.lineHeight,
+                    color: 'rgba(253, 248, 240, 0.72)',
+                    textAlign: metrics.translation.isRtl ? 'right' : 'center',
+                    writingDirection: metrics.translation.isRtl ? 'rtl' : 'ltr',
+                  },
+                ]}
+              >
+                {translation}
+              </Text>
+            </>
+          )}
+        </View>
+
+        <CardCredit attribution={attribution} tone="gold" />
+      </View>
+    );
+  }
+
+  if (variant === 'celestial') {
+    // CELESTIAL FOLIO — 17th-Century Uranometria Star Atlas
+    return (
+      <View
+        style={[
+          styles.card,
+          {
+            width,
+            height,
+            backgroundColor: '#090D18',
+            borderRadius: radius.card,
+            overflow: 'hidden',
+            borderWidth: 1.5,
+            borderColor: '#C9A050',
+          },
+        ]}
+      >
+        <CelestialStarMap width={width} height={height} />
+
+        <View style={{ paddingTop: 18, alignItems: 'center', zIndex: 10, elevation: 4 }}>
+          <Text
+            style={{
+              fontFamily: 'Manrope_700Bold',
+              fontSize: 7.8,
+              letterSpacing: 2.5,
+              textTransform: 'uppercase',
+              color: '#E5C158',
+            }}
+          >
+            URANOMETRIA • ASTRONOMICAL FOLIO
+          </Text>
+          <View style={{ width: 36, height: 1, backgroundColor: 'rgba(229, 193, 88, 0.35)', marginTop: 5 }} />
+        </View>
+
+        <View style={[styles.quoteBlock, { top: 58, bottom: 84, paddingHorizontal: 28, zIndex: 10, elevation: 4 }]}>
+          <Text
+            style={{
+              fontFamily: 'Manrope_700Bold',
+              fontSize: 12,
+              color: '#E5C158',
+              marginBottom: 4,
+              textAlign: 'center',
+              opacity: 0.9,
+            }}
+          >
+            ✦
+          </Text>
+          <Text
+            numberOfLines={metrics.hasTranslation ? 7 : 12}
+            adjustsFontSizeToFit
+            minimumFontScale={0.72}
+            style={[
+              styles.quoteText,
+              {
+                fontFamily: metrics.quote.fontFamily,
+                fontSize: metrics.quote.fontSize,
+                lineHeight: metrics.quote.lineHeight,
+                color: '#FAF7F0',
+                textAlign: metrics.quote.isRtl ? 'right' : 'center',
+                writingDirection: metrics.quote.isRtl ? 'rtl' : 'ltr',
+              },
+            ]}
+          >
+            {text}
+          </Text>
+
+          {metrics.hasTranslation && (
+            <>
+              <View style={[styles.dividerBar, { backgroundColor: 'rgba(229, 193, 88, 0.40)', marginVertical: 8 }]} />
+              <Text
+                numberOfLines={4}
+                adjustsFontSizeToFit
+                minimumFontScale={0.72}
+                style={[
+                  styles.translationText,
+                  {
+                    fontFamily: metrics.translation.fontFamily,
+                    fontSize: metrics.translation.fontSize,
+                    lineHeight: metrics.translation.lineHeight,
+                    color: 'rgba(250, 247, 240, 0.72)',
+                    textAlign: metrics.translation.isRtl ? 'right' : 'center',
+                    writingDirection: metrics.translation.isRtl ? 'rtl' : 'ltr',
+                  },
+                ]}
+              >
+                {translation}
+              </Text>
+            </>
+          )}
+        </View>
+
+        <CardCredit attribution={attribution} tone="gold" />
+      </View>
+    );
+  }
+
+  if (variant === 'obsidian') {
+    // OBSIDIAN & EMBER — Midnight Candlelit Sanctuary
+    return (
+      <View
+        style={[
+          styles.card,
+          {
+            width,
+            height,
+            backgroundColor: '#121114',
+            borderRadius: radius.card,
+            overflow: 'hidden',
+            borderWidth: 1.5,
+            borderColor: 'rgba(245, 166, 35, 0.40)',
+          },
+        ]}
+      >
+        <ObsidianEmberFrame width={width} height={height} />
+
+        <View style={{ paddingTop: 18, alignItems: 'center', zIndex: 10, elevation: 4 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <FlameMark size={12} color="#F5A623" />
+            <Text
+              style={{
+                fontFamily: 'Manrope_700Bold',
+                fontSize: 7.8,
+                letterSpacing: 2.2,
+                textTransform: 'uppercase',
+                color: '#F5A623',
+              }}
+            >
+              LAMPLIGHT SANCTUARY • 1890
+            </Text>
+            <FlameMark size={12} color="#F5A623" />
+          </View>
+          <View style={{ width: 32, height: 1, backgroundColor: 'rgba(245, 166, 35, 0.35)', marginTop: 5 }} />
+        </View>
+
+        <View style={[styles.quoteBlock, { top: 58, bottom: 84, paddingHorizontal: 28, zIndex: 10, elevation: 4 }]}>
+          <FlameMark size={34} color="#F5A623" />
+          <Text
+            numberOfLines={metrics.hasTranslation ? 7 : 12}
+            adjustsFontSizeToFit
+            minimumFontScale={0.72}
+            style={[
+              styles.quoteText,
+              {
+                fontFamily: metrics.quote.fontFamily,
+                fontSize: metrics.quote.fontSize,
+                lineHeight: metrics.quote.lineHeight,
+                color: '#FAF1E3',
+                marginTop: 10,
+                textAlign: metrics.quote.isRtl ? 'right' : 'center',
+                writingDirection: metrics.quote.isRtl ? 'rtl' : 'ltr',
+              },
+            ]}
+          >
+            {text}
+          </Text>
+
+          {metrics.hasTranslation && (
+            <>
+              <View style={[styles.dividerBar, { backgroundColor: 'rgba(245, 166, 35, 0.40)', marginVertical: 8 }]} />
+              <Text
+                numberOfLines={4}
+                adjustsFontSizeToFit
+                minimumFontScale={0.72}
+                style={[
+                  styles.translationText,
+                  {
+                    fontFamily: metrics.translation.fontFamily,
+                    fontSize: metrics.translation.fontSize,
+                    lineHeight: metrics.translation.lineHeight,
+                    color: 'rgba(250, 241, 227, 0.78)',
+                    textAlign: metrics.translation.isRtl ? 'right' : 'center',
+                    writingDirection: metrics.translation.isRtl ? 'rtl' : 'ltr',
+                  },
+                ]}
+              >
+                {translation}
+              </Text>
+            </>
+          )}
+        </View>
 
         <CardCredit attribution={attribution} tone="dark" />
       </View>
@@ -398,7 +1243,6 @@ function ShareCard({
 
   if (variant === 'editorial') {
     // EX LIBRIS — 1890s Antiquarian Collector's Bookplate
-    // Architectural engraved frame, ribbon header, provenance box, printer's walnut ink.
     return (
       <View
         style={[
@@ -414,7 +1258,6 @@ function ShareCard({
           },
         ]}
       >
-        {/* Inner Engraved Hairline Frame */}
         <View
           style={[
             StyleSheet.absoluteFill,
@@ -440,7 +1283,6 @@ function ShareCard({
           pointerEvents="none"
         />
 
-        {/* Top Bookplate Ribbon Header */}
         <View
           style={{
             paddingTop: 18,
@@ -484,7 +1326,6 @@ function ShareCard({
           <View style={{ width: 36, height: 1, backgroundColor: 'rgba(54, 46, 39, 0.20)', marginTop: 6 }} />
         </View>
 
-        {/* Quote Content */}
         <View style={[styles.quoteBlock, { top: 68, bottom: 85, paddingHorizontal: 28, zIndex: 10, elevation: 4 }]}>
           <Text
             numberOfLines={metrics.maxQuoteLines}
@@ -530,7 +1371,6 @@ function ShareCard({
           )}
         </View>
 
-        {/* Provenance Footer Box */}
         <View
           style={{
             position: 'absolute',
@@ -596,7 +1436,6 @@ function ShareCard({
 
   if (variant === 'midnightGold') {
     // CLOTHBOUND — Luxury Hardcover Edition with Silk Ribbon Bookmark
-    // Deep midnight buckram cloth, satin bookmark ribbon with chevron cut, blind deboss frame, champagne foil seal.
     return (
       <View
         style={[
@@ -612,7 +1451,6 @@ function ShareCard({
           },
         ]}
       >
-        {/* Top Edge Gilding (Fine-press gilt top edge) */}
         <View
           style={{
             position: 'absolute',
@@ -626,7 +1464,6 @@ function ShareCard({
           }}
         />
 
-        {/* Blind-Debossed Frame (Subtle book cover inset) */}
         <View
           style={[
             StyleSheet.absoluteFill,
@@ -640,7 +1477,7 @@ function ShareCard({
           pointerEvents="none"
         />
 
-        {/* Tactile Silk Bookmark Ribbon hanging from top binding */}
+        {/* Tactile Silk Bookmark Ribbon */}
         <View
           style={{
             position: 'absolute',
@@ -664,21 +1501,17 @@ function ShareCard({
                 <Stop offset="100%" stopColor="#5E1420" />
               </LinearGradient>
             </Defs>
-            {/* Swallowtail chevron cut */}
             <Polygon points="0,0 20,0 20,50 10,42 0,50" fill="url(#clothboundRibbon)" />
-            {/* Subtle center fold sheen */}
             <Rect x={9.5} y={0} width={1} height={42} fill="rgba(255,255,255,0.15)" />
-            {/* Gold head-band stitch at binding */}
             <Rect x={0} y={0} width={20} height={2.5} fill="#C8A97E" />
           </Svg>
         </View>
 
-        {/* Top Folio Header */}
         <View
           style={{
             paddingTop: 18,
             paddingLeft: 24,
-            paddingRight: 56, // clear the ribbon on the right
+            paddingRight: 56,
             zIndex: 10,
             elevation: 4,
           }}
@@ -709,7 +1542,6 @@ function ShareCard({
           </View>
         </View>
 
-        {/* Quote Content Block */}
         <View
           style={[
             styles.quoteBlock,
@@ -724,10 +1556,9 @@ function ShareCard({
             },
           ]}
         >
-          {/* Restrained Opening Glyph */}
           <Text
             style={{
-              fontFamily: 'Lora_600SemiBold',
+              fontFamily: FontFamily.loraSemiBold,
               fontSize: 20,
               lineHeight: 20,
               color: '#C8A97E',
@@ -790,7 +1621,6 @@ function ShareCard({
           )}
         </View>
 
-        {/* Bottom Publisher's Colophon */}
         <View
           style={{
             position: 'absolute',
@@ -828,7 +1658,6 @@ function ShareCard({
               </Text>
             </View>
 
-            {/* Foil Stamped Circular Colophon Seal */}
             <View
               style={{
                 width: 26,
@@ -850,8 +1679,7 @@ function ShareCard({
   }
 
   if (variant === 'washi') {
-    // ARCHIVE — Finetuned Vintage Library Catalog Card & Ticket
-    // Accession header, stamped circulation badge, perforated tear rule, catalog rod punch hole, archival barcode.
+    // ARCHIVE — Vintage Library Catalog Card & Ticket
     return (
       <View
         style={[
@@ -867,7 +1695,6 @@ function ShareCard({
           },
         ]}
       >
-        {/* Archival Catalog Header */}
         <View
           style={{
             paddingTop: 16,
@@ -908,7 +1735,6 @@ function ShareCard({
               </Text>
             </View>
 
-            {/* Circular Red Library Rubber Stamp */}
             <View
               style={{
                 borderWidth: 1.4,
@@ -934,7 +1760,6 @@ function ShareCard({
           </View>
         </View>
 
-        {/* Perforated / Dashed Tear Line */}
         <View
           style={{
             flexDirection: 'row',
@@ -955,7 +1780,6 @@ function ShareCard({
           />
         </View>
 
-        {/* Quote Content */}
         <View style={[styles.quoteBlock, { top: 68, bottom: 85, paddingHorizontal: 26, zIndex: 10, elevation: 4 }]}>
           <Text
             numberOfLines={metrics.maxQuoteLines}
@@ -1001,7 +1825,6 @@ function ShareCard({
           )}
         </View>
 
-        {/* Archival Ticket Footer with Micro Barcode and Catalog Punch Hole */}
         <View
           style={{
             position: 'absolute',
@@ -1039,7 +1862,6 @@ function ShareCard({
               </Text>
             </View>
 
-            {/* Catalog Rod Punch Hole */}
             <View
               style={{
                 width: 12,
@@ -1052,7 +1874,6 @@ function ShareCard({
               }}
             />
 
-            {/* Micro Barcode */}
             <Svg width={44} height={16} viewBox="0 0 44 16">
               <Rect x={0} y={0} width={2} height={16} fill="#3D352E" />
               <Rect x={4} y={0} width={1} height={16} fill="#3D352E" />
@@ -1075,10 +1896,9 @@ function ShareCard({
 
   if (variant === 'cyanotype') {
     // ATELIER — Hand-Painted Gouache Nocturne (Studio Plein Air)
-    // Deep layered Prussian gouache glazes, hand-painted organic moon & wet-brush halo,
-    // natural paint-spatter stars, silhouetted brushstroke pine forest, luminous warm ivory typography.
-    const moonCx = Math.round(width * 0.5);
-    const moonCy = Math.round(height * 0.15);
+    // Refined: Moon moved to top-right corner to eliminate text overlap completely.
+    const moonCx = Math.round(width * 0.78);
+    const moonCy = Math.round(height * 0.14);
 
     return (
       <View
@@ -1095,11 +1915,9 @@ function ShareCard({
           },
         ]}
       >
-        {/* Hand-Painted Canvas Art Layers */}
         <View style={StyleSheet.absoluteFill} pointerEvents="none">
           <Svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
             <Defs>
-              {/* Hand-Painted Deep Prussian Gouache Sky */}
               <LinearGradient id="atelierSky" x1="0%" y1="0%" x2="0%" y2="100%">
                 <Stop offset="0%" stopColor="#0B0F19" />
                 <Stop offset="38%" stopColor="#151C2C" />
@@ -1108,19 +1926,16 @@ function ShareCard({
                 <Stop offset="100%" stopColor="#141720" />
               </LinearGradient>
 
-              {/* Wet-on-wet Moon Diffuse Halo */}
-              <RadialGradient id="atelierMoonAura" cx="50%" cy="15%" r="42%">
-                <Stop offset="0%" stopColor="#FFECC7" stopOpacity={0.36} />
-                <Stop offset="45%" stopColor="#E2AC68" stopOpacity={0.10} />
+              <RadialGradient id="atelierMoonAura" cx="78%" cy="14%" r="35%">
+                <Stop offset="0%" stopColor="#FFECC7" stopOpacity={0.32} />
+                <Stop offset="50%" stopColor="#E2AC68" stopOpacity={0.08} />
                 <Stop offset="100%" stopColor="#0B0F19" stopOpacity={0} />
               </RadialGradient>
             </Defs>
 
-            {/* Canvas Base Sky */}
             <Rect x={0} y={0} width={width} height={height} fill="url(#atelierSky)" />
             <Rect x={0} y={0} width={width} height={height} fill="url(#atelierMoonAura)" />
 
-            {/* Expressive Horizontal Painterly Brush Glazes */}
             <Path
               d={`M 0 ${height * 0.08} Q ${width * 0.3} ${height * 0.05} ${width * 0.65} ${height * 0.09} T ${width} ${height * 0.07} L ${width} ${height * 0.14} Q ${width * 0.5} ${height * 0.1} 0 ${height * 0.15} Z`}
               fill="rgba(37, 48, 70, 0.40)"
@@ -1130,60 +1945,42 @@ function ShareCard({
               fill="rgba(56, 56, 72, 0.35)"
             />
 
-            {/* Hand-Painted Organic Moon with Wet-Brush Stroke Edges */}
+            {/* Organic Moon Disc in upper right corner */}
             <Circle
               cx={moonCx}
               cy={moonCy}
-              r={36}
-              stroke="rgba(244, 196, 114, 0.16)"
+              r={24}
+              stroke="rgba(244, 196, 114, 0.20)"
               strokeWidth={1}
               strokeDasharray="4,6"
               fill="none"
             />
-            {/* Organic Moon Disc */}
             <Path
-              d={`M ${moonCx - 17} ${moonCy + 2} Q ${moonCx - 14} ${moonCy - 15} ${moonCx + 1} ${moonCy - 17} Q ${moonCx + 16} ${moonCy - 13} ${moonCx + 18} ${moonCy + 1} Q ${moonCx + 13} ${moonCy + 16} ${moonCx - 1} ${moonCy + 18} Q ${moonCx - 15} ${moonCy + 15} ${moonCx - 17} ${moonCy + 2} Z`}
+              d={`M ${moonCx - 12} ${moonCy + 1} Q ${moonCx - 10} ${moonCy - 11} ${moonCx + 1} ${moonCy - 12} Q ${moonCx + 12} ${moonCy - 9} ${moonCx + 13} ${moonCy + 1} Q ${moonCx + 9} ${moonCy + 12} ${moonCx - 1} ${moonCy + 13} Q ${moonCx - 11} ${moonCy + 11} ${moonCx - 12} ${moonCy + 1} Z`}
               fill="#FFF8EC"
               opacity={0.92}
             />
-            {/* Soft inner gouache crescent shading */}
             <Path
-              d={`M ${moonCx - 3} ${moonCy - 15} Q ${moonCx + 14} ${moonCy - 6} ${moonCx + 12} ${moonCy + 11} Q ${moonCx + 4} ${moonCy + 15} ${moonCx + 16} ${moonCy + 1} Q ${moonCx + 13} ${moonCy - 11} ${moonCx - 3} ${moonCy - 15} Z`}
+              d={`M ${moonCx - 2} ${moonCy - 11} Q ${moonCx + 10} ${moonCy - 4} ${moonCx + 9} ${moonCy + 8} Q ${moonCx + 3} ${moonCy + 11} ${moonCx + 12} ${moonCy + 1} Q ${moonCx + 9} ${moonCy - 8} ${moonCx - 2} ${moonCy - 11} Z`}
               fill="rgba(235, 210, 175, 0.55)"
             />
 
-            {/* Natural Gouache Paint-Flick Spatter Stars */}
+            {/* Starlight Flecks */}
             <Circle cx={width * 0.12} cy={height * 0.16} r={1} fill="#FFF" opacity={0.65} />
             <Circle cx={width * 0.18} cy={height * 0.26} r={1.4} fill="#FFECC7" opacity={0.75} />
             <Circle cx={width * 0.26} cy={height * 0.11} r={1.8} fill="#FFF" opacity={0.8} />
             <Circle cx={width * 0.32} cy={height * 0.22} r={1.1} fill="#FFF" opacity={0.5} />
-            <Circle cx={width * 0.68} cy={height * 0.12} r={1.5} fill="#FFECC7" opacity={0.7} />
-            <Circle cx={width * 0.74} cy={height * 0.25} r={1.2} fill="#FFF" opacity={0.6} />
-            <Circle cx={width * 0.84} cy={height * 0.15} r={1.7} fill="#FFF" opacity={0.85} />
-            <Circle cx={width * 0.89} cy={height * 0.3} r={1} fill="#FFECC7" opacity={0.5} />
+            <Circle cx={width * 0.48} cy={height * 0.12} r={1.3} fill="#FFECC7" opacity={0.6} />
             <Circle cx={width * 0.14} cy={height * 0.44} r={1.3} fill="#FFF" opacity={0.55} />
-            <Circle cx={width * 0.83} cy={height * 0.46} r={1.4} fill="#FFECC7" opacity={0.6} />
+            <Circle cx={width * 0.88} cy={height * 0.46} r={1.4} fill="#FFECC7" opacity={0.6} />
             <Circle cx={width * 0.2} cy={height * 0.6} r={1} fill="#FFF" opacity={0.45} />
-            <Circle cx={width * 0.8} cy={height * 0.62} r={1.2} fill="#FFECC7" opacity={0.5} />
+            <Circle cx={width * 0.82} cy={height * 0.62} r={1.2} fill="#FFECC7" opacity={0.5} />
 
-            {/* Painterly Starlight Spark (upper left) */}
-            <Path
-              d={`M ${width * 0.22} ${height * 0.08 - 3} Q ${width * 0.22} ${height * 0.08} ${width * 0.22 + 3} ${height * 0.08} Q ${width * 0.22} ${height * 0.08} ${width * 0.22} ${height * 0.08 + 3} Q ${width * 0.22} ${height * 0.08} ${width * 0.22 - 3} ${height * 0.08} Z`}
-              fill="rgba(255, 240, 215, 0.75)"
-            />
-            {/* Painterly Starlight Spark (upper right) */}
-            <Path
-              d={`M ${width * 0.78} ${height * 0.2 - 3} Q ${width * 0.78} ${height * 0.2} ${width * 0.78 + 3} ${height * 0.2} Q ${width * 0.78} ${height * 0.2} ${width * 0.78} ${height * 0.2 + 3} Q ${width * 0.78} ${height * 0.2} ${width * 0.78 - 3} ${height * 0.2} Z`}
-              fill="rgba(255, 235, 205, 0.7)"
-            />
-
-            {/* Hand-Painted Silhouette Mountain Ridge & Pine Forest at Base */}
-            {/* Distant Ridge */}
+            {/* Silhouette Forest Ridge at Base */}
             <Path
               d={`M 0 ${height - 42} Q ${width * 0.3} ${height - 60} ${width * 0.68} ${height - 45} T ${width} ${height - 52} L ${width} ${height} L 0 ${height} Z`}
               fill="rgba(18, 23, 34, 0.78)"
             />
-            {/* Hand-Brushed Pine Forest Canopy Silhouette */}
             <Path
               d={`
                 M 0 ${height - 18}
@@ -1202,15 +1999,9 @@ function ShareCard({
               `}
               fill="#080B12"
             />
-
-            {/* Firefly / Golden Spark dabs above the forest */}
-            <Circle cx={48} cy={height - 56} r={1.6} fill="#F4C472" opacity={0.85} />
-            <Circle cx={width - 52} cy={height - 52} r={1.7} fill="#F4C472" opacity={0.85} />
-            <Circle cx={width * 0.52} cy={height - 32} r={1.3} fill="#F4C472" opacity={0.7} />
           </Svg>
         </View>
 
-        {/* Hand-Ruled Artist Framing Inset */}
         <View
           style={[
             StyleSheet.absoluteFill,
@@ -1224,7 +2015,6 @@ function ShareCard({
           pointerEvents="none"
         />
 
-        {/* Top Header */}
         <View
           style={{
             paddingTop: 18,
@@ -1247,7 +2037,6 @@ function ShareCard({
           </Text>
         </View>
 
-        {/* Quote Content Block */}
         <View
           style={[
             styles.quoteBlock,
@@ -1260,7 +2049,6 @@ function ShareCard({
             },
           ]}
         >
-          {/* Hand-Painted Starlight Opener */}
           <Text
             style={{
               fontFamily: 'Manrope_700Bold',
@@ -1327,7 +2115,6 @@ function ShareCard({
           )}
         </View>
 
-        {/* Bottom Colophon with Atelier Seal */}
         <View
           style={{
             position: 'absolute',
@@ -1365,7 +2152,6 @@ function ShareCard({
               </Text>
             </View>
 
-            {/* Atelier Painter's Insignia */}
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
               <FlameMark size={14} color="#F4C472" />
               <Text
@@ -1388,7 +2174,6 @@ function ShareCard({
 
   if (variant === 'broadside') {
     // BROADSIDE — Traditional Hand-Pulled Letterpress Galley Proof
-    // Unbleached cotton paper, corner registration crosshairs, galley header, deep carbon ink, book signature mark.
     return (
       <View
         style={[
@@ -1404,7 +2189,6 @@ function ShareCard({
           },
         ]}
       >
-        {/* Corner Registration Crosshair Marks */}
         <View style={{ position: 'absolute', top: 8, left: 8 }} pointerEvents="none">
           <Svg width={10} height={10} viewBox="0 0 10 10">
             <Line x1="5" y1="0" x2="5" y2="10" stroke="rgba(43, 37, 33, 0.35)" strokeWidth="0.8" />
@@ -1430,7 +2214,6 @@ function ShareCard({
           </Svg>
         </View>
 
-        {/* Galley Proof Header */}
         <View
           style={{
             paddingTop: 18,
@@ -1490,7 +2273,6 @@ function ShareCard({
           <View style={{ height: 1, backgroundColor: 'rgba(43, 37, 33, 0.18)', marginTop: 9 }} />
         </View>
 
-        {/* Quote Content */}
         <View
           style={[
             styles.quoteBlock,
@@ -1560,7 +2342,6 @@ function ShareCard({
           )}
         </View>
 
-        {/* Letterpress Signature Footer */}
         <View
           style={{
             position: 'absolute',
@@ -1598,7 +2379,6 @@ function ShareCard({
               </Text>
             </View>
 
-            {/* Registration Rosette */}
             <Svg width={22} height={22} viewBox="0 0 22 22">
               <Circle cx="11" cy="11" r="9" stroke="#2B2521" strokeWidth="0.8" strokeDasharray="2,2" fill="none" />
               <Circle cx="11" cy="11" r="2.5" fill="#2B2521" />
@@ -1611,7 +2391,6 @@ function ShareCard({
 
   if (variant === 'tanzaku') {
     // TANZAKU — Japanese Poetic Paper Slip (短冊)
-    // Golden bamboo washi paper, brass eyelet & silk hanging cord, drifting gold flecks, vermilion square hanko seal.
     return (
       <View
         style={[
@@ -1627,7 +2406,7 @@ function ShareCard({
           },
         ]}
       >
-        {/* Drifting Kirihaku Gold Flecks in top corner */}
+        {/* Drifting Kirihaku Gold Flecks */}
         <View style={{ position: 'absolute', top: 12, left: 16 }} pointerEvents="none">
           <Svg width={24} height={20} viewBox="0 0 24 20">
             <Rect x="2" y="2" width="3.5" height="3.5" fill="#D4AF37" opacity={0.45} transform="rotate(15 3.5 3.5)" />
@@ -1636,8 +2415,11 @@ function ShareCard({
           </Svg>
         </View>
 
-        {/* Brass Eyelet Ring & Knotted Crimson Silk Hanging Cord */}
-        <View style={{ position: 'absolute', top: 4, alignSelf: 'center', zIndex: 20 }} pointerEvents="none">
+        {/* Brass Eyelet Ring & Knotted Crimson Silk Hanging Cord (Centered on all viewports) */}
+        <View
+          style={{ position: 'absolute', top: 4, left: 0, right: 0, alignItems: 'center', zIndex: 20 }}
+          pointerEvents="none"
+        >
           <Svg width={24} height={34} viewBox="0 0 24 34">
             <Path d="M12 0 C 7 0, 7 9, 12 9 C 17 9, 17 0, 12 0 Z" fill="#8C1D2C" />
             <Circle cx="12" cy="10" r="5" fill="#C5A059" />
@@ -1647,7 +2429,6 @@ function ShareCard({
           </Svg>
         </View>
 
-        {/* Top Header */}
         <View
           style={{
             paddingTop: 36,
@@ -1670,7 +2451,6 @@ function ShareCard({
           </Text>
         </View>
 
-        {/* Quote Content */}
         <View style={[styles.quoteBlock, { top: 58, bottom: 82, paddingHorizontal: 26, zIndex: 10, elevation: 4 }]}>
           <Text
             numberOfLines={metrics.maxQuoteLines}
@@ -1716,7 +2496,6 @@ function ShareCard({
           )}
         </View>
 
-        {/* Bottom Footer with Vermilion Square Hanko Seal (印鑑) */}
         <View
           style={{
             position: 'absolute',
@@ -1754,7 +2533,6 @@ function ShareCard({
               </Text>
             </View>
 
-            {/* Authentic Square Red Hanko Seal (印鑑) */}
             <View
               style={{
                 width: 26,
@@ -1776,7 +2554,7 @@ function ShareCard({
     );
   }
 
-  // Variant: 'gradient'
+  // Variant: 'gradient' (Amber Glow)
   return (
     <View
       style={[
@@ -1810,7 +2588,7 @@ function ShareCard({
         </Svg>
       </View>
 
-      <View style={[styles.quoteBlock, { bottom: 90, paddingHorizontal: 28, zIndex: 10, elevation: 4 }]}>
+      <View style={[styles.quoteBlock, { top: 28, bottom: 98, paddingHorizontal: 28, zIndex: 10, elevation: 4 }]}>
         <FlameMark size={34} />
         <Text
           numberOfLines={metrics.maxQuoteLines}
@@ -1887,7 +2665,7 @@ export function ShareCardScreen({
   const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
 
-  // Responsive card sizing calculated per viewport
+  // Responsive card sizing calculated per viewport (Instagram Story 9:16 aspect ratio)
   const cardWidth = Math.max(Math.min(windowWidth - 48, 320), 1);
   const maxAvailableCardHeight = Math.max(windowHeight - insets.top - insets.bottom - 220, 1);
   const cardHeight = Math.min(Math.round((cardWidth * 16) / 9), maxAvailableCardHeight);
@@ -2013,12 +2791,15 @@ export function ShareCardScreen({
     }
   };
 
-  // Dark cards (white or amber share button on dark background)
+  // Dark cards (amber share button on dark background)
   const isDarkCard =
     variant === 'gradient' ||
     variant === 'foldSplit' ||
     variant === 'midnightGold' ||
-    variant === 'cyanotype';
+    variant === 'cyanotype' ||
+    variant === 'morocco' ||
+    variant === 'celestial' ||
+    variant === 'obsidian';
   const shareButtonIsDark = !isDarkCard;
 
   return (
@@ -2141,10 +2922,7 @@ export function ShareCardScreen({
         <Pressable
           onPress={() => handleSelectCategory('classic')}
           hitSlop={6}
-          style={[
-            styles.categoryTab,
-            activeCategory === 'classic' && styles.categoryTabActiveClassic,
-          ]}
+          style={[styles.categoryTab, activeCategory === 'classic' && styles.categoryTabActiveClassic]}
         >
           <Text
             style={[
@@ -2160,10 +2938,7 @@ export function ShareCardScreen({
         <Pressable
           onPress={() => handleSelectCategory('premium')}
           hitSlop={6}
-          style={[
-            styles.categoryTab,
-            activeCategory === 'premium' && styles.categoryTabActivePremium,
-          ]}
+          style={[styles.categoryTab, activeCategory === 'premium' && styles.categoryTabActivePremium]}
         >
           <Text
             style={[
@@ -2316,7 +3091,6 @@ const styles = StyleSheet.create({
   },
   quoteBlock: {
     position: 'absolute',
-    top: 0,
     left: 0,
     right: 0,
     alignItems: 'center',
@@ -2337,7 +3111,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 22,
     right: 22,
-    bottom: 22,
+    bottom: 20,
     alignItems: 'center',
   },
   attribution: {
@@ -2349,8 +3123,8 @@ const styles = StyleSheet.create({
   creditRule: {
     width: 28,
     height: 1,
-    marginTop: 10,
-    marginBottom: 8,
+    marginTop: 8,
+    marginBottom: 6,
   },
   brandRow: {
     flexDirection: 'row',

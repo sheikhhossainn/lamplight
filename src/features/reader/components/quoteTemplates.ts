@@ -3,11 +3,16 @@ import { FontFamily } from '@/theme/typography';
 export type Variant =
   | 'parchment'
   | 'gradient'
+  | 'botanical'
   | 'foldSplit'
+  | 'gildedVellum'
+  | 'morocco'
+  | 'celestial'
+  | 'obsidian'
   | 'editorial'
   | 'midnightGold'
-  | 'washi'
   | 'cyanotype'
+  | 'washi'
   | 'broadside'
   | 'tanzaku';
 
@@ -20,15 +25,23 @@ export interface TemplateInfo {
 }
 
 export const TEMPLATES: TemplateInfo[] = [
+  // Classic collection (timeless, understated reading paper)
   { id: 'parchment', name: 'Parchment', category: 'classic' },
   { id: 'gradient', name: 'Amber Glow', category: 'classic' },
+  { id: 'botanical', name: 'Herbarium', category: 'classic' },
   { id: 'foldSplit', name: 'Fold Split', category: 'classic' },
+
+  // Premium collection (artisan bookplates, fine bindings, illuminated folios)
+  { id: 'gildedVellum', name: 'Gilded Vellum', category: 'premium' },
+  { id: 'morocco', name: 'Oxford Morocco', category: 'premium' },
+  { id: 'celestial', name: 'Celestial Folio', category: 'premium' },
+  { id: 'obsidian', name: 'Obsidian Ember', category: 'premium' },
   { id: 'editorial', name: 'Ex Libris', category: 'premium' },
   { id: 'midnightGold', name: 'Clothbound', category: 'premium' },
-  { id: 'washi', name: 'Archive', category: 'premium' },
-  { id: 'cyanotype', name: 'Atelier', category: 'premium' },
-  { id: 'broadside', name: 'Broadside', category: 'premium' },
-  { id: 'tanzaku', name: 'Tanzaku', category: 'premium' },
+  { id: 'cyanotype', name: 'Atelier Nocturne', category: 'premium' },
+  { id: 'washi', name: 'Archive Slip', category: 'premium' },
+  { id: 'broadside', name: 'Broadside Proof', category: 'premium' },
+  { id: 'tanzaku', name: 'Tanzaku Poetry', category: 'premium' },
 ];
 
 export const VARIANTS: Variant[] = TEMPLATES.map((t) => t.id);
