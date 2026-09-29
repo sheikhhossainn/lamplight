@@ -241,7 +241,17 @@ export function getNativeUiTextStyle(language: string, role: NativeUiRole = 'row
   return LamplightTypography.uiRowTitle;
 }
 
-export function getReadingTextStyle(language?: string, pageStyle?: 'manuscript' | 'classic' | 'modern'): TextStyle {
+export type ReadingPageStyle =
+  | 'classic'
+  | 'modern'
+  | 'manuscript'
+  | 'editorial'
+  | 'oxford'
+  | 'vellum'
+  | 'nocturne'
+  | 'zen';
+
+export function getReadingTextStyle(language?: string, pageStyle?: ReadingPageStyle | string): TextStyle {
   const style = pageStyle ?? 'manuscript';
   if (language === 'bn') {
     if (style === 'classic') {
@@ -252,12 +262,44 @@ export function getReadingTextStyle(language?: string, pageStyle?: 'manuscript' 
         letterSpacing: 0,
       };
     }
-    if (style === 'modern') {
+    if (style === 'modern' || style === 'nocturne') {
       return {
         fontFamily: FontFamily.manropeRegular,
         fontSize: 17.5,
         lineHeight: 33,
         letterSpacing: 0.1,
+      };
+    }
+    if (style === 'editorial') {
+      return {
+        fontFamily: FontFamily.atmaRegular,
+        fontSize: 18,
+        lineHeight: 35,
+        letterSpacing: 0.25,
+      };
+    }
+    if (style === 'oxford') {
+      return {
+        fontFamily: FontFamily.loraSemiBold,
+        fontSize: 18.5,
+        lineHeight: 36,
+        letterSpacing: 0.15,
+      };
+    }
+    if (style === 'vellum') {
+      return {
+        fontFamily: FontFamily.atmaMedium,
+        fontSize: 19,
+        lineHeight: 37,
+        letterSpacing: 0.3,
+      };
+    }
+    if (style === 'zen') {
+      return {
+        fontFamily: FontFamily.atmaRegular,
+        fontSize: 19.5,
+        lineHeight: 39,
+        letterSpacing: 0.45,
       };
     }
     return LamplightTypography.banglaReadingBody;
@@ -279,6 +321,46 @@ export function getReadingTextStyle(language?: string, pageStyle?: 'manuscript' 
       fontSize: 17,
       lineHeight: 32,
       letterSpacing: 0.15,
+    };
+  }
+  if (style === 'editorial') {
+    return {
+      fontFamily: FontFamily.loraRegular,
+      fontSize: 17.5,
+      lineHeight: 35,
+      letterSpacing: 0.3,
+    };
+  }
+  if (style === 'oxford') {
+    return {
+      fontFamily: FontFamily.loraSemiBold,
+      fontSize: 18,
+      lineHeight: 36,
+      letterSpacing: 0.2,
+    };
+  }
+  if (style === 'vellum') {
+    return {
+      fontFamily: FontFamily.loraItalicMedium,
+      fontSize: 18.5,
+      lineHeight: 36,
+      letterSpacing: 0.35,
+    };
+  }
+  if (style === 'nocturne') {
+    return {
+      fontFamily: FontFamily.manropeRegular,
+      fontSize: 17.5,
+      lineHeight: 34,
+      letterSpacing: 0.4,
+    };
+  }
+  if (style === 'zen') {
+    return {
+      fontFamily: FontFamily.loraRegular,
+      fontSize: 19,
+      lineHeight: 38,
+      letterSpacing: 0.5,
     };
   }
   return LamplightTypography.readingBody;
