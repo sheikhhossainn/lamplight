@@ -15,7 +15,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronRightIcon, MoonIcon as ThemeMoonIcon, SunIcon as ThemeSunIcon } from '@/components/icons';
+import { CheckIcon, ChevronRightIcon, MoonIcon as ThemeMoonIcon, SunIcon as ThemeSunIcon } from '@/components/icons';
 import { CultureEditionBanner } from '@/components/CultureEditionBanner';
 import {
   useAppUpdateBanner,
@@ -45,7 +45,15 @@ import {
   THEME_TRANSITION_EASING,
   themeTransitionProgress,
 } from '@/features/settings/themeTransition';
-import { hapticThemeToggle } from '@/lib/haptics';
+import { hapticFlashcardAction, hapticThemeToggle } from '@/lib/haptics';
+import {
+  PAGE_STYLE_LIST,
+  PageStyleConfig,
+  type PageStyleId,
+  getPageStyleConfig,
+} from '@/features/reader/pageStyles';
+import { setPageStyle, usePageStyle } from '@/features/settings/pageStylePrefs';
+import { PageStyleSelectorModal } from '@/features/reader/components/PageStyleSelectorModal';
 import { setPageTurnSoundEnabled, usePageTurnSoundEnabled } from '@/features/settings/soundPrefs';
 import { isLapseRecoveryEnabled, setLapseRecoveryEnabled } from '@/features/retention/lapseRecovery';
 import {
@@ -489,6 +497,17 @@ export default function SettingsScreen() {
   }, []);
 
   const isPremium = entitlement.status === 'premium' || entitlement.status === 'trial' || entitlement.status === 'grace';
+  const currentStyleId = usePageStyle();
+  const [pageStyleModalVisible, setPageStyleModalVisible] = useState(false);
+
+  const handleSelectPageStyle = (style: PageStyleConfig) => {
+    if (style.isPremium && !isPremium) {
+      router.push({ pathname: '/paywall', params: { feature: 'premium_page_styles' } });
+      return;
+    }
+    void hapticFlashcardAction('graduate');
+    setPageStyle(style.id);
+  };
 
   const loadStorage = useCallback(() => {
     getStorageUsage().then(setStorageUsage).catch(() => {});
@@ -686,6 +705,267 @@ export default function SettingsScreen() {
             themeAnim={themeAnim}
           />
         </View>
+
+        <View style={[styles.itemDivider, { borderBottomColor: colors.hairline, marginVertical: 8 }]} />
+
+        {/* Page typography style */}
+        <View style={{ paddingVertical: 6 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+            <View style={{ flex: 1, paddingRight: 8 }}>
+              <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
+                Reading page style
+              </Text>
+              <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11, marginTop: 2 }]}>
+                {getPageStyleConfig(currentStyleId).name} · {getPageStyleConfig(currentStyleId).tag}
+              </Text>
+            </View>
+            <Pressable
+              onPress={() => setPageStyleModalVisible(true)}
+              style={[styles.pairPill, { backgroundColor: colors.pairPillBackground, borderRadius: radius.pill }]}
+            >
+              <Text style={[typography.uiRowTitle, { color: colors.pairPillText, fontSize: 11 }]}>
+                Fine-tune
+              </Text>
+              <View style={{ width: 14, height: 14, alignItems: 'center', justifyContent: 'center', marginLeft: 2 }}>
+                <ChevronRightIcon color={colors.straw} size={13} />
+              </View>
+            </Pressable>
+          </View>
+
+          {/* Horizontal scroll of page style cards */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingVertical: 4, gap: 10 }}
+          >
+            {PAGE_STYLE_LIST.map((style) => {
+              const isSelected = currentStyleId === style.id;
+              const isUnlocked = !style.isPremium || isPremium;
+              const sampleFont = motherTongue === 'bn' ? style.banglaFont : style.englishFont;
+              const sampleText = motherTongue === 'bn' ? style.previewSampleBangla : style.previewSample;
+
+              return (
+                <Pressable
+                  key={style.id}
+                  onPress={() => handleSelectPageStyle(style)}
+                  style={({ pressed }) => [
+                    styles.pageStyleMiniCard,
+                    {
+                      backgroundColor: isSelected ? `${colors.flameAmber}12` : (isLamp ? '#221F24' : '#FDFCFA'),
+                      borderColor: isSelected ? colors.flameAmber : colors.hairline,
+                      borderRadius: radius.card,
+                    },
+                    pressed && { opacity: 0.85 },
+                  ]}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <Text
+                      style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13, flex: 1, marginRight: 4 }]}
+                      numberOfLines={1}
+                    >
+                      {motherTongue === 'bn' ? style.nameBangla : style.name}
+                    </Text>
+                    <View
+                      style={{
+                        backgroundColor: style.isPremium
+                          ? (isPremium ? `${colors.flameAmber}24` : colors.flameAmber)
+                          : `${colors.fawn}1C`,
+                        paddingHorizontal: 6,
+                        paddingVertical: 2,
+                        borderRadius: radius.pill,
+                      }}
+                    >
+                      <Text
+                        style={{
+                          color: style.isPremium
+                            ? (isPremium ? colors.flameAmber : colors.primaryDark)
+                            : colors.fawn,
+                          fontSize: 8.5,
+                          fontFamily: 'Manrope_700Bold',
+                        }}
+                      >
+                        {style.isPremium ? (isPremium ? 'PREMIUM' : '★ PRO') : 'FREE'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <Text
+                    style={[typography.eyebrowLabel, { color: isSelected ? colors.flameAmber : colors.fawn, fontSize: 9, marginBottom: 8 }]}
+                    numberOfLines={1}
+                  >
+                    {style.tag}
+                  </Text>
+
+                  {/* Typography preview */}
+                  <View
+                    style={[
+                      styles.pageStyleSampleBox,
+                      {
+                        backgroundColor: isLamp ? '#18171A' : colors.parchment,
+                        borderColor: isSelected ? `${colors.flameAmber}44` : colors.hairline,
+                        borderRadius: radius.bookCoverOuter,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={{
+                        fontFamily: sampleFont,
+                        fontSize: 13,
+                        lineHeight: 22,
+                        letterSpacing: style.letterSpacing,
+                        color: colors.ink,
+                      }}
+                      numberOfLines={2}
+                    >
+                      {sampleText}
+                    </Text>
+                  </View>
+
+                  {/* Status indicator footer */}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
+                    <Text
+                      style={[
+                        typography.metadataCaption,
+                        {
+                          color: isSelected
+                            ? colors.flameAmber
+                            : isUnlocked
+                            ? colors.fawn
+                            : colors.flameAmber,
+                          fontSize: 10.5,
+                          fontWeight: isSelected ? '700' : '500',
+                        },
+                      ]}
+                    >
+                      {isSelected ? 'Active' : isUnlocked ? 'Tap to apply' : 'Unlock with Pro'}
+                    </Text>
+                    {isSelected ? (
+                      <View
+                        style={{
+                          width: 16,
+                          height: 16,
+                          borderRadius: 8,
+                          backgroundColor: colors.flameAmber,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        <CheckIcon color={colors.primaryDark} size={10} />
+                      </View>
+                    ) : null}
+                  </View>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </View>
+      </Animated.View>
+
+      <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginBottom: spacing.sm }]}>
+        Plan & Membership
+      </Text>
+      <Animated.View
+        style={[
+          styles.card,
+          animatedCardStyle,
+          {
+            borderRadius: radius.card,
+            marginBottom: spacing.xl,
+            borderColor: isPremium ? `${colors.flameAmber}66` : colors.hairline,
+          },
+        ]}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 15 }]}>
+              {isPremium ? 'Lamplight Premium' : 'Free Reader Tier'}
+            </Text>
+            <View
+              style={{
+                backgroundColor: isPremium ? colors.flameAmber : `${colors.fawn}22`,
+                paddingHorizontal: 8,
+                paddingVertical: 2,
+                borderRadius: radius.pill,
+              }}
+            >
+              <Text
+                style={{
+                  color: isPremium ? colors.primaryDark : colors.fawn,
+                  fontSize: 10,
+                  fontFamily: 'Manrope_700Bold',
+                }}
+              >
+                {isPremium ? 'ACTIVE' : 'FREE'}
+              </Text>
+            </View>
+          </View>
+          <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11 }]}>
+            {translationsLeft == null ? 'Unlimited lookups' : `${translationsLeft} lookups left today`}
+          </Text>
+        </View>
+
+        <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 12, lineHeight: 18, marginBottom: 14 }]}>
+          {isPremium
+            ? 'All 8 artisan page styles, full atmospheric soundscapes, 14 quote cards, and unlimited translations are unlocked.'
+            : 'Upgrade to unlock all 8 artisan page styles, unlimited word lookups, complete atmospheric soundscapes, and cloud sync.'}
+        </Text>
+
+        {/* Feature bullets */}
+        <View style={{ gap: 6, marginBottom: 16 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <View style={{ width: 14, height: 14, borderRadius: 7, backgroundColor: isPremium ? `${colors.flameAmber}33` : `${colors.fawn}22`, alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ color: isPremium ? colors.flameAmber : colors.fawn, fontSize: 9 }}>✦</Text>
+            </View>
+            <Text style={[typography.metadataCaption, { color: colors.ink, fontSize: 12 }]}>
+              8 Handcrafted Page Styles (Oxford, Vellum, Nocturne & Washi)
+            </Text>
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <View style={{ width: 14, height: 14, borderRadius: 7, backgroundColor: isPremium ? `${colors.flameAmber}33` : `${colors.fawn}22`, alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ color: isPremium ? colors.flameAmber : colors.fawn, fontSize: 9 }}>✦</Text>
+            </View>
+            <Text style={[typography.metadataCaption, { color: colors.ink, fontSize: 12 }]}>
+              Unlimited Vocabulary, Quotes & Daily Translations
+            </Text>
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <View style={{ width: 14, height: 14, borderRadius: 7, backgroundColor: isPremium ? `${colors.flameAmber}33` : `${colors.fawn}22`, alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ color: isPremium ? colors.flameAmber : colors.fawn, fontSize: 9 }}>✦</Text>
+            </View>
+            <Text style={[typography.metadataCaption, { color: colors.ink, fontSize: 12 }]}>
+              Full Atmospheric Soundscapes & 14 Artisan Quote Cards
+            </Text>
+          </View>
+        </View>
+
+        {/* Upgrade / Manage Button */}
+        <Pressable
+          onPress={() => router.push('/paywall')}
+          style={({ pressed }) => [
+            styles.upgradeButton,
+            {
+              backgroundColor: isPremium ? (isLamp ? '#3A342D' : colors.segmentedTrack) : colors.flameAmber,
+              borderRadius: radius.pill,
+              alignItems: 'center',
+              justifyContent: 'center',
+              paddingVertical: 11,
+            },
+            pressed && { opacity: 0.85 },
+          ]}
+        >
+          <Text
+            style={[
+              typography.buttonLabel,
+              {
+                color: isPremium ? colors.ink : colors.primaryDark,
+                fontSize: 13,
+                fontWeight: '700',
+              },
+            ]}
+          >
+            {isPremium ? 'Manage Subscription' : 'Upgrade to Premium'}
+          </Text>
+        </Pressable>
       </Animated.View>
 
       <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginBottom: spacing.sm }]}>
@@ -864,14 +1144,40 @@ export default function SettingsScreen() {
 
           {/* Action button */}
           {!isProtected ? (
-            <Pressable
-              onPress={() => setAccountProtectionModalVisible(true)}
-              style={[styles.upgradeButton, { backgroundColor: colors.flameAmber, borderRadius: radius.pill }]}
-            >
-              <Text style={[typography.uiRowTitle, { color: colors.primaryDark, fontSize: 12 }]}>
-                Protect and sync
-              </Text>
-            </Pressable>
+            <View style={{ flexDirection: 'row', gap: 6 }}>
+              <Pressable
+                onPress={() => router.push('/paywall')}
+                style={[
+                  styles.upgradeButton,
+                  {
+                    backgroundColor: colors.flameAmber,
+                    borderRadius: radius.pill,
+                    paddingHorizontal: 11,
+                    paddingVertical: 6,
+                  },
+                ]}
+              >
+                <Text style={[typography.uiRowTitle, { color: colors.primaryDark, fontSize: 11 }]}>
+                  Upgrade
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setAccountProtectionModalVisible(true)}
+                style={[
+                  styles.upgradeButton,
+                  {
+                    backgroundColor: isLamp ? '#3A342D' : colors.segmentedTrack,
+                    borderRadius: radius.pill,
+                    paddingHorizontal: 11,
+                    paddingVertical: 6,
+                  },
+                ]}
+              >
+                <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 11 }]}>
+                  Sync
+                </Text>
+              </Pressable>
+            </View>
           ) : !isPremium ? (
             <Pressable
               onPress={() => router.push('/paywall')}
@@ -882,7 +1188,8 @@ export default function SettingsScreen() {
               </Text>
             </Pressable>
           ) : (
-            <View
+            <Pressable
+              onPress={() => router.push('/paywall')}
               style={[
                 styles.upgradeButton,
                 {
@@ -894,7 +1201,7 @@ export default function SettingsScreen() {
               ]}
             >
               <Text style={[typography.uiRowTitle, { color: colors.flameAmber, fontSize: 12 }]}>Active</Text>
-            </View>
+            </Pressable>
           )}
         </View>
 
@@ -1248,6 +1555,12 @@ export default function SettingsScreen() {
         onClose={() => setFeedbackModalVisible(false)}
       />
 
+      <PageStyleSelectorModal
+        visible={pageStyleModalVisible}
+        onClose={() => setPageStyleModalVisible(false)}
+        isBangla={motherTongue === 'bn'}
+      />
+
       <ConfirmDialog
         visible={syncAndClearDialogVisible}
         title="Unsynced Changes Detected"
@@ -1477,5 +1790,16 @@ const styles = StyleSheet.create({
   itemDivider: {
     borderBottomWidth: StyleSheet.hairlineWidth,
     marginVertical: 4,
+  },
+  pageStyleMiniCard: {
+    width: 200,
+    borderWidth: 1.5,
+    padding: 12,
+  },
+  pageStyleSampleBox: {
+    padding: 10,
+    borderWidth: 1,
+    minHeight: 56,
+    justifyContent: 'center',
   },
 });

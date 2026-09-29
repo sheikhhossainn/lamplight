@@ -4,6 +4,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CheckIcon, CloseIcon } from '@/components/icons';
 import { ReaderOverlay } from '@/features/reader/components/ReaderOverlay';
+import { router } from 'expo-router';
+import { isPremiumUser } from '@/features/subscription/subscriptionState';
 import {
   PAGE_STYLE_LIST,
   PageStyleConfig,
@@ -40,13 +42,20 @@ export function PageStyleSelectorModal({
   const insets = useSafeAreaInsets();
   const currentStyleId = usePageStyle();
   const typographyPrefs = useReadingTypography();
+  const isPremium = isPremiumUser();
   const isDefaultTypography =
     typographyPrefs.fontSize === DEFAULT_READING_FONT_SIZE_PX &&
     Math.abs(typographyPrefs.lineHeightRatio - DEFAULT_READING_LINE_HEIGHT_RATIO) < 0.01;
 
-  const handleSelectStyle = (id: PageStyleId) => {
+  const handleSelectStyle = (style: PageStyleConfig) => {
+    if (style.isPremium && !isPremium) {
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      onClose();
+      router.push({ pathname: '/paywall', params: { feature: 'premium_page_styles' } });
+      return;
+    }
     void hapticFlashcardAction('graduate');
-    setPageStyle(id);
+    setPageStyle(style.id);
   };
 
   const handleDecreaseFontSize = () => {
@@ -265,7 +274,7 @@ export function PageStyleSelectorModal({
               return (
                 <Pressable
                   key={style.id}
-                  onPress={() => handleSelectStyle(style.id)}
+                  onPress={() => handleSelectStyle(style)}
                   style={({ pressed }) => [
                     styles.card,
                     {
@@ -303,6 +312,32 @@ export function PageStyleSelectorModal({
                           ]}
                         >
                           {style.tag}
+                        </Text>
+                      </View>
+                      <View
+                        style={[
+                          styles.tierBadge,
+                          {
+                            backgroundColor: style.isPremium
+                              ? (isPremium ? `${colors.flameAmber}22` : colors.flameAmber)
+                              : `${colors.fawn}18`,
+                            borderRadius: radius.pill,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            typography.eyebrowLabel,
+                            {
+                              color: style.isPremium
+                                ? (isPremium ? colors.flameAmber : colors.primaryDark)
+                                : colors.fawn,
+                              fontSize: 9,
+                              fontWeight: '700',
+                            },
+                          ]}
+                        >
+                          {style.isPremium ? (isPremium ? 'PREMIUM' : '★ PREMIUM') : 'FREE'}
                         </Text>
                       </View>
                     </View>
@@ -409,6 +444,10 @@ const styles = StyleSheet.create({
   },
   tagPill: {
     paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  tierBadge: {
+    paddingHorizontal: 7,
     paddingVertical: 2,
   },
   checkCircle: {

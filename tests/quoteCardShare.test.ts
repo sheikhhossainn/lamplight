@@ -156,25 +156,36 @@ test('SHARE-01: Long quote graceful handling and alternate condensed layout', as
 test('SHARE-01: Template registry and category boundaries', async (t) => {
   await t.test('includes exactly 3 classic curated themes for free tier', () => {
     const classic = TEMPLATES.filter((t) => t.category === 'classic');
-    assert.equal(classic.length, 3);
+    assert.equal(classic.length, 4);
     assert.deepEqual(
       classic.map((t) => t.id),
-      ['parchment', 'gradient', 'foldSplit'],
+      ['parchment', 'gradient', 'botanical', 'foldSplit'],
     );
   });
 
   await t.test('includes 6 culturally aligned premium artisan themes', () => {
     const premium = TEMPLATES.filter((t) => t.category === 'premium');
-    assert.equal(premium.length, 6);
+    assert.equal(premium.length, 10);
     assert.deepEqual(
       premium.map((t) => t.id),
-      ['editorial', 'midnightGold', 'washi', 'cyanotype', 'broadside', 'tanzaku'],
+      [
+        'gildedVellum',
+        'morocco',
+        'celestial',
+        'obsidian',
+        'editorial',
+        'midnightGold',
+        'cyanotype',
+        'washi',
+        'broadside',
+        'tanzaku',
+      ],
     );
   });
 
   await t.test('VARIANTS contains all 9 unique template identifiers', () => {
-    assert.equal(VARIANTS.length, 9);
-    assert.equal(new Set(VARIANTS).size, 9);
+    assert.equal(VARIANTS.length, 14);
+    assert.equal(new Set(VARIANTS).size, 14);
   });
 });
 

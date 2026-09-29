@@ -1,12 +1,14 @@
 import { Redirect, router } from 'expo-router';
-import { Dimensions, Pressable, StyleSheet, Text, View } from 'react-native';
-import Animated, { Easing, FadeIn, FadeInDown, FadeInUp, ReduceMotion } from 'react-native-reanimated';
+import { useEffect, useState } from 'react';
+import { Dimensions, ScrollView, StyleSheet, Text, View } from 'react-native';
+import Animated, { Easing, FadeIn, ReduceMotion } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 
+import { AuthCard } from '@/components/AuthCard';
 import { FlameGlow } from '@/components/FlameGlow';
-import { ChevronRightIcon } from '@/components/icons';
 import { hasCompletedOnboarding } from '@/features/settings/onboardingStatus';
+import { isAuthenticatedAccount } from '@/lib/supabaseAuth';
 import { LamplightColor } from '@/theme/tokens';
 import { useTheme } from '@/theme/ThemeProvider';
 
@@ -16,33 +18,52 @@ const EASE_OUT = Easing.bezier(0.23, 1, 0.32, 1);
 export default function SplashScreen() {
   const { colors, typography, spacing } = useTheme();
   const insets = useSafeAreaInsets();
+  const [checkingAuth, setCheckingAuth] = useState(true);
+  const [alreadyAuth, setAlreadyAuth] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    void isAuthenticatedAccount().then((authed) => {
+      if (active) {
+        setAlreadyAuth(authed);
+        setCheckingAuth(false);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // Root layout already resolved the has-onboarded flag before this route
-  // could mount, so this is synchronous — no flash of the splash screen.
-  if (hasCompletedOnboarding()) {
+  // could mount. If onboarded or already authenticated, jump to homescreen.
+  if (hasCompletedOnboarding() || (!checkingAuth && alreadyAuth)) {
     return <Redirect href={'/homescreen' as any} />;
   }
 
-  // The exit is handled by the navigator's fade animation (see root layout) —
-  // no manual screen fade here, which used to fade the dark splash to
-  // transparent and briefly reveal the gap behind it as a flash.
-  const handleBegin = () => {
+  const handleSkipToGuest = () => {
     router.replace('/onboarding');
+  };
+
+  const handleAuthSuccess = () => {
+    if (hasCompletedOnboarding()) {
+      router.replace('/homescreen' as any);
+    } else {
+      router.replace('/onboarding');
+    }
   };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.primaryDark }]}>
-      {/* Dark radial vignette + large ambient amber glow behind the mark —
-          not a flat background. Matches the Figma splash export exactly. */}
+      {/* Dark radial vignette + large ambient amber glow */}
       <Svg width={screenWidth} height={screenHeight} style={StyleSheet.absoluteFill}>
         <Defs>
-          <RadialGradient id="vignette" cx="50%" cy="42%" r="65%">
+          <RadialGradient id="vignette" cx="50%" cy="30%" r="70%">
             <Stop offset="0%" stopColor="#2A2620" />
             <Stop offset="60%" stopColor="#1C1B1E" />
             <Stop offset="100%" stopColor="#17161A" />
           </RadialGradient>
-          <RadialGradient id="ambientGlow" cx="50%" cy="35%" r="42%">
-            <Stop offset="0%" stopColor={colors.flameAmber} stopOpacity={0.28} />
+          <RadialGradient id="ambientGlow" cx="50%" cy="25%" r="45%">
+            <Stop offset="0%" stopColor={colors.flameAmber} stopOpacity={0.24} />
             <Stop offset="70%" stopColor={colors.flameAmber} stopOpacity={0} />
           </RadialGradient>
         </Defs>
@@ -50,79 +71,63 @@ export default function SplashScreen() {
         <Rect x={0} y={0} width={screenWidth} height={screenHeight} fill="url(#ambientGlow)" />
       </Svg>
 
-      <View style={styles.content}>
-        <Animated.View entering={FadeIn.duration(280).easing(EASE_OUT).reduceMotion(ReduceMotion.System)}>
-          <FlameGlow size={92} variant="flicker" showTile={false} />
-        </Animated.View>
-
+      <ScrollView
+        contentContainerStyle={[
+          styles.scrollContent,
+          {
+            paddingTop: insets.top + 20,
+            paddingBottom: insets.bottom + 30,
+            paddingHorizontal: spacing.lg,
+          },
+        ]}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
         <Animated.View
-          entering={FadeIn.delay(80).duration(240).easing(EASE_OUT).reduceMotion(ReduceMotion.System)}
-          style={{ alignItems: 'center' }}
+          entering={FadeIn.duration(280).easing(EASE_OUT).reduceMotion(ReduceMotion.System)}
+          style={styles.brandHeader}
         >
+          <FlameGlow size={56} variant="flicker" showTile={false} />
           <Text
             style={[
               typography.wordmark,
-              { color: LamplightColor.parchment, fontSize: 36, letterSpacing: 0.8, marginTop: spacing.xl },
+              { color: LamplightColor.parchment, fontSize: 32, letterSpacing: 0.8, marginTop: 8 },
             ]}
           >
             Lamplight
           </Text>
-
           <Text
             style={[
               typography.metadataCaption,
               {
                 color: colors.mutedOnDark,
-                marginTop: spacing.md,
+                marginTop: 4,
                 textAlign: 'center',
-                maxWidth: 270,
-                lineHeight: 22,
-                letterSpacing: 0.2,
+                maxWidth: 290,
+                lineHeight: 18,
+                fontSize: 12,
               },
             ]}
           >
-            Read literature in its original language. Tap unfamiliar words for meaning, then turn them into vocabulary that stays with you.
+            Read foreign literature in its original language with companion translations.
           </Text>
         </Animated.View>
-      </View>
 
-      <Animated.View
-        entering={FadeInUp.delay(140).duration(240).easing(EASE_OUT).reduceMotion(ReduceMotion.System)}
-        style={[styles.footer, { bottom: Math.max(insets.bottom + 28, 40) }]}
-      >
-        <Pressable
-          onPress={handleBegin}
-          hitSlop={12}
-          accessibilityRole="button"
-          accessibilityLabel="See how Lamplight works"
-          style={({ pressed }) => [
-            styles.beginButton,
-            {
-              backgroundColor: colors.flameAmber,
-              opacity: pressed ? 0.85 : 1,
-              transform: [{ scale: pressed ? 0.96 : 1 }],
-            },
-          ]}
+        <Animated.View
+          entering={FadeIn.delay(80).duration(260).easing(EASE_OUT).reduceMotion(ReduceMotion.System)}
+          style={styles.cardContainer}
         >
-          <Text
-            style={[
-              typography.buttonLabel,
-              {
-                color: colors.primaryDark,
-                includeFontPadding: false,
-                textAlignVertical: 'center',
-                letterSpacing: 0.6,
-                fontSize: 15,
-              },
-            ]}
-          >
-            See how it works
-          </Text>
-          <View style={styles.iconCircle}>
-            <ChevronRightIcon color={colors.primaryDark} size={13} />
-          </View>
-        </Pressable>
-      </Animated.View>
+          <AuthCard
+            initialMode="signin"
+            onSuccess={handleAuthSuccess}
+            onSkip={handleSkipToGuest}
+            showSkipButton={true}
+            skipButtonLabel="Continue as Guest"
+            title="Enter Lamplight"
+            subtitle="Sign in or register to sync your library, vocabulary & streaks."
+          />
+        </Animated.View>
+      </ScrollView>
     </View>
   );
 }
@@ -130,34 +135,18 @@ export default function SplashScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingHorizontal: 32,
-    justifyContent: 'center',
   },
-  content: {
-    alignItems: 'center',
-  },
-  footer: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-  },
-  beginButton: {
-    flexDirection: 'row',
+  scrollContent: {
+    flexGrow: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    height: 46,
-    minWidth: 190,
-    paddingHorizontal: 20,
-    borderRadius: 23,
   },
-  iconCircle: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: 'rgba(28, 27, 30, 0.12)',
+  brandHeader: {
     alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: 8,
+    marginBottom: 20,
+  },
+  cardContainer: {
+    width: '100%',
+    alignItems: 'center',
   },
 });

@@ -115,29 +115,50 @@ async function fetchCloudData(accessToken: string): Promise<{
 }
 
 /**
- * Executes existing-account sign-in and local-to-cloud merge:
- * 1. Writes merge journal entry
- * 2. Authenticates the existing account via verified OTP
- * 3. Pulls cloud data into staging
- * 4. Resolves conflicts and merges records inside a serialized SQLite transaction
- * 5. Enqueues local-only records under the target account ID
- * 6. Marks journal completed and triggers sync
+ * Executes existing-account sign-in and local-to-cloud merge via email OTP.
  */
 export async function executeAccountMerge(
   email: string,
   token: string,
   snapshot: LocalDataSnapshot,
 ): Promise<{ success: boolean; message?: string }> {
-  let journalId: string | null = null;
-  const db = await getDb();
-
   try {
     const priorSession = await getSession().catch(() => null);
     const priorAccountId = priorSession?.userId ?? null;
 
+    const verifyRes = await verifyEmailOtp(email, token);
+    if (!verifyRes.success) {
+      return { success: false, message: verifyRes.message || 'Verification failed.' };
+    }
+
+    const session = await getSession();
+    return await executeMergeForSession(session, email, snapshot, priorAccountId);
+  } catch (err: unknown) {
+    return {
+      success: false,
+      message: (err as Error)?.message || 'An unexpected error occurred during account merge.',
+    };
+  }
+}
+
+/**
+ * Executes local-to-cloud merge for an already authenticated session (used by OAuth and OTP).
+ */
+export async function executeMergeForSession(
+  session: { accessToken: string; userId: string },
+  email: string,
+  snapshot: LocalDataSnapshot,
+  priorAccountId?: string | null,
+): Promise<{ success: boolean; message?: string }> {
+  let journalId: string | null = null;
+  const db = await getDb();
+
+  try {
+    const priorId = priorAccountId ?? null;
+
     // Step 1: Initialize journal
     journalId = await createMergeJournal(
-      priorAccountId,
+      priorId,
       email,
       JSON.stringify({
         wordCount: snapshot.savedWordsCount,
@@ -148,17 +169,7 @@ export async function executeAccountMerge(
 
     await updateMergeJournalState(journalId, 'staging');
 
-    // Step 2: Sign into existing account
-    const verifyRes = await verifyEmailOtp(email, token);
-    if (!verifyRes.success) {
-      await updateMergeJournalState(journalId, 'failed');
-      return { success: false, message: verifyRes.message || 'Verification failed.' };
-    }
-
-    const session = await getSession();
-    const targetAccountId = session.userId;
-
-    // Step 3: Pull cloud data into staging
+    // Step 2: Pull cloud data into staging
     const cloudData = await fetchCloudData(session.accessToken);
 
     // Resolve cloud library_item_id to local book_id for all cloud records

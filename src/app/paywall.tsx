@@ -65,6 +65,15 @@ const FEATURE_DETAILS: Record<string, FeatureDetail> = {
       'Fine-tuned editorial typography and layout treatments',
     ],
   },
+  premium_page_styles: {
+    title: 'Artisan Page Styles',
+    subtitle: 'Immerse your reading in handcrafted typographic atmospheres.',
+    bullets: [
+      'Unlock Oxford Clothbound, Gilded Vellum, Midnight Nocturne, and Kyoto Washi',
+      'Fine-tuned leading, serif weights, and historic letterpress spacing',
+      'Artisan reading textures crafted for both daylight and low-light night mode',
+    ],
+  },
 };
 
 const DEFAULT_DETAIL: FeatureDetail = {
