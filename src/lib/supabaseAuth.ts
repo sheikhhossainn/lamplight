@@ -135,9 +135,20 @@ async function resolveSession(): Promise<{ accessToken: string; userId: string }
     return { accessToken: creds.accessToken, userId: creds.userId };
   }
 
-  const auth = creds?.refreshToken
-    ? await refreshSession(creds.refreshToken).catch(() => signInAnonymously())
-    : await signInAnonymously();
+  let auth: AuthResponse;
+  if (creds?.refreshToken) {
+    try {
+      auth = await refreshSession(creds.refreshToken);
+    } catch (refreshErr) {
+      // Do not downgrade a protected account to guest on transient network or refresh failure
+      if (!creds.isAnonymous) {
+        throw refreshErr;
+      }
+      auth = await signInAnonymously();
+    }
+  } else {
+    auth = await signInAnonymously();
+  }
 
   await persistSession(auth);
   return { accessToken: auth.access_token, userId: auth.user.id };
@@ -291,37 +302,47 @@ export async function verifyGuestEmailLink(
       }),
     });
 
+    let auth: AuthResponse;
     if (res.ok) {
-      const auth = (await res.json()) as AuthResponse;
-      auth.user.is_anonymous = false;
-      auth.user.email = normalizedEmail;
-      await persistSession(auth);
-      return { success: true };
+      auth = (await res.json()) as AuthResponse;
+    } else {
+      // 2. Fallback to standard email OTP verify if email_change was not used
+      const fallbackRes = await fetch(`${SUPABASE_URL}/auth/v1/verify`, {
+        method: 'POST',
+        headers: { apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'email',
+          email: normalizedEmail,
+          token: trimmedToken,
+        }),
+      });
+
+      if (!fallbackRes.ok) {
+        const err = await fallbackRes.json().catch(() => ({}));
+        return {
+          success: false,
+          message: err.msg || err.error_description || 'Invalid or expired verification code.',
+        };
+      }
+
+      auth = (await fallbackRes.json()) as AuthResponse;
     }
 
-    // 2. Fallback to standard email OTP verify if email_change was not used
-    const fallbackRes = await fetch(`${SUPABASE_URL}/auth/v1/verify`, {
-      method: 'POST',
-      headers: { apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'email',
-        email: normalizedEmail,
-        token: trimmedToken,
-      }),
-    });
-
-    if (!fallbackRes.ok) {
-      const err = await fallbackRes.json().catch(() => ({}));
-      return {
-        success: false,
-        message: err.msg || err.error_description || 'Invalid or expired verification code.',
-      };
-    }
-
-    const auth = (await fallbackRes.json()) as AuthResponse;
     auth.user.is_anonymous = false;
     auth.user.email = normalizedEmail;
     await persistSession(auth);
+
+    try {
+      const { coordinateAuthTransition } = await import('@/features/account/accountSessionCoordinator');
+      await coordinateAuthTransition({
+        newUserId: auth.user.id,
+        type: 'protect',
+        preserveOutbox: true,
+      });
+    } catch (coordErr) {
+      console.warn('[Auth] Account protection transition warning:', coordErr);
+    }
+
     return { success: true };
   } catch (err: unknown) {
     return {

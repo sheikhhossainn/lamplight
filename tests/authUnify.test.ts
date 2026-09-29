@@ -97,3 +97,15 @@ test('AUTH-02: Empty local snapshot does not trigger merge preview', () => {
 
   assert.equal(hasItemsToMerge, false);
 });
+
+test('ONBOARDING-01: getSuggestedThemeForMotherTongue culture-matching suggestions', async () => {
+  const { getSuggestedThemeForMotherTongue } = await import('../src/features/settings/literaryTheme');
+
+  assert.equal(getSuggestedThemeForMotherTongue('bn'), 'bengali', 'Bengali mother tongue should suggest Bengali theme');
+  assert.equal(getSuggestedThemeForMotherTongue('ja'), 'japanese', 'Japanese mother tongue should suggest Japanese theme');
+  assert.equal(getSuggestedThemeForMotherTongue('ko'), 'korean', 'Korean mother tongue should suggest Korean theme');
+  assert.equal(getSuggestedThemeForMotherTongue('ar'), 'arabic', 'Arabic mother tongue should suggest Arabic theme');
+  assert.equal(getSuggestedThemeForMotherTongue('en'), 'classic', 'English mother tongue should suggest Lamplight classic theme');
+  assert.equal(getSuggestedThemeForMotherTongue('other'), 'classic', 'Unknown mother tongue should fallback to classic');
+});
+

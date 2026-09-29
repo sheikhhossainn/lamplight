@@ -283,12 +283,21 @@ async function pushSingleMutation(
       const libraryItemId = await resolveLibraryItemId(payload.bookId, session.accessToken);
       if (!libraryItemId) return false;
 
+      // Payload carries the current page's percent; the local row holds the
+      // furthest point reached (MAX). Push that so the server never regresses
+      // when the reader pages back.
+      const db = await getDb();
+      const stored = await db.getFirstAsync<{ percent_complete: number }>(
+        'SELECT percent_complete FROM reading_positions WHERE book_id = ?',
+        [payload.bookId],
+      );
+
       const body = {
         owner_id: session.userId,
         library_item_id: libraryItemId,
         chapter_index: payload.chapterIndex,
         page_index: payload.pageIndex,
-        percent_complete: payload.percentComplete,
+        percent_complete: Math.max(payload.percentComplete ?? 0, stored?.percent_complete ?? 0),
         updated_at: new Date(payload.updatedAt ?? Date.now()).toISOString(),
       };
 
@@ -783,6 +792,21 @@ async function pushSingleMutation(
   }
 }
 
+// Resolve library_item_id -> local book_id BEFORE opening a transaction.
+// resolveLocalBookId can hit the network (8s timeout per miss); doing that
+// inside withTransactionAsync holds the global serial DB queue, stalling every
+// reader position write behind up to 50 sequential fetches.
+async function resolveLocalBookIds(
+  libraryItemIds: string[],
+  accessToken: string,
+): Promise<Map<string, string | null>> {
+  const bookIds = new Map<string, string | null>();
+  for (const id of new Set(libraryItemIds)) {
+    bookIds.set(id, await resolveLocalBookId(id, accessToken));
+  }
+  return bookIds;
+}
+
 async function pullServerChanges(session: { accessToken: string; userId: string }): Promise<void> {
   const db = await getDb();
 
@@ -811,12 +835,16 @@ async function pullServerChanges(session: { accessToken: string; userId: string 
 
       if (positions.length > 0) {
         let maxTime = lastSynced;
+        const bookIds = await resolveLocalBookIds(
+          positions.map((pos) => pos.library_item_id),
+          session.accessToken,
+        );
         await db.withTransactionAsync(async (tx) => {
           for (const pos of positions) {
             const time = new Date(pos.updated_at).getTime();
             if (time > maxTime) maxTime = time;
 
-            const bookId = await resolveLocalBookId(pos.library_item_id, session.accessToken, tx);
+            const bookId = bookIds.get(pos.library_item_id);
             if (bookId) {
               await tx.runAsync(
                 `INSERT INTO reading_positions (book_id, chapter_index, page_index, percent_complete, updated_at, continue_hidden)
@@ -875,6 +903,10 @@ async function pullServerChanges(session: { accessToken: string; userId: string 
 
       if (words.length > 0) {
         let maxTime = lastSynced;
+        const bookIds = await resolveLocalBookIds(
+          words.filter((word) => !word.deleted_at).map((word) => word.library_item_id),
+          session.accessToken,
+        );
         await db.withTransactionAsync(async (tx) => {
           for (const word of words) {
             const time = new Date(word.updated_at).getTime();
@@ -883,7 +915,7 @@ async function pullServerChanges(session: { accessToken: string; userId: string 
             if (word.deleted_at) {
               await tx.runAsync('DELETE FROM saved_words WHERE id = ?', [word.id]);
             } else {
-              const bookId = await resolveLocalBookId(word.library_item_id, session.accessToken, tx);
+              const bookId = bookIds.get(word.library_item_id);
               if (bookId) {
                 const srsDueDate = word.srs_next_review_at ? new Date(word.srs_next_review_at).getTime() : 0;
                 await tx.runAsync(
@@ -958,6 +990,10 @@ async function pullServerChanges(session: { accessToken: string; userId: string 
 
       if (highlights.length > 0) {
         let maxTime = lastSynced;
+        const bookIds = await resolveLocalBookIds(
+          highlights.filter((hl) => !hl.deleted_at).map((hl) => hl.library_item_id),
+          session.accessToken,
+        );
         await db.withTransactionAsync(async (tx) => {
           for (const hl of highlights) {
             const time = new Date(hl.created_at).getTime();
@@ -966,7 +1002,7 @@ async function pullServerChanges(session: { accessToken: string; userId: string 
             if (hl.deleted_at) {
               await tx.runAsync('DELETE FROM highlights WHERE id = ?', [hl.id]);
             } else {
-              const bookId = await resolveLocalBookId(hl.library_item_id, session.accessToken, tx);
+              const bookId = bookIds.get(hl.library_item_id);
               if (bookId) {
                 await tx.runAsync(
                   `INSERT INTO highlights (id, book_id, chapter_index, page_index, start_offset, end_offset, color_key, quote_text, created_at)

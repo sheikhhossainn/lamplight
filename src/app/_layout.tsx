@@ -77,19 +77,19 @@ export default function RootLayout() {
     void Promise.all([
       getSession().catch(() => {}),
       hydrateAppConfig().catch(() => {}),
-      hydrateTargetLanguage(),
-      hydrateTargetReadingLanguage(),
-      hydrateMotherTongue(),
-      hydratePageStyle(),
-      hydrateReadingTypography(),
-      hydrateLiteraryTheme(),
-      hydrateEntitlements(),
+      hydrateTargetLanguage().catch(() => {}),
+      hydrateTargetReadingLanguage().catch(() => {}),
+      hydrateMotherTongue().catch(() => {}),
+      hydratePageStyle().catch(() => {}),
+      hydrateReadingTypography().catch(() => {}),
+      hydrateLiteraryTheme().catch(() => {}),
+      hydrateEntitlements().catch(() => {}),
       cleanupPartialDownloads().catch(() => {}),
       reconcileDownloadStates().catch(() => {}),
-      seedJapaneseCatalog(),
-      seedKoreanCatalog(),
+      seedJapaneseCatalog().catch(() => {}),
+      seedKoreanCatalog().catch(() => {}),
       reconcilePendingMergeJournals().catch(() => {}),
-    ]);
+    ]).catch(() => {});
   }, []);
 
   // Resolve the has-onboarded flag before the Stack mounts, so the "/" splash
