@@ -875,7 +875,8 @@ create index if not exists feedback_category_idx on public.feedback (category);
 create index if not exists feedback_target_idx on public.feedback (target_type, target_id);
 
 -- Analytics View: overall feedback & rating metrics
-create or replace view public.feedback_summary as
+create or replace view public.feedback_summary
+with (security_invoker = true) as
 select
   count(*) as total_feedback_count,
   count(rating) as total_ratings_count,
@@ -891,7 +892,8 @@ select
 from public.feedback;
 
 -- Analytics View: book-specific review ratings
-create or replace view public.book_ratings_summary as
+create or replace view public.book_ratings_summary
+with (security_invoker = true) as
 select
   target_id as book_id,
   count(*) as review_count,
