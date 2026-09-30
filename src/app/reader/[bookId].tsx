@@ -1327,6 +1327,16 @@ export default function ReaderScreen() {
     ),
   }));
 
+  const readerContentOpacity = useSharedValue(0);
+  const readerFadeStyle = useAnimatedStyle(() => ({ opacity: readerContentOpacity.value }));
+  const isReaderReady = pages.length > 0 && initialIndex != null;
+
+  useEffect(() => {
+    if (isReaderReady) {
+      readerContentOpacity.value = withTiming(1, { duration: 120 });
+    }
+  }, [isReaderReady, readerContentOpacity]);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -2829,13 +2839,6 @@ export default function ReaderScreen() {
       </View>
     );
   }
-
-  const readerContentOpacity = useSharedValue(0);
-  const readerFadeStyle = useAnimatedStyle(() => ({ opacity: readerContentOpacity.value }));
-  
-  useEffect(() => {
-    readerContentOpacity.value = withTiming(1, { duration: 120 });
-  }, []);
 
   const currentTranslation =
     translation && currentPage && translation.pageGlobalIndex === currentPage.globalIndex ? translation : null;

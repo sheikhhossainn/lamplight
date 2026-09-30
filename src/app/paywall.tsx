@@ -260,10 +260,15 @@ export default function PaywallScreen() {
             onPress={() => setPlan('monthly')}
             style={[
               styles.segment,
-              plan === 'monthly' && { backgroundColor: colors.ember, borderRadius: radius.pill },
+              plan === 'monthly' && { backgroundColor: colors.flameAmber, borderRadius: radius.pill },
             ]}
           >
-            <Text style={[typography.uiRowTitle, { fontSize: 12, color: colors.mutedOnDark }]}>
+            <Text
+              style={[
+                typography.uiRowTitle,
+                { fontSize: 12, color: plan === 'monthly' ? colors.primaryDark : colors.mutedOnDark },
+              ]}
+            >
               Monthly{plan === 'monthly' && selectedPackage ? ` · ${selectedPackage.priceString}` : ''}
             </Text>
           </Pressable>
