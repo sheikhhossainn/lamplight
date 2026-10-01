@@ -19,11 +19,11 @@ export function setReadingTheme(theme: ReadingTheme): void {
   listeners.forEach((listener) => listener());
 }
 
-function subscribe(listener: () => void): () => void {
+export function subscribeToReadingTheme(listener: () => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
 }
 
 export function useReadingTheme(): ReadingTheme {
-  return useSyncExternalStore(subscribe, getReadingTheme);
+  return useSyncExternalStore(subscribeToReadingTheme, getReadingTheme);
 }

@@ -2505,7 +2505,10 @@ export default function ReaderScreen() {
     if (!book || !selection) return;
     const premium = canUse('unlimited_learning');
     const limitCheck = await getBookLimit('quotes', premium);
-    if (highlights.length >= limitCheck.limit) {
+    // A multi-page quote writes one row per page; only the first carries the
+    // text, so count those — otherwise one spanning quote uses several slots.
+    const quoteCount = highlights.filter((h) => h.quoteText).length;
+    if (quoteCount >= limitCheck.limit) {
       if (limitCheck.isGuest) {
         setAccountModalTrigger('quotes_limit');
         setAccountModalVisible(true);
@@ -2571,7 +2574,7 @@ export default function ReaderScreen() {
     if (primaryHighlight) {
       router.push({ pathname: '/quote-share/[highlightId]', params: { highlightId: primaryHighlight.id } });
     }
-  }, [book, selection, pages, clearEdgeTurnTimer, highlights.length]);
+  }, [book, selection, pages, clearEdgeTurnTimer, highlights]);
 
   const renderPage = useCallback(
     ({ item, index }: { item: ReaderPage; index: number }) => {
@@ -2757,6 +2760,16 @@ export default function ReaderScreen() {
     </View>
   );
 
+  // Hooks must run before the early returns below. Fade fires when the reader
+  // actually becomes ready, not on first mount behind the loading screen.
+  const readerReady = Boolean(book) && pages.length > 0 && initialIndex != null;
+  const readerContentOpacity = useSharedValue(0);
+  const readerFadeStyle = useAnimatedStyle(() => ({ opacity: readerContentOpacity.value }));
+
+  useEffect(() => {
+    if (readerReady) readerContentOpacity.value = withTiming(1, { duration: 120 });
+  }, [readerReady, readerContentOpacity]);
+
   if (bookTextState.status === 'loading') {
     return (
       <BookLoadingScreen
@@ -2829,13 +2842,6 @@ export default function ReaderScreen() {
       </View>
     );
   }
-
-  const readerContentOpacity = useSharedValue(0);
-  const readerFadeStyle = useAnimatedStyle(() => ({ opacity: readerContentOpacity.value }));
-  
-  useEffect(() => {
-    readerContentOpacity.value = withTiming(1, { duration: 120 });
-  }, []);
 
   const currentTranslation =
     translation && currentPage && translation.pageGlobalIndex === currentPage.globalIndex ? translation : null;

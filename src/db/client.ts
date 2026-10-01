@@ -272,14 +272,57 @@ function refreshFromRemoteInBackground(db: SQLiteDatabase, enqueue: Enqueue) {
 export async function getDb(): Promise<TransactionalDb> {
   if (!dbPromise) {
     dbPromise = (async () => {
-      const db = await openDatabaseAsync('lamplight.db');
+      let db: SQLiteDatabase | null = null;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          db = await openDatabaseAsync('lamplight.db');
+          // Wait on a held lock instead of failing instantly with "database is
+          // locked" (e.g. a connection left over from a dev reload finishing a write).
+          await db.execAsync('PRAGMA busy_timeout = 5000');
+          // If a transaction was left dangling by an abrupt JS reload / Fast Refresh,
+          // roll it back to restore autocommit mode and release any held locks.
+          try {
+            if (await db.isInTransactionAsync()) {
+              await db.execAsync('ROLLBACK');
+            }
+          } catch {
+            // Ignore if no transaction was active
+          }
+          // Enable Write-Ahead Logging (WAL). If the connection is locked or has
+          // dangling statements from prior reloads, this throws and triggers the catch block.
+          await db.execAsync('PRAGMA journal_mode = WAL');
+          break;
+        } catch (err) {
+          if (db) {
+            try {
+              // Drain all cached refs so expo-sqlite's NativeDatabase invokes
+              // sqlite3_finalize_all_statement() and sqlite3_close(), clearing
+              // stale statement locks from prior Fast Refreshes.
+              for (let i = 0; i < 20; i++) {
+                try {
+                  await db.closeAsync();
+                } catch {
+                  break;
+                }
+              }
+            } catch {}
+            db = null;
+          }
+          if (attempt === 3) throw err;
+          await new Promise((resolve) => setTimeout(resolve, 200 * attempt));
+        }
+      }
+      if (!db) throw new Error('Failed to open database');
       await migrate(db);
       const enqueue = createQueue();
       await enqueue(() => seedBootstrapIfEmpty(db));
       await enqueue(() => backfillBootstrapCategories(db));
       refreshFromRemoteInBackground(db, enqueue);
       return serializeDb(db, enqueue);
-    })();
+    })().catch((err) => {
+      dbPromise = null;
+      throw err;
+    });
   }
   return dbPromise;
 }

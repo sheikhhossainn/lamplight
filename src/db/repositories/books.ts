@@ -369,17 +369,19 @@ export async function saveJapaneseChapters(
   chapters: Array<{ index: number; title: string; slug: string; content: string }>,
 ): Promise<void> {
   const db = await getDb();
-  for (const ch of chapters) {
-    await db.runAsync(
-      `INSERT INTO japanese_chapters (book_id, chapter_index, title, slug, content, is_downloaded)
-       VALUES (?, ?, ?, ?, ?, 0)
-       ON CONFLICT(book_id, chapter_index) DO UPDATE SET
-         title = excluded.title,
-         slug = excluded.slug,
-         content = excluded.content`,
-      [bookId, ch.index, ch.title, ch.slug, ch.content],
-    );
-  }
+  await db.withTransactionAsync(async (tx) => {
+    for (const ch of chapters) {
+      await tx.runAsync(
+        `INSERT INTO japanese_chapters (book_id, chapter_index, title, slug, content, is_downloaded)
+         VALUES (?, ?, ?, ?, ?, 0)
+         ON CONFLICT(book_id, chapter_index) DO UPDATE SET
+           title = excluded.title,
+           slug = excluded.slug,
+           content = excluded.content`,
+        [bookId, ch.index, ch.title, ch.slug, ch.content],
+      );
+    }
+  });
 }
 
 export async function listJapaneseChapters(bookId: string): Promise<JapaneseChapterRow[]> {
@@ -495,17 +497,19 @@ export async function saveKoreanChapters(
   chapters: Array<{ index: number; title: string; slug: string; content: string }>,
 ): Promise<void> {
   const db = await getDb();
-  for (const ch of chapters) {
-    await db.runAsync(
-      `INSERT INTO korean_chapters (book_id, chapter_index, title, slug, content, is_downloaded)
-       VALUES (?, ?, ?, ?, ?, 0)
-       ON CONFLICT(book_id, chapter_index) DO UPDATE SET
-         title = excluded.title,
-         slug = excluded.slug,
-         content = excluded.content`,
-      [bookId, ch.index, ch.title, ch.slug, ch.content],
-    );
-  }
+  await db.withTransactionAsync(async (tx) => {
+    for (const ch of chapters) {
+      await tx.runAsync(
+        `INSERT INTO korean_chapters (book_id, chapter_index, title, slug, content, is_downloaded)
+         VALUES (?, ?, ?, ?, ?, 0)
+         ON CONFLICT(book_id, chapter_index) DO UPDATE SET
+           title = excluded.title,
+           slug = excluded.slug,
+           content = excluded.content`,
+        [bookId, ch.index, ch.title, ch.slug, ch.content],
+      );
+    }
+  });
 }
 
 export async function listKoreanChapters(bookId: string): Promise<KoreanChapterRow[]> {
