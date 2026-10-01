@@ -102,40 +102,60 @@ export async function updateReadingSession(
 }
 
 export async function getRecentSessions(limit: number = 100): Promise<ReadingSession[]> {
-  const db = await getDb();
-  const rows = await db.getAllAsync<ReadingSessionSqlRow>(
-    'SELECT * FROM reading_sessions ORDER BY started_at DESC LIMIT ?',
-    [limit],
-  );
-  return rows.map(fromSqlRow);
+  try {
+    const db = await getDb();
+    const rows = await db.getAllAsync<ReadingSessionSqlRow>(
+      'SELECT * FROM reading_sessions ORDER BY started_at DESC LIMIT ?',
+      [limit],
+    );
+    return rows.map(fromSqlRow);
+  } catch (err) {
+    console.warn('[ReadingSessions] getRecentSessions failed, defaulting to empty:', err);
+    return [];
+  }
 }
 
 export async function getAllSessions(): Promise<ReadingSession[]> {
-  const db = await getDb();
-  const rows = await db.getAllAsync<ReadingSessionSqlRow>(
-    'SELECT * FROM reading_sessions ORDER BY started_at ASC',
-  );
-  return rows.map(fromSqlRow);
+  try {
+    const db = await getDb();
+    const rows = await db.getAllAsync<ReadingSessionSqlRow>(
+      'SELECT * FROM reading_sessions ORDER BY started_at ASC',
+    );
+    return rows.map(fromSqlRow);
+  } catch (err) {
+    console.warn('[ReadingSessions] getAllSessions failed, defaulting to empty:', err);
+    return [];
+  }
 }
 
 export async function getSessionsForBook(bookId: string): Promise<ReadingSession[]> {
-  const db = await getDb();
-  const rows = await db.getAllAsync<ReadingSessionSqlRow>(
-    'SELECT * FROM reading_sessions WHERE book_id = ? ORDER BY started_at DESC',
-    [bookId],
-  );
-  return rows.map(fromSqlRow);
+  try {
+    const db = await getDb();
+    const rows = await db.getAllAsync<ReadingSessionSqlRow>(
+      'SELECT * FROM reading_sessions WHERE book_id = ? ORDER BY started_at DESC',
+      [bookId],
+    );
+    return rows.map(fromSqlRow);
+  } catch (err) {
+    console.warn('[ReadingSessions] getSessionsForBook failed, defaulting to empty:', err);
+    return [];
+  }
 }
 
 export async function getSessionsInDateRange(
   startTimestamp: number,
   endTimestamp: number,
 ): Promise<ReadingSession[]> {
-  const db = await getDb();
-  const rows = await db.getAllAsync<ReadingSessionSqlRow>(
-    'SELECT * FROM reading_sessions WHERE started_at >= ? AND started_at <= ? ORDER BY started_at ASC',
-    [startTimestamp, endTimestamp],
-  );
-  return rows.map(fromSqlRow);
+  try {
+    const db = await getDb();
+    const rows = await db.getAllAsync<ReadingSessionSqlRow>(
+      'SELECT * FROM reading_sessions WHERE started_at >= ? AND started_at <= ? ORDER BY started_at ASC',
+      [startTimestamp, endTimestamp],
+    );
+    return rows.map(fromSqlRow);
+  } catch (err) {
+    console.warn('[ReadingSessions] getSessionsInDateRange failed, defaulting to empty:', err);
+    return [];
+  }
 }
 

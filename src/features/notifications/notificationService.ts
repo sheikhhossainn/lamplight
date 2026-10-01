@@ -93,9 +93,53 @@ export class MemoryNotificationAdapter implements INotificationAdapter {
   }
 }
 
+let androidExpoGoChecked: boolean | null = null;
+async function isAndroidExpoGo(): Promise<boolean> {
+  if (androidExpoGoChecked !== null) return androidExpoGoChecked;
+  try {
+    const { Platform } = await import('react-native');
+    if (Platform.OS !== 'android') {
+      androidExpoGoChecked = false;
+      return false;
+    }
+
+    try {
+      const expo = await import('expo');
+      if (typeof expo.isRunningInExpoGo === 'function' && expo.isRunningInExpoGo()) {
+        androidExpoGoChecked = true;
+        return true;
+      }
+    } catch {
+      // ignore
+    }
+
+    try {
+      const constantsMod = await import('expo-constants');
+      const Constants = (constantsMod.default ?? constantsMod) as any;
+      if (
+        Constants?.executionEnvironment === 'storeClient' ||
+        Constants?.appOwnership === 'expo'
+      ) {
+        androidExpoGoChecked = true;
+        return true;
+      }
+    } catch {
+      // ignore
+    }
+  } catch {
+    androidExpoGoChecked = false;
+    return false;
+  }
+  androidExpoGoChecked = false;
+  return false;
+}
+
 let expoNotificationsModule: typeof import('expo-notifications') | null = null;
 async function getExpoNotifications(): Promise<typeof import('expo-notifications') | null> {
   if (expoNotificationsModule) return expoNotificationsModule;
+  if (await isAndroidExpoGo()) {
+    return null;
+  }
   try {
     expoNotificationsModule = await import('expo-notifications');
     // Configure default foreground presentation

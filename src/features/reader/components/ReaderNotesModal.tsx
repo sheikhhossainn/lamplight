@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Keyboard, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CloseIcon, TrashIcon } from '@/components/icons';
@@ -37,6 +37,22 @@ export function ReaderNotesModal({
   const [draft, setDraft] = useState('');
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [editingDraft, setEditingDraft] = useState('');
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  useEffect(() => {
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvt, (e) => {
+      setKeyboardHeight(e.endCoordinates?.height ?? 0);
+    });
+    const hideSub = Keyboard.addListener(hideEvt, () => {
+      setKeyboardHeight(0);
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   useEffect(() => {
     if (visible) {
@@ -47,29 +63,25 @@ export function ReaderNotesModal({
   }, [visible]);
 
   return (
-    <ReaderOverlay visible={visible} onClosed={onClose} variant="bottomSheet">
+    <ReaderOverlay visible={visible} onClosed={onClose} variant="fullscreen">
       {({ requestClose }) => (
         <View
           style={[
-            styles.sheet,
+            styles.container,
             {
               backgroundColor: colors.card,
-              borderColor: colors.hairline,
-              paddingBottom: Math.max(insets.bottom + 12, 24),
+              paddingTop: Math.max(insets.top + 6, 20),
+              paddingBottom: Math.max(insets.bottom, 16) + keyboardHeight,
             },
           ]}
         >
-          <View style={styles.grabber}>
-            <View style={[styles.grabberBar, { backgroundColor: colors.hairline }]} />
-          </View>
-
-          <View style={styles.headerRow}>
+          <View style={[styles.headerRow, { borderBottomColor: colors.hairline }]}>
             <View style={styles.headerCopy}>
               <Text style={[typography.uiRowTitle, styles.title, { color: colors.ink }]}>Private notes</Text>
-              <Text style={[typography.metadataCaption, { color: colors.fawn }]}>Saved only on this device</Text>
+              <Text style={[typography.metadataCaption, { color: colors.fawn, marginTop: 2 }]}>Saved only on this device</Text>
             </View>
             <Pressable onPress={onExport} accessibilityRole="button" accessibilityLabel="Export notes" hitSlop={8} style={styles.exportButton}>
-              <Text style={[typography.buttonLabel, { color: colors.flameAmber, fontSize: 12 }]}>Export</Text>
+              <Text style={[typography.buttonLabel, { color: colors.flameAmber, fontSize: 13 }]}>Export</Text>
             </Pressable>
             <Pressable
               accessibilityRole="button"
@@ -78,14 +90,16 @@ export function ReaderNotesModal({
               onPress={requestClose}
               style={({ pressed }) => [styles.closeButton, pressed && { opacity: 0.55 }]}
             >
-              <CloseIcon color={colors.fawn} size={17} />
+              <CloseIcon color={colors.fawn} size={18} />
             </Pressable>
           </View>
 
           <ScrollView
+            style={styles.scrollView}
+            contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
-            contentContainerStyle={{ paddingBottom: spacing.sm }}
+            keyboardDismissMode="on-drag"
           >
             <View style={[styles.composer, { backgroundColor: colors.parchment, borderColor: colors.hairline, borderRadius: radius.card }]}>
               <Text style={[typography.eyebrowLabel, { color: colors.flameAmber }]}>Note on {currentChapterTitle}</Text>
@@ -108,6 +122,7 @@ export function ReaderNotesModal({
                 onPress={() => {
                   onSave(draft);
                   setDraft('');
+                  Keyboard.dismiss();
                 }}
                 style={({ pressed }) => [
                   styles.saveButton,
@@ -120,7 +135,7 @@ export function ReaderNotesModal({
 
             {notes.length > 0 ? (
               <View style={{ marginTop: spacing.lg }}>
-                <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginBottom: spacing.sm }]}>Saved notes</Text>
+                <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginBottom: spacing.sm }]}>Saved notes ({notes.length})</Text>
                 {notes.map((note) => (
                   <View key={note.id} style={[styles.noteCard, { backgroundColor: colors.parchment, borderColor: colors.hairline, borderRadius: radius.card }]}>
                     <View style={styles.noteMeta}>
@@ -169,6 +184,7 @@ export function ReaderNotesModal({
                               if (!editingDraft.trim()) return;
                               onEdit(note.id, editingDraft);
                               setEditingNoteId(null);
+                              Keyboard.dismiss();
                             }}
                             disabled={!editingDraft.trim()}
                             hitSlop={6}
@@ -192,27 +208,16 @@ export function ReaderNotesModal({
 }
 
 const styles = StyleSheet.create({
-  sheet: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    borderTopWidth: 1,
+  container: {
+    flex: 1,
     paddingHorizontal: 20,
-    paddingTop: 10,
-    maxHeight: '88%',
-  },
-  grabber: {
-    alignItems: 'center',
-    marginBottom: 14,
-  },
-  grabberBar: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
   },
   headerRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     justifyContent: 'space-between',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
     marginBottom: 12,
   },
   headerCopy: {
@@ -220,25 +225,31 @@ const styles = StyleSheet.create({
     paddingRight: 12,
   },
   title: {
-    fontSize: 18,
+    fontSize: 20,
+    fontWeight: '700',
   },
   closeButton: {
     padding: 6,
-    marginTop: 1,
+    marginLeft: 6,
   },
   exportButton: {
-    paddingHorizontal: 8,
+    paddingHorizontal: 10,
     paddingVertical: 6,
-    marginRight: 2,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: 24,
   },
   composer: {
     borderWidth: 1,
-    padding: 13,
+    padding: 14,
   },
   input: {
-    minHeight: 82,
+    minHeight: 88,
     borderWidth: 1,
-    paddingHorizontal: 11,
+    paddingHorizontal: 12,
     paddingVertical: 10,
     marginTop: 10,
   },
@@ -246,12 +257,12 @@ const styles = StyleSheet.create({
     minHeight: 42,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 10,
+    marginTop: 12,
   },
   noteCard: {
     borderWidth: 1,
     padding: 13,
-    marginBottom: 8,
+    marginBottom: 10,
   },
   noteMeta: {
     flexDirection: 'row',

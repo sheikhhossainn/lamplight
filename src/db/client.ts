@@ -169,6 +169,111 @@ async function migrate(db: SQLiteDatabase) {
       }
     }
   }
+
+  // Idempotent recovery for v17-v24 tables and columns in case device user_version was advanced without table creation
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS reading_sessions (
+      id TEXT PRIMARY KEY,
+      book_id TEXT NOT NULL,
+      started_at INTEGER NOT NULL,
+      ended_at INTEGER,
+      duration_seconds INTEGER NOT NULL DEFAULT 0,
+      pages_read INTEGER NOT NULL DEFAULT 0,
+      chapter_index INTEGER NOT NULL DEFAULT 0,
+      synced INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS reading_sessions_book_idx ON reading_sessions (book_id);
+    CREATE INDEX IF NOT EXISTS reading_sessions_started_idx ON reading_sessions (started_at DESC);
+
+    CREATE TABLE IF NOT EXISTS sync_merge_journal (
+      id TEXT PRIMARY KEY,
+      started_at INTEGER NOT NULL,
+      prior_account_id TEXT,
+      target_account_id TEXT NOT NULL,
+      state TEXT NOT NULL,
+      backup_reference TEXT,
+      completed_at INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS sync_merge_journal_started_idx ON sync_merge_journal (started_at DESC);
+
+    CREATE TABLE IF NOT EXISTS feedback_outbox (
+      id TEXT PRIMARY KEY,
+      rating INTEGER,
+      category TEXT NOT NULL,
+      target_type TEXT NOT NULL,
+      target_id TEXT,
+      message TEXT NOT NULL,
+      tags_json TEXT NOT NULL,
+      metadata_json TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS reader_notes (
+      id TEXT PRIMARY KEY,
+      book_id TEXT NOT NULL REFERENCES books(id),
+      chapter_index INTEGER NOT NULL,
+      page_index INTEGER NOT NULL,
+      note_text TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS reader_notes_book_idx ON reader_notes (book_id, updated_at DESC);
+
+    CREATE TABLE IF NOT EXISTS bookmarks (
+      id TEXT PRIMARY KEY,
+      book_id TEXT NOT NULL REFERENCES books(id),
+      chapter_index INTEGER NOT NULL,
+      page_index INTEGER NOT NULL,
+      label TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      UNIQUE(book_id, chapter_index, page_index)
+    );
+    CREATE INDEX IF NOT EXISTS bookmarks_book_idx ON bookmarks (book_id, chapter_index, page_index);
+
+    CREATE TABLE IF NOT EXISTS download_states (
+      book_id TEXT PRIMARY KEY,
+      status TEXT NOT NULL,
+      progress INTEGER,
+      error_code TEXT,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS vocabulary_decks (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS vocabulary_deck_items (
+      deck_id TEXT NOT NULL REFERENCES vocabulary_decks(id) ON DELETE CASCADE,
+      word_id TEXT NOT NULL REFERENCES saved_words(id) ON DELETE CASCADE,
+      added_at INTEGER NOT NULL,
+      PRIMARY KEY (deck_id, word_id)
+    );
+    CREATE INDEX IF NOT EXISTS deck_items_deck_idx ON vocabulary_deck_items (deck_id);
+    CREATE INDEX IF NOT EXISTS deck_items_word_idx ON vocabulary_deck_items (word_id);
+
+    CREATE TABLE IF NOT EXISTS analytics_queue (
+      id TEXT PRIMARY KEY,
+      event_type TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      occurred_at INTEGER NOT NULL,
+      created_at INTEGER NOT NULL,
+      attempt_count INTEGER NOT NULL DEFAULT 0,
+      last_attempt_at INTEGER,
+      last_error TEXT
+    );
+    CREATE INDEX IF NOT EXISTS analytics_queue_occurred_idx ON analytics_queue (occurred_at ASC);
+  `);
+
+  const bookCols = await db.getAllAsync<{ name: string }>('PRAGMA table_info(books)');
+  const bookColSet = new Set(bookCols.map((c) => c.name));
+  if (bookCols.length > 0 && !bookColSet.has('is_favorite')) {
+    await db.execAsync('ALTER TABLE books ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0');
+    await db.execAsync('CREATE INDEX IF NOT EXISTS books_favorite_idx ON books (is_favorite, title)');
+  }
 }
 
 async function upsertBooks(db: SQLiteDatabase, rows: RemoteBookRow[]) {

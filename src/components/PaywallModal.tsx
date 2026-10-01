@@ -148,10 +148,17 @@ export function PaywallModal({ visible, onClose, onSuccess }: PaywallModalProps)
               onPress={() => setPlan('monthly')}
               style={[
                 styles.segment,
-                plan === 'monthly' && { backgroundColor: colors.ember, borderRadius: radius.pill },
+                plan === 'monthly' && { backgroundColor: colors.flameAmber, borderRadius: radius.pill },
               ]}
             >
-              <Text style={[typography.uiRowTitle, { fontSize: 12, color: colors.mutedOnDark }]}>Monthly</Text>
+              <Text
+                style={[
+                  typography.uiRowTitle,
+                  { fontSize: 12, color: plan === 'monthly' ? colors.primaryDark : colors.mutedOnDark },
+                ]}
+              >
+                Monthly
+              </Text>
             </Pressable>
             <Pressable
               onPress={() => setPlan('yearly')}

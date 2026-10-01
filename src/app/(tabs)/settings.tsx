@@ -55,7 +55,6 @@ import {
 import { setPageStyle, usePageStyle } from '@/features/settings/pageStylePrefs';
 import { PageStyleSelectorModal } from '@/features/reader/components/PageStyleSelectorModal';
 import { setPageTurnSoundEnabled, usePageTurnSoundEnabled } from '@/features/settings/soundPrefs';
-import { isLapseRecoveryEnabled, setLapseRecoveryEnabled } from '@/features/retention/lapseRecovery';
 import {
   canUse,
   getEntitlementSnapshot,
@@ -402,7 +401,6 @@ export default function SettingsScreen() {
   const [promoModalVisible, setPromoModalVisible] = useState(false);
   const [feedbackModalVisible, setFeedbackModalVisible] = useState(false);
   const [entitlement, setEntitlement] = useState<EntitlementSnapshot>(getEntitlementSnapshot());
-  const [lapseRecoveryEnabled, setLapseRecoveryEnabledState] = useState(true);
 
   const [isProtected, setIsProtected] = useState(false);
   const [userEmail, setUserEmail] = useState<string | null>(null);
@@ -647,7 +645,6 @@ export default function SettingsScreen() {
       loadStorage();
       void refreshSyncStatus();
       void refreshAccountStatus();
-      void isLapseRecoveryEnabled().then(setLapseRecoveryEnabledState).catch(() => {});
 
       return () => {
         cancelled = true;
@@ -731,25 +728,6 @@ export default function SettingsScreen() {
         <View style={styles.settingsRow}>
           <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>Page-turn sound</Text>
           <ToggleSwitch value={pageTurnSound} onChange={setPageTurnSoundEnabled} themeAnim={themeAnim} />
-        </View>
-        <View style={[styles.itemDivider, { borderBottomColor: colors.hairline, marginVertical: 4 }]} />
-        <View style={styles.settingsRow}>
-          <View style={{ flex: 1, minWidth: 0, paddingRight: spacing.sm }}>
-            <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
-              Gentle return prompts
-            </Text>
-            <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11, marginTop: 2 }]}>
-              Calm, guilt-free welcome back if you've been away for a few days
-            </Text>
-          </View>
-          <ToggleSwitch
-            value={lapseRecoveryEnabled}
-            onChange={(next) => {
-              setLapseRecoveryEnabledState(next);
-              void setLapseRecoveryEnabled(next);
-            }}
-            themeAnim={themeAnim}
-          />
         </View>
 
         <View style={[styles.itemDivider, { borderBottomColor: colors.hairline, marginVertical: 8 }]} />

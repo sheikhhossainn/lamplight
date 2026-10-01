@@ -180,7 +180,11 @@ export function VocabularyCalibrationModal({
           </Text>
 
           {/* Presets Row */}
-          <View style={styles.presetsRow}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.presetsRow}
+          >
             {(
               [
                 { key: 'foundational', label: 'Foundational' },
@@ -204,12 +208,14 @@ export function VocabularyCalibrationModal({
                   ]}
                 >
                   <Text
+                    numberOfLines={1}
                     style={[
                       typography.eyebrowLabel,
                       {
                         color: isActive ? colors.primaryDark : colors.ink,
                         fontSize: 10.5,
                         fontWeight: '600',
+                        letterSpacing: 0.6,
                       },
                     ]}
                   >
@@ -218,7 +224,7 @@ export function VocabularyCalibrationModal({
                 </Pressable>
               );
             })}
-          </View>
+          </ScrollView>
 
           {/* 12-Word Matrix Grid */}
           <ScrollView
@@ -403,7 +409,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   presetChip: {
-    flex: 1,
+    paddingHorizontal: 14,
     paddingVertical: 7,
     borderWidth: 1,
     alignItems: 'center',
@@ -416,7 +422,8 @@ const styles = StyleSheet.create({
   wordsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    justifyContent: 'space-between',
+    rowGap: 8,
     paddingBottom: 8,
   },
   wordCard: {
@@ -426,6 +433,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 9,
     gap: 8,
+    minHeight: 52,
   },
   wordCheckDot: {
     width: 18,
