@@ -3,7 +3,6 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, {
-  Easing,
   Extrapolation,
   interpolate,
   interpolateColor,
@@ -12,7 +11,6 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withSpring,
-  withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CheckIcon, ChevronRightIcon, MoonIcon as ThemeMoonIcon, SunIcon as ThemeSunIcon } from '@/components/icons';
@@ -29,8 +27,8 @@ import {
   isAuthenticatedAccount,
   getUserEmail,
   getUserId,
-  signOutUser,
 } from '@/lib/supabaseAuth';
+import { coordinateSignOut } from '@/features/account/accountSessionCoordinator';
 import { getDb } from '@/db/client';
 import { refreshSyncStatus, triggerSync, useSyncStatus, type SyncStatus } from '@/features/sync/syncWorker';
 import { getStorageUsage, clearTemporaryCache, getUnsyncedSafetyStatus, type StorageUsage } from '@/features/storage/storageManager';
@@ -40,9 +38,11 @@ import { FeedbackModal } from '@/components/FeedbackModal';
 import { setTargetLanguage, targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
 import { useReadingTheme } from '@/features/settings/readingTheme';
 import {
+  prepareThemeChange,
   requestThemeChange,
   THEME_TRANSITION_DURATION,
   THEME_TRANSITION_EASING,
+  themeSelectionProgress,
   themeTransitionProgress,
 } from '@/features/settings/themeTransition';
 import { hapticFlashcardAction, hapticThemeToggle } from '@/lib/haptics';
@@ -55,7 +55,6 @@ import {
 import { setPageStyle, usePageStyle } from '@/features/settings/pageStylePrefs';
 import { PageStyleSelectorModal } from '@/features/reader/components/PageStyleSelectorModal';
 import { setPageTurnSoundEnabled, usePageTurnSoundEnabled } from '@/features/settings/soundPrefs';
-import { isLapseRecoveryEnabled, setLapseRecoveryEnabled } from '@/features/retention/lapseRecovery';
 import {
   canUse,
   getEntitlementSnapshot,
@@ -102,6 +101,8 @@ function ThemeSegmentedSwitch({
   const lampColors = getCultureThemeColors(cultureTheme, 'lamp');
 
   const segWidth = useSharedValue(0);
+  // Selection (pill, icons) animates separately from colors — see themeTransition.ts.
+  const selectAnim = themeSelectionProgress;
 
   const handleSelect = (target: 'day' | 'lamp') => {
     if (theme === target) return;
@@ -109,16 +110,24 @@ function ThemeSegmentedSwitch({
     onThemeChange(target);
   };
 
-  const pillAnimatedStyle = useAnimatedStyle(() => {
+  // Capture the transition snapshot while the finger is down, so release is instant.
+  const handlePressIn = (target: 'day' | 'lamp') => {
+    if (theme !== target) prepareThemeChange();
+  };
+
+  // Width is a layout prop — kept out of the per-frame style so the slide only
+  // updates transform (no relayout every frame).
+  const pillWidthStyle = useAnimatedStyle(() => {
     const w = segWidth.value;
-    return {
-      width: w > 0 ? w : '50%',
-      transform: [{ translateX: themeAnim.value * w }],
-    };
+    return { width: w > 0 ? w : '50%' };
   });
 
+  const pillAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: selectAnim.value * segWidth.value }],
+  }));
+
   const sunAnimatedStyle = useAnimatedStyle(() => {
-    const p = themeAnim.value;
+    const p = selectAnim.value;
     const rotate = interpolate(p, [0, 1], [0, 45], Extrapolation.CLAMP);
     const scale = interpolate(p, [0, 1], [1, 0.88], Extrapolation.CLAMP);
     return {
@@ -127,7 +136,7 @@ function ThemeSegmentedSwitch({
   });
 
   const lampAnimatedStyle = useAnimatedStyle(() => {
-    const p = themeAnim.value;
+    const p = selectAnim.value;
     const rotate = interpolate(p, [0, 1], [-15, 0], Extrapolation.CLAMP);
     const scale = interpolate(p, [0, 1], [0.88, 1], Extrapolation.CLAMP);
     return {
@@ -136,27 +145,27 @@ function ThemeSegmentedSwitch({
   });
 
   const sunActiveStyle = useAnimatedStyle(() => ({
-    opacity: 1 - themeAnim.value,
+    opacity: 1 - selectAnim.value,
   }));
   const sunInactiveStyle = useAnimatedStyle(() => ({
-    opacity: themeAnim.value,
+    opacity: selectAnim.value,
   }));
 
   const lampActiveStyle = useAnimatedStyle(() => ({
-    opacity: themeAnim.value,
+    opacity: selectAnim.value,
   }));
   const lampInactiveStyle = useAnimatedStyle(() => ({
-    opacity: 1 - themeAnim.value,
+    opacity: 1 - selectAnim.value,
   }));
 
   const dayContentStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(themeAnim.value, [0, 1], [1, 0.72], Extrapolation.CLAMP),
-    transform: [{ scale: interpolate(themeAnim.value, [0, 1], [1, 0.96], Extrapolation.CLAMP) }],
+    opacity: interpolate(selectAnim.value, [0, 1], [1, 0.72], Extrapolation.CLAMP),
+    transform: [{ scale: interpolate(selectAnim.value, [0, 1], [1, 0.96], Extrapolation.CLAMP) }],
   }));
 
   const lampContentStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(themeAnim.value, [0, 1], [0.72, 1], Extrapolation.CLAMP),
-    transform: [{ scale: interpolate(themeAnim.value, [0, 1], [0.96, 1], Extrapolation.CLAMP) }],
+    opacity: interpolate(selectAnim.value, [0, 1], [0.72, 1], Extrapolation.CLAMP),
+    transform: [{ scale: interpolate(selectAnim.value, [0, 1], [0.96, 1], Extrapolation.CLAMP) }],
   }));
 
   const animatedTrackStyle = useAnimatedStyle(() => ({
@@ -171,8 +180,14 @@ function ThemeSegmentedSwitch({
     backgroundColor: interpolateColor(
       themeAnim.value,
       [0, 1],
-      [dayColors.primaryDark, lampColors.primaryDark],
+      [dayColors.primaryDark, '#36322D'],
     ),
+    borderColor: interpolateColor(
+      themeAnim.value,
+      [0, 1],
+      ['transparent', 'rgba(245, 166, 35, 0.28)'],
+    ),
+    borderWidth: interpolate(themeAnim.value, [0, 1], [0, 1], Extrapolation.CLAMP),
   }), [dayColors, lampColors]);
 
   const dayLabelStyle = useAnimatedStyle(() => {
@@ -183,7 +198,7 @@ function ThemeSegmentedSwitch({
       [dayColors.umber, lampColors.fawn],
     );
     return {
-      color: interpolateColor(themeAnim.value, [0, 1], [activeColor, inactiveColor]),
+      color: interpolateColor(selectAnim.value, [0, 1], [activeColor, inactiveColor]),
     };
   }, [dayColors, lampColors]);
 
@@ -195,7 +210,7 @@ function ThemeSegmentedSwitch({
       [dayColors.umber, lampColors.fawn],
     );
     return {
-      color: interpolateColor(themeAnim.value, [0, 1], [inactiveColor, activeColor]),
+      color: interpolateColor(selectAnim.value, [0, 1], [inactiveColor, activeColor]),
     };
   }, [dayColors, lampColors]);
 
@@ -215,11 +230,13 @@ function ThemeSegmentedSwitch({
           styles.slidingPill,
           animatedPillColorStyle,
           { borderRadius: radius.pill },
+          pillWidthStyle,
           pillAnimatedStyle,
         ]}
       />
       <Pressable
         hitSlop={6}
+        onPressIn={() => handlePressIn('day')}
         onPress={() => handleSelect('day')}
         style={({ pressed }) => [styles.segment, pressed && styles.segmentPressed]}
       >
@@ -230,7 +247,7 @@ function ThemeSegmentedSwitch({
                 <ThemeSunIcon color={dayColors.flameAmber} size={14} />
               </Animated.View>
               <Animated.View style={[StyleSheet.absoluteFill, styles.centered, sunInactiveStyle]}>
-                <ThemeSunIcon color={dayColors.umber} size={14} />
+                <ThemeSunIcon color={lampColors.fawn} size={14} />
               </Animated.View>
             </View>
           </Animated.View>
@@ -247,6 +264,7 @@ function ThemeSegmentedSwitch({
       </Pressable>
       <Pressable
         hitSlop={6}
+        onPressIn={() => handlePressIn('lamp')}
         onPress={() => handleSelect('lamp')}
         style={({ pressed }) => [styles.segment, pressed && styles.segmentPressed]}
       >
@@ -383,7 +401,6 @@ export default function SettingsScreen() {
   const [promoModalVisible, setPromoModalVisible] = useState(false);
   const [feedbackModalVisible, setFeedbackModalVisible] = useState(false);
   const [entitlement, setEntitlement] = useState<EntitlementSnapshot>(getEntitlementSnapshot());
-  const [lapseRecoveryEnabled, setLapseRecoveryEnabledState] = useState(true);
 
   const [isProtected, setIsProtected] = useState(false);
   const [userEmail, setUserEmail] = useState<string | null>(null);
@@ -479,14 +496,14 @@ export default function SettingsScreen() {
 
   const handleSignOutKeepData = async () => {
     setSignOutDialogVisible(false);
-    await signOutUser(true);
+    await coordinateSignOut(true);
     await refreshAccountStatus();
     await refreshSyncStatus();
   };
 
   const handleSignOutRemoveData = async () => {
     setSignOutDialogVisible(false);
-    await signOutUser(false);
+    await coordinateSignOut(false);
     await refreshAccountStatus();
     await refreshSyncStatus();
     loadStorage();
@@ -577,6 +594,33 @@ export default function SettingsScreen() {
     ),
   }), [dayColors, lampColors]);
 
+  const animatedMiniCardStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(
+      themeAnim.value,
+      [0, 1],
+      ['#FDFCFA', '#221F24'],
+    ),
+    borderColor: interpolateColor(
+      themeAnim.value,
+      [0, 1],
+      [dayColors.hairline, lampColors.hairline],
+    ),
+  }), [dayColors, lampColors]);
+
+  const animatedSampleBoxStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(
+      themeAnim.value,
+      [0, 1],
+      [dayColors.parchment, '#18171A'],
+    ),
+    borderColor: interpolateColor(
+      themeAnim.value,
+      [0, 1],
+      [dayColors.hairline, lampColors.hairline],
+    ),
+  }), [dayColors, lampColors]);
+
+
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
@@ -601,7 +645,6 @@ export default function SettingsScreen() {
       loadStorage();
       void refreshSyncStatus();
       void refreshAccountStatus();
-      void isLapseRecoveryEnabled().then(setLapseRecoveryEnabledState).catch(() => {});
 
       return () => {
         cancelled = true;
@@ -686,25 +729,6 @@ export default function SettingsScreen() {
           <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>Page-turn sound</Text>
           <ToggleSwitch value={pageTurnSound} onChange={setPageTurnSoundEnabled} themeAnim={themeAnim} />
         </View>
-        <View style={[styles.itemDivider, { borderBottomColor: colors.hairline, marginVertical: 4 }]} />
-        <View style={styles.settingsRow}>
-          <View style={{ flex: 1, minWidth: 0, paddingRight: spacing.sm }}>
-            <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
-              Gentle return prompts
-            </Text>
-            <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11, marginTop: 2 }]}>
-              Calm, guilt-free welcome back if you've been away for a few days
-            </Text>
-          </View>
-          <ToggleSwitch
-            value={lapseRecoveryEnabled}
-            onChange={(next) => {
-              setLapseRecoveryEnabledState(next);
-              void setLapseRecoveryEnabled(next);
-            }}
-            themeAnim={themeAnim}
-          />
-        </View>
 
         <View style={[styles.itemDivider, { borderBottomColor: colors.hairline, marginVertical: 8 }]} />
 
@@ -749,111 +773,114 @@ export default function SettingsScreen() {
                   key={style.id}
                   onPress={() => handleSelectPageStyle(style)}
                   style={({ pressed }) => [
-                    styles.pageStyleMiniCard,
-                    {
-                      backgroundColor: isSelected ? `${colors.flameAmber}12` : (isLamp ? '#221F24' : '#FDFCFA'),
-                      borderColor: isSelected ? colors.flameAmber : colors.hairline,
-                      borderRadius: radius.card,
-                    },
                     pressed && { opacity: 0.85 },
                   ]}
                 >
-                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <Animated.View
+                    style={[
+                      styles.pageStyleMiniCard,
+                      { borderRadius: radius.card },
+                      isSelected
+                        ? { backgroundColor: `${colors.flameAmber}12`, borderColor: colors.flameAmber }
+                        : animatedMiniCardStyle,
+                    ]}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <Text
+                        style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13, flex: 1, marginRight: 4 }]}
+                        numberOfLines={1}
+                      >
+                        {motherTongue === 'bn' ? style.nameBangla : style.name}
+                      </Text>
+                      <View
+                        style={{
+                          backgroundColor: style.isPremium
+                            ? (isPremium ? `${colors.flameAmber}24` : colors.flameAmber)
+                            : `${colors.fawn}1C`,
+                          paddingHorizontal: 6,
+                          paddingVertical: 2,
+                          borderRadius: radius.pill,
+                        }}
+                      >
+                        <Text
+                          style={{
+                            color: style.isPremium
+                              ? (isPremium ? colors.flameAmber : colors.primaryDark)
+                              : colors.fawn,
+                            fontSize: 8.5,
+                            fontFamily: 'Manrope_700Bold',
+                          }}
+                        >
+                          {style.isPremium ? (isPremium ? 'PREMIUM' : '★ PRO') : 'FREE'}
+                        </Text>
+                      </View>
+                    </View>
+
                     <Text
-                      style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13, flex: 1, marginRight: 4 }]}
+                      style={[typography.eyebrowLabel, { color: isSelected ? colors.flameAmber : colors.fawn, fontSize: 9, marginBottom: 8 }]}
                       numberOfLines={1}
                     >
-                      {motherTongue === 'bn' ? style.nameBangla : style.name}
+                      {style.tag}
                     </Text>
-                    <View
-                      style={{
-                        backgroundColor: style.isPremium
-                          ? (isPremium ? `${colors.flameAmber}24` : colors.flameAmber)
-                          : `${colors.fawn}1C`,
-                        paddingHorizontal: 6,
-                        paddingVertical: 2,
-                        borderRadius: radius.pill,
-                      }}
+
+                    {/* Typography preview */}
+                    <Animated.View
+                      style={[
+                        styles.pageStyleSampleBox,
+                        { borderRadius: radius.bookCoverOuter },
+                        isSelected
+                          ? [animatedSampleBoxStyle, { borderColor: `${colors.flameAmber}44` }]
+                          : animatedSampleBoxStyle,
+                      ]}
                     >
                       <Text
                         style={{
-                          color: style.isPremium
-                            ? (isPremium ? colors.flameAmber : colors.primaryDark)
-                            : colors.fawn,
-                          fontSize: 8.5,
-                          fontFamily: 'Manrope_700Bold',
+                          fontFamily: sampleFont,
+                          fontSize: 13,
+                          lineHeight: 22,
+                          letterSpacing: style.letterSpacing,
+                          color: colors.ink,
                         }}
+                        numberOfLines={2}
                       >
-                        {style.isPremium ? (isPremium ? 'PREMIUM' : '★ PRO') : 'FREE'}
+                        {sampleText}
                       </Text>
-                    </View>
-                  </View>
+                    </Animated.View>
 
-                  <Text
-                    style={[typography.eyebrowLabel, { color: isSelected ? colors.flameAmber : colors.fawn, fontSize: 9, marginBottom: 8 }]}
-                    numberOfLines={1}
-                  >
-                    {style.tag}
-                  </Text>
-
-                  {/* Typography preview */}
-                  <View
-                    style={[
-                      styles.pageStyleSampleBox,
-                      {
-                        backgroundColor: isLamp ? '#18171A' : colors.parchment,
-                        borderColor: isSelected ? `${colors.flameAmber}44` : colors.hairline,
-                        borderRadius: radius.bookCoverOuter,
-                      },
-                    ]}
-                  >
-                    <Text
-                      style={{
-                        fontFamily: sampleFont,
-                        fontSize: 13,
-                        lineHeight: 22,
-                        letterSpacing: style.letterSpacing,
-                        color: colors.ink,
-                      }}
-                      numberOfLines={2}
-                    >
-                      {sampleText}
-                    </Text>
-                  </View>
-
-                  {/* Status indicator footer */}
-                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
-                    <Text
-                      style={[
-                        typography.metadataCaption,
-                        {
-                          color: isSelected
-                            ? colors.flameAmber
-                            : isUnlocked
-                            ? colors.fawn
-                            : colors.flameAmber,
-                          fontSize: 10.5,
-                          fontWeight: isSelected ? '700' : '500',
-                        },
-                      ]}
-                    >
-                      {isSelected ? 'Active' : isUnlocked ? 'Tap to apply' : 'Unlock with Pro'}
-                    </Text>
-                    {isSelected ? (
-                      <View
-                        style={{
-                          width: 16,
-                          height: 16,
-                          borderRadius: 8,
-                          backgroundColor: colors.flameAmber,
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                        }}
+                    {/* Status indicator footer */}
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
+                      <Text
+                        style={[
+                          typography.metadataCaption,
+                          {
+                            color: isSelected
+                              ? colors.flameAmber
+                              : isUnlocked
+                              ? colors.fawn
+                              : colors.flameAmber,
+                            fontSize: 10.5,
+                            fontWeight: isSelected ? '700' : '500',
+                          },
+                        ]}
                       >
-                        <CheckIcon color={colors.primaryDark} size={10} />
-                      </View>
-                    ) : null}
-                  </View>
+                        {isSelected ? 'Active' : isUnlocked ? 'Tap to apply' : 'Unlock with Pro'}
+                      </Text>
+                      {isSelected ? (
+                        <View
+                          style={{
+                            width: 16,
+                            height: 16,
+                            borderRadius: 8,
+                            backgroundColor: colors.flameAmber,
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          <CheckIcon color={colors.primaryDark} size={10} />
+                        </View>
+                      ) : null}
+                    </View>
+                  </Animated.View>
                 </Pressable>
               );
             })}
@@ -1469,12 +1496,11 @@ export default function SettingsScreen() {
       <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginTop: spacing.xl, marginBottom: spacing.sm }]}>
         Legal & Privacy
       </Text>
-      <View
+      <Animated.View
         style={[
           styles.card,
+          animatedCardStyle,
           {
-            backgroundColor: colors.card,
-            borderColor: colors.hairline,
             borderRadius: radius.card,
             marginBottom: spacing.xl,
           },
@@ -1510,7 +1536,7 @@ export default function SettingsScreen() {
             <ChevronRightIcon color={colors.straw} size={14} />
           </View>
         </Pressable>
-      </View>
+      </Animated.View>
 
       <MotherTonguePicker
         visible={motherTonguePickerVisible}
@@ -1728,11 +1754,10 @@ const styles = StyleSheet.create({
     top: 3,
     bottom: 3,
     left: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1.5 },
-    shadowOpacity: 0.18,
-    shadowRadius: 3,
-    elevation: 2,
+    // boxShadow, not elevation: on Android elevation lifts the pill in Z, and the
+    // theme-transition snapshot (software draw) sorts by Z before zIndex — so it
+    // painted the pill over the active label, making the text vanish mid-switch.
+    boxShadow: '0px 1.5px 6px rgba(0, 0, 0, 0.18)',
   },
   segment: {
     flex: 1,

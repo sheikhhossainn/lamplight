@@ -294,7 +294,7 @@ export default function Homescreen() {
             synopsis: b.synopsis,
             genre: b.genre,
             totalChapters: b.totalChapters,
-            allLabel: 'All Bengali Books →',
+            allLabel: motherTongue === 'bn' ? 'সকল বাংলা বই →' : 'All Bengali Books →',
             onPress: () => router.push({ pathname: '/bangla/[slug]', params: { slug: b.slug } } as any),
             onAllPress: () => router.push({ pathname: '/bangla' } as any),
           });
@@ -891,18 +891,35 @@ export default function Homescreen() {
           /* Active Reader State: Last Read Book */
           <View style={{ marginTop: spacing.lg }}>
             <View style={styles.sectionHeader}>
-              <Text style={[typography.eyebrowLabel, { color: colors.fawn }]}>
+              <Text
+                numberOfLines={1}
+                style={[
+                  isBengaliText(homeLabels.currentlyReading)
+                    ? typography.banglaEyebrowLabel
+                    : getNativeUiTextStyle(motherTongue, 'eyebrow'),
+                  { color: colors.fawn },
+                ]}
+              >
                 {homeLabels.currentlyReading}
               </Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={[typography.metadataCaption, { color: colors.flameAmber, fontSize: 12 }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text
+                  numberOfLines={1}
+                  style={[
+                    isBengaliText(homeLabels.placeKept)
+                      ? [typography.banglaEyebrowLabel, { fontSize: 13.5, lineHeight: 24 }]
+                      : [typography.metadataCaption, { fontSize: 12 }],
+                    { color: colors.flameAmber },
+                  ]}
+                >
                   {homeLabels.placeKept}
                 </Text>
                 <Pressable
                   onPress={handleClearCurrentReading}
                   hitSlop={12}
                   style={{
-                    padding: 4,
+                    width: 22,
+                    height: 22,
                     borderRadius: radius.pill,
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -910,7 +927,7 @@ export default function Homescreen() {
                   accessibilityRole="button"
                   accessibilityLabel="Clear currently reading book"
                 >
-                  <CloseIcon color={colors.fawn} size={14} />
+                  <CloseIcon color={colors.fawn} size={13} />
                 </Pressable>
               </View>
             </View>
@@ -1087,10 +1104,26 @@ export default function Homescreen() {
           /* Ready to Read State: Downloaded Book */
           <View style={{ marginTop: spacing.lg }}>
             <View style={styles.sectionHeader}>
-              <Text style={[typography.eyebrowLabel, { color: colors.fawn }]}>
+              <Text
+                numberOfLines={1}
+                style={[
+                  isBengaliText(homeLabels.readyToRead)
+                    ? typography.banglaEyebrowLabel
+                    : getNativeUiTextStyle(motherTongue, 'eyebrow'),
+                  { color: colors.fawn },
+                ]}
+              >
                 {homeLabels.readyToRead}
               </Text>
-              <Text style={[typography.metadataCaption, { color: colors.flameAmber, fontSize: 12 }]}>
+              <Text
+                numberOfLines={1}
+                style={[
+                  isBengaliText(homeLabels.downloadedOnDevice)
+                    ? [typography.banglaEyebrowLabel, { fontSize: 13.5, lineHeight: 24 }]
+                    : [typography.metadataCaption, { fontSize: 12 }],
+                  { color: colors.flameAmber },
+                ]}
+              >
                 {homeLabels.downloadedOnDevice}
               </Text>
             </View>
@@ -1492,14 +1525,30 @@ export default function Homescreen() {
         {spotlight ? (
           <View style={{ marginTop: spacing.xl }}>
             <View style={styles.sectionHeader}>
-              <Text style={[typography.eyebrowLabel, { color: colors.fawn }]}>
+              <Text
+                numberOfLines={1}
+                style={[
+                  isBengaliText(homeLabels.curatorsPick)
+                    ? typography.banglaEyebrowLabel
+                    : getNativeUiTextStyle(motherTongue, 'eyebrow'),
+                  { color: colors.fawn },
+                ]}
+              >
                 {`${homeLabels.curatorsPick} · ${motherTongueOption.shelfTitle}`}
               </Text>
               <Pressable
                 onPress={spotlight.onAllPress}
                 hitSlop={8}
               >
-                <Text style={[typography.buttonLabel, { color: colors.flameAmber, fontSize: 13 }]}>
+                <Text
+                  numberOfLines={1}
+                  style={[
+                    isBengaliText(spotlight.allLabel)
+                      ? [typography.banglaButtonLabel, { fontSize: 14, lineHeight: 24 }]
+                      : [typography.buttonLabel, { fontSize: 13 }],
+                    { color: colors.flameAmber },
+                  ]}
+                >
                   {spotlight.allLabel}
                 </Text>
               </Pressable>
@@ -1592,7 +1641,14 @@ export default function Homescreen() {
                   {spotlight.totalChapters > 0 ? `${spotlight.totalChapters} Chapters` : 'Complete Work'}
                 </Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <Text style={[typography.buttonLabel, { color: colors.flameAmber, fontSize: 14 }]}>
+                  <Text
+                    style={[
+                      isBengaliText(homeLabels.viewBook)
+                        ? [typography.banglaButtonLabel, { fontSize: 15 }]
+                        : [typography.buttonLabel, { fontSize: 14 }],
+                      { color: colors.flameAmber },
+                    ]}
+                  >
                     {homeLabels.viewBook}
                   </Text>
                   <ChevronRightIcon color={colors.flameAmber} size={14} />
@@ -1605,11 +1661,27 @@ export default function Homescreen() {
         {localRecommendations.length > 0 ? (
           <View style={{ marginTop: spacing.xl }}>
             <View style={styles.sectionHeader}>
-              <Text style={[typography.eyebrowLabel, { color: colors.fawn }]}>
+              <Text
+                numberOfLines={1}
+                style={[
+                  isBengaliText(homeLabels.fromReadingRhythm)
+                    ? typography.banglaEyebrowLabel
+                    : getNativeUiTextStyle(motherTongue, 'eyebrow'),
+                  { color: colors.fawn },
+                ]}
+              >
                 {homeLabels.fromReadingRhythm}
               </Text>
               <Pressable onPress={handleExploreLibrary} hitSlop={8}>
-                <Text style={[typography.buttonLabel, { color: colors.flameAmber, fontSize: 13 }]}>
+                <Text
+                  numberOfLines={1}
+                  style={[
+                    isBengaliText(homeLabels.library)
+                      ? [typography.banglaButtonLabel, { fontSize: 14, lineHeight: 24 }]
+                      : [typography.buttonLabel, { fontSize: 13 }],
+                    { color: colors.flameAmber },
+                  ]}
+                >
                   {homeLabels.library}
                 </Text>
               </Pressable>
@@ -1670,13 +1742,37 @@ export default function Homescreen() {
                       width={56}
                       height={82}
                     />
-                    <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13, marginTop: 8 }]} numberOfLines={2}>
+                    <Text
+                      style={[
+                        isBengaliText(book.title)
+                          ? [typography.banglaUiRowTitle, { fontSize: 15, lineHeight: 22 }]
+                          : [typography.uiRowTitle, { fontSize: 13, lineHeight: 18 }],
+                        { color: colors.ink, marginTop: 8 },
+                      ]}
+                      numberOfLines={2}
+                    >
                       {book.title}
                     </Text>
-                    <Text style={[typography.metadataCaption, { color: colors.umber, fontSize: 11, marginTop: 2 }]} numberOfLines={1}>
+                    <Text
+                      style={[
+                        isBengaliText(book.author)
+                          ? [typography.banglaMetadataCaption, { fontSize: 13, lineHeight: 18 }]
+                          : [typography.metadataCaption, { fontSize: 11, lineHeight: 15 }],
+                        { color: colors.umber, marginTop: 2 },
+                      ]}
+                      numberOfLines={1}
+                    >
                       {book.author}
                     </Text>
-                    <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 10, lineHeight: 14, marginTop: 7 }]} numberOfLines={2}>
+                    <Text
+                      style={[
+                        isBengaliText(reason)
+                          ? [typography.banglaMetadataCaption, { fontSize: 12, lineHeight: 18 }]
+                          : [typography.metadataCaption, { fontSize: 10, lineHeight: 14 }],
+                        { color: colors.fawn, marginTop: 7 },
+                      ]}
+                      numberOfLines={2}
+                    >
                       {reason}
                     </Text>
                   </Pressable>
@@ -1688,7 +1784,14 @@ export default function Homescreen() {
 
         {/* Discover Curated Collections */}
         <View style={{ marginTop: spacing.xl }}>
-          <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginBottom: spacing.md }]}>
+          <Text
+            style={[
+              isBengaliText(homeLabels.discoverCollections)
+                ? typography.banglaEyebrowLabel
+                : getNativeUiTextStyle(motherTongue, 'eyebrow'),
+              { color: colors.fawn, marginBottom: spacing.md },
+            ]}
+          >
             {homeLabels.discoverCollections}
           </Text>
 
@@ -1763,7 +1866,7 @@ export default function Homescreen() {
               <Text style={[getNativeUiTextStyle(motherTongue, 'row'), { color: colors.ink }]}>
                 {scriptureLabels.sacredTitle}
               </Text>
-              <Text style={[typography.metadataCaption, { color: colors.fawn, marginTop: 2 }]}>
+              <Text style={[getNativeUiTextStyle(motherTongue, 'metadata'), { color: colors.fawn, marginTop: 2 }]}>
                 {scriptureLabels.quran}, {scriptureLabels.oldTestament}/{scriptureLabels.newTestament}, {scriptureLabels.torah}, {scriptureLabels.vedas}
               </Text>
             </View>

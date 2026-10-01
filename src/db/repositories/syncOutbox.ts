@@ -72,17 +72,19 @@ export async function enqueueMutation(
 
   // Apply compaction rules
   if (mutation.operation === 'delete') {
-    // If deleting a saved word, highlight, or shelf item that was created locally
-    // but not yet pushed to the server, collapse both into a no-op.
+    // Drop every unsent upsert for this entity — pushing them would recreate it.
+    // The delete itself is still enqueued: a pending upsert may be an edit
+    // (SRS review, label, note text) of a row the server already has, and a
+    // delete of a never-pushed row is a harmless server no-op.
     if (['saved_word', 'highlight', 'shelf_item', 'preference', 'bookmark', 'reader_note'].includes(mutation.entityType)) {
-      const pendingCreate = await db.getFirstAsync<SyncOutboxSqlRow>(
-        'SELECT id FROM sync_outbox WHERE entity_type = ? AND entity_id = ? AND operation = ?',
+      const result = await db.runAsync(
+        'DELETE FROM sync_outbox WHERE entity_type = ? AND entity_id = ? AND operation = ?',
         [mutation.entityType, mutation.entityId, 'upsert'],
       );
-      if (pendingCreate) {
-        // Created locally and deleted before any push -> remove create, omit delete
-        await db.runAsync('DELETE FROM sync_outbox WHERE id = ?', [pendingCreate.id]);
-        return pendingCreate.id;
+      // shelf_item has no edit path, so a pending upsert is always an unpushed
+      // create — safe to collapse create+delete into a no-op.
+      if (mutation.entityType === 'shelf_item' && result.changes > 0) {
+        return mutation.entityId;
       }
     }
   } else if (mutation.operation === 'upsert') {

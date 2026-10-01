@@ -76,6 +76,9 @@ export default function TabsLayout() {
         headerShown: false,
         // Tabs are peers: a theme change must not animate focus between them.
         animation: 'none',
+        // Hidden tabs don't re-render until focused — keeps the theme swap (a
+        // whole-app re-render) down to the visible screen, so it lands fast.
+        freezeOnBlur: true,
         // The tab scene container defaults to white — theme it so navigating
         // into the tabs (e.g. from Onboarding) never flashes white before the
         // screen paints.
