@@ -4,6 +4,7 @@ import { Alert, Dimensions, Pressable, ScrollView, StyleSheet, Text, View } from
 import Svg, { Defs, Path, RadialGradient, Rect, Stop } from 'react-native-svg';
 
 import { FlameGlow } from '@/components/FlameGlow';
+import { RedeemPromoModal } from '@/components/RedeemPromoModal';
 import { useBilling } from '@/features/billing/BillingProvider';
 import type { PremiumPackage } from '@/features/billing/billingTypes';
 import { useAppFlag } from '@/features/config/appConfig';
@@ -107,6 +108,7 @@ export default function PaywallScreen() {
   const { status, packages, isLoadingPackages, purchase, restore, openManagement } = useBilling();
   const [plan, setPlan] = useState<Plan>('yearly');
   const [busy, setBusy] = useState(false);
+  const [promoModalVisible, setPromoModalVisible] = useState(false);
 
   const selectedPackage = useMemo(() => packageForPlan(packages, plan), [packages, plan]);
   const isPremium = status.state === 'premium';
@@ -294,25 +296,46 @@ export default function PaywallScreen() {
           style={[
             styles.freeTierBox,
             {
-              backgroundColor: 'rgba(240, 230, 214, 0.05)',
-              borderColor: 'rgba(240, 230, 214, 0.10)',
+              backgroundColor: 'rgba(245, 166, 35, 0.07)',
+              borderColor: 'rgba(245, 166, 35, 0.22)',
               borderRadius: radius.card,
-              paddingVertical: 10,
-              paddingHorizontal: 14,
-              marginTop: 16,
+              paddingVertical: 14,
+              paddingHorizontal: 16,
+              marginTop: 20,
             },
           ]}
         >
-          <Text style={[typography.eyebrowLabel, { color: colors.flameAmber, fontSize: 9.5, letterSpacing: 0.8, textAlign: 'center' }]}>
-            ALWAYS FREE IN LAMPLIGHT
-          </Text>
+          <View style={styles.freeTierHeaderRow}>
+            <Text style={{ fontSize: 13, color: colors.flameAmber }}>✦</Text>
+            <Text
+              style={[
+                typography.eyebrowLabel,
+                {
+                  color: colors.flameAmber,
+                  fontSize: 11.5,
+                  fontWeight: '700',
+                  letterSpacing: 1.1,
+                  textAlign: 'center',
+                },
+              ]}
+            >
+              ALWAYS FREE IN LAMPLIGHT
+            </Text>
+            <Text style={{ fontSize: 13, color: colors.flameAmber }}>✦</Text>
+          </View>
           <Text
             style={[
-              typography.metadataCaption,
-              { color: colors.mutedOnDark, fontSize: 11, marginTop: 4, textAlign: 'center', lineHeight: 15 },
+              typography.uiRowTitle,
+              {
+                color: colors.lampText ?? '#F0E6D6',
+                fontSize: 13,
+                lineHeight: 19,
+                textAlign: 'center',
+                fontWeight: '400',
+              },
             ]}
           >
-            Core reading, offline downloads, EPUB import, bookmarks, notes, and 30 words / 15 quotes per book remain free forever.
+            Core reading, offline downloads, EPUB import, bookmarks, private notes, and 30 words / 15 quotes per book remain free forever.
           </Text>
         </View>
       </ScrollView>
@@ -344,9 +367,17 @@ export default function PaywallScreen() {
             Billing is not configured for this build yet.
           </Text>
         ) : null}
-        <Pressable onPress={handleRestore} disabled={busy || billingUnavailable} style={styles.secondaryAction}>
-          <Text style={[typography.uiRowTitle, { color: colors.flameAmber, fontSize: 12 }]}>Restore Purchases</Text>
-        </Pressable>
+
+        <View style={styles.actionLinksRow}>
+          <Pressable onPress={handleRestore} disabled={busy || billingUnavailable} style={styles.secondaryAction}>
+            <Text style={[typography.uiRowTitle, { color: colors.flameAmber, fontSize: 12.5 }]}>Restore Purchases</Text>
+          </Pressable>
+          <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 12 }]}>·</Text>
+          <Pressable onPress={() => setPromoModalVisible(true)} style={styles.secondaryAction}>
+            <Text style={[typography.uiRowTitle, { color: colors.flameAmber, fontSize: 12.5 }]}>Redeem Code</Text>
+          </Pressable>
+        </View>
+
         {isPremium ? (
           <Pressable onPress={() => void openManagement()} disabled={busy} style={styles.secondaryAction}>
             <Text style={[typography.uiRowTitle, { color: colors.flameAmber, fontSize: 12 }]}>Manage Subscription</Text>
@@ -365,6 +396,15 @@ export default function PaywallScreen() {
           <Text style={[typography.uiRowTitle, { color: colors.fawn, fontSize: 12 }]}>Maybe later</Text>
         </Pressable>
       </View>
+
+      <RedeemPromoModal
+        visible={promoModalVisible}
+        onClose={() => setPromoModalVisible(false)}
+        onSuccess={() => {
+          setPromoModalVisible(false);
+          router.back();
+        }}
+      />
     </View>
   );
 }
@@ -422,6 +462,19 @@ const styles = StyleSheet.create({
   maybeLater: {
     alignItems: 'center',
     marginTop: 4,
+  },
+  freeTierHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  actionLinksRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 12,
   },
   secondaryAction: {
     alignItems: 'center',

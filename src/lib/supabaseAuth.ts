@@ -619,158 +619,243 @@ export async function signInWithGoogle(options?: {
       redirectUrl,
     )}`;
 
+    console.log('[Auth] Google OAuth redirectUrl:', redirectUrl);
+
     const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUrl);
 
     if (result.type !== 'success' || !result.url) {
       if (result.type === 'cancel' || result.type === 'dismiss') {
+        // Guard for Android: Custom Tabs might dismiss after the deep link has already fired
+        const creds = await getCredentials().catch(() => null);
+        if (creds && !creds.isAnonymous && creds.userId !== priorUserId) {
+          return {
+            success: true,
+            user: { id: creds.userId, email: creds.email ?? null },
+          };
+        }
         return { success: false, cancelled: true, message: 'Google sign-in was cancelled.' };
       }
       return { success: false, message: 'Unable to complete Google authentication.' };
     }
 
-    const params = parseAuthUrlParams(result.url);
+    return await handleOAuthCallbackUrl(result.url, { snapshot: options?.snapshot, priorUserId });
+  } catch (err: unknown) {
+    return {
+      success: false,
+      message: (err as Error)?.message || 'Google authentication error.',
+    };
+  }
+}
 
-    if (params.error || params.error_description) {
-      const errText = params.error_description || params.error || 'Google authentication failed.';
-      if (errText.toLowerCase().includes('not enabled') || errText.toLowerCase().includes('unsupported')) {
-        return {
-          success: false,
-          message:
-            'Google provider is not enabled in your Supabase project. Please configure Google OAuth in the Supabase dashboard.',
-        };
-      }
-      return { success: false, message: errText };
-    }
+let oauthCallbackInFlight: Promise<{
+  success: boolean;
+  cancelled?: boolean;
+  message?: string;
+  user?: { id: string; email?: string | null; displayName?: string };
+}> | null = null;
 
-    let accessToken = params.access_token;
-    let refreshToken = params.refresh_token;
-    let expiresIn = Number(params.expires_in) || 3600;
+/**
+ * Handles incoming OAuth callback URL, extracting authentication credentials and
+ * persisting user session and profile.
+ */
+export async function handleOAuthCallbackUrl(
+  url: string,
+  options?: {
+    snapshot?: any;
+    priorUserId?: string | null;
+  },
+): Promise<{
+  success: boolean;
+  cancelled?: boolean;
+  message?: string;
+  user?: { id: string; email?: string | null; displayName?: string };
+}> {
+  if (oauthCallbackInFlight) {
+    return oauthCallbackInFlight;
+  }
+  oauthCallbackInFlight = _handleOAuthCallbackUrlInternal(url, options).finally(() => {
+    oauthCallbackInFlight = null;
+  });
+  return oauthCallbackInFlight;
+}
 
-    // Support PKCE auth code exchange if returned
-    if (!accessToken && params.code) {
-      try {
-        const tokenRes = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=pkce`, {
-          method: 'POST',
-          headers: {
-            apikey: SUPABASE_ANON_KEY,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ auth_code: params.code }),
-        });
-        if (tokenRes.ok) {
-          const tokenData = (await tokenRes.json()) as Record<string, any>;
-          accessToken = tokenData.access_token;
-          refreshToken = tokenData.refresh_token;
-          expiresIn = Number(tokenData.expires_in) || 3600;
-        }
-      } catch (err) {
-        console.warn('[Auth] Code exchange error:', err);
-      }
-    }
+async function _handleOAuthCallbackUrlInternal(
+  url: string,
+  options?: {
+    snapshot?: any;
+    priorUserId?: string | null;
+  },
+): Promise<{
+  success: boolean;
+  cancelled?: boolean;
+  message?: string;
+  user?: { id: string; email?: string | null; displayName?: string };
+}> {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    return { success: false, message: 'Supabase configuration missing.' };
+  }
 
-    if (!accessToken) {
+  try {
+    const params = parseAuthUrlParams(url);
+
+  if (params.error || params.error_description) {
+    const errText = params.error_description || params.error || 'Google authentication failed.';
+    if (errText.toLowerCase().includes('not enabled') || errText.toLowerCase().includes('unsupported')) {
       return {
         success: false,
-        message: 'No access token received from Google authentication.',
+        message:
+          'Google provider is not enabled in your Supabase project. Please configure Google OAuth in the Supabase dashboard.',
       };
     }
+    return { success: false, message: errText };
+  }
 
-    // Retrieve user object from Supabase Auth
-    const userRes = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
-      headers: {
-        apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${accessToken}`,
-      },
-    });
+  let accessToken = params.access_token;
+  let refreshToken = params.refresh_token;
+  let expiresIn = Number(params.expires_in) || 3600;
 
-    if (!userRes.ok) {
-      return { success: false, message: 'Failed to retrieve authenticated user profile.' };
-    }
-
-    const userData = (await userRes.json()) as {
-      id: string;
-      email?: string;
-      user_metadata?: { full_name?: string; name?: string; avatar_url?: string; picture?: string };
-    };
-    const userEmail = userData.email || null;
-    const metadata = userData.user_metadata || {};
-    const displayName =
-      metadata.full_name ||
-      metadata.name ||
-      (userEmail ? userEmail.split('@')[0] : 'Reader');
-
-    // 1. Persist session securely in OS Keystore/Keychain
-    await persistSession({
-      access_token: accessToken,
-      refresh_token: refreshToken || '',
-      expires_in: expiresIn,
-      user: {
-        id: userData.id,
-        email: userEmail || undefined,
-        is_anonymous: false,
-      },
-    });
-
-    // 2. Persist display name and avatar in Supabase database & local settings
-    if (displayName) {
-      await updateUserProfile(displayName).catch(() => {});
-    }
-    const avatarUrl = metadata.avatar_url || metadata.picture;
-    if (avatarUrl) {
-      await setSetting('user_avatar_url', avatarUrl).catch(() => {});
-    }
-
-    // 3. Reconcile / Merge local guest data if present
-    const snapshot = options?.snapshot;
-    if (
-      snapshot &&
-      (snapshot.savedWordsCount > 0 ||
-        snapshot.highlightsCount > 0 ||
-        snapshot.booksCount > 0 ||
-        snapshot.shelvesCount > 0)
-    ) {
-      try {
-        const { executeMergeForSession } = await import('@/features/account/accountMergeService');
-        await executeMergeForSession(
-          { accessToken, userId: userData.id },
-          userEmail || 'google-user',
-          snapshot,
-          priorUserId,
-        );
-      } catch (mergeErr) {
-        console.warn('[Auth] Local merge after Google OAuth warning:', mergeErr);
-      }
-    }
-
-    // 4. Coordinate auth transition (RevenueCat identity, sync cursors, entitlements)
+  // Support PKCE auth code exchange if returned
+  if (!accessToken && params.code) {
     try {
-      const { coordinateAuthTransition } = await import('@/features/account/accountSessionCoordinator');
-      await coordinateAuthTransition({
-        priorUserId,
-        newUserId: userData.id,
-        type: 'login',
-        preserveOutbox: true,
+      const tokenRes = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=pkce`, {
+        method: 'POST',
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ auth_code: params.code }),
       });
-    } catch (coordErr) {
-      console.warn('[Auth] Auth transition coordination warning:', coordErr);
+      if (tokenRes.ok) {
+        const tokenData = (await tokenRes.json()) as Record<string, any>;
+        accessToken = tokenData.access_token;
+        refreshToken = tokenData.refresh_token;
+        expiresIn = Number(tokenData.expires_in) || 3600;
+      }
+    } catch (err) {
+      console.warn('[Auth] Code exchange error:', err);
     }
+  }
 
-    // 5. Trigger sync in background
-    try {
-      const { triggerSync } = await import('@/features/sync/syncWorker');
-      void triggerSync();
-    } catch {
-      // Offline or sync worker in progress
-    }
-
+  if (!accessToken) {
     return {
-      success: true,
-      user: {
-        id: userData.id,
-        email: userEmail,
-        displayName,
-      },
+      success: false,
+      message: 'No access token received from Google authentication.',
     };
+  }
+
+  // Retrieve user object from Supabase Auth
+  const userRes = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+    headers: {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  if (!userRes.ok) {
+    return { success: false, message: 'Failed to retrieve authenticated user profile.' };
+  }
+
+  const userData = (await userRes.json()) as {
+    id: string;
+    email?: string;
+    user_metadata?: { full_name?: string; name?: string; avatar_url?: string; picture?: string };
+  };
+  const userEmail = userData.email || null;
+  const metadata = userData.user_metadata || {};
+  const displayName =
+    metadata.full_name ||
+    metadata.name ||
+    (userEmail ? userEmail.split('@')[0] : 'Reader');
+
+  const currentSession = await getSession().catch(() => null);
+  const priorUserId =
+    options?.priorUserId !== undefined
+      ? options.priorUserId
+      : currentSession && currentSession.userId !== userData.id
+        ? currentSession.userId
+        : null;
+
+  // 1. Persist session securely in OS Keystore/Keychain
+  await persistSession({
+    access_token: accessToken,
+    refresh_token: refreshToken || '',
+    expires_in: expiresIn,
+    user: {
+      id: userData.id,
+      email: userEmail || undefined,
+      is_anonymous: false,
+    },
+  });
+
+  // 2. Persist display name and avatar in Supabase database & local settings
+  if (displayName) {
+    await updateUserProfile(displayName).catch(() => {});
+  }
+  const avatarUrl = metadata.avatar_url || metadata.picture;
+  if (avatarUrl) {
+    await setSetting('user_avatar_url', avatarUrl).catch(() => {});
+  }
+
+  // 3. Reconcile / Merge local guest data if present
+  let snapshot = options?.snapshot;
+  if (!snapshot) {
+    try {
+      const { snapshotLocalData } = await import('@/features/account/accountMergeService');
+      snapshot = await snapshotLocalData().catch(() => null);
+    } catch {
+      snapshot = null;
+    }
+  }
+
+  if (
+    snapshot &&
+    (snapshot.savedWordsCount > 0 ||
+      snapshot.highlightsCount > 0 ||
+      snapshot.booksCount > 0 ||
+      snapshot.shelvesCount > 0)
+  ) {
+    try {
+      const { executeMergeForSession } = await import('@/features/account/accountMergeService');
+      await executeMergeForSession(
+        { accessToken, userId: userData.id },
+        userEmail || 'google-user',
+        snapshot,
+        priorUserId,
+      );
+    } catch (mergeErr) {
+      console.warn('[Auth] Local merge after Google OAuth warning:', mergeErr);
+    }
+  }
+
+  // 4. Coordinate auth transition (RevenueCat identity, sync cursors, entitlements)
+  try {
+    const { coordinateAuthTransition } = await import('@/features/account/accountSessionCoordinator');
+    await coordinateAuthTransition({
+      priorUserId,
+      newUserId: userData.id,
+      type: 'login',
+      preserveOutbox: true,
+    });
+  } catch (coordErr) {
+    console.warn('[Auth] Auth transition coordination warning:', coordErr);
+  }
+
+  // 5. Trigger sync in background
+  try {
+    const { triggerSync } = await import('@/features/sync/syncWorker');
+    void triggerSync();
+  } catch {
+    // Offline or sync worker in progress
+  }
+
+  return {
+    success: true,
+    user: {
+      id: userData.id,
+      email: userEmail,
+      displayName,
+    },
+  };
   } catch (err: unknown) {
     return {
       success: false,
