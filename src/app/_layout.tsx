@@ -17,8 +17,19 @@ import {
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as SplashScreen from 'expo-splash-screen';
 import * as SystemUI from 'expo-system-ui';
+import * as WebBrowser from 'expo-web-browser';
 import { useEffect, useState } from 'react';
-import { AppState, View } from 'react-native';
+import { AppState, LogBox, View } from 'react-native';
+
+WebBrowser.maybeCompleteAuthSession();
+
+LogBox.ignoreLogs([
+  'ProgressBarAndroid has been extracted',
+  'SafeAreaView has been deprecated',
+  'Clipboard has been extracted',
+  'InteractionManager has been deprecated',
+  'PushNotificationIOS has been extracted',
+]);
 
 import { triggerSync } from '@/features/sync/syncWorker';
 import { flushAnalyticsQueue } from '@/features/analytics/analytics';
@@ -242,6 +253,7 @@ function AppShell() {
         <Stack.Screen name="mood-verses/reflect" options={{ contentStyle: { backgroundColor: colors.parchment } }} />
         <Stack.Screen name="login" options={{ contentStyle: { backgroundColor: colors.parchment } }} />
         <Stack.Screen name="signup" options={{ contentStyle: { backgroundColor: colors.parchment } }} />
+        <Stack.Screen name="auth/callback" options={{ contentStyle: { backgroundColor: colors.parchment } }} />
         <Stack.Screen name="profile" options={{ contentStyle: { backgroundColor: colors.parchment } }} />
         <Stack.Screen name="terms" options={{ contentStyle: { backgroundColor: colors.parchment } }} />
         <Stack.Screen name="privacy" options={{ contentStyle: { backgroundColor: colors.parchment } }} />

@@ -13,6 +13,7 @@ import Svg, { Defs, Path, RadialGradient, Rect, Stop } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 
 import { FlameGlow } from '@/components/FlameGlow';
+import { RedeemPromoModal } from '@/components/RedeemPromoModal';
 import { restorePurchases } from '@/features/subscription/subscriptionState';
 import { useTheme } from '@/theme/ThemeProvider';
 
@@ -45,6 +46,7 @@ export function PaywallModal({ visible, onClose, onSuccess }: PaywallModalProps)
   const { colors, typography, spacing, radius, layout } = useTheme();
   const [plan, setPlan] = useState<Plan>('yearly');
   const [restoring, setRestoring] = useState(false);
+  const [promoModalVisible, setPromoModalVisible] = useState(false);
 
   const startPremium = () => {
     Alert.alert('Not yet available', 'In-app billing is coming in a later milestone.');
@@ -192,24 +194,42 @@ export function PaywallModal({ visible, onClose, onSuccess }: PaywallModalProps)
             </Text>
           </Pressable>
 
-          <Pressable
-            disabled={restoring}
-            onPress={handleRestore}
-            style={styles.restoreBtn}
-          >
-            {restoring ? (
-              <ActivityIndicator size="small" color={colors.flameAmber} />
-            ) : (
+          <View style={styles.actionLinksRow}>
+            <Pressable
+              disabled={restoring}
+              onPress={handleRestore}
+              style={styles.restoreBtn}
+            >
+              {restoring ? (
+                <ActivityIndicator size="small" color={colors.flameAmber} />
+              ) : (
+                <Text style={[typography.metadataCaption, { color: colors.flameAmber, fontSize: 13, fontWeight: '600' }]}>
+                  Restore Purchases
+                </Text>
+              )}
+            </Pressable>
+            <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 13 }]}>·</Text>
+            <Pressable onPress={() => setPromoModalVisible(true)} style={styles.restoreBtn}>
               <Text style={[typography.metadataCaption, { color: colors.flameAmber, fontSize: 13, fontWeight: '600' }]}>
-                Restore Purchases
+                Redeem Code
               </Text>
-            )}
-          </Pressable>
+            </Pressable>
+          </View>
 
           <Pressable onPress={onClose} style={styles.maybeLater}>
             <Text style={[typography.uiRowTitle, { color: colors.fawn, fontSize: 12 }]}>Maybe later</Text>
           </Pressable>
         </View>
+
+        <RedeemPromoModal
+          visible={promoModalVisible}
+          onClose={() => setPromoModalVisible(false)}
+          onSuccess={() => {
+            setPromoModalVisible(false);
+            onSuccess?.();
+            onClose();
+          }}
+        />
       </View>
     </Modal>
   );
@@ -262,11 +282,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 10,
   },
+  actionLinksRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    marginBottom: 6,
+  },
   restoreBtn: {
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 8,
-    marginBottom: 6,
   },
   maybeLater: {
     alignItems: 'center',
