@@ -440,6 +440,16 @@ let koreanCatalogSeeded = false;
 export async function seedKoreanCatalog(): Promise<void> {
   if (koreanCatalogSeeded) return;
   try {
+    const { getDb } = await import('@/db/client');
+    const db = await getDb();
+    const { count } = (await db.getFirstAsync<{ count: number }>(
+      "SELECT COUNT(*) as count FROM books WHERE source = 'gongu_korea'",
+    )) ?? { count: 0 };
+    if (count >= GONGU_KOREAN_BOOKS.length) {
+      koreanCatalogSeeded = true;
+      return;
+    }
+
     const { saveKoreanChapters, upsertKoreanBook } = await import('@/db/repositories/books');
     for (const book of GONGU_KOREAN_BOOKS) {
       await upsertKoreanBook({

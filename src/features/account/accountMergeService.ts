@@ -1,0 +1,455 @@
+import { getDb } from '@/db/client';
+import { getSession, verifyEmailOtp } from '@/lib/supabaseAuth';
+import {
+  createMergeJournal,
+  updateMergeJournalState,
+} from '@/db/repositories/syncMergeJournal';
+import { enqueueMutation } from '@/db/repositories/syncOutbox';
+import { resolveLocalBookId } from '@/db/repositories/cloudLibraryMap';
+import { triggerSync } from '@/features/sync/syncWorker';
+
+const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+
+export type LocalDataSnapshot = {
+  savedWordsCount: number;
+  highlightsCount: number;
+  booksCount: number;
+  shelvesCount: number;
+  reviewEventsCount: number;
+  timestamp: number;
+  data: {
+    savedWords: any[];
+    highlights: any[];
+    readingPositions: any[];
+    shelves: any[];
+    shelfItems: any[];
+    reviewEvents: any[];
+  };
+};
+
+/**
+ * Creates an in-memory snapshot of all personal local SQLite rows
+ * before initiating an existing-account sign-in or merge.
+ */
+export async function snapshotLocalData(): Promise<LocalDataSnapshot> {
+  const db = await getDb();
+
+  const [savedWords, highlights, readingPositions, shelves, shelfItems, reviewEvents] =
+    await Promise.all([
+      db.getAllAsync<any>('SELECT * FROM saved_words'),
+      db.getAllAsync<any>('SELECT * FROM highlights'),
+      db.getAllAsync<any>('SELECT * FROM reading_positions'),
+      db.getAllAsync<any>('SELECT * FROM shelves'),
+      db.getAllAsync<any>('SELECT * FROM shelf_items'),
+      db.getAllAsync<any>('SELECT * FROM review_events'),
+    ]);
+
+  return {
+    savedWordsCount: savedWords.length,
+    highlightsCount: highlights.length,
+    booksCount: readingPositions.length,
+    shelvesCount: shelves.length,
+    reviewEventsCount: reviewEvents.length,
+    timestamp: Date.now(),
+    data: {
+      savedWords,
+      highlights,
+      readingPositions,
+      shelves,
+      shelfItems,
+      reviewEvents,
+    },
+  };
+}
+
+/**
+ * Pulls cloud records for an authenticated user from Supabase REST API.
+ */
+async function fetchCloudData(accessToken: string): Promise<{
+  readingPositions: any[];
+  savedWords: any[];
+  highlights: any[];
+  shelves: any[];
+  shelfItems: any[];
+}> {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    return {
+      readingPositions: [],
+      savedWords: [],
+      highlights: [],
+      shelves: [],
+      shelfItems: [],
+    };
+  }
+
+  const headers = {
+    apikey: SUPABASE_ANON_KEY,
+    Authorization: `Bearer ${accessToken}`,
+    'Content-Type': 'application/json',
+  };
+
+  const [posRes, wordsRes, hlRes, shelvesRes, itemsRes] = await Promise.all([
+    fetch(`${SUPABASE_URL}/rest/v1/reading_positions?select=*`, { headers }).catch(() => null),
+    fetch(`${SUPABASE_URL}/rest/v1/saved_words?select=*`, { headers }).catch(() => null),
+    fetch(`${SUPABASE_URL}/rest/v1/highlights?select=*`, { headers }).catch(() => null),
+    fetch(`${SUPABASE_URL}/rest/v1/shelves?select=*`, { headers }).catch(() => null),
+    fetch(`${SUPABASE_URL}/rest/v1/shelf_items?select=*`, { headers }).catch(() => null),
+  ]);
+
+  const [readingPositions, savedWords, highlights, shelves, shelfItems] = await Promise.all([
+    posRes && posRes.ok ? posRes.json().catch(() => []) : [],
+    wordsRes && wordsRes.ok ? wordsRes.json().catch(() => []) : [],
+    hlRes && hlRes.ok ? hlRes.json().catch(() => []) : [],
+    shelvesRes && shelvesRes.ok ? shelvesRes.json().catch(() => []) : [],
+    itemsRes && itemsRes.ok ? itemsRes.json().catch(() => []) : [],
+  ]);
+
+  return {
+    readingPositions: Array.isArray(readingPositions) ? readingPositions : [],
+    savedWords: Array.isArray(savedWords) ? savedWords : [],
+    highlights: Array.isArray(highlights) ? highlights : [],
+    shelves: Array.isArray(shelves) ? shelves : [],
+    shelfItems: Array.isArray(shelfItems) ? shelfItems : [],
+  };
+}
+
+/**
+ * Executes existing-account sign-in and local-to-cloud merge via email OTP.
+ */
+export async function executeAccountMerge(
+  email: string,
+  token: string,
+  snapshot: LocalDataSnapshot,
+): Promise<{ success: boolean; message?: string }> {
+  try {
+    const priorSession = await getSession().catch(() => null);
+    const priorAccountId = priorSession?.userId ?? null;
+
+    const verifyRes = await verifyEmailOtp(email, token);
+    if (!verifyRes.success) {
+      return { success: false, message: verifyRes.message || 'Verification failed.' };
+    }
+
+    const session = await getSession();
+    return await executeMergeForSession(session, email, snapshot, priorAccountId);
+  } catch (err: unknown) {
+    return {
+      success: false,
+      message: (err as Error)?.message || 'An unexpected error occurred during account merge.',
+    };
+  }
+}
+
+/**
+ * Executes local-to-cloud merge for an already authenticated session (used by OAuth and OTP).
+ */
+export async function executeMergeForSession(
+  session: { accessToken: string; userId: string },
+  email: string,
+  snapshot: LocalDataSnapshot,
+  priorAccountId?: string | null,
+): Promise<{ success: boolean; message?: string }> {
+  let journalId: string | null = null;
+  const db = await getDb();
+
+  try {
+    const priorId = priorAccountId ?? null;
+
+    // Step 1: Initialize journal
+    journalId = await createMergeJournal(
+      priorId,
+      email,
+      JSON.stringify({
+        wordCount: snapshot.savedWordsCount,
+        booksCount: snapshot.booksCount,
+        highlightsCount: snapshot.highlightsCount,
+      }),
+    );
+
+    await updateMergeJournalState(journalId, 'staging');
+
+    // Step 2: Pull cloud data into staging
+    const cloudData = await fetchCloudData(session.accessToken);
+
+    // Resolve cloud library_item_id to local book_id for all cloud records
+    for (const cp of cloudData.readingPositions) {
+      if (!cp.book_id && cp.library_item_id) {
+        cp.book_id = await resolveLocalBookId(cp.library_item_id, session.accessToken, db);
+      }
+    }
+    cloudData.readingPositions = cloudData.readingPositions.filter((p) => Boolean(p.book_id));
+
+    for (const cw of cloudData.savedWords) {
+      if (!cw.book_id && cw.library_item_id) {
+        cw.book_id = await resolveLocalBookId(cw.library_item_id, session.accessToken, db);
+      }
+    }
+    cloudData.savedWords = cloudData.savedWords.filter((w) => Boolean(w.book_id));
+
+    for (const ch of cloudData.highlights) {
+      if (!ch.book_id && ch.library_item_id) {
+        ch.book_id = await resolveLocalBookId(ch.library_item_id, session.accessToken, db);
+      }
+    }
+    cloudData.highlights = cloudData.highlights.filter((h) => Boolean(h.book_id));
+
+    for (const csi of cloudData.shelfItems) {
+      if (!csi.book_id && csi.library_item_id) {
+        csi.book_id = await resolveLocalBookId(csi.library_item_id, session.accessToken, db);
+      }
+    }
+
+    await updateMergeJournalState(journalId, 'merging');
+
+    // Step 4: Execute merge transaction in SQLite
+    await db.withTransactionAsync(async (tx) => {
+      // 4.1 Merge Reading Positions: latest timestamp wins, furthest percent retained
+      const cloudPositionsMap = new Map(cloudData.readingPositions.map((p) => [p.book_id, p]));
+      for (const localPos of snapshot.data.readingPositions) {
+        const cloudPos = cloudPositionsMap.get(localPos.book_id);
+        if (cloudPos) {
+          const newestTime = Math.max(localPos.updated_at, new Date(cloudPos.updated_at ?? 0).getTime());
+          const maxPercent = Math.max(localPos.percent_complete, cloudPos.percent_complete ?? 0);
+          const activeChapter = localPos.updated_at >= new Date(cloudPos.updated_at ?? 0).getTime()
+            ? localPos.chapter_index
+            : cloudPos.chapter_index;
+          const activePage = localPos.updated_at >= new Date(cloudPos.updated_at ?? 0).getTime()
+            ? localPos.page_index
+            : cloudPos.page_index;
+
+          await tx.runAsync(
+            `INSERT INTO reading_positions (book_id, chapter_index, page_index, percent_complete, updated_at, continue_hidden)
+             VALUES (?, ?, ?, ?, ?, ?)
+             ON CONFLICT(book_id) DO UPDATE SET
+               chapter_index = excluded.chapter_index,
+               page_index = excluded.page_index,
+               percent_complete = excluded.percent_complete,
+               updated_at = excluded.updated_at`,
+            [localPos.book_id, activeChapter, activePage, maxPercent, newestTime, localPos.continue_hidden ?? 0],
+          );
+        } else {
+          // Local-only position: enqueue for upload under new owner
+          await enqueueMutation(
+            {
+              entityType: 'reading_position',
+              entityId: localPos.book_id,
+              operation: 'upsert',
+              payload: {
+                bookId: localPos.book_id,
+                chapterIndex: localPos.chapter_index,
+                pageIndex: localPos.page_index,
+                percentComplete: localPos.percent_complete,
+                updatedAt: localPos.updated_at,
+              },
+            },
+            tx,
+          );
+        }
+      }
+
+      // Upsert any cloud-only positions into local DB
+      const localPositionsMap = new Map(snapshot.data.readingPositions.map((p) => [p.book_id, p]));
+      for (const cloudPos of cloudData.readingPositions) {
+        if (!localPositionsMap.has(cloudPos.book_id)) {
+          await tx.runAsync(
+            `INSERT OR IGNORE INTO reading_positions (book_id, chapter_index, page_index, percent_complete, updated_at, continue_hidden)
+             VALUES (?, ?, ?, ?, ?, ?)`,
+            [
+              cloudPos.book_id,
+              cloudPos.chapter_index ?? 0,
+              cloudPos.page_index ?? 0,
+              cloudPos.percent_complete ?? 0,
+              new Date(cloudPos.updated_at ?? Date.now()).getTime(),
+              0,
+            ],
+          );
+        }
+      }
+
+      // 4.2 Merge Saved Words: union by id or (book_id, source_word)
+      const cloudWordsMap = new Map(cloudData.savedWords.map((w) => [w.id, w]));
+      const cloudWordKeyMap = new Map(
+        cloudData.savedWords.map((w) => [`${w.book_id}:${w.source_word.toLowerCase()}`, w]),
+      );
+
+      for (const localWord of snapshot.data.savedWords) {
+        const key = `${localWord.book_id}:${localWord.source_word.toLowerCase()}`;
+        const match = cloudWordsMap.get(localWord.id) ?? cloudWordKeyMap.get(key);
+        if (!match) {
+          // Local-only word: enqueue to upload to cloud
+          await enqueueMutation(
+            {
+              entityType: 'saved_word',
+              entityId: localWord.id,
+              operation: 'upsert',
+              payload: {
+                id: localWord.id,
+                bookId: localWord.book_id,
+                sourceWord: localWord.source_word,
+                sourceLang: localWord.source_lang,
+                targetLang: localWord.target_lang,
+                translation: localWord.translation,
+                contextSentence: localWord.context_sentence,
+                chapterIndex: localWord.chapter_index,
+                pageIndex: localWord.page_index ?? 0,
+                paragraphIndex: localWord.paragraph_index ?? 0,
+                srsStage: localWord.srs_stage ?? 0,
+                srsEaseFactor: localWord.srs_ease_factor ?? 2.5,
+                srsDueDate: localWord.srs_due_date,
+                createdAt: localWord.created_at,
+              },
+            },
+            tx,
+          );
+        }
+      }
+
+      // Insert cloud words that do not exist locally
+      const localWordsMap = new Map(snapshot.data.savedWords.map((w) => [w.id, w]));
+      for (const cloudWord of cloudData.savedWords) {
+        if (!localWordsMap.has(cloudWord.id)) {
+          const srsDueDate = cloudWord.srs_next_review_at
+            ? new Date(cloudWord.srs_next_review_at).getTime()
+            : (cloudWord.srs_due_date ?? 0);
+          await tx.runAsync(
+            `INSERT OR IGNORE INTO saved_words (
+              id, book_id, source_word, source_lang, target_lang, translation,
+              context_sentence, chapter_index, page_index, paragraph_index, created_at,
+              srs_stage, srs_ease_factor, srs_due_date, srs_reps, srs_interval_days, srs_lapses
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)`,
+            [
+              cloudWord.id,
+              cloudWord.book_id,
+              cloudWord.source_word,
+              cloudWord.source_lang,
+              cloudWord.target_lang,
+              cloudWord.translation,
+              cloudWord.context_sentence,
+              cloudWord.chapter_index ?? 0,
+              cloudWord.page_index ?? 0,
+              cloudWord.paragraph_index ?? 0,
+              new Date(cloudWord.created_at ?? Date.now()).getTime(),
+              cloudWord.srs_stage ?? cloudWord.srs_box ?? 0,
+              cloudWord.srs_ease_factor ?? 2.5,
+              srsDueDate,
+              cloudWord.srs_reps ?? cloudWord.srs_review_count ?? 0,
+            ],
+          );
+        }
+      }
+
+      // 4.3 Merge Highlights: union
+      const cloudHlMap = new Map(cloudData.highlights.map((h) => [h.id, h]));
+      for (const localHl of snapshot.data.highlights) {
+        if (!cloudHlMap.has(localHl.id)) {
+          await enqueueMutation(
+            {
+              entityType: 'highlight',
+              entityId: localHl.id,
+              operation: 'upsert',
+              payload: {
+                id: localHl.id,
+                bookId: localHl.book_id,
+                chapterIndex: localHl.chapter_index ?? 0,
+                pageIndex: localHl.page_index ?? 0,
+                startOffset: localHl.start_offset ?? 0,
+                endOffset: localHl.end_offset ?? 0,
+                colorKey: localHl.color_key ?? 'amber',
+                quoteText: localHl.quote_text ?? '',
+                createdAt: localHl.created_at,
+              },
+            },
+            tx,
+          );
+        }
+      }
+      const localHlMap = new Map(snapshot.data.highlights.map((h) => [h.id, h]));
+      for (const cloudHl of cloudData.highlights) {
+        if (!localHlMap.has(cloudHl.id)) {
+          await tx.runAsync(
+            `INSERT OR IGNORE INTO highlights (
+              id, book_id, chapter_index, page_index, start_offset, end_offset, color_key, quote_text, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              cloudHl.id,
+              cloudHl.book_id,
+              cloudHl.chapter_index ?? 0,
+              cloudHl.page_index ?? 0,
+              cloudHl.start_offset ?? 0,
+              cloudHl.end_offset ?? 0,
+              cloudHl.color_key ?? 'amber',
+              cloudHl.quote_text ?? '',
+              new Date(cloudHl.created_at ?? Date.now()).getTime(),
+            ],
+          );
+        }
+      }
+
+      // 4.4 Merge Shelves & Shelf Items
+      const cloudShelvesMap = new Map(cloudData.shelves.map((s) => [s.id, s]));
+      for (const localShelf of snapshot.data.shelves) {
+        if (!cloudShelvesMap.has(localShelf.id)) {
+          await enqueueMutation(
+            {
+              entityType: 'shelf',
+              entityId: localShelf.id,
+              operation: 'upsert',
+              payload: {
+                id: localShelf.id,
+                name: localShelf.name,
+                sortOrder: localShelf.sort_order ?? 0,
+                createdAt: localShelf.created_at,
+              },
+            },
+            tx,
+          );
+        }
+      }
+      const localShelvesMap = new Map(snapshot.data.shelves.map((s) => [s.id, s]));
+      for (const cloudShelf of cloudData.shelves) {
+        if (!localShelvesMap.has(cloudShelf.id)) {
+          await tx.runAsync(
+            `INSERT OR IGNORE INTO shelves (id, name, created_at) VALUES (?, ?, ?)`,
+            [cloudShelf.id, cloudShelf.name, new Date(cloudShelf.created_at ?? Date.now()).getTime()],
+          );
+        }
+      }
+      for (const cloudShelfItem of cloudData.shelfItems) {
+        if (cloudShelfItem.book_id) {
+          await tx.runAsync(
+            `INSERT OR IGNORE INTO shelf_items (shelf_id, book_id, added_at) VALUES (?, ?, ?)`,
+            [cloudShelfItem.shelf_id, cloudShelfItem.book_id, new Date(cloudShelfItem.added_at ?? Date.now()).getTime()],
+          );
+        }
+      }
+    });
+
+    // Step 5: Mark journal as completed
+    await updateMergeJournalState(journalId, 'completed', Date.now());
+
+    // Step 6: Coordinate auth identity transition (RevenueCat, cursors, outbox, entitlements, sync, telemetry)
+    const { coordinateAuthTransition } = await import('@/features/account/accountSessionCoordinator');
+    await coordinateAuthTransition({
+      priorUserId: priorAccountId,
+      newUserId: session.userId,
+      type: 'merge',
+      preserveOutbox: true,
+    });
+
+    return { success: true };
+  } catch (err: unknown) {
+    console.error('[AccountMerge] Error during merge execution:', err);
+    if (journalId) {
+      await updateMergeJournalState(journalId, 'failed');
+    }
+    const { logEvent } = await import('@/features/analytics/analytics');
+    logEvent('account_merge_failed', {
+      reason: (err as Error)?.message || 'An unexpected error occurred during account merge.',
+    });
+    return {
+      success: false,
+      message: (err as Error)?.message || 'An unexpected error occurred during account merge.',
+    };
+  }
+}

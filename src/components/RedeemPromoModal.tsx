@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import * as Haptics from 'expo-haptics';
 
+import { hydrateRateLimit, recordFailedAttempt, resetRateLimit } from '@/lib/rateLimiter';
 import { redeemPromoCode } from '@/features/subscription/entitlementService';
 import { useTheme } from '@/theme/ThemeProvider';
 
@@ -10,6 +12,8 @@ type RedeemPromoModalProps = {
   onSuccess?: (message: string) => void;
 };
 
+const PROMO_RATE_LIMIT_KEY = 'redeem_promo_code';
+
 export function RedeemPromoModal({ visible, onClose, onSuccess }: RedeemPromoModalProps) {
   const { colors, typography, radius, spacing } = useTheme();
   const [code, setCode] = useState('');
@@ -17,7 +21,50 @@ export function RedeemPromoModal({ visible, onClose, onSuccess }: RedeemPromoMod
   const [message, setMessage] = useState<string | null>(null);
   const [isError, setIsError] = useState(false);
 
+  // Rate limiting lock state
+  const [isLocked, setIsLocked] = useState(false);
+  const [remainingLockSeconds, setRemainingLockSeconds] = useState(0);
+  const lockTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    if (visible) {
+      void (async () => {
+        const state = await hydrateRateLimit(PROMO_RATE_LIMIT_KEY);
+        updateLockState(state.locked, state.remainingSeconds);
+      })();
+    }
+  }, [visible]);
+
+  useEffect(() => {
+    return () => {
+      if (lockTimerRef.current) clearInterval(lockTimerRef.current);
+    };
+  }, []);
+
+  const updateLockState = (locked: boolean, seconds: number) => {
+    setIsLocked(locked);
+    setRemainingLockSeconds(seconds);
+
+    if (lockTimerRef.current) clearInterval(lockTimerRef.current);
+
+    if (locked && seconds > 0) {
+      lockTimerRef.current = setInterval(() => {
+        setRemainingLockSeconds((prev) => {
+          if (prev <= 1) {
+            if (lockTimerRef.current) clearInterval(lockTimerRef.current);
+            setIsLocked(false);
+            setMessage(null);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+  };
+
   const handleRedeem = async () => {
+    if (isLocked) return;
+
     const trimmed = code.trim();
     if (!trimmed) return;
 
@@ -28,8 +75,10 @@ export function RedeemPromoModal({ visible, onClose, onSuccess }: RedeemPromoMod
     try {
       const res = await redeemPromoCode(trimmed);
       if (res.success) {
+        await resetRateLimit(PROMO_RATE_LIMIT_KEY);
         setIsError(false);
         setMessage(res.message);
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         onSuccess?.(res.message);
         setTimeout(() => {
           onClose();
@@ -37,8 +86,17 @@ export function RedeemPromoModal({ visible, onClose, onSuccess }: RedeemPromoMod
           setMessage(null);
         }, 1200);
       } else {
+        const lockState = await recordFailedAttempt(PROMO_RATE_LIMIT_KEY);
         setIsError(true);
-        setMessage(res.message);
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+
+        if (lockState.locked) {
+          updateLockState(true, lockState.remainingSeconds);
+          setMessage(`Too many attempts. Entry locked for ${lockState.remainingSeconds}s.`);
+        } else {
+          const remaining = 5 - (lockState.attempts % 5);
+          setMessage(`${res.message} (${remaining} ${remaining === 1 ? 'attempt' : 'attempts'} remaining)`);
+        }
       }
     } catch {
       setIsError(true);
@@ -89,7 +147,7 @@ export function RedeemPromoModal({ visible, onClose, onSuccess }: RedeemPromoMod
               setCode(text);
               if (message) setMessage(null);
             }}
-            editable={!loading}
+            editable={!loading && !isLocked}
           />
 
           {message ? (
@@ -113,14 +171,24 @@ export function RedeemPromoModal({ visible, onClose, onSuccess }: RedeemPromoMod
               style={[
                 styles.action,
                 styles.redeemBtn,
-                { backgroundColor: colors.flameAmber, borderRadius: radius.pill },
+                {
+                  backgroundColor: isLocked ? colors.hairline : colors.flameAmber,
+                  borderRadius: radius.pill,
+                },
               ]}
-              disabled={loading || !code.trim()}
+              disabled={loading || !code.trim() || isLocked}
             >
               {loading ? (
                 <ActivityIndicator size="small" color={colors.primaryDark} />
               ) : (
-                <Text style={[typography.buttonLabel, { color: colors.primaryDark, fontSize: 14 }]}>Redeem</Text>
+                <Text
+                  style={[
+                    typography.buttonLabel,
+                    { color: isLocked ? colors.fawn : colors.primaryDark, fontSize: 14 },
+                  ]}
+                >
+                  {isLocked ? `Locked (${remainingLockSeconds}s)` : 'Redeem'}
+                </Text>
               )}
             </Pressable>
           </View>

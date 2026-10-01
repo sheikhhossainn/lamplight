@@ -1,5 +1,9 @@
 import { StyleSheet, Text, View } from 'react-native';
-import { type SharedValue } from 'react-native-reanimated';
+import Animated, {
+  interpolateColor,
+  useAnimatedStyle,
+  type SharedValue,
+} from 'react-native-reanimated';
 
 import { CultureMotif } from '@/components/CultureMotif';
 import { LamplightClassicThemeIcon } from '@/components/icons';
@@ -13,12 +17,12 @@ import {
   type TargetReadingLanguageCode,
 } from '@/features/settings/targetReadingLanguage';
 import { useTheme } from '@/theme/ThemeProvider';
-import { getCultureMaterial } from '@/theme/tokens';
+import { getCultureMaterial, getCultureThemeColors } from '@/theme/tokens';
 import { getNativeUiTextStyle } from '@/theme/typography';
 
 export function CultureEditionBanner({
   compact = false,
-  themeProgress: _themeProgress,
+  themeProgress,
   motherTongue: overrideMotherTongue,
   targetReadingLanguage: overrideTargetReadingLanguage,
 }: {
@@ -38,15 +42,66 @@ export function CultureEditionBanner({
   const subtitleLanguage = presentation.subtitleLanguage ?? motherTongue;
   const isRTL = language === 'ar';
 
+  const dayColors = getCultureThemeColors(cultureTheme, 'day');
+  const lampColors = getCultureThemeColors(cultureTheme, 'lamp');
+  const dayMaterial = getCultureMaterial(cultureTheme, 'day');
+  const lampMaterial = getCultureMaterial(cultureTheme, 'lamp');
+
+  const animatedBannerStyle = useAnimatedStyle(() => {
+    if (!themeProgress) {
+      return {
+        backgroundColor: material.wash,
+        borderLeftColor: material.accent,
+        borderRightColor: material.accent,
+      };
+    }
+    return {
+      backgroundColor: interpolateColor(
+        themeProgress.value,
+        [0, 1],
+        [dayMaterial.wash, lampMaterial.wash],
+      ),
+      borderLeftColor: interpolateColor(
+        themeProgress.value,
+        [0, 1],
+        [dayMaterial.accent, lampMaterial.accent],
+      ),
+      borderRightColor: interpolateColor(
+        themeProgress.value,
+        [0, 1],
+        [dayMaterial.accent, lampMaterial.accent],
+      ),
+    };
+  }, [themeProgress, material.wash, material.accent, dayMaterial, lampMaterial]);
+
+  const animatedMonogramStyle = useAnimatedStyle(() => {
+    if (!themeProgress) {
+      return {
+        backgroundColor: colors.card,
+        borderColor: material.accent,
+      };
+    }
+    return {
+      backgroundColor: interpolateColor(
+        themeProgress.value,
+        [0, 1],
+        [dayColors.card, lampColors.card],
+      ),
+      borderColor: interpolateColor(
+        themeProgress.value,
+        [0, 1],
+        [dayMaterial.accent, lampMaterial.accent],
+      ),
+    };
+  }, [themeProgress, colors.card, material.accent, dayColors, lampColors, dayMaterial, lampMaterial]);
+
   return (
-    <View
+    <Animated.View
       style={[
         styles.banner,
         compact && styles.bannerCompact,
+        animatedBannerStyle,
         {
-          backgroundColor: material.wash,
-          borderLeftColor: material.accent,
-          borderRightColor: material.accent,
           borderLeftWidth: isRTL ? 0 : 4,
           borderRightWidth: isRTL ? 4 : 0,
           borderRadius: radius.card,
@@ -59,14 +114,11 @@ export function CultureEditionBanner({
       accessibilityLabel={`${presentation.title} reading theme. ${presentation.nativeTitle}`}
     >
       <CultureMotif theme={cultureTheme} color={material.accent} />
-      <View
+      <Animated.View
         style={[
           styles.monogram,
           compact && styles.monogramCompact,
-          {
-            backgroundColor: colors.card,
-            borderColor: material.accent,
-          },
+          animatedMonogramStyle,
         ]}
       >
         {cultureTheme === 'classic' ? (
@@ -86,7 +138,7 @@ export function CultureEditionBanner({
             {presentation.monogram}
           </Text>
         )}
-      </View>
+      </Animated.View>
       <View style={[styles.copy, { marginLeft: isRTL ? 0 : spacing.xsm, marginRight: isRTL ? spacing.xsm : 0 }]}>
         <Text
           style={[
@@ -123,7 +175,7 @@ export function CultureEditionBanner({
           {presentation.editionLabel}
         </Text>
       </View>
-    </View>
+    </Animated.View>
   );
 }
 

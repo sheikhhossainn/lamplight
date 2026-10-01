@@ -16,43 +16,79 @@ import { CultureEditionBanner } from '@/components/CultureEditionBanner';
 import { CultureMotif } from '@/components/CultureMotif';
 import { HomeGuideModal } from '@/components/HomeGuideModal';
 import { WordsIllustration } from '@/components/NotebookIllustrations';
-import { ChevronRightIcon, QuestionIcon } from '@/components/icons';
+import { ChevronRightIcon, CloseIcon, QuestionIcon } from '@/components/icons';
 import { getBook, listBanglaBooks, listBooks, type BookRow } from '@/db/repositories/books';
 import { getSrsMetrics } from '@/db/repositories/savedWords';
 import { getSetting, setSetting } from '@/db/repositories/appSettings';
 import {
+  hideFromContinueReading,
   listActiveReadingPositions,
+  listAllReadingPositions,
   type ReadingPosition,
 } from '@/db/repositories/readingPosition';
+import { getRecentSessions } from '@/db/repositories/readingSessions';
 import {
   fetchBanglaBooks,
   type BanglaBookSummary,
 } from '@/features/content-ingestion/banglaApi';
 import { AOZORA_JAPANESE_BOOKS } from '@/features/content-ingestion/japaneseApi';
 import { GONGU_KOREAN_BOOKS } from '@/features/content-ingestion/koreanApi';
-import { getMotherTongueOption, getScriptureLabels, useMotherTongue } from '@/features/settings/motherTongue';
+import { getHomepageLabels, getMotherTongueOption, getScriptureLabels, useMotherTongue, type HomepageLabels } from '@/features/settings/motherTongue';
 import { targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
 import { getNativeUiTextStyle, isBengaliText, isJapaneseText, isKoreanText } from '@/theme/typography';
 import { hapticOpenInquiry } from '@/lib/haptics';
+import * as Haptics from 'expo-haptics';
 import { useTheme } from '@/theme/ThemeProvider';
 import Animated, { Easing, FadeIn, ReduceMotion } from 'react-native-reanimated';
 import {
   getStoredCalibrationData,
   getCalibratedStartingBook,
+  getThreeDoorStarterBooks,
   type CalibratedStartingBook,
+  type ThreeDoorStarterOption,
 } from '@/features/vocabulary/calibration';
+import { VocabularyCalibrationModal } from '@/features/vocabulary/VocabularyCalibrationModal';
+import {
+  getReadingGoal,
+  calculateCadencePacing,
+  type ReadingGoal,
+  type CadencePacing,
+} from '@/db/repositories/readingGoals';
+import { ReadingCadenceModal } from '@/components/ReadingCadenceModal';
+import { FlameGlow } from '@/components/FlameGlow';
 import {
   getTargetReadingLanguage,
   useTargetReadingLanguage,
 } from '@/features/settings/targetReadingLanguage';
 import { getLiteraryTheme } from '@/features/settings/literaryTheme';
+import {
+  getLocalRecommendations,
+  getDismissedBookIds,
+  dismissRecommendation,
+  type LocalRecommendation,
+} from '@/features/discovery/localRecommendations';
+import { MilestoneCelebrationModal } from '@/components/MilestoneCelebrationModal';
+import {
+  checkAndTriggerMilestone,
+  evaluateReadingStatsMilestones,
+  type MilestoneConfig,
+} from '@/features/milestones/milestoneService';
+import { computeUserReadingStats } from '@/features/analytics/statsEngine';
+import { getUserProfile } from '@/lib/supabaseAuth';
+import { logEvent } from '@/features/analytics/analytics';
+import { LapseReturnCard } from '@/components/LapseReturnCard';
+import {
+  dismissLapseRecovery,
+  getLapseRecoveryPrompt,
+  recordLapseRecoveryAction,
+  type LapseAction,
+  type LapsePrompt,
+} from '@/features/retention/lapseRecovery';
 
 const { width: screenWidth } = Dimensions.get('window');
 const EASE_OUT = Easing.bezier(0.23, 1, 0.32, 1);
 
 const HOME_GUIDE_SEEN_KEY = 'home_guide_shown_once';
-// Set to true to always show Home Guide on every start in development / testing.
-const ALWAYS_SHOW_HOME_GUIDE_IN_DEV = true;
 
 function getEnglishGenre(genre?: string): string {
   if (!genre) return 'Classic Literature';
@@ -184,35 +220,46 @@ const LITERARY_SPARKS: LiterarySpark[] = [
   },
 ];
 
-function getGreeting(): { title: string; subtitle: string } {
+function getGreeting(labels: HomepageLabels): { title: string; subtitle: string } {
   const hour = new Date().getHours();
   if (hour >= 5 && hour < 12) {
-    return { title: 'Good morning', subtitle: 'Start your day with a page of calm' };
+    return { title: labels.greetingMorning, subtitle: labels.greetingMorningSub };
   }
   if (hour >= 12 && hour < 17) {
-    return { title: 'Good afternoon', subtitle: 'A quiet pause in your day' };
+    return { title: labels.greetingAfternoon, subtitle: labels.greetingAfternoonSub };
   }
   if (hour >= 17 && hour < 21) {
-    return { title: 'Good evening', subtitle: 'The lamp is trimmed and glowing' };
+    return { title: labels.greetingEvening, subtitle: labels.greetingEveningSub };
   }
-  return { title: 'Night reading', subtitle: 'The night is a page, and the lamp its only light' };
+  return { title: labels.greetingNight, subtitle: labels.greetingNightSub };
 }
 
 export default function Homescreen() {
-  const { colors, cultureTheme, typography, spacing, radius, layout } = useTheme();
+  const { colors, cultureTheme, typography, spacing, radius, layout, scheme } = useTheme();
+  const isLamp = scheme === 'lamp';
   const insets = useSafeAreaInsets();
   const targetLanguage = useTargetLanguage();
   const targetReadingLanguage = useTargetReadingLanguage();
   const motherTongue = useMotherTongue();
   const motherTongueOption = getMotherTongueOption(motherTongue);
   const scriptureLabels = getScriptureLabels(motherTongue);
+  const homeLabels = getHomepageLabels(motherTongue);
 
   const [loading, setLoading] = useState(true);
   const [latestBook, setLatestBook] = useState<BookRow | null>(null);
   const [latestPosition, setLatestPosition] = useState<ReadingPosition | null>(null);
+  const [localRecommendations, setLocalRecommendations] = useState<LocalRecommendation[]>([]);
   const [readyBook, setReadyBook] = useState<BookRow | null>(null);
   const [calibratedBook, setCalibratedBook] = useState<CalibratedStartingBook | null>(null);
+  const [isCalibrationSkipped, setIsCalibrationSkipped] = useState(false);
+  const [starterDoor, setStarterDoor] = useState<'gentle' | 'balanced' | 'deep'>('balanced');
+  const [calibrationModalVisible, setCalibrationModalVisible] = useState(false);
   const [sparkIndex, setSparkIndex] = useState(0);
+  const [cadenceGoal, setCadenceGoal] = useState<ReadingGoal | null>(null);
+  const [cadenceModalVisible, setCadenceModalVisible] = useState(false);
+  const [activeMilestone, setActiveMilestone] = useState<MilestoneConfig | null>(null);
+  const [isGuestUser, setIsGuestUser] = useState(false);
+  const [lapsePrompt, setLapsePrompt] = useState<LapsePrompt | null>(null);
   const [srsMetrics, setSrsMetrics] = useState<{
     totalWords: number;
     dueToday: number;
@@ -247,7 +294,7 @@ export default function Homescreen() {
             synopsis: b.synopsis,
             genre: b.genre,
             totalChapters: b.totalChapters,
-            allLabel: 'All Bengali Books →',
+            allLabel: motherTongue === 'bn' ? 'সকল বাংলা বই →' : 'All Bengali Books →',
             onPress: () => router.push({ pathname: '/bangla/[slug]', params: { slug: b.slug } } as any),
             onAllPress: () => router.push({ pathname: '/bangla' } as any),
           });
@@ -327,7 +374,26 @@ export default function Homescreen() {
       const metrics = await getSrsMetrics();
       setSrsMetrics(metrics);
 
-      const positions = await listActiveReadingPositions();
+      const [dismissedIds, recentSessions, positions, allPositions, catalogBooks] = await Promise.all([
+        getDismissedBookIds(),
+        getRecentSessions(10),
+        listActiveReadingPositions(),
+        listAllReadingPositions(),
+        listBooks(),
+      ]);
+      const recommendations = getLocalRecommendations(catalogBooks, allPositions, {
+        targetLanguage: targetReadingLanguage,
+        recentSessions,
+        dismissedBookIds: dismissedIds,
+        limit: 4,
+      });
+      setLocalRecommendations(recommendations);
+      if (recommendations.length > 0) {
+        logEvent('recommendation_impression', {
+          source: 'local_reading_rhythm',
+          book_ids: recommendations.map(({ book }) => book.id),
+        });
+      }
       if (positions.length > 0) {
         const sorted = [...positions].sort((a, b) => b.updatedAt - a.updatedAt);
         const topPos = sorted[0];
@@ -335,34 +401,32 @@ export default function Homescreen() {
         if (topBookRow) {
           setLatestBook(topBookRow);
           setLatestPosition(topPos);
-          setReadyBook(null);
-          setLoading(false);
-          return;
+          const goal = await getReadingGoal(topBookRow.id);
+          setCadenceGoal(goal);
+        } else {
+          setLatestBook(null);
+          setLatestPosition(null);
+          setCadenceGoal(null);
         }
-      }
-
-      // Check if user has downloaded any books ready to read
-      let downloaded: BookRow | undefined;
-      if (targetReadingLanguage === 'bn') {
-        const banglaBooks = await listBanglaBooks();
-        downloaded = banglaBooks.find((b) => b.isAvailable);
       } else {
-        const allBooks = await listBooks();
-        downloaded = allBooks.find((b) => b.isAvailable && b.sourceLanguage === targetReadingLanguage);
-      }
-
-      if (downloaded) {
-        setReadyBook(downloaded);
         setLatestBook(null);
         setLatestPosition(null);
-      } else {
-        setReadyBook(null);
-        setLatestBook(null);
-        setLatestPosition(null);
+        setCadenceGoal(null);
+      }
 
-        // Load calibrated starting book for new users
-        const calib = await getStoredCalibrationData();
-        const theme = getLiteraryTheme();
+      setReadyBook(null);
+
+      // Always load calibration & curated starting book
+      const calib = await getStoredCalibrationData();
+      const skipped = Boolean(calib?.isSkipped);
+      setIsCalibrationSkipped(skipped);
+
+      const theme = getLiteraryTheme();
+      if (skipped) {
+        const threeDoor = getThreeDoorStarterBooks(targetReadingLanguage, theme);
+        const activeChoice = threeDoor[starterDoor] ?? threeDoor.balanced;
+        setCalibratedBook(activeChoice.book);
+      } else {
         const startingRec = getCalibratedStartingBook(
           targetReadingLanguage,
           theme,
@@ -375,7 +439,35 @@ export default function Homescreen() {
     } finally {
       setLoading(false);
     }
-  }, [targetReadingLanguage]);
+  }, [targetReadingLanguage, starterDoor]);
+
+  const cadencePacing = useMemo(() => {
+    if (!latestBook || !cadenceGoal) return null;
+    return calculateCadencePacing({
+      goal: cadenceGoal,
+      totalChapters: Math.max(1, latestBook.totalChapters),
+      currentChapterIndex: latestPosition?.chapterIndex ?? 0,
+    });
+  }, [latestBook, latestPosition, cadenceGoal]);
+
+  const handleClearCurrentReading = useCallback(async () => {
+    if (!latestBook) return;
+    const bookId = latestBook.id;
+    setLatestBook(null);
+    setLatestPosition(null);
+    await hideFromContinueReading(bookId);
+  }, [latestBook]);
+
+  const handleSelectStarterDoor = useCallback(
+    (door: 'gentle' | 'balanced' | 'deep') => {
+      setStarterDoor(door);
+      const theme = getLiteraryTheme();
+      const threeDoor = getThreeDoorStarterBooks(targetReadingLanguage, theme);
+      setCalibratedBook(threeDoor[door].book);
+      void Haptics.selectionAsync();
+    },
+    [targetReadingLanguage],
+  );
 
   const [guideVisible, setGuideVisible] = useState(false);
   const guideDismissedInSessionRef = useRef(false);
@@ -397,14 +489,61 @@ export default function Homescreen() {
       void (async () => {
         if (!guideDismissedInSessionRef.current) {
           const seen = await getSetting(HOME_GUIDE_SEEN_KEY);
-          const shouldShow = (__DEV__ && ALWAYS_SHOW_HOME_GUIDE_IN_DEV) || seen !== '1';
+          const shouldShow = seen !== '1';
           if (isFocused && shouldShow && !guideDismissedInSessionRef.current) {
             setGuideVisible(true);
-          } else if (seen === '1' && !(__DEV__ && ALWAYS_SHOW_HOME_GUIDE_IN_DEV)) {
+          } else if (seen === '1') {
             guideDismissedInSessionRef.current = true;
           }
         }
         await loadProgress();
+
+        // Evaluate reading stats milestones & ownership milestones
+        try {
+          const [prof, userStats] = await Promise.all([
+            getUserProfile(),
+            computeUserReadingStats(),
+          ]);
+          if (isFocused) {
+            setIsGuestUser(!prof.isProtected);
+          }
+
+          // 1. Check stats milestones (30 minutes, 7 days)
+          const statsMilestone = await evaluateReadingStatsMilestones({
+            cumulativeReadingMinutes: Math.floor(userStats.totalReadingSeconds / 60),
+            distinctReadingDays: new Set(userStats.weeklyActivity.filter((d) => d.hasRead).map((d) => d.dateStr)).size,
+            isBookCompleted: userStats.booksCompletedCount > 0,
+          });
+
+          if (isFocused && statsMilestone) {
+            setActiveMilestone(statsMilestone);
+            return;
+          }
+
+          // 2. Check first saved word milestone (if at least one word was saved)
+          if (userStats.totalSavedWords >= 1) {
+            const wordMilestone = await checkAndTriggerMilestone('first_saved_word');
+            if (isFocused && wordMilestone) {
+              setActiveMilestone(wordMilestone);
+              return;
+            }
+          }
+
+          // 3. Check gentle lapse recovery prompt
+          const lapse = await getLapseRecoveryPrompt();
+          if (isFocused && lapse) {
+            setLapsePrompt(lapse);
+            logEvent('lapse_recovery_displayed', {
+              stage: lapse.stage,
+              days_since_last_read: lapse.daysSinceLastRead,
+              action_type: lapse.primaryAction.type,
+            });
+          } else if (isFocused) {
+            setLapsePrompt(null);
+          }
+        } catch {
+          // Graceful fallback
+        }
       })();
       return () => {
         isFocused = false;
@@ -412,7 +551,7 @@ export default function Homescreen() {
     }, [loadProgress]),
   );
 
-  const greeting = getGreeting();
+  const greeting = getGreeting(homeLabels);
 
   const handleOpenBook = (bookId: string) => {
     if (latestBook?.id === bookId) {
@@ -438,6 +577,261 @@ export default function Homescreen() {
 
   const handleExploreLibrary = () => {
     router.push('/(tabs)/library' as any);
+  };
+
+  const handleDismissRecommendation = useCallback(async (bookId: string) => {
+    logEvent('recommendation_dismissed', { source: 'local_reading_rhythm', book_id: bookId });
+    setLocalRecommendations((prev) => prev.filter((r) => r.book.id !== bookId));
+    await dismissRecommendation(bookId);
+  }, []);
+
+  const handleLapseAction = (action: LapseAction) => {
+    if (lapsePrompt) {
+      void recordLapseRecoveryAction(lapsePrompt);
+    }
+    setLapsePrompt(null);
+    if (action.type === 'current_book' && action.bookId) {
+      handleOpenBook(action.bookId);
+    } else {
+      router.push(action.route as any);
+    }
+  };
+
+  const handleDismissLapse = () => {
+    if (lapsePrompt) {
+      void dismissLapseRecovery(lapsePrompt);
+    }
+    setLapsePrompt(null);
+  };
+
+  const renderCalibratedCard = () => {
+    if (!calibratedBook) return null;
+    return (
+      <View style={{ marginTop: spacing.md }}>
+        <Pressable
+          onPress={() => handleOpenBook(calibratedBook.id)}
+          style={({ pressed }) => [
+            styles.featuredCard,
+            {
+              backgroundColor: colors.card,
+              borderRadius: radius.card,
+              borderColor: 'rgba(245, 166, 35, 0.45)',
+              borderWidth: 1.5,
+              marginTop: spacing.sm,
+              padding: spacing.lg,
+              opacity: pressed ? 0.95 : 1,
+            },
+          ]}
+        >
+          {/* Top Calibrated / Curated Badge Row */}
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: spacing.md,
+            }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text style={{ color: colors.flameAmber, fontSize: 13 }}>✦</Text>
+              <Text
+                style={[
+                  typography.eyebrowLabel,
+                  { color: colors.flameAmber, fontSize: 11, letterSpacing: 0.8 },
+                ]}
+              >
+                {isCalibrationSkipped ? homeLabels.curatedForTaste : homeLabels.calibratedForYou}
+              </Text>
+            </View>
+
+            <View
+              style={{
+                backgroundColor: colors.flameAmber,
+                paddingHorizontal: 8,
+                paddingVertical: 3,
+                borderRadius: radius.pill,
+              }}
+            >
+              <Text
+                style={[
+                  typography.eyebrowLabel,
+                  { color: colors.primaryDark, fontSize: 10, letterSpacing: 0.5 },
+                ]}
+              >
+                {isCalibrationSkipped ? 'Curated Classic' : calibratedBook.coverageBadge}
+              </Text>
+            </View>
+          </View>
+
+          {/* Three-Door Comfort Selector for Uncalibrated Readers */}
+          {isCalibrationSkipped ? (
+            <View style={{ flexDirection: 'row', gap: 6, marginBottom: spacing.md }}>
+              {(
+                [
+                  { key: 'gentle', label: 'Gentle Novella' },
+                  { key: 'balanced', label: 'Balanced Classic' },
+                  { key: 'deep', label: 'Deep Masterpiece' },
+                ] as const
+              ).map((door) => {
+                const isSelected = starterDoor === door.key;
+                return (
+                  <Pressable
+                    key={door.key}
+                    onPress={() => handleSelectStarterDoor(door.key)}
+                    style={{
+                      flex: 1,
+                      paddingVertical: 6,
+                      borderRadius: radius.pill,
+                      borderWidth: 1,
+                      borderColor: isSelected ? colors.flameAmber : colors.hairline,
+                      backgroundColor: isSelected ? 'rgba(245, 166, 35, 0.15)' : 'transparent',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Text
+                      style={[
+                        typography.eyebrowLabel,
+                        {
+                          color: isSelected ? colors.flameAmber : colors.umber,
+                          fontSize: 9.5,
+                          fontWeight: isSelected ? '700' : '500',
+                          letterSpacing: 0.3,
+                        },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {door.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          ) : null}
+
+          <View style={styles.featuredTop}>
+            <BookSpine
+              bookId={calibratedBook.id}
+              title={calibratedBook.title}
+              toneIndex={0}
+              onPress={() => handleOpenBook(calibratedBook.id)}
+              width={68}
+              height={100}
+            />
+            <View style={styles.featuredInfo}>
+              <Text
+                style={[typography.uiRowTitle, { color: colors.ink, fontSize: 18 }]}
+                numberOfLines={2}
+              >
+                {calibratedBook.title}
+              </Text>
+              <Text
+                style={[typography.metadataCaption, { color: colors.umber, marginTop: 4 }]}
+                numberOfLines={1}
+              >
+                {calibratedBook.author}
+              </Text>
+
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  marginTop: spacing.sm,
+                  backgroundColor: 'rgba(245, 166, 35, 0.12)',
+                  alignSelf: 'flex-start',
+                  paddingHorizontal: 8,
+                  paddingVertical: 4,
+                  borderRadius: radius.pill,
+                }}
+              >
+                <Text
+                  style={[
+                    typography.metadataCaption,
+                    { color: colors.flameAmber, fontSize: 11, fontWeight: '600' },
+                  ]}
+                >
+                  {isCalibrationSkipped
+                    ? '★ Recommended Starter · Curated by Genre'
+                    : `✓ ${calibratedBook.coveragePercent}% Comprehension · Zero Fatigue`}
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          <View
+            style={[
+              styles.quoteBox,
+              {
+                backgroundColor: colors.libraryBackground,
+                borderRadius: radius.card,
+                marginTop: spacing.md,
+                padding: spacing.md,
+              },
+            ]}
+          >
+            <Text
+              style={[
+                typography.readingBody,
+                { color: colors.ink, fontSize: 13, lineHeight: 20, fontStyle: 'italic' },
+              ]}
+              numberOfLines={2}
+            >
+              “{calibratedBook.synopsis}”
+            </Text>
+
+            <Text
+              style={[
+                typography.metadataCaption,
+                { color: colors.fawn, fontSize: 11, marginTop: 6 },
+              ]}
+              numberOfLines={1}
+            >
+              {calibratedBook.reason}
+            </Text>
+
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: spacing.md }}>
+              <Pressable
+                onPress={() => router.push('/library')}
+                style={[
+                  styles.continueButton,
+                  {
+                    flex: 1,
+                    backgroundColor: 'transparent',
+                    borderWidth: 1,
+                    borderColor: colors.hairline,
+                    borderRadius: radius.pill,
+                    marginTop: 0,
+                  },
+                ]}
+              >
+                <Text style={[typography.buttonLabel, { color: colors.ink, fontSize: 13 }]}>
+                  {homeLabels.exploreLibrary}
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => handleOpenBook(calibratedBook.id)}
+                style={[
+                  styles.continueButton,
+                  {
+                    flex: 1.4,
+                    backgroundColor: colors.flameAmber,
+                    borderRadius: radius.pill,
+                    marginTop: 0,
+                  },
+                ]}
+              >
+                <Text style={[typography.buttonLabel, { color: colors.primaryDark, fontSize: 13 }]}>
+                  {homeLabels.startReading}
+                </Text>
+                <View style={{ marginLeft: 4 }}>
+                  <ChevronRightIcon color={colors.primaryDark} size={14} />
+                </View>
+              </Pressable>
+            </View>
+          </View>
+        </Pressable>
+      </View>
+    );
   };
 
   return (
@@ -479,6 +873,15 @@ export default function Homescreen() {
           <CultureEditionBanner targetReadingLanguage={targetReadingLanguage} />
         </View>
 
+        {/* Gentle Lapse Recovery Welcome Card */}
+        {lapsePrompt && (
+          <LapseReturnCard
+            prompt={lapsePrompt}
+            onAction={handleLapseAction}
+            onDismiss={handleDismissLapse}
+          />
+        )}
+
         {/* Active Reader / Welcome State */}
         {loading ? (
           <View style={styles.loadingBox}>
@@ -488,12 +891,45 @@ export default function Homescreen() {
           /* Active Reader State: Last Read Book */
           <View style={{ marginTop: spacing.lg }}>
             <View style={styles.sectionHeader}>
-              <Text style={[typography.eyebrowLabel, { color: colors.fawn }]}>
-                Currently Reading
+              <Text
+                numberOfLines={1}
+                style={[
+                  isBengaliText(homeLabels.currentlyReading)
+                    ? typography.banglaEyebrowLabel
+                    : getNativeUiTextStyle(motherTongue, 'eyebrow'),
+                  { color: colors.fawn },
+                ]}
+              >
+                {homeLabels.currentlyReading}
               </Text>
-              <Text style={[typography.metadataCaption, { color: colors.flameAmber, fontSize: 12 }]}>
-                Your place is kept
-              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text
+                  numberOfLines={1}
+                  style={[
+                    isBengaliText(homeLabels.placeKept)
+                      ? [typography.banglaEyebrowLabel, { fontSize: 13.5, lineHeight: 24 }]
+                      : [typography.metadataCaption, { fontSize: 12 }],
+                    { color: colors.flameAmber },
+                  ]}
+                >
+                  {homeLabels.placeKept}
+                </Text>
+                <Pressable
+                  onPress={handleClearCurrentReading}
+                  hitSlop={12}
+                  style={{
+                    width: 22,
+                    height: 22,
+                    borderRadius: radius.pill,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Clear currently reading book"
+                >
+                  <CloseIcon color={colors.fawn} size={13} />
+                </Pressable>
+              </View>
             </View>
 
             {/* Featured Active Book Card */}
@@ -565,6 +1001,65 @@ export default function Homescreen() {
                 </View>
               </View>
 
+              {/* Reading Cadence / Nightly Goal */}
+              <Pressable
+                onPress={(e) => {
+                  e?.stopPropagation?.();
+                  setCadenceModalVisible(true);
+                }}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  backgroundColor: cadenceGoal
+                    ? (isLamp ? 'rgba(245, 166, 35, 0.12)' : 'rgba(245, 166, 35, 0.15)')
+                    : (isLamp ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.03)'),
+                  borderColor: cadenceGoal ? 'rgba(245, 166, 35, 0.35)' : colors.hairline,
+                  borderWidth: 1,
+                  borderRadius: radius.pill,
+                  paddingVertical: 7,
+                  paddingHorizontal: spacing.md,
+                  marginTop: spacing.md,
+                }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                  {cadenceGoal ? (
+                    <FlameGlow size={16} showTile={false} variant="static" />
+                  ) : (
+                    <FlameGlow size={16} showTile={false} lit={false} variant="static" />
+                  )}
+                  <Text
+                    style={[
+                      typography.metadataCaption,
+                      {
+                        color: cadenceGoal ? colors.flameAmber : colors.fawn,
+                        fontWeight: cadenceGoal ? '700' : '500',
+                        fontSize: 12,
+                      },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {cadencePacing
+                      ? homeLabels.cadenceStatus(cadencePacing.daysRemaining, cadencePacing.requiredChaptersToday)
+                      : homeLabels.setTargetDays}
+                  </Text>
+                </View>
+                <Text
+                  style={[
+                    typography.eyebrowLabel,
+                    {
+                      color: cadenceGoal ? colors.flameAmber : colors.fawn,
+                      fontSize: 10,
+                      fontWeight: '600',
+                      letterSpacing: 0.5,
+                      textTransform: 'uppercase',
+                    },
+                  ]}
+                >
+                  {cadenceGoal ? homeLabels.adjustGoal : homeLabels.setGoal}
+                </Text>
+              </Pressable>
+
               {/* Literary Encouragement & Action */}
               <View
                 style={[
@@ -594,7 +1089,7 @@ export default function Homescreen() {
                   ]}
                 >
                   <Text style={[typography.buttonLabel, { color: colors.primaryDark, fontSize: 14 }]}>
-                    Continue Reading
+                    {homeLabels.continueReading}
                   </Text>
                   <View style={{ marginLeft: 6 }}>
                     <ChevronRightIcon color={colors.primaryDark} size={15} />
@@ -602,17 +1097,34 @@ export default function Homescreen() {
                 </Pressable>
               </View>
             </Pressable>
-
           </View>
+        ) : calibratedBook ? (
+          renderCalibratedCard()
         ) : readyBook ? (
           /* Ready to Read State: Downloaded Book */
           <View style={{ marginTop: spacing.lg }}>
             <View style={styles.sectionHeader}>
-              <Text style={[typography.eyebrowLabel, { color: colors.fawn }]}>
-                Ready to Read
+              <Text
+                numberOfLines={1}
+                style={[
+                  isBengaliText(homeLabels.readyToRead)
+                    ? typography.banglaEyebrowLabel
+                    : getNativeUiTextStyle(motherTongue, 'eyebrow'),
+                  { color: colors.fawn },
+                ]}
+              >
+                {homeLabels.readyToRead}
               </Text>
-              <Text style={[typography.metadataCaption, { color: colors.flameAmber, fontSize: 12 }]}>
-                Downloaded on device
+              <Text
+                numberOfLines={1}
+                style={[
+                  isBengaliText(homeLabels.downloadedOnDevice)
+                    ? [typography.banglaEyebrowLabel, { fontSize: 13.5, lineHeight: 24 }]
+                    : [typography.metadataCaption, { fontSize: 12 }],
+                  { color: colors.flameAmber },
+                ]}
+              >
+                {homeLabels.downloadedOnDevice}
               </Text>
             </View>
 
@@ -704,160 +1216,7 @@ export default function Homescreen() {
                   ]}
                 >
                   <Text style={[typography.buttonLabel, { color: colors.primaryDark, fontSize: 14 }]}>
-                    Start Reading Now
-                  </Text>
-                  <View style={{ marginLeft: 6 }}>
-                    <ChevronRightIcon color={colors.primaryDark} size={15} />
-                  </View>
-                </Pressable>
-              </View>
-            </Pressable>
-          </View>
-        ) : calibratedBook ? (
-          /* Calibrated Starting Book Hero for New User */
-          <View style={{ marginTop: spacing.md }}>
-            <Pressable
-              onPress={() => handleOpenBook(calibratedBook.id)}
-              style={({ pressed }) => [
-                styles.featuredCard,
-                {
-                  backgroundColor: colors.card,
-                  borderRadius: radius.card,
-                  borderColor: 'rgba(245, 166, 35, 0.45)',
-                  borderWidth: 1.5,
-                  marginTop: spacing.sm,
-                  padding: spacing.lg,
-                  opacity: pressed ? 0.95 : 1,
-                },
-              ]}
-            >
-              {/* Top Calibrated Badge Row */}
-              <View
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  marginBottom: spacing.md,
-                }}
-              >
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Text style={{ color: colors.flameAmber, fontSize: 13 }}>✦</Text>
-                  <Text
-                    style={[
-                      typography.eyebrowLabel,
-                      { color: colors.flameAmber, fontSize: 11, letterSpacing: 0.8 },
-                    ]}
-                  >
-                    CALIBRATED FOR YOU
-                  </Text>
-                </View>
-
-                <View
-                  style={{
-                    backgroundColor: colors.flameAmber,
-                    paddingHorizontal: 8,
-                    paddingVertical: 3,
-                    borderRadius: radius.pill,
-                  }}
-                >
-                  <Text
-                    style={[
-                      typography.eyebrowLabel,
-                      { color: colors.primaryDark, fontSize: 10, letterSpacing: 0.5 },
-                    ]}
-                  >
-                    {calibratedBook.coverageBadge}
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.featuredTop}>
-                <BookSpine
-                  bookId={calibratedBook.id}
-                  title={calibratedBook.title}
-                  toneIndex={0}
-                  onPress={() => handleOpenBook(calibratedBook.id)}
-                  width={68}
-                  height={100}
-                />
-                <View style={styles.featuredInfo}>
-                  <Text
-                    style={[typography.uiRowTitle, { color: colors.ink, fontSize: 18 }]}
-                    numberOfLines={2}
-                  >
-                    {calibratedBook.title}
-                  </Text>
-                  <Text
-                    style={[typography.metadataCaption, { color: colors.umber, marginTop: 4 }]}
-                    numberOfLines={1}
-                  >
-                    {calibratedBook.author}
-                  </Text>
-
-                  <View
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      marginTop: spacing.sm,
-                      backgroundColor: 'rgba(245, 166, 35, 0.12)',
-                      alignSelf: 'flex-start',
-                      paddingHorizontal: 8,
-                      paddingVertical: 4,
-                      borderRadius: radius.pill,
-                    }}
-                  >
-                    <Text
-                      style={[
-                        typography.metadataCaption,
-                        { color: colors.flameAmber, fontSize: 11, fontWeight: '600' },
-                      ]}
-                    >
-                      ✓ {calibratedBook.coveragePercent}% Comprehension · Zero Fatigue
-                    </Text>
-                  </View>
-                </View>
-              </View>
-
-              <View
-                style={[
-                  styles.quoteBox,
-                  {
-                    backgroundColor: colors.libraryBackground,
-                    borderRadius: radius.card,
-                    marginTop: spacing.md,
-                    padding: spacing.md,
-                  },
-                ]}
-              >
-                <Text
-                  style={[
-                    typography.readingBody,
-                    { color: colors.ink, fontSize: 13, lineHeight: 20, fontStyle: 'italic' },
-                  ]}
-                  numberOfLines={2}
-                >
-                  “{calibratedBook.synopsis}”
-                </Text>
-
-                <Text
-                  style={[
-                    typography.metadataCaption,
-                    { color: colors.fawn, fontSize: 11, marginTop: 6 },
-                  ]}
-                  numberOfLines={1}
-                >
-                  {calibratedBook.reason}
-                </Text>
-
-                <Pressable
-                  onPress={() => handleOpenBook(calibratedBook.id)}
-                  style={[
-                    styles.continueButton,
-                    { backgroundColor: colors.flameAmber, borderRadius: radius.pill, marginTop: spacing.md },
-                  ]}
-                >
-                  <Text style={[typography.buttonLabel, { color: colors.primaryDark, fontSize: 14 }]}>
-                    Start Reading Chapter 1
+                    {homeLabels.startReadingNow}
                   </Text>
                   <View style={{ marginLeft: 6 }}>
                     <ChevronRightIcon color={colors.primaryDark} size={15} />
@@ -891,7 +1250,7 @@ export default function Homescreen() {
                   { color: colors.ink, textAlign: 'center', fontSize: 22 },
                 ]}
               >
-                Begin Your Journey
+                {homeLabels.beginJourney}
               </Text>
               <Text
                 style={[
@@ -917,7 +1276,7 @@ export default function Homescreen() {
                 ]}
               >
                 <Text style={[typography.buttonLabel, { color: colors.primaryDark, fontSize: 15 }]}>
-                  Explore Libraries
+                  {homeLabels.exploreLibraries}
                 </Text>
                 <View style={{ marginLeft: 6 }}>
                   <ChevronRightIcon color={colors.primaryDark} size={16} />
@@ -953,7 +1312,7 @@ export default function Homescreen() {
                   }}
                 />
                 <Text style={[typography.eyebrowLabel, { color: colors.flameAmber, fontSize: 11 }]}>
-                  {srsMetrics.dueToday > 0 ? 'DAILY MEMORY HABIT' : 'DAILY FLAME LIT'}
+                  {srsMetrics.dueToday > 0 ? homeLabels.dailyMemoryHabit : homeLabels.dailyFlameLit}
                 </Text>
               </View>
               <View
@@ -999,7 +1358,7 @@ export default function Homescreen() {
                   { color: srsMetrics.dueToday > 0 ? colors.primaryDark : colors.flameAmber, fontSize: 13 },
                 ]}
               >
-                {srsMetrics.dueToday > 0 ? 'Review Due Words Now' : 'Open Flashcard Studio'}
+                {srsMetrics.dueToday > 0 ? homeLabels.reviewDueWords : homeLabels.openFlashcardStudio}
               </Text>
               <View style={{ marginLeft: 6 }}>
                 <ChevronRightIcon
@@ -1030,7 +1389,7 @@ export default function Homescreen() {
           <View style={styles.sparkHeader}>
             <View style={styles.sparkTagRow}>
               <Text style={[typography.eyebrowLabel, { color: colors.flameAmber, fontSize: 12 }]}>
-                DAILY SPARK
+                {homeLabels.dailySpark}
               </Text>
             </View>
             <Pressable
@@ -1042,7 +1401,7 @@ export default function Homescreen() {
               ]}
             >
               <Text style={[typography.buttonLabel, { color: colors.flameAmber, fontSize: 12 }]}>
-                ✦ Next Quote
+                {homeLabels.nextQuote}
               </Text>
             </Pressable>
           </View>
@@ -1166,14 +1525,30 @@ export default function Homescreen() {
         {spotlight ? (
           <View style={{ marginTop: spacing.xl }}>
             <View style={styles.sectionHeader}>
-              <Text style={[typography.eyebrowLabel, { color: colors.fawn }]}>
-                CURATOR'S PICK · {motherTongueOption.shelfTitle.toUpperCase()}
+              <Text
+                numberOfLines={1}
+                style={[
+                  isBengaliText(homeLabels.curatorsPick)
+                    ? typography.banglaEyebrowLabel
+                    : getNativeUiTextStyle(motherTongue, 'eyebrow'),
+                  { color: colors.fawn },
+                ]}
+              >
+                {`${homeLabels.curatorsPick} · ${motherTongueOption.shelfTitle}`}
               </Text>
               <Pressable
                 onPress={spotlight.onAllPress}
                 hitSlop={8}
               >
-                <Text style={[typography.buttonLabel, { color: colors.flameAmber, fontSize: 13 }]}>
+                <Text
+                  numberOfLines={1}
+                  style={[
+                    isBengaliText(spotlight.allLabel)
+                      ? [typography.banglaButtonLabel, { fontSize: 14, lineHeight: 24 }]
+                      : [typography.buttonLabel, { fontSize: 13 }],
+                    { color: colors.flameAmber },
+                  ]}
+                >
                   {spotlight.allLabel}
                 </Text>
               </Pressable>
@@ -1266,8 +1641,15 @@ export default function Homescreen() {
                   {spotlight.totalChapters > 0 ? `${spotlight.totalChapters} Chapters` : 'Complete Work'}
                 </Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <Text style={[typography.buttonLabel, { color: colors.flameAmber, fontSize: 14 }]}>
-                    View Book
+                  <Text
+                    style={[
+                      isBengaliText(homeLabels.viewBook)
+                        ? [typography.banglaButtonLabel, { fontSize: 15 }]
+                        : [typography.buttonLabel, { fontSize: 14 }],
+                      { color: colors.flameAmber },
+                    ]}
+                  >
+                    {homeLabels.viewBook}
                   </Text>
                   <ChevronRightIcon color={colors.flameAmber} size={14} />
                 </View>
@@ -1276,10 +1658,141 @@ export default function Homescreen() {
           </View>
         ) : null}
 
+        {localRecommendations.length > 0 ? (
+          <View style={{ marginTop: spacing.xl }}>
+            <View style={styles.sectionHeader}>
+              <Text
+                numberOfLines={1}
+                style={[
+                  isBengaliText(homeLabels.fromReadingRhythm)
+                    ? typography.banglaEyebrowLabel
+                    : getNativeUiTextStyle(motherTongue, 'eyebrow'),
+                  { color: colors.fawn },
+                ]}
+              >
+                {homeLabels.fromReadingRhythm}
+              </Text>
+              <Pressable onPress={handleExploreLibrary} hitSlop={8}>
+                <Text
+                  numberOfLines={1}
+                  style={[
+                    isBengaliText(homeLabels.library)
+                      ? [typography.banglaButtonLabel, { fontSize: 14, lineHeight: 24 }]
+                      : [typography.buttonLabel, { fontSize: 13 }],
+                    { color: colors.flameAmber },
+                  ]}
+                >
+                  {homeLabels.library}
+                </Text>
+              </Pressable>
+            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ gap: spacing.sm, paddingTop: spacing.sm }}
+            >
+              {localRecommendations.map(({ book, reason }, index) => (
+                <View
+                  key={book.id}
+                  style={[
+                    styles.localRecommendationCard,
+                    {
+                      backgroundColor: colors.card,
+                      borderColor: colors.hairline,
+                      borderRadius: radius.card,
+                      position: 'relative',
+                    },
+                  ]}
+                >
+                  <Pressable
+                    hitSlop={8}
+                    accessibilityLabel={`Dismiss recommendation for ${book.title}`}
+                    accessibilityRole="button"
+                    onPress={() => handleDismissRecommendation(book.id)}
+                    style={{
+                      position: 'absolute',
+                      top: 6,
+                      right: 6,
+                      zIndex: 2,
+                      width: 20,
+                      height: 20,
+                      borderRadius: 10,
+                      backgroundColor: colors.hairline,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <CloseIcon size={10} color={colors.fawn} />
+                  </Pressable>
+                  <Pressable
+                    onPress={() => {
+                      logEvent('recommendation_opened', { source: 'local_reading_rhythm', book_id: book.id });
+                      handleOpenBook(book.id);
+                    }}
+                  >
+                    <BookSpine
+                      bookId={book.id}
+                      title={book.title}
+                      coverUrl={book.coverUrl}
+                      toneIndex={index + 2}
+                      onPress={() => {
+                        logEvent('recommendation_opened', { source: 'local_reading_rhythm', book_id: book.id });
+                        handleOpenBook(book.id);
+                      }}
+                      width={56}
+                      height={82}
+                    />
+                    <Text
+                      style={[
+                        isBengaliText(book.title)
+                          ? [typography.banglaUiRowTitle, { fontSize: 15, lineHeight: 22 }]
+                          : [typography.uiRowTitle, { fontSize: 13, lineHeight: 18 }],
+                        { color: colors.ink, marginTop: 8 },
+                      ]}
+                      numberOfLines={2}
+                    >
+                      {book.title}
+                    </Text>
+                    <Text
+                      style={[
+                        isBengaliText(book.author)
+                          ? [typography.banglaMetadataCaption, { fontSize: 13, lineHeight: 18 }]
+                          : [typography.metadataCaption, { fontSize: 11, lineHeight: 15 }],
+                        { color: colors.umber, marginTop: 2 },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {book.author}
+                    </Text>
+                    <Text
+                      style={[
+                        isBengaliText(reason)
+                          ? [typography.banglaMetadataCaption, { fontSize: 12, lineHeight: 18 }]
+                          : [typography.metadataCaption, { fontSize: 10, lineHeight: 14 }],
+                        { color: colors.fawn, marginTop: 7 },
+                      ]}
+                      numberOfLines={2}
+                    >
+                      {reason}
+                    </Text>
+                  </Pressable>
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        ) : null}
+
         {/* Discover Curated Collections */}
         <View style={{ marginTop: spacing.xl }}>
-          <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginBottom: spacing.md }]}>
-            Discover Curated Collections
+          <Text
+            style={[
+              isBengaliText(homeLabels.discoverCollections)
+                ? typography.banglaEyebrowLabel
+                : getNativeUiTextStyle(motherTongue, 'eyebrow'),
+              { color: colors.fawn, marginBottom: spacing.md },
+            ]}
+          >
+            {homeLabels.discoverCollections}
           </Text>
 
           <Pressable
@@ -1353,7 +1866,7 @@ export default function Homescreen() {
               <Text style={[getNativeUiTextStyle(motherTongue, 'row'), { color: colors.ink }]}>
                 {scriptureLabels.sacredTitle}
               </Text>
-              <Text style={[typography.metadataCaption, { color: colors.fawn, marginTop: 2 }]}>
+              <Text style={[getNativeUiTextStyle(motherTongue, 'metadata'), { color: colors.fawn, marginTop: 2 }]}>
                 {scriptureLabels.quran}, {scriptureLabels.oldTestament}/{scriptureLabels.newTestament}, {scriptureLabels.torah}, {scriptureLabels.vedas}
               </Text>
             </View>
@@ -1365,6 +1878,35 @@ export default function Homescreen() {
         visible={guideVisible}
         onClose={handleCloseGuide}
         onNavigateTab={handleNavigateTab}
+      />
+      <VocabularyCalibrationModal
+        visible={calibrationModalVisible}
+        onClose={() => setCalibrationModalVisible(false)}
+        onCalibrated={(estimate) => {
+          setIsCalibrationSkipped(false);
+          setCalibratedBook(estimate.startingBook);
+        }}
+      />
+      {latestBook ? (
+        <ReadingCadenceModal
+          visible={cadenceModalVisible}
+          bookId={latestBook.id}
+          bookTitle={latestBook.title}
+          totalChapters={Math.max(1, latestBook.totalChapters)}
+          currentChapterIndex={latestPosition?.chapterIndex ?? 0}
+          onClose={() => setCadenceModalVisible(false)}
+          onGoalSaved={(newGoal: ReadingGoal) => {
+            setCadenceGoal(newGoal);
+          }}
+        />
+      ) : null}
+
+      <MilestoneCelebrationModal
+        visible={activeMilestone != null}
+        milestone={activeMilestone}
+        isGuest={isGuestUser}
+        onClose={() => setActiveMilestone(null)}
+        onProtectAccount={() => router.push('/signup' as any)}
       />
     </View>
   );
@@ -1476,6 +2018,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   spotlightCard: {},
+  localRecommendationCard: {
+    width: 142,
+    minHeight: 194,
+    borderWidth: 1,
+    padding: 10,
+  },
   spotlightRow: {
     flexDirection: 'row',
   },

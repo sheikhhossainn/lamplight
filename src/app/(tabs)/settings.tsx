@@ -1,9 +1,8 @@
 import Constants from 'expo-constants';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, {
-  Easing,
   Extrapolation,
   interpolate,
   interpolateColor,
@@ -12,31 +11,52 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withSpring,
-  withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronRightIcon, MoonIcon as ThemeMoonIcon, SunIcon as ThemeSunIcon } from '@/components/icons';
+import { CheckIcon, ChevronRightIcon, MoonIcon as ThemeMoonIcon, SunIcon as ThemeSunIcon } from '@/components/icons';
 import { CultureEditionBanner } from '@/components/CultureEditionBanner';
 import {
   useAppUpdateBanner,
   type AppUpdateStatus,
 } from '@/features/app-update/useAppUpdateBanner';
+import * as Clipboard from 'expo-clipboard';
+import * as Sharing from 'expo-sharing';
+import { File, Paths } from 'expo-file-system';
+import { AccountProtectionModal } from '@/components/AccountProtectionModal';
+import {
+  isAuthenticatedAccount,
+  getUserEmail,
+  getUserId,
+} from '@/lib/supabaseAuth';
+import { coordinateSignOut } from '@/features/account/accountSessionCoordinator';
+import { getDb } from '@/db/client';
 import { refreshSyncStatus, triggerSync, useSyncStatus, type SyncStatus } from '@/features/sync/syncWorker';
 import { getStorageUsage, clearTemporaryCache, getUnsyncedSafetyStatus, type StorageUsage } from '@/features/storage/storageManager';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { RedeemPromoModal } from '@/components/RedeemPromoModal';
+import { FeedbackModal } from '@/components/FeedbackModal';
 import { setTargetLanguage, targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
 import { useReadingTheme } from '@/features/settings/readingTheme';
 import {
+  prepareThemeChange,
   requestThemeChange,
   THEME_TRANSITION_DURATION,
   THEME_TRANSITION_EASING,
+  themeSelectionProgress,
   themeTransitionProgress,
 } from '@/features/settings/themeTransition';
-import { hapticThemeToggle } from '@/lib/haptics';
+import { hapticFlashcardAction, hapticThemeToggle } from '@/lib/haptics';
+import {
+  PAGE_STYLE_LIST,
+  PageStyleConfig,
+  type PageStyleId,
+  getPageStyleConfig,
+} from '@/features/reader/pageStyles';
+import { setPageStyle, usePageStyle } from '@/features/settings/pageStylePrefs';
+import { PageStyleSelectorModal } from '@/features/reader/components/PageStyleSelectorModal';
 import { setPageTurnSoundEnabled, usePageTurnSoundEnabled } from '@/features/settings/soundPrefs';
 import {
-  isPremiumUser,
+  canUse,
   getEntitlementSnapshot,
   subscribeToEntitlements,
   type EntitlementSnapshot,
@@ -45,6 +65,7 @@ import {
   checkCachedTranslationCap,
   checkTranslationCap,
   FREE_DAILY_TRANSLATION_LIMIT,
+  GUEST_DAILY_TRANSLATION_LIMIT,
 } from '@/features/translation';
 import type { CapCheck } from '@/features/translation/capPolicy';
 import { LanguagePicker } from '@/components/LanguagePicker';
@@ -62,7 +83,7 @@ import {
   useLiteraryTheme,
 } from '@/features/settings/literaryTheme';
 import { useTheme } from '@/theme/ThemeProvider';
-import { getCultureThemeColors, Layout, Spacing } from '@/theme/tokens';
+import { getCultureThemeColors, LamplightColor, Layout, Spacing } from '@/theme/tokens';
 
 const TAB_BAR_CLEARANCE = Layout.tabBarHeight + Spacing.xl;
 
@@ -80,6 +101,8 @@ function ThemeSegmentedSwitch({
   const lampColors = getCultureThemeColors(cultureTheme, 'lamp');
 
   const segWidth = useSharedValue(0);
+  // Selection (pill, icons) animates separately from colors — see themeTransition.ts.
+  const selectAnim = themeSelectionProgress;
 
   const handleSelect = (target: 'day' | 'lamp') => {
     if (theme === target) return;
@@ -87,16 +110,24 @@ function ThemeSegmentedSwitch({
     onThemeChange(target);
   };
 
-  const pillAnimatedStyle = useAnimatedStyle(() => {
+  // Capture the transition snapshot while the finger is down, so release is instant.
+  const handlePressIn = (target: 'day' | 'lamp') => {
+    if (theme !== target) prepareThemeChange();
+  };
+
+  // Width is a layout prop — kept out of the per-frame style so the slide only
+  // updates transform (no relayout every frame).
+  const pillWidthStyle = useAnimatedStyle(() => {
     const w = segWidth.value;
-    return {
-      width: w > 0 ? w : '50%',
-      transform: [{ translateX: themeAnim.value * w }],
-    };
+    return { width: w > 0 ? w : '50%' };
   });
 
+  const pillAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: selectAnim.value * segWidth.value }],
+  }));
+
   const sunAnimatedStyle = useAnimatedStyle(() => {
-    const p = themeAnim.value;
+    const p = selectAnim.value;
     const rotate = interpolate(p, [0, 1], [0, 45], Extrapolation.CLAMP);
     const scale = interpolate(p, [0, 1], [1, 0.88], Extrapolation.CLAMP);
     return {
@@ -105,7 +136,7 @@ function ThemeSegmentedSwitch({
   });
 
   const lampAnimatedStyle = useAnimatedStyle(() => {
-    const p = themeAnim.value;
+    const p = selectAnim.value;
     const rotate = interpolate(p, [0, 1], [-15, 0], Extrapolation.CLAMP);
     const scale = interpolate(p, [0, 1], [0.88, 1], Extrapolation.CLAMP);
     return {
@@ -114,27 +145,27 @@ function ThemeSegmentedSwitch({
   });
 
   const sunActiveStyle = useAnimatedStyle(() => ({
-    opacity: 1 - themeAnim.value,
+    opacity: 1 - selectAnim.value,
   }));
   const sunInactiveStyle = useAnimatedStyle(() => ({
-    opacity: themeAnim.value,
+    opacity: selectAnim.value,
   }));
 
   const lampActiveStyle = useAnimatedStyle(() => ({
-    opacity: themeAnim.value,
+    opacity: selectAnim.value,
   }));
   const lampInactiveStyle = useAnimatedStyle(() => ({
-    opacity: 1 - themeAnim.value,
+    opacity: 1 - selectAnim.value,
   }));
 
   const dayContentStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(themeAnim.value, [0, 1], [1, 0.72], Extrapolation.CLAMP),
-    transform: [{ scale: interpolate(themeAnim.value, [0, 1], [1, 0.96], Extrapolation.CLAMP) }],
+    opacity: interpolate(selectAnim.value, [0, 1], [1, 0.72], Extrapolation.CLAMP),
+    transform: [{ scale: interpolate(selectAnim.value, [0, 1], [1, 0.96], Extrapolation.CLAMP) }],
   }));
 
   const lampContentStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(themeAnim.value, [0, 1], [0.72, 1], Extrapolation.CLAMP),
-    transform: [{ scale: interpolate(themeAnim.value, [0, 1], [0.96, 1], Extrapolation.CLAMP) }],
+    opacity: interpolate(selectAnim.value, [0, 1], [0.72, 1], Extrapolation.CLAMP),
+    transform: [{ scale: interpolate(selectAnim.value, [0, 1], [0.96, 1], Extrapolation.CLAMP) }],
   }));
 
   const animatedTrackStyle = useAnimatedStyle(() => ({
@@ -149,8 +180,14 @@ function ThemeSegmentedSwitch({
     backgroundColor: interpolateColor(
       themeAnim.value,
       [0, 1],
-      [dayColors.primaryDark, lampColors.primaryDark],
+      [dayColors.primaryDark, '#36322D'],
     ),
+    borderColor: interpolateColor(
+      themeAnim.value,
+      [0, 1],
+      ['transparent', 'rgba(245, 166, 35, 0.28)'],
+    ),
+    borderWidth: interpolate(themeAnim.value, [0, 1], [0, 1], Extrapolation.CLAMP),
   }), [dayColors, lampColors]);
 
   const dayLabelStyle = useAnimatedStyle(() => {
@@ -161,7 +198,7 @@ function ThemeSegmentedSwitch({
       [dayColors.umber, lampColors.fawn],
     );
     return {
-      color: interpolateColor(themeAnim.value, [0, 1], [activeColor, inactiveColor]),
+      color: interpolateColor(selectAnim.value, [0, 1], [activeColor, inactiveColor]),
     };
   }, [dayColors, lampColors]);
 
@@ -173,7 +210,7 @@ function ThemeSegmentedSwitch({
       [dayColors.umber, lampColors.fawn],
     );
     return {
-      color: interpolateColor(themeAnim.value, [0, 1], [inactiveColor, activeColor]),
+      color: interpolateColor(selectAnim.value, [0, 1], [inactiveColor, activeColor]),
     };
   }, [dayColors, lampColors]);
 
@@ -193,11 +230,13 @@ function ThemeSegmentedSwitch({
           styles.slidingPill,
           animatedPillColorStyle,
           { borderRadius: radius.pill },
+          pillWidthStyle,
           pillAnimatedStyle,
         ]}
       />
       <Pressable
         hitSlop={6}
+        onPressIn={() => handlePressIn('day')}
         onPress={() => handleSelect('day')}
         style={({ pressed }) => [styles.segment, pressed && styles.segmentPressed]}
       >
@@ -208,7 +247,7 @@ function ThemeSegmentedSwitch({
                 <ThemeSunIcon color={dayColors.flameAmber} size={14} />
               </Animated.View>
               <Animated.View style={[StyleSheet.absoluteFill, styles.centered, sunInactiveStyle]}>
-                <ThemeSunIcon color={dayColors.umber} size={14} />
+                <ThemeSunIcon color={lampColors.fawn} size={14} />
               </Animated.View>
             </View>
           </Animated.View>
@@ -225,6 +264,7 @@ function ThemeSegmentedSwitch({
       </Pressable>
       <Pressable
         hitSlop={6}
+        onPressIn={() => handlePressIn('lamp')}
         onPress={() => handleSelect('lamp')}
         style={({ pressed }) => [styles.segment, pressed && styles.segmentPressed]}
       >
@@ -345,7 +385,7 @@ export default function SettingsScreen() {
   // full daily limit so the screen paints immediately without an infinite
   // "Checking translations left…" hang, which cached/server reads then refine.
   const [translationsLeft, setTranslationsLeft] = useState<number | null | undefined>(
-    isPremiumUser() ? null : FREE_DAILY_TRANSLATION_LIMIT,
+    canUse('unlimited_learning') ? null : GUEST_DAILY_TRANSLATION_LIMIT,
   );
   const [languagePickerVisible, setLanguagePickerVisible] = useState(false);
   const [motherTonguePickerVisible, setMotherTonguePickerVisible] = useState(false);
@@ -359,13 +399,132 @@ export default function SettingsScreen() {
   const [unsyncedCount, setUnsyncedCount] = useState(0);
   const [accountProtectionDialogVisible, setAccountProtectionDialogVisible] = useState(false);
   const [promoModalVisible, setPromoModalVisible] = useState(false);
+  const [feedbackModalVisible, setFeedbackModalVisible] = useState(false);
   const [entitlement, setEntitlement] = useState<EntitlementSnapshot>(getEntitlementSnapshot());
+
+  const [isProtected, setIsProtected] = useState(false);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [accountProtectionModalVisible, setAccountProtectionModalVisible] = useState(false);
+  const [signOutDialogVisible, setSignOutDialogVisible] = useState(false);
+  const [restoreDialogVisible, setRestoreDialogVisible] = useState(false);
+  const [copiedToast, setCopiedToast] = useState(false);
+  const [exportingData, setExportingData] = useState(false);
+
+  const refreshAccountStatus = useCallback(async () => {
+    try {
+      const [authStatus, email, uid] = await Promise.all([
+        isAuthenticatedAccount(),
+        getUserEmail(),
+        getUserId(),
+      ]);
+      setIsProtected(authStatus);
+      setUserEmail(email);
+      setUserId(uid);
+    } catch (err) {
+      console.warn('[Settings] Error refreshing account status:', err);
+    }
+  }, []);
+
+  const handleCopySupportId = async () => {
+    if (!userId) return;
+    await Clipboard.setStringAsync(userId);
+    setCopiedToast(true);
+    setTimeout(() => setCopiedToast(false), 2000);
+  };
+
+  const handleExportData = async () => {
+    if (exportingData) return;
+    setExportingData(true);
+    try {
+      const db = await getDb();
+      const [savedWords, highlights, readingPositions, shelves, shelfItems, reviewEvents, quizAttempts] =
+        await Promise.all([
+          db.getAllAsync('SELECT * FROM saved_words'),
+          db.getAllAsync('SELECT * FROM highlights'),
+          db.getAllAsync('SELECT * FROM reading_positions'),
+          db.getAllAsync('SELECT * FROM shelves'),
+          db.getAllAsync('SELECT * FROM shelf_items'),
+          db.getAllAsync('SELECT * FROM review_events'),
+          db.getAllAsync('SELECT * FROM quiz_attempts'),
+        ]);
+
+      const payload = {
+        app: 'Lamplight',
+        version: Constants.expoConfig?.version ?? '1.0.0',
+        exportedAt: new Date().toISOString(),
+        userId: userId ?? 'guest',
+        data: {
+          savedWords,
+          highlights,
+          readingPositions,
+          shelves,
+          shelfItems,
+          reviewEvents,
+          quizAttempts,
+        },
+      };
+
+      const file = new File(Paths.cache, `lamplight-backup-${Date.now()}.json`);
+      file.create({ overwrite: true });
+      file.write(JSON.stringify(payload, null, 2));
+
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(file.uri, {
+          mimeType: 'application/json',
+          dialogTitle: 'Export Lamplight Reading Data',
+          UTI: 'public.json',
+        });
+      }
+    } catch (err) {
+      console.warn('[Settings] Failed to export data:', err);
+    } finally {
+      setExportingData(false);
+    }
+  };
+
+  const handleConfirmRestore = async () => {
+    setRestoreDialogVisible(false);
+    try {
+      await triggerSync({ forceImmediate: true });
+      loadStorage();
+      await refreshAccountStatus();
+    } catch (err) {
+      console.warn('[Settings] Failed to restore backup:', err);
+    }
+  };
+
+  const handleSignOutKeepData = async () => {
+    setSignOutDialogVisible(false);
+    await coordinateSignOut(true);
+    await refreshAccountStatus();
+    await refreshSyncStatus();
+  };
+
+  const handleSignOutRemoveData = async () => {
+    setSignOutDialogVisible(false);
+    await coordinateSignOut(false);
+    await refreshAccountStatus();
+    await refreshSyncStatus();
+    loadStorage();
+  };
 
   useEffect(() => {
     return subscribeToEntitlements(setEntitlement);
   }, []);
 
   const isPremium = entitlement.status === 'premium' || entitlement.status === 'trial' || entitlement.status === 'grace';
+  const currentStyleId = usePageStyle();
+  const [pageStyleModalVisible, setPageStyleModalVisible] = useState(false);
+
+  const handleSelectPageStyle = (style: PageStyleConfig) => {
+    if (style.isPremium && !isPremium) {
+      router.push({ pathname: '/paywall', params: { feature: 'premium_page_styles' } });
+      return;
+    }
+    void hapticFlashcardAction('graduate');
+    setPageStyle(style.id);
+  };
 
   const loadStorage = useCallback(() => {
     getStorageUsage().then(setStorageUsage).catch(() => {});
@@ -411,11 +570,61 @@ export default function SettingsScreen() {
 
   const isLamp = theme === 'lamp';
   const themeAnim = themeTransitionProgress;
+  const dayColors = getCultureThemeColors(cultureTheme, 'day');
+  const lampColors = getCultureThemeColors(cultureTheme, 'lamp');
+
+  const animatedContainerStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(
+      themeAnim.value,
+      [0, 1],
+      [dayColors.parchment, lampColors.parchment],
+    ),
+  }), [dayColors, lampColors]);
+
+  const animatedCardStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(
+      themeAnim.value,
+      [0, 1],
+      [dayColors.card, lampColors.card],
+    ),
+    borderColor: interpolateColor(
+      themeAnim.value,
+      [0, 1],
+      [dayColors.hairline, lampColors.hairline],
+    ),
+  }), [dayColors, lampColors]);
+
+  const animatedMiniCardStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(
+      themeAnim.value,
+      [0, 1],
+      ['#FDFCFA', '#221F24'],
+    ),
+    borderColor: interpolateColor(
+      themeAnim.value,
+      [0, 1],
+      [dayColors.hairline, lampColors.hairline],
+    ),
+  }), [dayColors, lampColors]);
+
+  const animatedSampleBoxStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(
+      themeAnim.value,
+      [0, 1],
+      [dayColors.parchment, '#18171A'],
+    ),
+    borderColor: interpolateColor(
+      themeAnim.value,
+      [0, 1],
+      [dayColors.hairline, lampColors.hairline],
+    ),
+  }), [dayColors, lampColors]);
+
 
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
-      const isPremium = isPremiumUser();
+      const isPremium = canUse('unlimited_learning');
       const apply = (cap: CapCheck) => {
         if (!cancelled) setTranslationsLeft(cap.remaining === Infinity ? null : cap.remaining);
       };
@@ -430,23 +639,24 @@ export default function SettingsScreen() {
         .then(apply)
         .catch(() => {
           if (!cancelled) {
-            setTranslationsLeft((prev) => prev ?? FREE_DAILY_TRANSLATION_LIMIT);
+            setTranslationsLeft((prev) => prev ?? (isProtected ? FREE_DAILY_TRANSLATION_LIMIT : GUEST_DAILY_TRANSLATION_LIMIT));
           }
         });
       loadStorage();
       void refreshSyncStatus();
+      void refreshAccountStatus();
 
       return () => {
         cancelled = true;
       };
-    }, [loadStorage]),
+    }, [loadStorage, refreshAccountStatus]),
   );
 
   return (
     // Scrolls now that About sits below the plan card — on a short phone the
     // last section would otherwise fall off the bottom with no way to reach it.
-    <ScrollView
-      style={[styles.container, { backgroundColor: colors.parchment }]}
+    <Animated.ScrollView
+      style={[styles.container, animatedContainerStyle]}
       contentContainerStyle={{
         paddingHorizontal: spacing.xl,
         paddingTop: insets.top + 16,
@@ -461,12 +671,11 @@ export default function SettingsScreen() {
       <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginBottom: spacing.sm }]}>
         Appearance
       </Text>
-      <View
+      <Animated.View
         style={[
           styles.card,
+          animatedCardStyle,
           {
-            backgroundColor: colors.card,
-            borderColor: colors.hairline,
             borderRadius: radius.card,
             marginBottom: spacing.xl,
           },
@@ -500,17 +709,16 @@ export default function SettingsScreen() {
             </View>
           </Pressable>
         </View>
-      </View>
+      </Animated.View>
 
       <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginBottom: spacing.sm }]}>
         Reading
       </Text>
-      <View
+      <Animated.View
         style={[
           styles.card,
+          animatedCardStyle,
           {
-            backgroundColor: colors.card,
-            borderColor: colors.hairline,
             borderRadius: radius.card,
             marginBottom: spacing.xl,
             paddingVertical: 4,
@@ -521,17 +729,280 @@ export default function SettingsScreen() {
           <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>Page-turn sound</Text>
           <ToggleSwitch value={pageTurnSound} onChange={setPageTurnSoundEnabled} themeAnim={themeAnim} />
         </View>
-      </View>
+
+        <View style={[styles.itemDivider, { borderBottomColor: colors.hairline, marginVertical: 8 }]} />
+
+        {/* Page typography style */}
+        <View style={{ paddingVertical: 6 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+            <View style={{ flex: 1, paddingRight: 8 }}>
+              <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
+                Reading page style
+              </Text>
+              <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11, marginTop: 2 }]}>
+                {getPageStyleConfig(currentStyleId).name} · {getPageStyleConfig(currentStyleId).tag}
+              </Text>
+            </View>
+            <Pressable
+              onPress={() => setPageStyleModalVisible(true)}
+              style={[styles.pairPill, { backgroundColor: colors.pairPillBackground, borderRadius: radius.pill }]}
+            >
+              <Text style={[typography.uiRowTitle, { color: colors.pairPillText, fontSize: 11 }]}>
+                Fine-tune
+              </Text>
+              <View style={{ width: 14, height: 14, alignItems: 'center', justifyContent: 'center', marginLeft: 2 }}>
+                <ChevronRightIcon color={colors.straw} size={13} />
+              </View>
+            </Pressable>
+          </View>
+
+          {/* Horizontal scroll of page style cards */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingVertical: 4, gap: 10 }}
+          >
+            {PAGE_STYLE_LIST.map((style) => {
+              const isSelected = currentStyleId === style.id;
+              const isUnlocked = !style.isPremium || isPremium;
+              const sampleFont = motherTongue === 'bn' ? style.banglaFont : style.englishFont;
+              const sampleText = motherTongue === 'bn' ? style.previewSampleBangla : style.previewSample;
+
+              return (
+                <Pressable
+                  key={style.id}
+                  onPress={() => handleSelectPageStyle(style)}
+                  style={({ pressed }) => [
+                    pressed && { opacity: 0.85 },
+                  ]}
+                >
+                  <Animated.View
+                    style={[
+                      styles.pageStyleMiniCard,
+                      { borderRadius: radius.card },
+                      isSelected
+                        ? { backgroundColor: `${colors.flameAmber}12`, borderColor: colors.flameAmber }
+                        : animatedMiniCardStyle,
+                    ]}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <Text
+                        style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13, flex: 1, marginRight: 4 }]}
+                        numberOfLines={1}
+                      >
+                        {motherTongue === 'bn' ? style.nameBangla : style.name}
+                      </Text>
+                      <View
+                        style={{
+                          backgroundColor: style.isPremium
+                            ? (isPremium ? `${colors.flameAmber}24` : colors.flameAmber)
+                            : `${colors.fawn}1C`,
+                          paddingHorizontal: 6,
+                          paddingVertical: 2,
+                          borderRadius: radius.pill,
+                        }}
+                      >
+                        <Text
+                          style={{
+                            color: style.isPremium
+                              ? (isPremium ? colors.flameAmber : colors.primaryDark)
+                              : colors.fawn,
+                            fontSize: 8.5,
+                            fontFamily: 'Manrope_700Bold',
+                          }}
+                        >
+                          {style.isPremium ? (isPremium ? 'PREMIUM' : '★ PRO') : 'FREE'}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <Text
+                      style={[typography.eyebrowLabel, { color: isSelected ? colors.flameAmber : colors.fawn, fontSize: 9, marginBottom: 8 }]}
+                      numberOfLines={1}
+                    >
+                      {style.tag}
+                    </Text>
+
+                    {/* Typography preview */}
+                    <Animated.View
+                      style={[
+                        styles.pageStyleSampleBox,
+                        { borderRadius: radius.bookCoverOuter },
+                        isSelected
+                          ? [animatedSampleBoxStyle, { borderColor: `${colors.flameAmber}44` }]
+                          : animatedSampleBoxStyle,
+                      ]}
+                    >
+                      <Text
+                        style={{
+                          fontFamily: sampleFont,
+                          fontSize: 13,
+                          lineHeight: 22,
+                          letterSpacing: style.letterSpacing,
+                          color: colors.ink,
+                        }}
+                        numberOfLines={2}
+                      >
+                        {sampleText}
+                      </Text>
+                    </Animated.View>
+
+                    {/* Status indicator footer */}
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
+                      <Text
+                        style={[
+                          typography.metadataCaption,
+                          {
+                            color: isSelected
+                              ? colors.flameAmber
+                              : isUnlocked
+                              ? colors.fawn
+                              : colors.flameAmber,
+                            fontSize: 10.5,
+                            fontWeight: isSelected ? '700' : '500',
+                          },
+                        ]}
+                      >
+                        {isSelected ? 'Active' : isUnlocked ? 'Tap to apply' : 'Unlock with Pro'}
+                      </Text>
+                      {isSelected ? (
+                        <View
+                          style={{
+                            width: 16,
+                            height: 16,
+                            borderRadius: 8,
+                            backgroundColor: colors.flameAmber,
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          <CheckIcon color={colors.primaryDark} size={10} />
+                        </View>
+                      ) : null}
+                    </View>
+                  </Animated.View>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </View>
+      </Animated.View>
+
+      <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginBottom: spacing.sm }]}>
+        Plan & Membership
+      </Text>
+      <Animated.View
+        style={[
+          styles.card,
+          animatedCardStyle,
+          {
+            borderRadius: radius.card,
+            marginBottom: spacing.xl,
+            borderColor: isPremium ? `${colors.flameAmber}66` : colors.hairline,
+          },
+        ]}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 15 }]}>
+              {isPremium ? 'Lamplight Premium' : 'Free Reader Tier'}
+            </Text>
+            <View
+              style={{
+                backgroundColor: isPremium ? colors.flameAmber : `${colors.fawn}22`,
+                paddingHorizontal: 8,
+                paddingVertical: 2,
+                borderRadius: radius.pill,
+              }}
+            >
+              <Text
+                style={{
+                  color: isPremium ? colors.primaryDark : colors.fawn,
+                  fontSize: 10,
+                  fontFamily: 'Manrope_700Bold',
+                }}
+              >
+                {isPremium ? 'ACTIVE' : 'FREE'}
+              </Text>
+            </View>
+          </View>
+          <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11 }]}>
+            {translationsLeft == null ? 'Unlimited lookups' : `${translationsLeft} lookups left today`}
+          </Text>
+        </View>
+
+        <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 12, lineHeight: 18, marginBottom: 14 }]}>
+          {isPremium
+            ? 'All 8 artisan page styles, full atmospheric soundscapes, 14 quote cards, and unlimited translations are unlocked.'
+            : 'Upgrade to unlock all 8 artisan page styles, unlimited word lookups, complete atmospheric soundscapes, and cloud sync.'}
+        </Text>
+
+        {/* Feature bullets */}
+        <View style={{ gap: 6, marginBottom: 16 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <View style={{ width: 14, height: 14, borderRadius: 7, backgroundColor: isPremium ? `${colors.flameAmber}33` : `${colors.fawn}22`, alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ color: isPremium ? colors.flameAmber : colors.fawn, fontSize: 9 }}>✦</Text>
+            </View>
+            <Text style={[typography.metadataCaption, { color: colors.ink, fontSize: 12 }]}>
+              8 Handcrafted Page Styles (Oxford, Vellum, Nocturne & Washi)
+            </Text>
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <View style={{ width: 14, height: 14, borderRadius: 7, backgroundColor: isPremium ? `${colors.flameAmber}33` : `${colors.fawn}22`, alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ color: isPremium ? colors.flameAmber : colors.fawn, fontSize: 9 }}>✦</Text>
+            </View>
+            <Text style={[typography.metadataCaption, { color: colors.ink, fontSize: 12 }]}>
+              Unlimited Vocabulary, Quotes & Daily Translations
+            </Text>
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <View style={{ width: 14, height: 14, borderRadius: 7, backgroundColor: isPremium ? `${colors.flameAmber}33` : `${colors.fawn}22`, alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ color: isPremium ? colors.flameAmber : colors.fawn, fontSize: 9 }}>✦</Text>
+            </View>
+            <Text style={[typography.metadataCaption, { color: colors.ink, fontSize: 12 }]}>
+              Full Atmospheric Soundscapes & 14 Artisan Quote Cards
+            </Text>
+          </View>
+        </View>
+
+        {/* Upgrade / Manage Button */}
+        <Pressable
+          onPress={() => router.push('/paywall')}
+          style={({ pressed }) => [
+            styles.upgradeButton,
+            {
+              backgroundColor: isPremium ? (isLamp ? '#3A342D' : colors.segmentedTrack) : colors.flameAmber,
+              borderRadius: radius.pill,
+              alignItems: 'center',
+              justifyContent: 'center',
+              paddingVertical: 11,
+            },
+            pressed && { opacity: 0.85 },
+          ]}
+        >
+          <Text
+            style={[
+              typography.buttonLabel,
+              {
+                color: isPremium ? colors.ink : colors.primaryDark,
+                fontSize: 13,
+                fontWeight: '700',
+              },
+            ]}
+          >
+            {isPremium ? 'Manage Subscription' : 'Upgrade to Premium'}
+          </Text>
+        </Pressable>
+      </Animated.View>
 
       <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginBottom: spacing.sm }]}>
         Language
       </Text>
-      <View
+      <Animated.View
         style={[
           styles.card,
+          animatedCardStyle,
           {
-            backgroundColor: colors.card,
-            borderColor: colors.hairline,
             borderRadius: radius.card,
             marginBottom: spacing.xl,
             paddingVertical: 4,
@@ -565,17 +1036,16 @@ export default function SettingsScreen() {
             </Text>
           </Pressable>
         </View>
-      </View>
+      </Animated.View>
 
       <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginBottom: spacing.sm }]}>
         Storage
       </Text>
-      <View
+      <Animated.View
         style={[
           styles.card,
+          animatedCardStyle,
           {
-            backgroundColor: colors.card,
-            borderColor: colors.hairline,
             borderRadius: radius.card,
             marginBottom: spacing.xl,
           },
@@ -634,45 +1104,123 @@ export default function SettingsScreen() {
             )}
           </Pressable>
         </View>
-      </View>
+      </Animated.View>
 
       <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginBottom: spacing.sm }]}>
         Account
       </Text>
-      <View
+      <Animated.View
         style={[
           styles.card,
+          animatedCardStyle,
           {
-            backgroundColor: isLamp ? colors.card : colors.primaryDark,
-            borderColor: isLamp ? colors.hairline : colors.primaryDark,
             borderRadius: radius.card,
+            marginBottom: spacing.xl,
           },
         ]}
       >
+        {/* Status header */}
         <View style={styles.settingsRow}>
-          <View>
-            <Text style={[typography.uiRowTitle, { color: isLamp ? colors.ink : colors.lampText, fontSize: 13 }]}>
-              {isPremium ? (entitlement.source === 'promo' ? 'Promo Pass' : 'Premium Plan') : 'Free Plan'}
-            </Text>
+          <View style={{ flex: 1, minWidth: 0, paddingRight: spacing.sm }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
+                {isProtected
+                  ? isPremium
+                    ? 'Premium Plan'
+                    : 'Protected Account'
+                  : 'Guest Library'}
+              </Text>
+              <View
+                style={{
+                  backgroundColor: isProtected
+                    ? (isPremium ? colors.flameAmber : 'rgba(127, 163, 122, 0.25)')
+                    : (isLamp ? 'rgba(245, 237, 225, 0.12)' : 'rgba(0, 0, 0, 0.06)'),
+                  paddingHorizontal: 7,
+                  paddingVertical: 2,
+                  borderRadius: radius.pill,
+                }}
+              >
+                <Text
+                  style={{
+                    color: isProtected
+                      ? (isPremium ? colors.primaryDark : LamplightColor.highlight.sage)
+                      : colors.fawn,
+                    fontSize: 10,
+                    fontFamily: 'Manrope_700Bold',
+                  }}
+                >
+                  {isProtected ? (isPremium ? 'PREMIUM' : 'PROTECTED') : 'GUEST'}
+                </Text>
+              </View>
+            </View>
+
             <Text
               style={[
                 typography.metadataCaption,
-                { color: isLamp ? colors.fawn : colors.mutedOnDark, fontSize: 11, marginTop: 2 },
+                { color: colors.fawn, fontSize: 11, marginTop: 3 },
               ]}
+              numberOfLines={1}
             >
-              {isPremium
-                ? 'Unlimited translations'
-                : translationsLeft === undefined
-                  ? 'Checking translations left…'
-                  : `${translationsLeft} translations left today`}
+              {isProtected
+                ? userEmail
+                  ? `${userEmail} · ${isPremium ? (entitlement.expiresAt ? `Renews ${new Date(entitlement.expiresAt).toLocaleDateString()}` : 'Active') : 'Free Plan (50 lookups/day)'}`
+                  : 'Free Plan · Protected'
+                : 'Guest mode · 20 lookups/day · Unsynced'}
             </Text>
           </View>
-          {isPremium ? (
-            <View
+
+          {/* Action button */}
+          {!isProtected ? (
+            <View style={{ flexDirection: 'row', gap: 6 }}>
+              <Pressable
+                onPress={() => router.push('/paywall')}
+                style={[
+                  styles.upgradeButton,
+                  {
+                    backgroundColor: colors.flameAmber,
+                    borderRadius: radius.pill,
+                    paddingHorizontal: 11,
+                    paddingVertical: 6,
+                  },
+                ]}
+              >
+                <Text style={[typography.uiRowTitle, { color: colors.primaryDark, fontSize: 11 }]}>
+                  Upgrade
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setAccountProtectionModalVisible(true)}
+                style={[
+                  styles.upgradeButton,
+                  {
+                    backgroundColor: isLamp ? '#3A342D' : colors.segmentedTrack,
+                    borderRadius: radius.pill,
+                    paddingHorizontal: 11,
+                    paddingVertical: 6,
+                  },
+                ]}
+              >
+                <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 11 }]}>
+                  Sync
+                </Text>
+              </Pressable>
+            </View>
+          ) : !isPremium ? (
+            <Pressable
+              onPress={() => router.push('/paywall')}
+              style={[styles.upgradeButton, { backgroundColor: colors.flameAmber, borderRadius: radius.pill }]}
+            >
+              <Text style={[typography.uiRowTitle, { color: colors.primaryDark, fontSize: 12 }]}>
+                Upgrade
+              </Text>
+            </Pressable>
+          ) : (
+            <Pressable
+              onPress={() => router.push('/paywall')}
               style={[
                 styles.upgradeButton,
                 {
-                  backgroundColor: isLamp ? '#3A342D' : colors.segmentedTrack,
+                  backgroundColor: colors.segmentedTrack,
                   borderRadius: radius.pill,
                   paddingHorizontal: 12,
                   paddingVertical: 6,
@@ -680,118 +1228,247 @@ export default function SettingsScreen() {
               ]}
             >
               <Text style={[typography.uiRowTitle, { color: colors.flameAmber, fontSize: 12 }]}>Active</Text>
-            </View>
-          ) : (
-            <Pressable
-              onPress={() => router.push('/paywall')}
-              style={[styles.upgradeButton, { backgroundColor: colors.flameAmber, borderRadius: radius.pill }]}
-            >
-              <Text style={[typography.uiRowTitle, { color: colors.primaryDark, fontSize: 12 }]}>Upgrade</Text>
             </Pressable>
           )}
         </View>
 
-        <View style={[styles.itemDivider, { borderBottomColor: isLamp ? colors.hairline : '#2B2621' }]} />
+        {/* View Profile & Reading Stats */}
+        <View style={[styles.itemDivider, { borderBottomColor: colors.hairline }]} />
+        <Pressable
+          onPress={() => router.push('/profile' as any)}
+          style={[styles.settingsRow, { paddingVertical: 10 }]}
+        >
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
+              Profile & Reading Stats
+            </Text>
+            <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11, marginTop: 1 }]}>
+              Streaks, reading velocity, top books & edit name
+            </Text>
+          </View>
+          <View style={{ width: 15, height: 15, alignItems: 'center', justifyContent: 'center' }}>
+            <ChevronRightIcon color={colors.fawn} size={14} />
+          </View>
+        </Pressable>
 
+        {/* Sign in with existing account (for guests) */}
+        {!isProtected ? (
+          <>
+            <View style={[styles.itemDivider, { borderBottomColor: colors.hairline }]} />
+            <Pressable
+              onPress={() => router.push('/login' as any)}
+              style={[styles.settingsRow, { paddingVertical: 10 }]}
+            >
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
+                  Sign in with existing account
+                </Text>
+                <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11, marginTop: 1 }]}>
+                  Restore your previous reading library and vocabulary
+                </Text>
+              </View>
+              <View style={{ width: 15, height: 15, alignItems: 'center', justifyContent: 'center' }}>
+                <ChevronRightIcon color={colors.flameAmber} size={14} />
+              </View>
+            </Pressable>
+          </>
+        ) : null}
+
+        {/* Copyable Support ID Row */}
+        {userId ? (
+          <>
+            <View style={[styles.itemDivider, { borderBottomColor: colors.hairline }]} />
+            <View style={[styles.settingsRow, { paddingVertical: 8 }]}>
+              <View style={{ flex: 1, minWidth: 0, paddingRight: spacing.sm }}>
+                <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 12 }]}>
+                  Support ID
+                </Text>
+                <Text
+                  style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11, marginTop: 1 }]}
+                  numberOfLines={1}
+                >
+                  {userId}
+                </Text>
+              </View>
+              <Pressable
+                onPress={handleCopySupportId}
+                hitSlop={8}
+                style={[
+                  styles.upgradeButton,
+                  {
+                    backgroundColor: colors.segmentedTrack,
+                    borderRadius: radius.pill,
+                    paddingHorizontal: 10,
+                    paddingVertical: 4,
+                  },
+                ]}
+              >
+                <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 11 }]}>
+                  {copiedToast ? 'Copied!' : 'Copy'}
+                </Text>
+              </Pressable>
+            </View>
+          </>
+        ) : null}
+
+        {/* Cloud Backup & Sync (for protected accounts) */}
+        {isProtected ? (
+          <>
+            <View style={[styles.itemDivider, { borderBottomColor: colors.hairline }]} />
+            <View style={[styles.settingsRow, { paddingVertical: 8 }]}>
+              <View style={{ flex: 1, minWidth: 0, paddingRight: spacing.sm }}>
+                <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 12 }]}>
+                  Cloud Backup & Sync
+                </Text>
+                <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11, marginTop: 1 }]}>
+                  {syncSubtitle(syncStatus)}
+                </Text>
+              </View>
+
+              <View style={{ flexDirection: 'row', gap: 6 }}>
+                <Pressable
+                  onPress={() => router.push('/restore' as any)}
+                  disabled={syncStatus === 'syncing'}
+                  style={[
+                    styles.upgradeButton,
+                    {
+                      backgroundColor: colors.segmentedTrack,
+                      borderRadius: radius.pill,
+                      paddingHorizontal: 10,
+                      paddingVertical: 5,
+                    },
+                  ]}
+                >
+                  <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 11 }]}>
+                    Restore
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => void triggerSync({ forceImmediate: true })}
+                  disabled={syncStatus === 'syncing'}
+                  style={[
+                    styles.upgradeButton,
+                    {
+                      backgroundColor:
+                        syncStatus === 'syncing'
+                          ? colors.fawn
+                          : colors.flameAmber,
+                      borderRadius: radius.pill,
+                      paddingHorizontal: 11,
+                      paddingVertical: 5,
+                    },
+                  ]}
+                >
+                  {syncStatus === 'syncing' ? (
+                    <ActivityIndicator size="small" color={colors.primaryDark} />
+                  ) : (
+                    <Text style={[typography.uiRowTitle, { color: colors.primaryDark, fontSize: 11 }]}>
+                      Back up now
+                    </Text>
+                  )}
+                </Pressable>
+              </View>
+            </View>
+          </>
+        ) : null}
+
+        {/* Export Reading Data */}
+        <View style={[styles.itemDivider, { borderBottomColor: colors.hairline }]} />
+        <Pressable
+          onPress={handleExportData}
+          disabled={exportingData}
+          style={[styles.settingsRow, { paddingVertical: 10 }]}
+        >
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
+              Export reading data
+            </Text>
+            <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11, marginTop: 1 }]}>
+              JSON backup of words, highlights & reading positions
+            </Text>
+          </View>
+          {exportingData ? (
+            <ActivityIndicator size="small" color={colors.flameAmber} />
+          ) : (
+            <View style={{ width: 15, height: 15, alignItems: 'center', justifyContent: 'center' }}>
+              <ChevronRightIcon color={colors.fawn} size={14} />
+            </View>
+          )}
+        </Pressable>
+
+        {/* Redeem promo code */}
+        <View style={[styles.itemDivider, { borderBottomColor: colors.hairline }]} />
         <Pressable
           onPress={() => setPromoModalVisible(true)}
           style={[styles.settingsRow, { paddingVertical: 10 }]}
         >
-          <Text style={[typography.uiRowTitle, { color: isLamp ? colors.ink : colors.lampText, fontSize: 13 }]}>
+          <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
             Redeem promo code
           </Text>
           <View style={{ width: 15, height: 15, alignItems: 'center', justifyContent: 'center' }}>
             <ChevronRightIcon color={colors.flameAmber} size={14} />
           </View>
         </Pressable>
-      </View>
+
+        {/* Sign Out (Protected accounts only) */}
+        {isProtected ? (
+          <>
+            <View style={[styles.itemDivider, { borderBottomColor: colors.hairline }]} />
+            <Pressable
+              onPress={() => setSignOutDialogVisible(true)}
+              style={[styles.settingsRow, { paddingVertical: 10 }]}
+            >
+              <Text style={[typography.uiRowTitle, { color: colors.highlight.clay, fontSize: 13 }]}>
+                Sign out
+              </Text>
+              <View style={{ width: 15, height: 15, alignItems: 'center', justifyContent: 'center' }}>
+                <ChevronRightIcon color={colors.highlight.clay} size={14} />
+              </View>
+            </Pressable>
+          </>
+        ) : null}
+      </Animated.View>
 
       <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginTop: spacing.xl, marginBottom: spacing.sm }]}>
-        Cloud Sync
+        Support & Feedback
       </Text>
-      <View
+      <Animated.View
         style={[
           styles.card,
-          styles.settingsRow,
+          animatedCardStyle,
           {
-            backgroundColor: colors.card,
-            borderColor: colors.hairline,
             borderRadius: radius.card,
           },
         ]}
       >
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
-            Cloud Sync
-          </Text>
-          <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11, marginTop: 2 }]}>
-            {syncSubtitle(syncStatus)}
-          </Text>
-        </View>
         <Pressable
-          onPress={() => {
-            if (syncStatus === 'guest') {
-              setAccountProtectionDialogVisible(true);
-            } else {
-              void triggerSync({ forceImmediate: true });
-            }
-          }}
-          disabled={syncStatus === 'syncing'}
-          style={[
-            styles.upgradeButton,
-            {
-              backgroundColor:
-                syncStatus === 'syncing'
-                  ? colors.fawn
-                  : syncStatus === 'guest'
-                  ? colors.flameAmber
-                  : syncStatus === 'offline_saved' || syncStatus === 'needs_attention'
-                  ? colors.flameAmber
-                  : (isLamp ? 'rgba(245, 237, 225, 0.08)' : 'rgba(28, 27, 30, 0.06)'),
-              borderRadius: radius.pill,
-              minWidth: 78,
-              alignItems: 'center',
-              justifyContent: 'center',
-              paddingHorizontal: 12,
-              paddingVertical: 6,
-            },
-          ]}
+          onPress={() => setFeedbackModalVisible(true)}
+          style={[styles.settingsRow, { paddingVertical: 10 }]}
         >
-          {syncStatus === 'syncing' ? (
-            <ActivityIndicator size="small" color={colors.primaryDark} />
-          ) : (
-            <Text
-              style={[
-                typography.uiRowTitle,
-                {
-                  color:
-                    syncStatus === 'guest' || syncStatus === 'offline_saved' || syncStatus === 'needs_attention'
-                      ? colors.primaryDark
-                      : colors.fawn,
-                  fontSize: 12,
-                },
-              ]}
-            >
-              {syncStatus === 'guest'
-                ? 'Log in'
-                : syncStatus === 'offline_saved' || syncStatus === 'needs_attention'
-                ? 'Retry'
-                : 'Sync now'}
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
+              Rate & share feedback
             </Text>
-          )}
+            <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11, marginTop: 2 }]}>
+              Help us improve translations, report bugs, or share ideas
+            </Text>
+          </View>
+          <View style={{ width: 15, height: 15, alignItems: 'center', justifyContent: 'center' }}>
+            <ChevronRightIcon color={colors.straw} size={15} />
+          </View>
         </Pressable>
-      </View>
+      </Animated.View>
 
       <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginTop: spacing.xl, marginBottom: spacing.sm }]}>
         About
       </Text>
-      <View
+      <Animated.View
         style={[
           styles.card,
           styles.settingsRow,
+          animatedCardStyle,
           {
-            backgroundColor: colors.card,
-            borderColor: colors.hairline,
             borderRadius: radius.card,
           },
         ]}
@@ -814,7 +1491,52 @@ export default function SettingsScreen() {
             <Text style={[typography.uiRowTitle, { color: colors.primaryDark, fontSize: 12 }]}>Restart</Text>
           </Pressable>
         ) : null}
-      </View>
+      </Animated.View>
+
+      <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginTop: spacing.xl, marginBottom: spacing.sm }]}>
+        Legal & Privacy
+      </Text>
+      <Animated.View
+        style={[
+          styles.card,
+          animatedCardStyle,
+          {
+            borderRadius: radius.card,
+            marginBottom: spacing.xl,
+          },
+        ]}
+      >
+        <Pressable
+          onPress={() => router.push('/terms' as any)}
+          style={[styles.settingsRow, { paddingVertical: 10 }]}
+        >
+          <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
+            Terms and Conditions
+          </Text>
+          <View style={{ width: 15, height: 15, alignItems: 'center', justifyContent: 'center' }}>
+            <ChevronRightIcon color={colors.straw} size={14} />
+          </View>
+        </Pressable>
+
+        <View style={[styles.itemDivider, { borderBottomColor: colors.hairline }]} />
+
+        <Pressable
+          onPress={() => router.push('/privacy' as any)}
+          style={[styles.settingsRow, { paddingVertical: 10 }]}
+        >
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
+              Privacy Policy
+            </Text>
+            <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11, marginTop: 1 }]}>
+              EU GDPR, US CCPA/COPPA & Asian Privacy Acts
+            </Text>
+          </View>
+          <View style={{ width: 15, height: 15, alignItems: 'center', justifyContent: 'center' }}>
+            <ChevronRightIcon color={colors.straw} size={14} />
+          </View>
+        </Pressable>
+      </Animated.View>
 
       <MotherTonguePicker
         visible={motherTonguePickerVisible}
@@ -854,6 +1576,17 @@ export default function SettingsScreen() {
         }}
       />
 
+      <FeedbackModal
+        visible={feedbackModalVisible}
+        onClose={() => setFeedbackModalVisible(false)}
+      />
+
+      <PageStyleSelectorModal
+        visible={pageStyleModalVisible}
+        onClose={() => setPageStyleModalVisible(false)}
+        isBangla={motherTongue === 'bn'}
+      />
+
       <ConfirmDialog
         visible={syncAndClearDialogVisible}
         title="Unsynced Changes Detected"
@@ -883,11 +1616,121 @@ export default function SettingsScreen() {
         onConfirm={() => setAccountProtectionDialogVisible(false)}
         onCancel={() => setAccountProtectionDialogVisible(false)}
       />
-    </ScrollView>
+
+      <AccountProtectionModal
+        visible={accountProtectionModalVisible}
+        onClose={() => setAccountProtectionModalVisible(false)}
+        onSuccess={() => {
+          void refreshAccountStatus();
+          void refreshSyncStatus();
+          loadStorage();
+        }}
+      />
+
+      <ConfirmDialog
+        visible={restoreDialogVisible}
+        title="Restore Library Backup"
+        message="This will sync and pull your latest backed up reading progress, saved words, and highlights from your account into this device."
+        confirmLabel="Restore"
+        cancelLabel="Cancel"
+        onConfirm={handleConfirmRestore}
+        onCancel={() => setRestoreDialogVisible(false)}
+      />
+
+      <Modal
+        visible={signOutDialogVisible}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setSignOutDialogVisible(false)}
+      >
+        <Pressable style={styles.dialogBackdrop} onPress={() => setSignOutDialogVisible(false)}>
+          <Pressable
+            style={[
+              styles.dialogCard,
+              { backgroundColor: colors.card, borderColor: colors.hairline, borderRadius: radius.card },
+            ]}
+            onPress={() => {}}
+          >
+            <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 16 }]}>
+              Sign out of Lamplight?
+            </Text>
+            <Text style={[typography.metadataCaption, { color: colors.umber, marginTop: spacing.xs, lineHeight: 18 }]}>
+              Would you like to keep your reading progress and saved vocabulary on this device, or remove it?
+            </Text>
+
+            <View style={{ marginTop: spacing.lg, gap: 10 }}>
+              <Pressable
+                onPress={handleSignOutKeepData}
+                style={[
+                  styles.upgradeButton,
+                  {
+                    backgroundColor: colors.flameAmber,
+                    borderRadius: radius.pill,
+                    paddingVertical: 12,
+                    alignItems: 'center',
+                  },
+                ]}
+              >
+                <Text style={[typography.buttonLabel, { color: colors.primaryDark, fontSize: 13 }]}>
+                  Keep data on this device
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={handleSignOutRemoveData}
+                style={[
+                  styles.upgradeButton,
+                  {
+                    backgroundColor: 'transparent',
+                    borderWidth: 1,
+                    borderColor: colors.highlight.clay,
+                    borderRadius: radius.pill,
+                    paddingVertical: 12,
+                    alignItems: 'center',
+                  },
+                ]}
+              >
+                <Text style={[typography.uiRowTitle, { color: colors.highlight.clay, fontSize: 13 }]}>
+                  Remove data from this device
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => setSignOutDialogVisible(false)}
+                style={{ paddingVertical: 8, alignItems: 'center' }}
+              >
+                <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 13 }]}>
+                  Cancel
+                </Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </Animated.ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
+  dialogBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  dialogCard: {
+    width: '100%',
+    maxWidth: 380,
+    borderWidth: 1,
+    padding: 22,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 6,
+  },
   container: {
     flex: 1,
   },
@@ -911,11 +1754,10 @@ const styles = StyleSheet.create({
     top: 3,
     bottom: 3,
     left: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1.5 },
-    shadowOpacity: 0.18,
-    shadowRadius: 3,
-    elevation: 2,
+    // boxShadow, not elevation: on Android elevation lifts the pill in Z, and the
+    // theme-transition snapshot (software draw) sorts by Z before zIndex — so it
+    // painted the pill over the active label, making the text vanish mid-switch.
+    boxShadow: '0px 1.5px 6px rgba(0, 0, 0, 0.18)',
   },
   segment: {
     flex: 1,
@@ -973,5 +1815,16 @@ const styles = StyleSheet.create({
   itemDivider: {
     borderBottomWidth: StyleSheet.hairlineWidth,
     marginVertical: 4,
+  },
+  pageStyleMiniCard: {
+    width: 200,
+    borderWidth: 1.5,
+    padding: 12,
+  },
+  pageStyleSampleBox: {
+    padding: 10,
+    borderWidth: 1,
+    minHeight: 56,
+    justifyContent: 'center',
   },
 });

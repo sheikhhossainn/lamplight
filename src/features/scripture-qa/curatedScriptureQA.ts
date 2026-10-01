@@ -20,7 +20,42 @@ export type ScriptureQAVerse = {
   translation: string;
   historicalContext: string; // Who was addressed, factual occasion of revelation / setting
   classicalCommentary?: string; // Tafsir al-Jalalayn, Jamieson-Fausset-Brown commentary
+  translationEdition?: string; // e.g. Saheeh International, World English Bible (WEB)
+  commentarySource?: string; // e.g. Tafsir al-Jalalayn, Jamieson-Fausset-Brown
+  isAiAssistedContext?: boolean; // Whether the historical context was generated with AI assistance
 };
+
+/**
+ * Returns canonical source edition and commentary attribution for a given tradition.
+ */
+export function getTraditionSourceAttribution(tradition: TraditionKey): {
+  translationEdition: string;
+  commentarySource: string;
+} {
+  switch (tradition) {
+    case 'quran':
+      return {
+        translationEdition: 'Saheeh International',
+        commentarySource: 'Tafsir al-Jalalayn',
+      };
+    case 'bible-nt':
+      return {
+        translationEdition: 'World English Bible (WEB)',
+        commentarySource: 'Jamieson-Fausset-Brown',
+      };
+    case 'bible-ot':
+    case 'torah':
+      return {
+        translationEdition: 'World English Bible (WEB)',
+        commentarySource: 'Jamieson-Fausset-Brown',
+      };
+    case 'vedas':
+      return {
+        translationEdition: 'Ralph T.H. Griffith (1896)',
+        commentarySource: 'Traditional Vedic Exegesis (Rigveda Samhita)',
+      };
+  }
+}
 
 export type TraditionGroup = {
   tradition: TraditionKey;

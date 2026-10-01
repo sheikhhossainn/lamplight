@@ -2,7 +2,12 @@ import { setAudioModeAsync, useAudioPlayer } from 'expo-audio';
 import { useEffect } from 'react';
 
 import { ambienceTrackById } from '@/features/ambience/tracks';
-import { useAmbienceTrackId, useAmbienceVolume } from '@/features/ambience/ambiencePreference';
+import {
+  getStopOnReaderClose,
+  setAmbienceTrackId,
+  useAmbienceTrackId,
+  useAmbienceVolume,
+} from '@/features/ambience/ambiencePreference';
 
 // Drives reading ambience for the screen that mounts it (the Reader). Watches
 // the shared ambience preference: plays the chosen loop, follows volume, and
@@ -24,6 +29,14 @@ export function useAmbiencePlayer(): void {
     }).catch(() => {
       // Non-fatal — playback still works with the default session mode.
     });
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (getStopOnReaderClose()) {
+        setAmbienceTrackId(null);
+      }
+    };
   }, []);
 
   // Passing the URL (or null for "Off") re-creates the player when the track

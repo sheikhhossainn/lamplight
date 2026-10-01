@@ -1,4 +1,4 @@
-﻿# LampLight
+# LampLight
 
 **Universal language learning through reading — any language, any direction.**
 
@@ -92,7 +92,7 @@ Open in Expo Go (SDK 57 required). Scan the QR code.
 3. **Reading typography floor**: Lora font, never below 17px, line-height never below 1.85.
 4. **No new dependencies** without lead approval.
 5. **Before any PR**: `npx tsc --noEmit` → 0 errors.
-6. **Git identity** for all commits: `sheikhhossainn` / `skhossain799@gmail.com`.
+6. **Git identity**: dynamically inherit active developer's git configuration (`git config user.name` / `user.email`). Never hardcode or override identities.
 
 ---
 

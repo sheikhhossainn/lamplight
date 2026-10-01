@@ -4,5 +4,6 @@ export {
   checkCachedTranslationCap,
   checkTranslationCap,
   FREE_DAILY_TRANSLATION_LIMIT,
+  GUEST_DAILY_TRANSLATION_LIMIT,
   recordTranslationUsage,
 } from './capPolicy';

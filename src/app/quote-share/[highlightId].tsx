@@ -78,6 +78,7 @@ export default function QuoteShareScreen() {
     <ShareCardScreen
       text={highlight.quoteText}
       attribution={`${book.title} · ${book.author}`}
+      bookId={book.id}
       translation={showTranslation && translation ? translation : undefined}
       onToggleTranslation={handleToggleTranslation}
       hasTranslationAvailable={true}

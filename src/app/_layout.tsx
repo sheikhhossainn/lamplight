@@ -9,14 +9,32 @@ import {
 } from '@expo-google-fonts/lora';
 import { Manrope_400Regular, Manrope_600SemiBold, Manrope_700Bold } from '@expo-google-fonts/manrope';
 import { useFonts } from 'expo-font';
-import { Stack, usePathname } from 'expo-router';
+import { Stack, usePathname, useRouter } from 'expo-router';
+import {
+  reconcileScheduledNotifications,
+  setupNotificationResponseListener,
+} from '@/features/notifications/notificationService';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as SplashScreen from 'expo-splash-screen';
 import * as SystemUI from 'expo-system-ui';
+import * as WebBrowser from 'expo-web-browser';
 import { useEffect, useState } from 'react';
-import { AppState, View } from 'react-native';
+import { AppState, LogBox, View } from 'react-native';
+
+WebBrowser.maybeCompleteAuthSession();
+
+LogBox.ignoreLogs([
+  'ProgressBarAndroid has been extracted',
+  'SafeAreaView has been deprecated',
+  'Clipboard has been extracted',
+  'InteractionManager has been deprecated',
+  'PushNotificationIOS has been extracted',
+]);
 
 import { triggerSync } from '@/features/sync/syncWorker';
+import { flushAnalyticsQueue } from '@/features/analytics/analytics';
+import { fetchRemoteAppConfig, hydrateAppConfig } from '@/features/config/appConfig';
+import { getSession } from '@/lib/supabaseAuth';
 
 import { AppUpdatePrompt } from '@/components/AppUpdatePrompt';
 import { WhatsNewOverlay } from '@/components/WhatsNewOverlay';
@@ -29,8 +47,12 @@ import { hydrateTargetReadingLanguage } from '@/features/settings/targetReadingL
 import { hydrateLiteraryTheme } from '@/features/settings/literaryTheme';
 import { hydrateOnboardingStatus } from '@/features/settings/onboardingStatus';
 import { hydratePageStyle } from '@/features/settings/pageStylePrefs';
+import { hydrateReadingTypography } from '@/features/settings/readingPrefs';
 import { cleanupPartialDownloads } from '@/features/storage/storageManager';
+import { reconcileDownloadStates } from '@/features/content-ingestion/bookDownloader';
 import { hydrateEntitlements } from '@/features/subscription/entitlementService';
+import { reconcilePendingMergeJournals } from '@/features/account/accountSessionCoordinator';
+import { BillingProvider } from '@/features/billing/BillingProvider';
 import { LamplightThemeProvider, useTheme } from '@/theme/ThemeProvider';
 import { ThemeTransitionOverlay } from '@/theme/ThemeTransitionOverlay';
 
@@ -61,19 +83,24 @@ export default function RootLayout() {
 
   const ready = (fontsLoaded || Boolean(fontError)) && onboardingChecked;
 
-  // Load persisted settings (translation language pair, mother tongue, page style) once on launch.
+  // Load persisted settings (translation language pair, mother tongue, page style, app config) once on launch.
   useEffect(() => {
     void Promise.all([
-      hydrateTargetLanguage(),
-      hydrateTargetReadingLanguage(),
-      hydrateMotherTongue(),
-      hydratePageStyle(),
-      hydrateLiteraryTheme(),
-      hydrateEntitlements(),
+      getSession().catch(() => {}),
+      hydrateAppConfig().catch(() => {}),
+      hydrateTargetLanguage().catch(() => {}),
+      hydrateTargetReadingLanguage().catch(() => {}),
+      hydrateMotherTongue().catch(() => {}),
+      hydratePageStyle().catch(() => {}),
+      hydrateReadingTypography().catch(() => {}),
+      hydrateLiteraryTheme().catch(() => {}),
+      hydrateEntitlements().catch(() => {}),
       cleanupPartialDownloads().catch(() => {}),
-      seedJapaneseCatalog(),
-      seedKoreanCatalog(),
-    ]);
+      reconcileDownloadStates().catch(() => {}),
+      seedJapaneseCatalog().catch(() => {}),
+      seedKoreanCatalog().catch(() => {}),
+      reconcilePendingMergeJournals().catch(() => {}),
+    ]).catch(() => {});
   }, []);
 
   // Resolve the has-onboarded flag before the Stack mounts, so the "/" splash
@@ -84,13 +111,17 @@ export default function RootLayout() {
     );
   }, []);
 
-  // Trigger local-first sync on launch and when returning to foreground
+  // Trigger local-first sync, flush offline analytics, and refresh remote app config on launch and when returning to foreground
   useEffect(() => {
     void triggerSync();
+    void flushAnalyticsQueue();
+    void fetchRemoteAppConfig();
 
     const subscription = AppState.addEventListener('change', (nextAppState) => {
       if (nextAppState === 'active') {
         void triggerSync();
+        void flushAnalyticsQueue();
+        void fetchRemoteAppConfig();
       }
     });
 
@@ -98,6 +129,19 @@ export default function RootLayout() {
       subscription.remove();
     };
   }, []);
+
+  const router = useRouter();
+
+  // Reconcile notifications on launch and listen for notification taps (RET-01, RET-02)
+  useEffect(() => {
+    void reconcileScheduledNotifications().catch(() => {});
+    const cleanup = setupNotificationResponseListener((url) => {
+      router.push(url as any);
+    });
+    return () => {
+      cleanup?.();
+    };
+  }, [router]);
 
   useEffect(() => {
     if (ready) {
@@ -112,7 +156,9 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <LamplightThemeProvider>
-        <AppShell />
+        <BillingProvider>
+          <AppShell />
+        </BillingProvider>
       </LamplightThemeProvider>
     </GestureHandlerRootView>
   );
@@ -203,7 +249,14 @@ function AppShell() {
             flash libraryBackground before the gradient paints. */}
         <Stack.Screen name="mood-verses/table" options={{ contentStyle: { backgroundColor: '#4A3620' } }} />
         <Stack.Screen name="mood-verses/ask" options={{ contentStyle: { backgroundColor: colors.parchment } }} />
+        <Stack.Screen name="mood-verses/inquiry" options={{ contentStyle: { backgroundColor: colors.parchment } }} />
         <Stack.Screen name="mood-verses/reflect" options={{ contentStyle: { backgroundColor: colors.parchment } }} />
+        <Stack.Screen name="login" options={{ contentStyle: { backgroundColor: colors.parchment } }} />
+        <Stack.Screen name="signup" options={{ contentStyle: { backgroundColor: colors.parchment } }} />
+        <Stack.Screen name="auth/callback" options={{ contentStyle: { backgroundColor: colors.parchment } }} />
+        <Stack.Screen name="profile" options={{ contentStyle: { backgroundColor: colors.parchment } }} />
+        <Stack.Screen name="terms" options={{ contentStyle: { backgroundColor: colors.parchment } }} />
+        <Stack.Screen name="privacy" options={{ contentStyle: { backgroundColor: colors.parchment } }} />
       </Stack>
       <ThemeTransitionOverlay />
       <AppUpdatePrompt />

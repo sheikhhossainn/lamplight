@@ -403,10 +403,257 @@ export function calculateVocabularyEstimate(
   };
 }
 
+export type ThreeDoorStarterOption = {
+  profile: 'gentle' | 'balanced' | 'deep';
+  profileLabel: string;
+  tagline: string;
+  book: CalibratedStartingBook;
+};
+
+export function getThreeDoorStarterBooks(
+  lang: TargetReadingLanguageCode,
+  theme: LiteraryThemeCode = 'bengali',
+): Record<'gentle' | 'balanced' | 'deep', ThreeDoorStarterOption> {
+  if (lang === 'ja') {
+    return {
+      gentle: {
+        profile: 'gentle',
+        profileLabel: 'Gentle & Witty',
+        tagline: 'Accessible prose · Low reading friction',
+        book: {
+          id: 'aozora-wagahai',
+          title: '吾輩は猫である (I Am a Cat)',
+          author: '夏目漱石 (Natsume Soseki)',
+          synopsis: 'A witty, observant house cat comments on the eccentricities of human society.',
+          coveragePercent: 96,
+          coverageBadge: 'Gentle Pace',
+          reason: 'Playful social satire with comfortable reading speed.',
+        },
+      },
+      balanced: {
+        profile: 'balanced',
+        profileLabel: 'Canonical Classic',
+        tagline: 'Recommended starter classic',
+        book: getCalibratedStartingBook(lang, theme, 3500),
+      },
+      deep: {
+        profile: 'deep',
+        profileLabel: 'Deep Masterpiece',
+        tagline: 'Richer psychological depth',
+        book: {
+          id: 'aozora-rashomon',
+          title: '羅生門 (Rashomon)',
+          author: '芥川龍之介 (Akutagawa)',
+          synopsis: 'A chilling psychological encounter at the southern gate of Kyoto amidst moral ruin.',
+          coveragePercent: 95,
+          coverageBadge: 'Deep Classic',
+          reason: 'Haunting psychological prose for focused contemplation.',
+        },
+      },
+    };
+  }
+
+  if (lang === 'bn') {
+    return {
+      gentle: {
+        profile: 'gentle',
+        profileLabel: 'Gentle & Mystical',
+        tagline: 'Short mystery stories · Smooth flow',
+        book: {
+          id: 'bn-golpoguchho',
+          title: 'কঙ্কাল ও অলৌকিক গল্প (গল্পগুচ্ছ)',
+          author: 'রবীন্দ্রনাথ ঠাকুর',
+          synopsis: 'রহস্য, মায়া ও অদ্ভুত অনুভূতির মেলবন্ধনে রচিত অলৌকিক কথামালা।',
+          coveragePercent: 96,
+          coverageBadge: 'Gentle Pace',
+          reason: 'সংক্ষিপ্ত রহস্যধর্মী গল্প যা পাঠে কোনো ক্লান্তি আনে না।',
+        },
+      },
+      balanced: {
+        profile: 'balanced',
+        profileLabel: 'Canonical Classic',
+        tagline: 'Recommended starter classic',
+        book: getCalibratedStartingBook(lang, theme, 3500),
+      },
+      deep: {
+        profile: 'deep',
+        profileLabel: 'Sublime Masterpiece',
+        tagline: 'Rich poetic & spiritual classic',
+        book: {
+          id: 'bn-gitanjali',
+          title: 'গীতাঞ্জলি (Song Offerings)',
+          author: 'রবীন্দ্রনাথ ঠাকুর',
+          synopsis: 'আধ্যাত্মিক নিবেদন ও মানবতার চিরন্তন সুর নিয়ে রচিত নোবেলজয়ী কাব্যগ্রন্থ।',
+          coveragePercent: 97,
+          coverageBadge: 'Deep Classic',
+          reason: 'বিশ্বসাহিত্যের অমর শিল্পকর্ম যা গভীর উপলব্ধির জন্ম দেয়।',
+        },
+      },
+    };
+  }
+
+  if (lang === 'ko') {
+    return {
+      gentle: {
+        profile: 'gentle',
+        profileLabel: 'Gentle & Lyrical',
+        tagline: 'Warm humor · Relaxed prose',
+        book: {
+          id: 'ko-spring',
+          title: '봄·봄 (Spring, Spring)',
+          author: '김유정 (Kim Yu-jeong)',
+          synopsis: '순박한 데릴사위와 능청스러운 장인 사이의 해학적인 갈등과 로맨스.',
+          coveragePercent: 97,
+          coverageBadge: 'Gentle Pace',
+          reason: '위트 넘치는 대화와 해학으로 편안하게 몰입할 수 있습니다.',
+        },
+      },
+      balanced: {
+        profile: 'balanced',
+        profileLabel: 'Canonical Classic',
+        tagline: 'Recommended starter classic',
+        book: getCalibratedStartingBook(lang, theme, 3500),
+      },
+      deep: {
+        profile: 'deep',
+        profileLabel: 'Deep Modernist',
+        tagline: 'Complex psychological introspection',
+        book: {
+          id: 'ko-nalgae',
+          title: '날개 (Wings)',
+          author: '이상 (Yi Sang)',
+          synopsis: '현대인의 내면적 고독과 자아 분열을 그린 한국 모더니즘 문학의 기념비적 작품.',
+          coveragePercent: 95,
+          coverageBadge: 'Deep Classic',
+          reason: '한국 문학 최고의 내면적 성찰을 담은 모더니즘 걸작.',
+        },
+      },
+    };
+  }
+
+  // English Literature
+  if (theme === 'gothic') {
+    return {
+      gentle: {
+        profile: 'gentle',
+        profileLabel: 'Gentle Classic',
+        tagline: 'Compelling mystery · Direct narrative',
+        book: {
+          id: 'frankenstein',
+          title: 'Frankenstein',
+          author: 'Mary Shelley',
+          synopsis: 'A scientist breathes life into a creature of his own making, igniting a haunting exploration of solitude and moral reckoning.',
+          coveragePercent: 96,
+          coverageBadge: 'Gentle Pace',
+          reason: 'Short, direct chapters with immediate gothic atmosphere.',
+        },
+      },
+      balanced: {
+        profile: 'balanced',
+        profileLabel: 'Canonical Standard',
+        tagline: 'Recommended gothic starter',
+        book: getCalibratedStartingBook('en', 'gothic', 4000),
+      },
+      deep: {
+        profile: 'deep',
+        profileLabel: 'Atmospheric Epic',
+        tagline: 'Rich Victorian epistolary prose',
+        book: {
+          id: 'dracula',
+          title: 'Dracula',
+          author: 'Bram Stoker',
+          synopsis: 'The quintessential epistolary vampire gothic, tracing Count Dracula’s crossing from the Carpathians to England.',
+          coveragePercent: 97,
+          coverageBadge: 'Deep Classic',
+          reason: 'Immersive journal entries and dense Victorian atmosphere.',
+        },
+      },
+    };
+  }
+
+  if (theme === 'philosophy' || theme === 'arabic') {
+    return {
+      gentle: {
+        profile: 'gentle',
+        profileLabel: 'Gentle Inquiry',
+        tagline: 'Pivotal moral drama · Clear tension',
+        book: {
+          id: 'crime-and-punishment',
+          title: 'Crime and Punishment',
+          author: 'Fyodor Dostoevsky',
+          synopsis: 'A destitute student commits a calculated murder, then spends the novel in a psychological labyrinth of conscience and redemption.',
+          coveragePercent: 95,
+          coverageBadge: 'Gentle Pace',
+          reason: 'Gripping psychological crime narrative with profound themes.',
+        },
+      },
+      balanced: {
+        profile: 'balanced',
+        profileLabel: 'Philosophical Standard',
+        tagline: 'Recommended philosophical starter',
+        book: getCalibratedStartingBook('en', 'philosophy', 4500),
+      },
+      deep: {
+        profile: 'deep',
+        profileLabel: 'Grand Epic',
+        tagline: 'Epic scope · High Russian society',
+        book: {
+          id: 'anna-karenina',
+          title: 'Anna Karenina',
+          author: 'Leo Tolstoy',
+          synopsis: 'An epic exploration of human desire, high society morality, and spiritual search for meaning in 19th-century Russia.',
+          coveragePercent: 97,
+          coverageBadge: 'Deep Classic',
+          reason: 'Sweeping philosophical scope with richly textured characters.',
+        },
+      },
+    };
+  }
+
+  // Default: Romance / Wit / Adventure
+  return {
+    gentle: {
+      profile: 'gentle',
+      profileLabel: 'Gentle & Sparkling',
+      tagline: 'Witty dialogue · Lighthearted romance',
+      book: {
+        id: 'pride-and-prejudice',
+        title: 'Pride and Prejudice',
+        author: 'Jane Austen',
+        synopsis: 'A sparkling novel of manners, courtship, and first impressions undone among the landed gentry of Regency England.',
+        coveragePercent: 96,
+        coverageBadge: 'Gentle Pace',
+        reason: 'Effortless wit and universally accessible Regency dialogue.',
+      },
+    },
+    balanced: {
+      profile: 'balanced',
+      profileLabel: 'Canonical Classic',
+      tagline: 'Recommended starter classic',
+      book: getCalibratedStartingBook('en', 'western', 4000),
+    },
+    deep: {
+      profile: 'deep',
+      profileLabel: 'Monumental Epic',
+      tagline: 'Vast historical canvas · Deep classic',
+      book: {
+        id: 'war-and-peace',
+        title: 'War and Peace',
+        author: 'Leo Tolstoy',
+        synopsis: 'Five aristocratic families navigate love, war, and spiritual awakening during Napoleon’s invasion of Russia.',
+        coveragePercent: 97,
+        coverageBadge: 'Deep Classic',
+        reason: 'Masterpiece of world literature for readers seeking vast scope.',
+      },
+    },
+  };
+}
+
 const STORAGE_CALIBRATION_KEY = 'baseline_vocab_size';
 const STORAGE_CALIBRATION_TIER = 'baseline_vocab_tier';
 const STORAGE_CALIBRATION_WORDS = 'baseline_calibration_words';
 const STORAGE_CALIBRATED_FLAG = 'baseline_calibrated';
+const STORAGE_SKIPPED_FLAG = 'baseline_skipped';
 const STORAGE_RECOMMENDED_BOOK = 'calibrated_starting_book_id';
 
 export async function saveCalibrationData(params: {
@@ -415,12 +662,14 @@ export async function saveCalibrationData(params: {
   tierLabel: string;
   selectedWordIds: string[];
   recommendedBookId?: string;
+  isSkipped?: boolean;
 }): Promise<void> {
   const tasks: Promise<void>[] = [
     setSetting(STORAGE_CALIBRATION_KEY, String(params.estimatedWords)),
     setSetting(STORAGE_CALIBRATION_TIER, params.tierLabel),
     setSetting(STORAGE_CALIBRATION_WORDS, JSON.stringify(params.selectedWordIds)),
     setSetting(STORAGE_CALIBRATED_FLAG, 'true'),
+    setSetting(STORAGE_SKIPPED_FLAG, params.isSkipped ? 'true' : 'false'),
   ];
   if (params.recommendedBookId) {
     tasks.push(setSetting(STORAGE_RECOMMENDED_BOOK, params.recommendedBookId));
@@ -432,6 +681,7 @@ export async function getStoredCalibrationData(): Promise<{
   estimatedWords: number;
   tierLabel: string;
   isCalibrated: boolean;
+  isSkipped: boolean;
   recommendedBookId: string | null;
 } | null> {
   const flag = await getSetting(STORAGE_CALIBRATED_FLAG);
@@ -440,11 +690,57 @@ export async function getStoredCalibrationData(): Promise<{
   const countStr = await getSetting(STORAGE_CALIBRATION_KEY);
   const tier = await getSetting(STORAGE_CALIBRATION_TIER);
   const bookId = await getSetting(STORAGE_RECOMMENDED_BOOK);
+  const skippedStr = await getSetting(STORAGE_SKIPPED_FLAG);
 
   return {
     estimatedWords: countStr ? parseInt(countStr, 10) : 3500,
     tierLabel: tier ?? 'Intermediate Reader',
-    isCalibrated: true,
+    isCalibrated: skippedStr !== 'true',
+    isSkipped: skippedStr === 'true',
     recommendedBookId: bookId ?? null,
   };
+}
+
+/**
+ * Passively adjusts vocabulary baseline based on reading lookup density
+ * without interrupting the reader.
+ */
+export async function updatePassiveVocabularyEstimate(
+  lookupCount: number,
+  pageCount: number,
+): Promise<boolean> {
+  if (pageCount < 10) return false;
+  try {
+    const data = await getStoredCalibrationData();
+    // Only passively calibrate if the user skipped the active test
+    if (!data || !data.isSkipped) return false;
+
+    const lookupsPerPage = lookupCount / pageCount;
+    let newEstimate = data.estimatedWords;
+    let newTier = data.tierLabel;
+
+    if (lookupsPerPage < 0.25) {
+      // Very smooth reading, barely looking up words -> elevated comprehension
+      newEstimate = Math.max(newEstimate, 5500);
+      newTier = 'Advanced Literature Reader';
+    } else if (lookupsPerPage > 2.5) {
+      // Frequent lookups -> foundational assistance zone
+      newEstimate = Math.min(newEstimate, 2200);
+      newTier = 'Foundational Reader';
+    } else {
+      return false; // Stays in current intermediate zone
+    }
+
+    if (newEstimate !== data.estimatedWords) {
+      await Promise.all([
+        setSetting(STORAGE_CALIBRATION_KEY, String(newEstimate)),
+        setSetting(STORAGE_CALIBRATION_TIER, newTier),
+        setSetting(STORAGE_SKIPPED_FLAG, 'false'),
+      ]);
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
 }

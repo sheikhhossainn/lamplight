@@ -98,24 +98,28 @@ export const LamplightTypography = {
     fontSize: 18,
     lineHeight: 27,
     letterSpacing: 0,
+    includeFontPadding: false,
   },
   banglaButtonLabel: {
     fontFamily: FontFamily.atmaSemiBold,
     fontSize: 17,
     lineHeight: 26,
     letterSpacing: 0,
+    includeFontPadding: false,
   },
   banglaMetadataCaption: {
     fontFamily: FontFamily.atmaRegular,
     fontSize: 15,
     lineHeight: 24,
     letterSpacing: 0,
+    includeFontPadding: false,
   },
   banglaEyebrowLabel: {
     fontFamily: FontFamily.atmaSemiBold,
     fontSize: 16,
     lineHeight: 24,
     letterSpacing: 0,
+    includeFontPadding: false,
   },
   quoteShareCard: {
     fontFamily: FontFamily.loraItalicMedium,
@@ -169,7 +173,7 @@ export const LamplightTypography = {
   eyebrowLabel: {
     fontFamily: FontFamily.manropeBold,
     fontSize: 11,
-    lineHeight: 11,
+    lineHeight: 14,
     letterSpacing: 1.2,
     textTransform: 'uppercase',
   },
@@ -208,20 +212,21 @@ export const LamplightTypography = {
 
 export type LamplightTypographyKey = keyof typeof LamplightTypography;
 
-export type NativeUiRole = 'display' | 'row' | 'metadata';
+export type NativeUiRole = 'display' | 'row' | 'metadata' | 'eyebrow';
 
 export function getNativeUiTextStyle(language: string, role: NativeUiRole = 'row'): TextStyle {
   if (language === 'bn') {
     if (role === 'display') return LamplightTypography.banglaScreenTitle;
     if (role === 'metadata') return LamplightTypography.banglaMetadataCaption;
+    if (role === 'eyebrow') return LamplightTypography.banglaEyebrowLabel;
     return LamplightTypography.banglaUiRowTitle;
   }
 
   if (language === 'ar') {
     return {
-      fontFamily: role === 'display' ? FontFamily.amiriBold : FontFamily.amiriRegular,
-      fontSize: role === 'display' ? 27 : role === 'metadata' ? 16 : 19,
-      lineHeight: role === 'display' ? 42 : role === 'metadata' ? 27 : 31,
+      fontFamily: role === 'display' || role === 'eyebrow' ? FontFamily.amiriBold : FontFamily.amiriRegular,
+      fontSize: role === 'display' ? 27 : role === 'metadata' ? 16 : role === 'eyebrow' ? 14 : 19,
+      lineHeight: role === 'display' ? 42 : role === 'metadata' ? 27 : role === 'eyebrow' ? 22 : 31,
       letterSpacing: 0,
       writingDirection: 'rtl',
     };
@@ -229,19 +234,30 @@ export function getNativeUiTextStyle(language: string, role: NativeUiRole = 'row
 
   if (language === 'ja' || language === 'ko') {
     return {
-      fontSize: role === 'display' ? 23 : role === 'metadata' ? 14 : 17,
-      lineHeight: role === 'display' ? 34 : role === 'metadata' ? 23 : 27,
-      fontWeight: role === 'display' ? '700' : role === 'row' ? '600' : '400',
-      letterSpacing: 0,
+      fontSize: role === 'display' ? 23 : role === 'metadata' ? 14 : role === 'eyebrow' ? 12 : 17,
+      lineHeight: role === 'display' ? 34 : role === 'metadata' ? 23 : role === 'eyebrow' ? 16 : 27,
+      fontWeight: role === 'display' || role === 'eyebrow' ? '700' : role === 'row' ? '600' : '400',
+      letterSpacing: role === 'eyebrow' ? 0.5 : 0,
     };
   }
 
   if (role === 'display') return LamplightTypography.screenTitle;
   if (role === 'metadata') return LamplightTypography.metadataCaption;
+  if (role === 'eyebrow') return LamplightTypography.eyebrowLabel;
   return LamplightTypography.uiRowTitle;
 }
 
-export function getReadingTextStyle(language?: string, pageStyle?: 'manuscript' | 'classic' | 'modern'): TextStyle {
+export type ReadingPageStyle =
+  | 'classic'
+  | 'modern'
+  | 'manuscript'
+  | 'editorial'
+  | 'oxford'
+  | 'vellum'
+  | 'nocturne'
+  | 'zen';
+
+export function getReadingTextStyle(language?: string, pageStyle?: ReadingPageStyle | string): TextStyle {
   const style = pageStyle ?? 'manuscript';
   if (language === 'bn') {
     if (style === 'classic') {
@@ -252,12 +268,44 @@ export function getReadingTextStyle(language?: string, pageStyle?: 'manuscript' 
         letterSpacing: 0,
       };
     }
-    if (style === 'modern') {
+    if (style === 'modern' || style === 'nocturne') {
       return {
         fontFamily: FontFamily.manropeRegular,
         fontSize: 17.5,
         lineHeight: 33,
         letterSpacing: 0.1,
+      };
+    }
+    if (style === 'editorial') {
+      return {
+        fontFamily: FontFamily.atmaRegular,
+        fontSize: 18,
+        lineHeight: 35,
+        letterSpacing: 0.25,
+      };
+    }
+    if (style === 'oxford') {
+      return {
+        fontFamily: FontFamily.loraSemiBold,
+        fontSize: 18.5,
+        lineHeight: 36,
+        letterSpacing: 0.15,
+      };
+    }
+    if (style === 'vellum') {
+      return {
+        fontFamily: FontFamily.atmaMedium,
+        fontSize: 19,
+        lineHeight: 37,
+        letterSpacing: 0.3,
+      };
+    }
+    if (style === 'zen') {
+      return {
+        fontFamily: FontFamily.atmaRegular,
+        fontSize: 19.5,
+        lineHeight: 39,
+        letterSpacing: 0.45,
       };
     }
     return LamplightTypography.banglaReadingBody;
@@ -279,6 +327,46 @@ export function getReadingTextStyle(language?: string, pageStyle?: 'manuscript' 
       fontSize: 17,
       lineHeight: 32,
       letterSpacing: 0.15,
+    };
+  }
+  if (style === 'editorial') {
+    return {
+      fontFamily: FontFamily.loraRegular,
+      fontSize: 17.5,
+      lineHeight: 35,
+      letterSpacing: 0.3,
+    };
+  }
+  if (style === 'oxford') {
+    return {
+      fontFamily: FontFamily.loraSemiBold,
+      fontSize: 18,
+      lineHeight: 36,
+      letterSpacing: 0.2,
+    };
+  }
+  if (style === 'vellum') {
+    return {
+      fontFamily: FontFamily.loraItalicMedium,
+      fontSize: 18.5,
+      lineHeight: 36,
+      letterSpacing: 0.35,
+    };
+  }
+  if (style === 'nocturne') {
+    return {
+      fontFamily: FontFamily.manropeRegular,
+      fontSize: 17.5,
+      lineHeight: 34,
+      letterSpacing: 0.4,
+    };
+  }
+  if (style === 'zen') {
+    return {
+      fontFamily: FontFamily.loraRegular,
+      fontSize: 19,
+      lineHeight: 38,
+      letterSpacing: 0.5,
     };
   }
   return LamplightTypography.readingBody;

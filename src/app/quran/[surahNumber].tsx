@@ -1,9 +1,11 @@
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View, type ViewToken } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BookmarkIcon, ChevronLeftIcon, ChevronRightIcon, ShareIcon } from '@/components/icons';
+import { ScreenStateView } from '@/components/ScreenStateView';
+import { startReadingSession, endReadingSession } from '@/features/analytics/readingTracker';
 import {
   createQuranHighlight,
   deleteQuranHighlight,
@@ -87,6 +89,15 @@ export default function QuranVerseReaderScreen() {
     });
     return () => cancelAnimationFrame(handle);
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      startReadingSession(`surah-${surahNumber}`, surahNumber);
+      return () => {
+        endReadingSession();
+      };
+    }, [surahNumber]),
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -310,7 +321,19 @@ export default function QuranVerseReaderScreen() {
     },
   ).current;
 
-  if (!surahMeta) return <View style={{ flex: 1, backgroundColor: colors.parchment }} />;
+  if (!surahMeta) {
+    return (
+      <ScreenStateView
+        type="error"
+        title="Surah Not Found"
+        message="This Surah does not exist. The Holy Quran contains 114 Surahs."
+        fullScreen
+        canGoBack
+        actionLabel="Return to Quran Index"
+        onAction={() => router.replace('/quran')}
+      />
+    );
+  }
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.parchment }}>

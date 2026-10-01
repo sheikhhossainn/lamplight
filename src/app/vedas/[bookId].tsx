@@ -1,9 +1,11 @@
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View, type ViewToken } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BookmarkIcon, ChevronLeftIcon, ChevronRightIcon, ShareIcon } from '@/components/icons';
+import { ScreenStateView } from '@/components/ScreenStateView';
+import { startReadingSession, endReadingSession } from '@/features/analytics/readingTracker';
 import {
   createBibleHighlight,
   deleteBibleHighlight,
@@ -91,6 +93,15 @@ export default function VedasVerseReaderScreen() {
       void upsertBibleReadingPosition({ bookId, chapter: newChapter, verse: 1 });
     },
     [bookId, bookMeta],
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      startReadingSession(`vedas-${bookId}`, currentChapter);
+      return () => {
+        endReadingSession();
+      };
+    }, [bookId, currentChapter]),
   );
 
   const [highlights, setHighlights] = useState<BibleHighlight[]>([]);
@@ -307,7 +318,19 @@ export default function VedasVerseReaderScreen() {
     },
   ).current;
 
-  if (!bookMeta) return <View style={{ flex: 1, backgroundColor: colors.parchment }} />;
+  if (!bookMeta) {
+    return (
+      <ScreenStateView
+        type="error"
+        title="Book Not Found"
+        message="This Mandala could not be found in the Rigveda scriptures."
+        fullScreen
+        canGoBack
+        actionLabel="Return to Vedas Index"
+        onAction={() => router.replace('/vedas')}
+      />
+    );
+  }
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.parchment }}>

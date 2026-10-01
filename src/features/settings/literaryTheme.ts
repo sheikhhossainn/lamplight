@@ -771,8 +771,20 @@ function emit(): void {
   listeners.forEach((listener) => listener());
 }
 
-export function getSuggestedThemeForMotherTongue(_motherTongue: string): LiteraryThemeCode {
-  return 'classic';
+export function getSuggestedThemeForMotherTongue(motherTongue: string): LiteraryThemeCode {
+  switch (motherTongue) {
+    case 'bn':
+      return 'bengali';
+    case 'ja':
+      return 'japanese';
+    case 'ko':
+      return 'korean';
+    case 'ar':
+      return 'arabic';
+    case 'en':
+    default:
+      return 'classic';
+  }
 }
 
 export function isRtlLiteraryTheme(theme: LiteraryThemeCode): boolean {

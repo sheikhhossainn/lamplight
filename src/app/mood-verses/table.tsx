@@ -1,5 +1,15 @@
-import { ScriptureInquiryDeck } from '@/features/scripture-qa/ScriptureInquiryDeck';
+import { useLocalSearchParams } from 'expo-router';
+
+import { ScriptureTableDeck } from '@/features/scripture-verses/ScriptureTableDeck';
 
 export default function VerseTableScreen() {
-  return <ScriptureInquiryDeck questionQuery="" />;
+  const { text, feeling, query } = useLocalSearchParams<{
+    text?: string;
+    feeling?: string;
+    query?: string;
+  }>();
+
+  const userFeelingText = feeling ?? text ?? query ?? '';
+
+  return <ScriptureTableDeck userFeelingText={userFeelingText} />;
 }

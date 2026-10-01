@@ -213,8 +213,8 @@ export async function resolvePendingLookupsBatch(maxBatch = 5, nowMs: number = D
       }
 
       // Promote to saved_words atomically and remove from pending
-      await db.withTransactionAsync(async () => {
-        await db.runAsync(
+      await db.withTransactionAsync(async (tx) => {
+        await tx.runAsync(
           `INSERT INTO saved_words (
             id, book_id, source_word, source_lang, target_lang,
             translation, context_sentence, chapter_index, page_index, paragraph_index,
@@ -239,13 +239,13 @@ export async function resolvePendingLookupsBatch(maxBatch = 5, nowMs: number = D
           ],
         );
 
-        await db.runAsync(
+        await tx.runAsync(
           `DELETE FROM pending_word_lookups WHERE id = ?`,
           [item.id],
         );
 
         // Enqueue mutation to sync_outbox
-        await db.runAsync(
+        await tx.runAsync(
           `INSERT INTO sync_outbox (
             id, entity_type, entity_id, operation, payload_json,
             idempotency_key, created_at, attempt_count, next_attempt_at, last_error_code

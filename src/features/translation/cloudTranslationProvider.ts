@@ -1,4 +1,5 @@
 import { getCachedTranslation, setCachedTranslation } from '@/db/repositories/translationCache';
+import { callLiteraryAi } from './literaryAiClient';
 import type { LanguageCode, TranslationProvider, TranslationResult } from './TranslationProvider';
 
 // Thin wrapper around the unofficial (but widely used, key-free) Google Translate
@@ -36,23 +37,44 @@ async function fetchTranslation(
     console.warn('[translation] Persistent cache read error:', err);
   }
 
-  // 3. Network fetch
-  const url = `${ENDPOINT}?client=gtx&sl=${from}&tl=${to}&dt=t&q=${encodeURIComponent(text)}`;
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Translation request failed (${response.status})`);
+  // 3. Network fetch (Primary: Google Translate)
+  try {
+    const url = `${ENDPOINT}?client=gtx&sl=${from}&tl=${to}&dt=t&q=${encodeURIComponent(text)}`;
+    const response = await fetch(url);
+    if (response.ok) {
+      const data = (await response.json()) as unknown;
+      const translatedText = extractTranslatedText(data);
+      const result: TranslationResult = { sourceText: text, translatedText };
+      
+      cache.set(key, result);
+      void setCachedTranslation(text, translatedText, from, to).catch((err) =>
+        console.warn('[translation] Persistent cache write error:', err),
+      );
+
+      return result;
+    }
+  } catch (err) {
+    console.warn('[translation] Primary Google Translate failed, attempting server Edge Function fallback:', err);
   }
 
-  const data = (await response.json()) as unknown;
-  const translatedText = extractTranslatedText(data);
-  const result: TranslationResult = { sourceText: text, translatedText };
-  
-  cache.set(key, result);
-  void setCachedTranslation(text, translatedText, from, to).catch((err) =>
-    console.warn('[translation] Persistent cache write error:', err),
-  );
+  // 4. Fallback: Authenticated Supabase Edge Function literary-ai
+  const edgeRes = await callLiteraryAi<{ success?: boolean; translations?: string[] }>('batch_translate', {
+    sentences: [text],
+    fromLang: from,
+    toLang: to,
+  });
 
-  return result;
+  if (edgeRes?.success && edgeRes.translations?.[0]) {
+    const translatedText = String(edgeRes.translations[0]).trim();
+    const result: TranslationResult = { sourceText: text, translatedText };
+
+    cache.set(key, result);
+    void setCachedTranslation(text, translatedText, from, to).catch(() => {});
+
+    return result;
+  }
+
+  throw new Error(`Translation request failed for "${text}"`);
 }
 
 function extractTranslatedText(data: unknown): string {

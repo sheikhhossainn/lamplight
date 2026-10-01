@@ -18,16 +18,17 @@ import {
   listBooks as listVedasBooks,
 } from '@/features/vedas-content/vedasData';
 
-import type {
-  ScriptureQAVerse,
-  TraditionGroup,
-  TraditionKey,
+import {
+  type ScriptureQAVerse,
+  type TraditionGroup,
+  type TraditionKey,
+  getTraditionSourceAttribution,
 } from './curatedScriptureQA';
 import type { ScriptureInquiryResult } from './scriptureInquiryApi';
 import { parseCitation } from './citationResolver';
 import { requestScriptureInquiry } from './scriptureInquiryRemote';
 
-type AICitation = {
+export type AICitation = {
   surahNumber?: number;
   bookId?: string;
   chapter?: number;
@@ -148,110 +149,158 @@ export function normalizeTraditionKey(raw: string): TraditionKey | null {
 
 /**
  * Hydrates and strictly validates citations against our local bundled database.
+ * Treats AI candidate citations as unverified hints; only canonically matching verses
+ * are hydrated into renderable scripture texts (FULLAPP §13.3).
  */
-function hydrateAndVerifyTraditionVerses(
+export function hydrateAndVerifyTraditionVerses(
   tradition: TraditionKey,
   citations: AICitation[],
+  options?: { isAiAssisted?: boolean },
 ): ScriptureQAVerse[] {
   const result: ScriptureQAVerse[] = [];
+  const attribution = getTraditionSourceAttribution(tradition);
+  const isAiAssisted = options?.isAiAssisted ?? true;
 
   for (const cite of citations) {
-    if (tradition === 'quran' && cite.surahNumber && cite.verseNumber) {
-      const meta = getSurahMeta(cite.surahNumber);
-      const verses = getSurahVerses(cite.surahNumber);
-      const verseObj = verses.find((v) => v.number === cite.verseNumber);
+    if (!cite || typeof cite !== 'object') continue;
+    const vNum = Number(cite.verseNumber);
+    if (!Number.isInteger(vNum) || vNum <= 0) continue;
+
+    if (tradition === 'quran') {
+      const sNum = Number(cite.surahNumber);
+      if (!Number.isInteger(sNum) || sNum < 1 || sNum > 114) continue;
+      // Cross-tradition guard: Quran citations cannot carry a non-empty bookId
+      if (cite.bookId && typeof cite.bookId === 'string' && cite.bookId.trim().length > 0) {
+        continue;
+      }
+      const meta = getSurahMeta(sNum);
+      const verses = getSurahVerses(sNum);
+      const verseObj = verses.find((v) => v.number === vNum);
 
       if (verseObj) {
         result.push({
-          id: `ai-quran-${cite.surahNumber}-${cite.verseNumber}`,
+          id: `ai-quran-${sNum}-${vNum}`,
           tradition: 'quran',
-          book: meta ? meta.nameEnglish : `Surah ${cite.surahNumber}`,
-          chapter: cite.surahNumber,
-          verseNumber: cite.verseNumber,
+          book: meta ? meta.nameEnglish : `Surah ${sNum}`,
+          chapter: sNum,
+          verseNumber: vNum,
           originalText: verseObj.textArabic,
           translation: verseObj.textEnglish,
           historicalContext:
-            `Surah ${meta?.nameEnglish ?? cite.surahNumber} (${meta?.revelationType ?? 'Medina'}), Verse ${cite.verseNumber}.`,
+            `Surah ${meta?.nameEnglish ?? sNum} (${meta?.revelationType ?? 'Medina'}), Verse ${vNum}.`,
           classicalCommentary:
             verseObj.textTafsir ? `Tafsir al-Jalalayn: ${verseObj.textTafsir}` : undefined,
+          translationEdition: attribution.translationEdition,
+          commentarySource: verseObj.textTafsir ? attribution.commentarySource : undefined,
+          isAiAssistedContext: isAiAssisted,
         });
       }
-    } else if (tradition === 'bible-nt' && cite.bookId && cite.chapter && cite.verseNumber) {
-      let bookId = cite.bookId;
-      if (bookId && (bookId.length > 3 || !getBibleNtMeta(bookId))) {
-        const parsed = parseCitation(`${bookId} ${cite.chapter}:${cite.verseNumber}`);
+    } else if (tradition === 'bible-nt') {
+      // Cross-tradition guard: Bible NT cannot have surahNumber
+      if (cite.surahNumber !== undefined && cite.surahNumber !== null) continue;
+      const chNum = Number(cite.chapter);
+      if (!Number.isInteger(chNum) || chNum <= 0) continue;
+      if (!cite.bookId || typeof cite.bookId !== 'string') continue;
+
+      let bookId = cite.bookId.trim().toUpperCase();
+      if (bookId.length > 3 || !getBibleNtMeta(bookId)) {
+        const parsed = parseCitation(`${bookId} ${chNum}:${vNum}`);
         if (parsed?.bookId) bookId = parsed.bookId;
       }
       const meta = getBibleNtMeta(bookId);
-      const verses = getBibleNtVerses(bookId, cite.chapter);
-      const verseObj = verses.find((v) => v.verse.number === cite.verseNumber);
+      // Strictly require that the book exists in the New Testament
+      if (!meta) continue;
+
+      const verses = getBibleNtVerses(bookId, chNum);
+      const verseObj = verses.find((v) => v.verse.number === vNum);
 
       if (verseObj) {
         result.push({
-          id: `ai-nt-${bookId}-${cite.chapter}-${cite.verseNumber}`,
+          id: `ai-nt-${bookId}-${chNum}-${vNum}`,
           tradition: 'bible-nt',
-          book: meta ? meta.name : bookId,
+          book: meta.name,
           bookId,
-          chapter: cite.chapter,
-          verseNumber: cite.verseNumber,
+          chapter: chNum,
+          verseNumber: vNum,
           translation: verseObj.verse.text,
           historicalContext:
-            `Apostolic record in ${meta?.name ?? bookId}, Chapter ${cite.chapter}.`,
+            `Apostolic record in ${meta.name}, Chapter ${chNum}.`,
           classicalCommentary:
             verseObj.verse.commentary
               ? `Jamieson-Fausset-Brown: ${verseObj.verse.commentary}`
               : undefined,
+          translationEdition: attribution.translationEdition,
+          commentarySource: verseObj.verse.commentary ? attribution.commentarySource : undefined,
+          isAiAssistedContext: isAiAssisted,
         });
       }
-    } else if (
-      (tradition === 'torah' || tradition === 'bible-ot') &&
-      cite.bookId &&
-      cite.chapter &&
-      cite.verseNumber
-    ) {
-      let bookId = cite.bookId;
-      if (bookId && (bookId.length > 3 || !getBibleOtMeta(bookId))) {
-        const parsed = parseCitation(`${bookId} ${cite.chapter}:${cite.verseNumber}`);
+    } else if (tradition === 'torah' || tradition === 'bible-ot') {
+      // Cross-tradition guard: Torah/OT cannot have surahNumber
+      if (cite.surahNumber !== undefined && cite.surahNumber !== null) continue;
+      const chNum = Number(cite.chapter);
+      if (!Number.isInteger(chNum) || chNum <= 0) continue;
+      if (!cite.bookId || typeof cite.bookId !== 'string') continue;
+
+      let bookId = cite.bookId.trim().toUpperCase();
+      if (bookId.length > 3 || !getBibleOtMeta(bookId)) {
+        const parsed = parseCitation(`${bookId} ${chNum}:${vNum}`);
         if (parsed?.bookId) bookId = parsed.bookId;
       }
       const meta = getBibleOtMeta(bookId);
-      const verses = getBibleOtVerses(bookId, cite.chapter);
-      const verseObj = verses.find((v) => v.verse.number === cite.verseNumber);
+      // Strictly require that the book exists in the Old Testament / Torah
+      if (!meta) continue;
+
+      const verses = getBibleOtVerses(bookId, chNum);
+      const verseObj = verses.find((v) => v.verse.number === vNum);
 
       if (verseObj) {
         result.push({
-          id: `ai-ot-${bookId}-${cite.chapter}-${cite.verseNumber}`,
+          id: `ai-ot-${bookId}-${chNum}-${vNum}`,
           tradition: 'torah',
-          book: meta ? meta.name : bookId,
+          book: meta.name,
           bookId,
-          chapter: cite.chapter,
-          verseNumber: cite.verseNumber,
+          chapter: chNum,
+          verseNumber: vNum,
           translation: verseObj.verse.text,
           historicalContext:
-            `Biblical record in ${meta?.name ?? bookId}, Chapter ${cite.chapter}.`,
+            `Biblical record in ${meta.name}, Chapter ${chNum}.`,
           classicalCommentary:
             verseObj.verse.commentary
               ? `Jamieson-Fausset-Brown: ${verseObj.verse.commentary}`
               : undefined,
+          translationEdition: attribution.translationEdition,
+          commentarySource: verseObj.verse.commentary ? attribution.commentarySource : undefined,
+          isAiAssistedContext: isAiAssisted,
         });
       }
-    } else if (tradition === 'vedas' && cite.bookId && cite.chapter && cite.verseNumber) {
-      const meta = getVedasMeta(cite.bookId);
-      const verses = getVedasVerses(cite.bookId, cite.chapter);
-      const verseObj = verses.find((v) => v.verse.number === cite.verseNumber);
+    } else if (tradition === 'vedas') {
+      if (cite.surahNumber !== undefined && cite.surahNumber !== null) continue;
+      const chNum = Number(cite.chapter);
+      if (!Number.isInteger(chNum) || chNum <= 0) continue;
+      if (!cite.bookId || typeof cite.bookId !== 'string') continue;
+
+      const bookId = cite.bookId.trim().toUpperCase();
+      const meta = getVedasMeta(bookId);
+      if (!meta) continue;
+
+      const verses = getVedasVerses(bookId, chNum);
+      const verseObj = verses.find((v) => v.verse.number === vNum);
 
       if (verseObj) {
         result.push({
-          id: `ai-vedas-${cite.bookId}-${cite.chapter}-${cite.verseNumber}`,
+          id: `ai-vedas-${bookId}-${chNum}-${vNum}`,
           tradition: 'vedas',
-          book: meta ? meta.name : `Rigveda Mandala ${cite.bookId.replace('RV', '')}`,
-          bookId: cite.bookId,
-          chapter: cite.chapter,
-          verseNumber: cite.verseNumber,
+          book: meta.name,
+          bookId,
+          chapter: chNum,
+          verseNumber: vNum,
           translation: verseObj.verse.text,
           historicalContext:
-            `Vedic hymn in ${meta?.name ?? cite.bookId}, Hymn ${cite.chapter}.`,
+            `Vedic hymn in ${meta.name}, Hymn ${chNum}.`,
           classicalCommentary: undefined,
+          translationEdition: attribution.translationEdition,
+          commentarySource: undefined,
+          isAiAssistedContext: isAiAssisted,
         });
       }
     }
@@ -399,6 +448,9 @@ function searchInternalScriptureDatasets(query: string): TraditionGroup[] {
             translation: v.textEnglish,
             historicalContext: `Surah ${meta?.nameEnglish ?? s} (${meta?.revelationType ?? 'Medina'}), Verse ${v.number}.`,
             classicalCommentary: v.textTafsir ? `Tafsir al-Jalalayn: ${v.textTafsir}` : undefined,
+            translationEdition: 'Saheeh International',
+            commentarySource: v.textTafsir ? 'Tafsir al-Jalalayn' : undefined,
+            isAiAssistedContext: false,
           },
         });
       }
@@ -438,6 +490,9 @@ function searchInternalScriptureDatasets(query: string): TraditionGroup[] {
             classicalCommentary: item.verse.commentary
               ? `Jamieson-Fausset-Brown: ${item.verse.commentary}`
               : undefined,
+            translationEdition: 'World English Bible (WEB)',
+            commentarySource: item.verse.commentary ? 'Jamieson-Fausset-Brown' : undefined,
+            isAiAssistedContext: false,
           },
         });
       }
@@ -477,6 +532,9 @@ function searchInternalScriptureDatasets(query: string): TraditionGroup[] {
             classicalCommentary: item.verse.commentary
               ? `Jamieson-Fausset-Brown: ${item.verse.commentary}`
               : undefined,
+            translationEdition: 'World English Bible (WEB)',
+            commentarySource: item.verse.commentary ? 'Jamieson-Fausset-Brown' : undefined,
+            isAiAssistedContext: false,
           },
         });
       }
@@ -514,6 +572,9 @@ function searchInternalScriptureDatasets(query: string): TraditionGroup[] {
             translation: item.verse.text,
             historicalContext: `Vedic hymn in ${b.name}, Hymn ${item.chapter}.`,
             classicalCommentary: item.verse.commentary,
+            translationEdition: 'Ralph T.H. Griffith (1896)',
+            commentarySource: item.verse.commentary ? 'Traditional Rigveda Exegesis' : undefined,
+            isAiAssistedContext: false,
           },
         });
       }
@@ -588,6 +649,7 @@ export async function askAIScriptureInquiry(
         topicBackground: `AI-guided citation discovery for "${query}". The passages below are verified against Lamplight's bundled scripture texts.`,
         traditions: hydratedTraditions,
         isCurated: false,
+        modelVersion: 'openai/gpt-oss-20b',
       };
     }
   }
@@ -602,5 +664,6 @@ export async function askAIScriptureInquiry(
     topicBackground: `Comparative scriptural passages examining "${query}". Select a tradition below to examine primary verses and classical commentary without verdicts.`,
     traditions: matchedTraditions,
     isCurated: false,
+    modelVersion: 'local-canonical-search',
   };
 }

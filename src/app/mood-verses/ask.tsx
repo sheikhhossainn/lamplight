@@ -322,7 +322,7 @@ export default function AskScriptureScreen() {
     submittedThisPress.current = true;
 
     router.push({
-      pathname: '/mood-verses/reflect',
+      pathname: '/mood-verses/inquiry' as any,
       params: {
         question: q,
         ...(initialTradition && initialTradition !== 'all' ? { tradition: initialTradition } : {}),

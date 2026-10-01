@@ -1317,6 +1317,7 @@ export default function OnboardingScreen() {
         tierLabel: estimateToSave.tierLabel,
         selectedWordIds: wordsToSave,
         recommendedBookId: estimateToSave.startingBook.id,
+        isSkipped: isSkipping,
       }).catch((err) => {
         console.warn('[Onboarding] Error saving calibration data:', err);
       });
@@ -1373,31 +1374,27 @@ export default function OnboardingScreen() {
             ) : (
               <View style={styles.skipPlaceholder} />
             )}
-            {isIntro ? (
-              <Pressable
-                style={({ pressed }) => [styles.skip, pressed && { opacity: 0.7, transform: [{ scale: 0.97 }] }]}
-                onPress={handleSkipToIntroQuestions}
-                hitSlop={14}
+
+            <Pressable
+              style={({ pressed }) => [styles.skip, pressed && { opacity: 0.7, transform: [{ scale: 0.97 }] }]}
+              onPress={() => handleFinish(true)}
+              hitSlop={{ top: 14, bottom: 14, left: 16, right: 16 }}
+              accessibilityRole="button"
+              accessibilityLabel="Skip onboarding and begin reading"
+            >
+              <Text
+                style={[
+                  typography.uiRowTitle,
+                  {
+                    color: isCalibration ? colors.flameAmber : colors.mutedOnDark,
+                    fontSize: 13,
+                    fontWeight: isCalibration ? '600' : '400',
+                  },
+                ]}
               >
-                <Text style={[typography.uiRowTitle, { color: colors.mutedOnDark, fontSize: 13 }]}>
-                  Skip Intro
-                </Text>
-              </Pressable>
-            ) : isCalibration ? (
-              <Pressable
-                style={({ pressed }) => [styles.skip, pressed && { opacity: 0.7, transform: [{ scale: 0.97 }] }]}
-                onPress={() => handleFinish(true)}
-                hitSlop={{ top: 14, bottom: 14, left: 16, right: 16 }}
-                accessibilityRole="button"
-                accessibilityLabel="Skip vocabulary test and begin reading"
-              >
-                <Text style={[typography.uiRowTitle, { color: colors.flameAmber, fontSize: 13, fontWeight: '600' }]}>
-                  Skip test
-                </Text>
-              </Pressable>
-            ) : (
-              <View style={styles.skipPlaceholder} />
-            )}
+                {isCalibration ? 'Skip test' : 'Skip'}
+              </Text>
+            </Pressable>
           </View>
 
           {/* Slide Body Content */}

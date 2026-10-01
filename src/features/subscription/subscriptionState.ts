@@ -4,9 +4,12 @@ import {
   requireFeature,
   subscribeToEntitlements,
   refreshEntitlements,
+  restorePurchases,
   hydrateEntitlements,
+  resetEntitlementsToFree,
   type PremiumFeature,
   type EntitlementSnapshot,
+  type RestoreResult,
 } from './entitlementService';
 
 /**
@@ -24,7 +27,10 @@ export {
   getEntitlementSnapshot,
   subscribeToEntitlements,
   refreshEntitlements,
+  restorePurchases,
   hydrateEntitlements,
+  resetEntitlementsToFree,
   type PremiumFeature,
   type EntitlementSnapshot,
+  type RestoreResult,
 };

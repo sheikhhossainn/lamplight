@@ -131,11 +131,7 @@ Once sheikhhossainn lands the context sentence (1-B) and growth graph (1-H), int
 
 ## 4. Non-Negotiable Engineering Rules
 
-1. **Git identity** — every commit must use:
-   `
-   git config user.name "sheikhhossainn"
-   git config user.email "skhossain799@gmail.com"
-   `
+1. **Git identity** — dynamically inherit each active contributor's git identity (`git config user.name` and `git config user.email`). Never hardcode or override another teammate's identity or push credentials.
 2. **SQLite queue** — all DB calls go through `getDb()` in `src/db/client.ts`. Never bypass it.
 3. **Design tokens** — never hardcode hex values that exist in `src/theme/tokens.ts`. Locked constants: `#1C1B1E`, `#F5A623`, `#F5EDE1`. Reading body: Lora, >=17px, line-height >=1.85.
 4. **No new dependencies** without lead sign-off.

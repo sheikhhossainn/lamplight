@@ -310,6 +310,16 @@ let catalogSeeded = false;
 export async function seedJapaneseCatalog(): Promise<void> {
   if (catalogSeeded) return;
   try {
+    const { getDb } = await import('@/db/client');
+    const db = await getDb();
+    const { count } = (await db.getFirstAsync<{ count: number }>(
+      "SELECT COUNT(*) as count FROM books WHERE source = 'aozora_bunko'",
+    )) ?? { count: 0 };
+    if (count >= AOZORA_JAPANESE_BOOKS.length) {
+      catalogSeeded = true;
+      return;
+    }
+
     const { saveJapaneseChapters, upsertJapaneseBook } = await import('@/db/repositories/books');
     for (const book of AOZORA_JAPANESE_BOOKS) {
       await upsertJapaneseBook({

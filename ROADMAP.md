@@ -43,7 +43,7 @@ Current free-tier values (`supabase/schema.sql`'s `plans` seed row):
 |---|---|
 | Vocabulary words / book | 30 |
 | Quotes / book | 15 |
-| Translations / day | 25 |
+| Translations / day | 50 |
 
 ---
 
@@ -63,7 +63,7 @@ did without having to ask them.
   add/remove that one book from any shelf, creating a new shelf inline if none
   exist yet. Complements the shelf-centric editor (pick books for a shelf)
   with the inverse flow (pick shelves for a book).
-- Translation: tap a word → its translation, 25/day cap. **[clarified]** This
+- Translation: tap a word → its translation, 50/day cap. **[clarified]** This
   is the *action*, ephemeral unless saved — see below for how it differs from
   Vocabulary, and Phase 1 for the context-aware upgrade.
 - Vocabulary: the *saved result* of a translation — save (free-tier cap

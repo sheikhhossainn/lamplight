@@ -1,6 +1,11 @@
 import { Directory, File, Paths } from 'expo-file-system';
 
 import { BookFormatError, parseBookText, type IngestedBook } from '@/features/content-ingestion/textParser';
+import {
+  clearDownloadState,
+  listDownloadStates,
+  setDownloadState,
+} from '@/db/repositories/downloadStates';
 
 // Replaces the old getBundledBookText: instead of a book's full text being
 // bundled into the app binary, it's downloaded from its `text_url` (synced
@@ -31,15 +36,70 @@ function normalizeBookId(id: string): string {
   }
 }
 
+export type DownloadProgressCallback = (
+  progress: number,
+  stage: 'downloading' | 'parsing' | 'ready',
+) => void;
+
+const activeDownloads = new Map<string, AbortController>();
+
+/**
+ * Cancels an ongoing download and cleans up any dangling partial .tmp files
+ * without touching valid cached files (FULLAPP §9.3).
+ */
+export function cancelBookDownload(bookId: string): void {
+  const cleanId = normalizeBookId(bookId);
+  const controller = activeDownloads.get(cleanId) ?? activeDownloads.get(bookId);
+  if (controller) {
+    controller.abort();
+    activeDownloads.delete(cleanId);
+    activeDownloads.delete(bookId);
+  }
+  try {
+    const tmpFile = new File(booksDirectory, `${cleanId}.tmp`);
+    if (tmpFile.exists) tmpFile.delete();
+    if (cleanId !== bookId) {
+      const rawTmpFile = new File(booksDirectory, `${bookId}.tmp`);
+      if (rawTmpFile.exists) rawTmpFile.delete();
+    }
+  } catch {}
+}
+
+/**
+ * Atomically writes a book cache file via temporary file replacement so
+ * failures/crashes never leave partial or corrupt JSON files on disk.
+ */
+export function atomicWriteBookCache(cleanId: string, book: IngestedBook): void {
+  if (!booksDirectory.exists) booksDirectory.create({ intermediates: true });
+  const tmpFile = new File(booksDirectory, `${cleanId}.tmp`);
+  tmpFile.write(JSON.stringify(book));
+  const targetFile = new File(booksDirectory, `${cleanId}.json`);
+  try {
+    tmpFile.moveSync(targetFile, { overwrite: true });
+  } catch {
+    if (targetFile.exists) targetFile.delete();
+    try {
+      tmpFile.copySync(targetFile);
+      tmpFile.delete();
+    } catch {
+      targetFile.write(JSON.stringify(book));
+    }
+  }
+}
+
 export async function getBookText(
   bookId: string,
   title: string,
   textUrl?: string | null,
   chapter1Anchor?: string,
+  onProgress?: DownloadProgressCallback,
 ): Promise<IngestedBook> {
   const cleanId = normalizeBookId(bookId);
   const cached = bookCache.get(cleanId) ?? bookCache.get(bookId);
-  if (cached) return cached;
+  if (cached) {
+    onProgress?.(100, 'ready');
+    return cached;
+  }
 
   let cacheFile = new File(booksDirectory, `${cleanId}.json`);
   if (!cacheFile.exists && cleanId !== bookId) {
@@ -58,8 +118,16 @@ export async function getBookText(
     }
     bookCache.set(cleanId, book);
     if (cleanId !== bookId) bookCache.set(bookId, book);
+    onProgress?.(100, 'ready');
     return book;
   }
+
+  const controller = new AbortController();
+  activeDownloads.set(cleanId, controller);
+  activeDownloads.set(bookId, controller);
+  onProgress?.(10, 'downloading');
+
+  try {
 
   // Auto-download Bangla book if opening directly
   if (cleanId.startsWith('bn-') || bookId.startsWith('bn-')) {
@@ -98,8 +166,7 @@ export async function getBookText(
       }),
     );
     const ingested: IngestedBook = { chapters };
-    if (!booksDirectory.exists) booksDirectory.create({ intermediates: true });
-    cacheFile.write(JSON.stringify(ingested));
+    atomicWriteBookCache(cleanId, ingested);
     bookCache.set(cleanId, ingested);
     if (cleanId !== bookId) bookCache.set(bookId, ingested);
     await markJapaneseBookDownloaded(cleanId);
@@ -137,8 +204,7 @@ export async function getBookText(
         }),
       );
       const ingested: IngestedBook = { chapters };
-      if (!booksDirectory.exists) booksDirectory.create({ intermediates: true });
-      cacheFile.write(JSON.stringify(ingested));
+      atomicWriteBookCache(cleanId, ingested);
       bookCache.set(cleanId, ingested);
       if (cleanId !== bookId) bookCache.set(bookId, ingested);
       try {
@@ -186,15 +252,18 @@ export async function getBookText(
     ) {
       const { downloadKoreanBook } = await import('@/features/content-ingestion/koreanDownloader');
       const book = await downloadKoreanBook(effectiveTextUrl, title);
-      if (!booksDirectory.exists) booksDirectory.create({ intermediates: true });
-      cacheFile.write(JSON.stringify(book));
+      atomicWriteBookCache(cleanId, book);
       bookCache.set(cleanId, book);
-      if (cleanId !== bookId) bookCache.set(bookId, book);
+      if (cleanId !== bookId) {
+        atomicWriteBookCache(bookId, book);
+        bookCache.set(bookId, book);
+      }
       try {
         await markKoreanBookDownloaded(cleanId);
       } catch {
         // non-fatal
       }
+      onProgress?.(100, 'ready');
       return book;
     }
   }
@@ -213,15 +282,18 @@ export async function getBookText(
     const { downloadAozoraBook } = await import('@/features/content-ingestion/aozoraDownloader');
     const { markJapaneseBookDownloaded } = await import('@/db/repositories/books');
     const book = await downloadAozoraBook(textUrl, title);
-    if (!booksDirectory.exists) booksDirectory.create({ intermediates: true });
-    cacheFile.write(JSON.stringify(book));
+    atomicWriteBookCache(cleanId, book);
     bookCache.set(cleanId, book);
-    if (cleanId !== bookId) bookCache.set(bookId, book);
+    if (cleanId !== bookId) {
+      atomicWriteBookCache(bookId, book);
+      bookCache.set(bookId, book);
+    }
     try {
       await markJapaneseBookDownloaded(cleanId);
     } catch {
       // non-fatal
     }
+    onProgress?.(100, 'ready');
     return book;
   }
 
@@ -231,19 +303,28 @@ export async function getBookText(
     throw new BookFormatError(`"${title}" isn't available in a readable format.`);
   }
 
-  const response = await fetch(resolveDirectUrl(textUrl));
-  if (!response.ok) {
-    throw new Error(`Failed to download "${title}" (${response.status})`);
-  }
-  const raw = await response.text();
-  const { chapters } = parseBookText(raw, { title, chapter1Anchor });
-  const book: IngestedBook = { chapters };
+  onProgress?.(30, 'downloading');
+  const response = await fetch(resolveDirectUrl(textUrl), { signal: controller.signal });
+    if (!response.ok) {
+      throw new Error(`Failed to download "${title}" (${response.status})`);
+    }
+    const raw = await response.text();
+    onProgress?.(70, 'parsing');
+    const { chapters } = parseBookText(raw, { title, chapter1Anchor });
+    const book: IngestedBook = { chapters };
 
-  if (!booksDirectory.exists) booksDirectory.create({ intermediates: true });
-  cacheFile.write(JSON.stringify(book));
-  bookCache.set(cleanId, book);
-  if (cleanId !== bookId) bookCache.set(bookId, book);
-  return book;
+    atomicWriteBookCache(cleanId, book);
+    bookCache.set(cleanId, book);
+    if (cleanId !== bookId) {
+      atomicWriteBookCache(bookId, book);
+      bookCache.set(bookId, book);
+    }
+    onProgress?.(100, 'ready');
+    return book;
+  } finally {
+    activeDownloads.delete(cleanId);
+    activeDownloads.delete(bookId);
+  }
 }
 
 // Whether this book has been downloaded (its parsed cache file exists on
@@ -272,13 +353,10 @@ export function listDownloadedBookIds(): string[] {
 // cache file getBookText reads, skipping the fetch entirely on first open.
 export function cacheImportedBook(bookId: string, book: IngestedBook): void {
   const cleanId = normalizeBookId(bookId);
-  if (!booksDirectory.exists) booksDirectory.create({ intermediates: true });
-  const cacheFile = new File(booksDirectory, `${cleanId}.json`);
-  cacheFile.write(JSON.stringify(book));
+  atomicWriteBookCache(cleanId, book);
   bookCache.set(cleanId, book);
   if (cleanId !== bookId) {
-    const rawCacheFile = new File(booksDirectory, `${bookId}.json`);
-    rawCacheFile.write(JSON.stringify(book));
+    atomicWriteBookCache(bookId, book);
     bookCache.set(bookId, book);
   }
 }
@@ -320,5 +398,72 @@ export async function deleteBookCache(bookId: string): Promise<void> {
     } catch {
       // Non-fatal if DB update fails
     }
+  }
+
+  await clearDownloadState(cleanId).catch(() => {});
+}
+
+/**
+ * Reconciles the SQLite download_states records against the actual cached files on disk.
+ * 1. If a download was interrupted (stuck in 'downloading' or 'queued'), transitions it to 'failed' (errorCode: 'interrupted').
+ * 2. If a record is 'ready' but the cached file is missing, cleans up the stale download state.
+ * 3. If a cached file exists on disk, ensures the state is marked 'ready'.
+ */
+export async function reconcileDownloadStates(): Promise<void> {
+  try {
+    const states = await listDownloadStates();
+    const stateMap = new Map(states.map((s) => [s.bookId, s]));
+    const diskIds = new Set(listDownloadedBookIds());
+
+    for (const state of states) {
+      const existsOnDisk = diskIds.has(state.bookId) || isBookCached(state.bookId);
+      if (existsOnDisk) {
+        if (state.status !== 'ready') {
+          await setDownloadState({
+            bookId: state.bookId,
+            status: 'ready',
+            progress: 100,
+            errorCode: null,
+          });
+        }
+      } else {
+        if (state.status === 'downloading' || state.status === 'queued') {
+          await setDownloadState({
+            bookId: state.bookId,
+            status: 'failed',
+            progress: state.progress,
+            errorCode: 'interrupted',
+          });
+        } else if (state.status === 'ready') {
+          await clearDownloadState(state.bookId);
+        }
+      }
+    }
+
+    // For any books physically cached on disk without an entry in download_states, mark ready
+    for (const diskId of diskIds) {
+      if (!stateMap.has(diskId)) {
+        await setDownloadState({
+          bookId: diskId,
+          status: 'ready',
+          progress: 100,
+          errorCode: null,
+        });
+      }
+    }
+
+    // Clean up any abandoned partial .tmp files left by interrupted downloads/crashes
+    if (booksDirectory.exists) {
+      const tmpEntries = booksDirectory
+        .list()
+        .filter((entry): entry is File => entry instanceof File && entry.name.endsWith('.tmp'));
+      for (const tmp of tmpEntries) {
+        try {
+          tmp.delete();
+        } catch {}
+      }
+    }
+  } catch (err) {
+    console.warn('[bookDownloader] Failed to reconcile download states:', err);
   }
 }

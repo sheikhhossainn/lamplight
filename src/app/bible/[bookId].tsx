@@ -1,9 +1,11 @@
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View, type ViewToken } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BookmarkIcon, ChevronLeftIcon, ChevronRightIcon, ShareIcon } from '@/components/icons';
+import { ScreenStateView } from '@/components/ScreenStateView';
+import { startReadingSession, endReadingSession } from '@/features/analytics/readingTracker';
 import {
   createBibleHighlight,
   deleteBibleHighlight,
@@ -19,6 +21,8 @@ import { WordActionMenu } from '@/features/reader/components/WordActionMenu';
 import { WordTranslationPopup } from '@/features/reader/components/WordTranslationPopup';
 import { cleanWordForLookup } from '@/features/reader/engine/words';
 import { useTargetLanguage } from '@/features/settings/languagePair';
+import { ScriptureAudioButton } from '@/features/scripture-audio/ScriptureAudioButton';
+import { bibleChapterNarrationUrl } from '@/features/scripture-audio/scriptureAudioUrls';
 import { useTheme } from '@/theme/ThemeProvider';
 
 type FlatVerse = { chapter: number; verse: { number: number; text: string; commentary?: string } };
@@ -81,6 +85,7 @@ export default function BibleVerseReaderScreen() {
 
   const bookMeta = getBookMeta(bookId);
   const verses = useMemo(() => getChapterVerses(bookId, currentChapter), [bookId, currentChapter]);
+  const audioUrl = bibleChapterNarrationUrl(bookId, currentChapter);
 
   const changeChapter = useCallback(
     (newChapter: number) => {
@@ -91,6 +96,15 @@ export default function BibleVerseReaderScreen() {
       void upsertBibleReadingPosition({ bookId, chapter: newChapter, verse: 1 });
     },
     [bookId, bookMeta],
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      startReadingSession(`bible-${bookId}`, currentChapter);
+      return () => {
+        endReadingSession();
+      };
+    }, [bookId, currentChapter]),
   );
 
   const [highlights, setHighlights] = useState<BibleHighlight[]>([]);
@@ -314,7 +328,19 @@ export default function BibleVerseReaderScreen() {
     },
   ).current;
 
-  if (!bookMeta) return <View style={{ flex: 1, backgroundColor: colors.parchment }} />;
+  if (!bookMeta) {
+    return (
+      <ScreenStateView
+        type="error"
+        title="Book Not Found"
+        message="This book could not be found in the Old Testament scriptures."
+        fullScreen
+        canGoBack
+        actionLabel="Return to Bible Index"
+        onAction={() => router.replace('/bible')}
+      />
+    );
+  }
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.parchment }}>
@@ -328,32 +354,40 @@ export default function BibleVerseReaderScreen() {
             Chapter {currentChapter} of {bookMeta.chapterCount}
           </Text>
         </View>
-        {bookMeta.chapterCount > 1 ? (
-          <View style={styles.chapterNavGroup}>
-            <Pressable
-              disabled={currentChapter <= 1}
-              onPress={() => changeChapter(currentChapter - 1)}
-              style={({ pressed }) => [
-                styles.chapterNavBtn,
-                { opacity: currentChapter <= 1 ? 0.3 : pressed ? 0.6 : 1 },
-              ]}
-              hitSlop={8}
-            >
-              <ChevronLeftIcon color={colors.ink} size={18} />
-            </Pressable>
-            <Pressable
-              disabled={currentChapter >= bookMeta.chapterCount}
-              onPress={() => changeChapter(currentChapter + 1)}
-              style={({ pressed }) => [
-                styles.chapterNavBtn,
-                { opacity: currentChapter >= bookMeta.chapterCount ? 0.3 : pressed ? 0.6 : 1 },
-              ]}
-              hitSlop={8}
-            >
-              <ChevronRightIcon color={colors.ink} size={18} />
-            </Pressable>
-          </View>
-        ) : null}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+          {audioUrl ? (
+            <ScriptureAudioButton
+              source={audioUrl}
+              accessibilityLabel={`${bookMeta.name} chapter ${currentChapter}`}
+            />
+          ) : null}
+          {bookMeta.chapterCount > 1 ? (
+            <View style={styles.chapterNavGroup}>
+              <Pressable
+                disabled={currentChapter <= 1}
+                onPress={() => changeChapter(currentChapter - 1)}
+                style={({ pressed }) => [
+                  styles.chapterNavBtn,
+                  { opacity: currentChapter <= 1 ? 0.3 : pressed ? 0.6 : 1 },
+                ]}
+                hitSlop={8}
+              >
+                <ChevronLeftIcon color={colors.ink} size={18} />
+              </Pressable>
+              <Pressable
+                disabled={currentChapter >= bookMeta.chapterCount}
+                onPress={() => changeChapter(currentChapter + 1)}
+                style={({ pressed }) => [
+                  styles.chapterNavBtn,
+                  { opacity: currentChapter >= bookMeta.chapterCount ? 0.3 : pressed ? 0.6 : 1 },
+                ]}
+                hitSlop={8}
+              >
+                <ChevronRightIcon color={colors.ink} size={18} />
+              </Pressable>
+            </View>
+          ) : null}
+        </View>
       </View>
 
       {isReady ? (

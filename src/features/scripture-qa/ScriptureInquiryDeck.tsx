@@ -26,6 +26,7 @@ import {
 import { saveInquiryToCache } from './inquiryCache';
 import { ScriptureInquirySpinner } from './ScriptureInquirySpinner';
 import { SACRED_TRADITION_EMBLEMS, IslamEmblem } from './TraditionEmblems';
+import { FeedbackModal } from '@/components/FeedbackModal';
 
 type ScriptureInquiryDeckProps = {
   questionQuery: string;
@@ -45,6 +46,7 @@ export function ScriptureInquiryDeck({ questionQuery, initialTradition }: Script
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [requestVersion, setRequestVersion] = useState(0);
   const [isInquirySaved, setIsInquirySaved] = useState(false);
+  const [reportingVerse, setReportingVerse] = useState<ScriptureQAVerse | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -650,6 +652,19 @@ export function ScriptureInquiryDeck({ questionQuery, initialTradition }: Script
                         </Pressable>
                       </View>
 
+                      {/* Source Attribution (FULLAPP §13.3 item 3) */}
+                      <View style={styles.attributionBadgeRow}>
+                        <Text
+                          style={[
+                            typography.metadataCaption,
+                            { color: colors.fawn, fontSize: 11 },
+                          ]}
+                        >
+                          {verse.translationEdition ? `Text: ${verse.translationEdition}` : 'Canonical Text'}
+                          {verse.commentarySource ? ` · Exegesis: ${verse.commentarySource}` : ''}
+                        </Text>
+                      </View>
+
                       {/* Original Sacred Script (Amiri Arabic for Quran) */}
                       {verse.originalText ? (
                         <View
@@ -687,7 +702,7 @@ export function ScriptureInquiryDeck({ questionQuery, initialTradition }: Script
                         </Text>
                       </View>
 
-                      {/* Historical Context & Occasion */}
+                      {/* Historical Context & Occasion (marked AI-assisted when generated, FULLAPP §13.3 item 4) */}
                       <View
                         style={[
                           styles.contextInfoBox,
@@ -697,18 +712,42 @@ export function ScriptureInquiryDeck({ questionQuery, initialTradition }: Script
                           },
                         ]}
                       >
-                        <Text
-                          style={[
-                            typography.eyebrowLabel,
-                            { color: colors.flameAmber, fontSize: 10, marginBottom: 4 },
-                          ]}
-                        >
-                          HISTORICAL CONTEXT & OCCASION
-                        </Text>
+                        <View style={styles.contextHeaderRow}>
+                          <Text
+                            style={[
+                              typography.eyebrowLabel,
+                              { color: colors.flameAmber, fontSize: 10 },
+                            ]}
+                          >
+                            {verse.isAiAssistedContext || !data?.isCurated
+                              ? 'HISTORICAL CONTEXT · AI-ASSISTED'
+                              : 'HISTORICAL CONTEXT · SCHOLAR-VETTED'}
+                          </Text>
+                          {(verse.isAiAssistedContext || !data?.isCurated) && (
+                            <View
+                              style={[
+                                styles.aiAssistedPill,
+                                {
+                                  backgroundColor: isDark ? '#3D2F1B' : '#F6EBD7',
+                                  borderColor: isDark ? '#554224' : '#EADBB6',
+                                },
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  typography.metadataCaption,
+                                  { color: colors.flameAmber, fontSize: 9.5, fontWeight: '700' },
+                                ]}
+                              >
+                                AI-ASSISTED
+                              </Text>
+                            </View>
+                          )}
+                        </View>
                         <Text
                           style={[
                             typography.metadataCaption,
-                            { color: colors.ink, fontSize: 13, lineHeight: 19.5 },
+                            { color: colors.ink, fontSize: 13, lineHeight: 19.5, marginTop: 4 },
                           ]}
                         >
                           {verse.historicalContext}
@@ -745,8 +784,26 @@ export function ScriptureInquiryDeck({ questionQuery, initialTradition }: Script
                         </View>
                       ) : null}
 
-                      {/* Deep Link Action Button */}
+                      {/* Deep Link & Report Citation Actions (FULLAPP §13.3 item 5) */}
                       <View style={[styles.verseActionRow, { borderTopColor: colors.hairline }]}>
+                        <Pressable
+                          onPress={() => setReportingVerse(verse)}
+                          hitSlop={8}
+                          style={({ pressed }) => [
+                            styles.reportCitationBtn,
+                            { opacity: pressed ? 0.7 : 1 },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              typography.metadataCaption,
+                              { color: colors.fawn, fontSize: 11.5 },
+                            ]}
+                          >
+                            Report issue
+                          </Text>
+                        </Pressable>
+
                         <Pressable
                           onPress={() => handleReadChapter(verse)}
                           style={({ pressed }) => [
@@ -803,6 +860,24 @@ export function ScriptureInquiryDeck({ questionQuery, initialTradition }: Script
           </Pressable>
         </View>
       )}
+
+      <FeedbackModal
+        visible={reportingVerse !== null}
+        onClose={() => setReportingVerse(null)}
+        initialCategory="citation_issue"
+        targetType="scripture_citation"
+        targetId={
+          reportingVerse
+            ? `${reportingVerse.id}|${data?.id ?? 'inquiry'}|${data?.modelVersion ?? 'canonical-v1'}`
+            : undefined
+        }
+        title="Report Scripture Citation Issue"
+        subtitle={
+          reportingVerse
+            ? `Auditing citation for ${reportingVerse.book} ${reportingVerse.chapter}:${reportingVerse.verseNumber} (Model: ${data?.modelVersion ?? 'canonical-v1'}).`
+            : undefined
+        }
+      />
     </View>
   );
 }
@@ -977,11 +1052,27 @@ const styles = StyleSheet.create({
   translationText: {
     // readingBody provides fontSize: 17 and lineHeight: 31 — never overridden
   },
+  attributionBadgeRow: {
+    marginTop: 2,
+    marginBottom: 8,
+  },
   contextInfoBox: {
     borderRadius: 10,
     borderWidth: 1,
     padding: 12,
     marginBottom: 10,
+  },
+  contextHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 2,
+  },
+  aiAssistedPill: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    borderWidth: 1,
   },
   commentaryInfoBox: {
     borderRadius: 10,
@@ -991,9 +1082,14 @@ const styles = StyleSheet.create({
   },
   verseActionRow: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     borderTopWidth: 1,
-    paddingTop: 12,
+    paddingTop: 10,
+  },
+  reportCitationBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 4,
   },
   jumpToReaderBtn: {
     paddingHorizontal: 14,

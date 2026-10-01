@@ -350,6 +350,7 @@ export async function getSrsMetrics(): Promise<{
 
 export async function deleteSavedWord(id: string): Promise<void> {
   const db = await getDb();
+  await db.runAsync('DELETE FROM vocabulary_deck_items WHERE word_id = ?', [id]).catch(() => {});
   await db.runAsync('DELETE FROM saved_words WHERE id = ?', [id]);
   try {
     await enqueueMutation(

@@ -258,7 +258,7 @@ export function ReaderOverlay({
     <ReaderOverlayContext.Provider value={{ requestClose }}>
       <Modal
         visible={mounted}
-        transparent={variant !== 'fullscreen'}
+        transparent
         animationType="none"
         statusBarTranslucent
         onRequestClose={requestClose}

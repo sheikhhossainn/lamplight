@@ -1,4 +1,4 @@
-﻿import { useSyncExternalStore } from 'react';
+import { useSyncExternalStore } from 'react';
 import { getSetting, setSetting } from '@/db/repositories/appSettings';
 import type { PageStyleId } from '@/features/reader/pageStyles';
 
@@ -18,10 +18,21 @@ export function setPageStyle(style: PageStyleId): void {
   void setSetting(PAGE_STYLE_KEY, style);
 }
 
+const VALID_PAGE_STYLES = new Set<PageStyleId>([
+  'classic',
+  'modern',
+  'manuscript',
+  'editorial',
+  'oxford',
+  'vellum',
+  'nocturne',
+  'zen',
+]);
+
 export async function hydratePageStyle(): Promise<void> {
   const saved = await getSetting(PAGE_STYLE_KEY);
-  if (saved && (saved === 'manuscript' || saved === 'classic' || saved === 'modern')) {
-    currentPageStyle = saved;
+  if (saved && VALID_PAGE_STYLES.has(saved as PageStyleId)) {
+    currentPageStyle = saved as PageStyleId;
     listeners.forEach((listener) => listener());
   }
 }

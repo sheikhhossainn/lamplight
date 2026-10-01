@@ -31,6 +31,7 @@ export type ScriptureInquiryResult = {
   rateLimitNote?: string;
   initialTradition?: TraditionKey;
   criticalControversy?: CriticalControversyVerse;
+  modelVersion?: string;
 };
 
 /**
@@ -259,13 +260,15 @@ export async function queryScriptureInquiry(
       topicBackground: defaultQA.topicBackground,
       traditions: defaultQA.traditions,
       isCurated: true,
+      modelVersion: 'curated-scholarly-archive',
     };
   }
 
   // 1. Critical Controversies Check (Highest priority: scholar-vetted critical passages with context status)
   const criticalMatch = findCriticalControversy(trimmed);
   if (criticalMatch) {
-    return convertControversyToInquiryResult(criticalMatch);
+    const result = convertControversyToInquiryResult(criticalMatch);
+    return { ...result, modelVersion: 'curated-critical-controversy' };
   }
 
   // 2. Strict Curated Check (Includes thematic questions and keyword mapping)
@@ -280,13 +283,14 @@ export async function queryScriptureInquiry(
       traditions: qa.traditions,
       isCurated: true,
       initialTradition,
+      modelVersion: 'curated-scholarly-archive',
     };
   }
 
   // 3. Offline Scripture Citation Lookup for ANY Bible (OT/NT) or Quran passage
   const directVerseResult = resolveDirectScriptureVerse(trimmed);
   if (directVerseResult) {
-    return directVerseResult;
+    return { ...directVerseResult, modelVersion: 'local-canonical-verse' };
   }
 
   // 3. Check Device Persistent Cache (Instant Offline Load, Zero API Token Consumption)
