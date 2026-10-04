@@ -93,7 +93,7 @@ export function ReadingReportCard({
         style={[
           styles.emptyContainer,
           {
-            backgroundColor: colors.parchment,
+            backgroundColor: colors.card,
             borderColor: colors.hairline,
             borderRadius: radius.card,
           },
@@ -106,7 +106,7 @@ export function ReadingReportCard({
         <Text
           style={[
             typography.metadataCaption,
-            { color: colors.fawn, textAlign: 'center', marginTop: 4, paddingHorizontal: 16 },
+            { color: isLamp ? '#C7BDB0' : colors.umber, textAlign: 'center', marginTop: 4, paddingHorizontal: 16 },
           ]}
         >
           Track sessions in {report?.periodLabel ?? 'this period'} to generate your literary milestones report card.
@@ -126,8 +126,8 @@ export function ReadingReportCard({
         style={[
           styles.cardContainer,
           {
-            backgroundColor: colors.parchment,
-            borderColor: isLamp ? 'rgba(245, 166, 35, 0.28)' : 'rgba(245, 166, 35, 0.35)',
+            backgroundColor: isLamp ? '#232026' : colors.card,
+            borderColor: isLamp ? 'rgba(245, 166, 35, 0.32)' : 'rgba(245, 166, 35, 0.35)',
             borderRadius: radius.card,
           },
         ]}
@@ -137,7 +137,7 @@ export function ReadingReportCard({
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <FlameMark size={22} color={colors.flameAmber} />
             <View>
-              <Text style={[typography.eyebrowLabel, { color: colors.flameAmber, fontSize: 9.5, letterSpacing: 1.2 }]}>
+              <Text style={[typography.eyebrowLabel, { color: colors.flameAmber, fontSize: 9.5, letterSpacing: 1.2, fontWeight: '700' }]}>
                 LAMPLIGHT · READING REPORT
               </Text>
               <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 15, marginTop: 1 }]}>
@@ -150,55 +150,55 @@ export function ReadingReportCard({
             style={[
               styles.readerBadge,
               {
-                backgroundColor: isLamp ? 'rgba(245, 166, 35, 0.12)' : 'rgba(245, 166, 35, 0.1)',
-                borderColor: isLamp ? 'rgba(245, 166, 35, 0.25)' : 'rgba(245, 166, 35, 0.28)',
+                backgroundColor: isLamp ? 'rgba(245, 166, 35, 0.16)' : 'rgba(245, 166, 35, 0.12)',
+                borderColor: isLamp ? 'rgba(245, 166, 35, 0.35)' : 'rgba(245, 166, 35, 0.3)',
               },
             ]}
           >
-            <Text style={[typography.metadataCaption, { color: colors.ink, fontSize: 11 }]}>
+            <Text style={[typography.metadataCaption, { color: colors.ink, fontSize: 11, fontWeight: '600' }]}>
               {readerName}
             </Text>
           </View>
         </View>
 
         {/* Three Core Stat Pillars */}
-        <View style={[styles.statsRow, { borderColor: colors.hairline }]}>
+        <View style={[styles.statsRow, { borderColor: isLamp ? 'rgba(245, 166, 35, 0.2)' : colors.hairline }]}>
           <View style={styles.statPillar}>
-            <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 10 }]}>
+            <Text style={[typography.metadataCaption, { color: isLamp ? '#C7BDB0' : colors.umber, fontSize: 10, fontWeight: '600' }]}>
               READING TIME
             </Text>
             <Text style={[typography.uiRowTitle, { color: colors.flameAmber, fontSize: 17, marginTop: 2 }]}>
               {formatHoursMinutes(report.totalReadingMinutes)}
             </Text>
-            <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 9.5, marginTop: 1 }]}>
+            <Text style={[typography.metadataCaption, { color: isLamp ? '#B7ADA0' : colors.fawn, fontSize: 9.5, marginTop: 1 }]}>
               {report.totalSessionsCount} sessions
             </Text>
           </View>
 
-          <View style={[styles.statDivider, { backgroundColor: colors.hairline }]} />
+          <View style={[styles.statDivider, { backgroundColor: isLamp ? 'rgba(245, 166, 35, 0.2)' : colors.hairline }]} />
 
           <View style={styles.statPillar}>
-            <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 10 }]}>
+            <Text style={[typography.metadataCaption, { color: isLamp ? '#C7BDB0' : colors.umber, fontSize: 10, fontWeight: '600' }]}>
               PAGES READ
             </Text>
             <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 17, marginTop: 2 }]}>
               {report.totalPagesRead}
             </Text>
-            <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 9.5, marginTop: 1 }]}>
+            <Text style={[typography.metadataCaption, { color: isLamp ? '#B7ADA0' : colors.fawn, fontSize: 9.5, marginTop: 1 }]}>
               {report.averagePagesPerHour > 0 ? `~${report.averagePagesPerHour} pgs/hr` : '—'}
             </Text>
           </View>
 
-          <View style={[styles.statDivider, { backgroundColor: colors.hairline }]} />
+          <View style={[styles.statDivider, { backgroundColor: isLamp ? 'rgba(245, 166, 35, 0.2)' : colors.hairline }]} />
 
           <View style={styles.statPillar}>
-            <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 10 }]}>
+            <Text style={[typography.metadataCaption, { color: isLamp ? '#C7BDB0' : colors.umber, fontSize: 10, fontWeight: '600' }]}>
               VOCABULARY
             </Text>
             <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 17, marginTop: 2 }]}>
               +{report.vocabularyGrowth.wordsSavedCount}
             </Text>
-            <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 9.5, marginTop: 1 }]}>
+            <Text style={[typography.metadataCaption, { color: isLamp ? '#B7ADA0' : colors.fawn, fontSize: 9.5, marginTop: 1 }]}>
               {report.vocabularyGrowth.wordsMasteredCount} mastered
             </Text>
           </View>
@@ -210,13 +210,13 @@ export function ReadingReportCard({
             style={[
               styles.topBookSection,
               {
-                backgroundColor: isLamp ? 'rgba(245, 166, 35, 0.08)' : 'rgba(245, 166, 35, 0.07)',
-                borderColor: isLamp ? 'rgba(245, 166, 35, 0.2)' : 'rgba(245, 166, 35, 0.25)',
+                backgroundColor: isLamp ? 'rgba(245, 166, 35, 0.12)' : 'rgba(245, 166, 35, 0.08)',
+                borderColor: isLamp ? 'rgba(245, 166, 35, 0.28)' : 'rgba(245, 166, 35, 0.22)',
               },
             ]}
           >
             <View style={{ flex: 1, marginRight: 8 }}>
-              <Text style={[typography.eyebrowLabel, { color: colors.flameAmber, fontSize: 8.5 }]}>
+              <Text style={[typography.eyebrowLabel, { color: colors.flameAmber, fontSize: 8.5, fontWeight: '700' }]}>
                 PRIMARY LITERARY WORK
               </Text>
               <Text
@@ -230,7 +230,7 @@ export function ReadingReportCard({
               >
                 {topBook.title}
               </Text>
-              <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 10, marginTop: 1 }]}>
+              <Text style={[typography.metadataCaption, { color: isLamp ? '#C7BDB0' : colors.umber, fontSize: 10, marginTop: 1 }]}>
                 {topBook.author} · {formatHoursMinutes(topBook.minutesRead)} ({topBook.pagesRead} pages)
               </Text>
             </View>
@@ -238,7 +238,7 @@ export function ReadingReportCard({
               <Text style={[typography.uiRowTitle, { color: colors.flameAmber, fontSize: 13 }]}>
                 {Math.round(topBook.percentComplete * 100)}%
               </Text>
-              <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 9 }]}>
+              <Text style={[typography.metadataCaption, { color: isLamp ? '#B7ADA0' : colors.fawn, fontSize: 9 }]}>
                 completed
               </Text>
             </View>
@@ -248,15 +248,22 @@ export function ReadingReportCard({
         {/* Footer: Rhythm and Seal */}
         <View style={styles.cardFooter}>
           <View>
-            <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 10 }]}>
+            <Text style={[typography.metadataCaption, { color: isLamp ? '#C7BDB0' : colors.umber, fontSize: 10 }]}>
               Peak reading rhythm: {report.timeDistribution.dominantTime}
             </Text>
-            <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 9.5, marginTop: 2 }]}>
+            <Text style={[typography.metadataCaption, { color: isLamp ? '#B7ADA0' : colors.fawn, fontSize: 9.5, marginTop: 2 }]}>
               {report.activeReadingDays} active reading days in {report.periodLabel}
             </Text>
           </View>
 
-          <View style={styles.watermarkTag}>
+          <View
+            style={[
+              styles.watermarkTag,
+              {
+                backgroundColor: isLamp ? 'rgba(245, 166, 35, 0.18)' : 'rgba(245, 166, 35, 0.12)',
+              },
+            ]}
+          >
             <Text style={[typography.metadataCaption, { color: colors.flameAmber, fontSize: 9, fontWeight: '700' }]}>
               LAMP · LIGHT
             </Text>
@@ -271,7 +278,7 @@ export function ReadingReportCard({
         style={[
           styles.shareButton,
           {
-            backgroundColor: colors.parchment,
+            backgroundColor: colors.card,
             borderColor: colors.hairline,
             borderRadius: radius.card,
           },
