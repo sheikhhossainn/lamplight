@@ -1,5 +1,5 @@
 import { type ReactNode } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, View, Text } from 'react-native';
 import Animated, { type SharedValue, useAnimatedStyle } from 'react-native-reanimated';
 import { Image } from 'expo-image';
 import { LamplightColor } from '@/theme/tokens';
@@ -65,9 +65,15 @@ export function BookPageFrame({ children, themeProgress }: BookPageFrameProps) {
     opacity: themeProgress.value,
   }));
 
+  const isNewspaper = bg.template === 'newspaper';
+  const isOxford = bg.template === 'oxford';
+  const isKraft = bg.template === 'kraft';
+  const isSage = bg.template === 'sage';
+  const isVellum = bg.template === 'vellum';
+
   return (
     <View style={[styles.container, { backgroundColor: bg.lampBackground }]}>
-      {/* Day Mode Layer: Page-specific background + authentic paper texture + deckle stack */}
+      {/* Day Mode Layer: Page-specific background + template styling + authentic paper texture */}
       <Animated.View
         style={[
           StyleSheet.absoluteFill,
@@ -76,13 +82,15 @@ export function BookPageFrame({ children, themeProgress }: BookPageFrameProps) {
         ]}
         pointerEvents="none"
       >
-        <Image
-          source={ANTIQUE_PAPER_DAY}
-          style={[StyleSheet.absoluteFill, { opacity: 0.55 }]}
-          contentFit="cover"
-          priority="high"
-          cachePolicy="memory-disk"
-        />
+        {bg.textureOpacityDay > 0 ? (
+          <Image
+            source={ANTIQUE_PAPER_DAY}
+            style={[StyleSheet.absoluteFill, { opacity: bg.textureOpacityDay }]}
+            contentFit="cover"
+            priority="high"
+            cachePolicy="memory-disk"
+          />
+        ) : null}
 
         {/* Ambient paper tint for this specific page atmosphere */}
         <View
@@ -91,6 +99,76 @@ export function BookPageFrame({ children, themeProgress }: BookPageFrameProps) {
             { backgroundColor: bg.paperTint },
           ]}
         />
+
+        {/* Template CSS Decoration: Newspaper Top Masthead Bar & Double Rules */}
+        {isNewspaper ? (
+          <View style={styles.newspaperHeaderContainer}>
+            <View style={[styles.newspaperDoubleRule, { borderColor: bg.dayTextColor }]} />
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 2.5 }}>
+              <Text style={[styles.newspaperMastheadLabel, { color: bg.dayTextColor }]}>
+                {bg.previewMasthead}
+              </Text>
+              <Text style={[styles.newspaperFolioLabel, { color: bg.dayAccent }]}>
+                FOLIO EDITION
+              </Text>
+            </View>
+            <View style={[styles.newspaperSingleRule, { borderColor: bg.dayTextColor }]} />
+          </View>
+        ) : null}
+
+        {/* Template CSS Decoration: Oxford Royal Gold Inner Frame */}
+        {isOxford ? (
+          <View
+            style={[
+              styles.oxfordInnerFrame,
+              {
+                borderColor: `${bg.dayAccent}50`,
+              },
+            ]}
+          >
+            {/* Corner gold brackets */}
+            <View style={[styles.cornerBracketTL, { borderColor: bg.dayAccent }]} />
+            <View style={[styles.cornerBracketTR, { borderColor: bg.dayAccent }]} />
+            <View style={[styles.cornerBracketBL, { borderColor: bg.dayAccent }]} />
+            <View style={[styles.cornerBracketBR, { borderColor: bg.dayAccent }]} />
+          </View>
+        ) : null}
+
+        {/* Template CSS Decoration: Kraft Leather-Stitched Binding Seam */}
+        {isKraft ? (
+          <View
+            style={[
+              styles.kraftStitchedSeam,
+              {
+                borderLeftColor: 'rgba(100, 60, 25, 0.40)',
+              },
+            ]}
+          />
+        ) : null}
+
+        {/* Template CSS Decoration: Sage Botanical Margin Accent */}
+        {isSage ? (
+          <View
+            style={[
+              styles.sageMarginRule,
+              {
+                borderColor: 'rgba(90, 140, 95, 0.22)',
+              },
+            ]}
+          />
+        ) : null}
+
+        {/* Template CSS Decoration: Gilded Vellum Gold Filigree Trim */}
+        {isVellum ? (
+          <View
+            style={[
+              styles.vellumInnerFrame,
+              {
+                borderColor: `${bg.dayAccent}45`,
+              },
+            ]}
+          />
+        ) : null}
 
         {/* Outer book cover rim peeking behind the stacked leaves along the right */}
         <View style={[styles.coverRim, { backgroundColor: DAY_TONES.coverRim }]} />
@@ -126,13 +204,15 @@ export function BookPageFrame({ children, themeProgress }: BookPageFrameProps) {
         ]}
         pointerEvents="none"
       >
-        <Image
-          source={ANTIQUE_PAPER_DAY}
-          style={[StyleSheet.absoluteFill, { opacity: 0.35 }]}
-          contentFit="cover"
-          priority="high"
-          cachePolicy="memory-disk"
-        />
+        {bg.textureOpacityLamp > 0 ? (
+          <Image
+            source={ANTIQUE_PAPER_DAY}
+            style={[StyleSheet.absoluteFill, { opacity: bg.textureOpacityLamp }]}
+            contentFit="cover"
+            priority="high"
+            cachePolicy="memory-disk"
+          />
+        ) : null}
 
         {/* Themed night wash */}
         <View
@@ -153,6 +233,71 @@ export function BookPageFrame({ children, themeProgress }: BookPageFrameProps) {
           </Defs>
           <Rect x="0" y="0" width="100%" height="100%" fill="url(#moonGlow)" />
         </Svg>
+
+        {/* Lamp Template CSS Decorations */}
+        {isNewspaper ? (
+          <View style={styles.newspaperHeaderContainer}>
+            <View style={[styles.newspaperDoubleRule, { borderColor: bg.lampTextColor }]} />
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 2.5 }}>
+              <Text style={[styles.newspaperMastheadLabel, { color: bg.lampTextColor }]}>
+                {bg.previewMasthead}
+              </Text>
+              <Text style={[styles.newspaperFolioLabel, { color: bg.lampAccent }]}>
+                FOLIO EDITION
+              </Text>
+            </View>
+            <View style={[styles.newspaperSingleRule, { borderColor: bg.lampTextColor }]} />
+          </View>
+        ) : null}
+
+        {isOxford ? (
+          <View
+            style={[
+              styles.oxfordInnerFrame,
+              {
+                borderColor: `${bg.lampAccent}50`,
+              },
+            ]}
+          >
+            <View style={[styles.cornerBracketTL, { borderColor: bg.lampAccent }]} />
+            <View style={[styles.cornerBracketTR, { borderColor: bg.lampAccent }]} />
+            <View style={[styles.cornerBracketBL, { borderColor: bg.lampAccent }]} />
+            <View style={[styles.cornerBracketBR, { borderColor: bg.lampAccent }]} />
+          </View>
+        ) : null}
+
+        {isKraft ? (
+          <View
+            style={[
+              styles.kraftStitchedSeam,
+              {
+                borderLeftColor: 'rgba(238, 214, 191, 0.25)',
+              },
+            ]}
+          />
+        ) : null}
+
+        {isSage ? (
+          <View
+            style={[
+              styles.sageMarginRule,
+              {
+                borderColor: 'rgba(90, 140, 95, 0.18)',
+              },
+            ]}
+          />
+        ) : null}
+
+        {isVellum ? (
+          <View
+            style={[
+              styles.vellumInnerFrame,
+              {
+                borderColor: `${bg.lampAccent}45`,
+              },
+            ]}
+          />
+        ) : null}
 
         {/* Outer book cover rim in cool dark slate */}
         <View style={[styles.coverRim, { backgroundColor: NIGHT_TONES.coverRim }]} />
@@ -323,5 +468,114 @@ const styles = StyleSheet.create({
     right: 0,
     width: 6,
     zIndex: 3,
+  },
+  // Template: Newspaper styles
+  newspaperHeaderContainer: {
+    position: 'absolute',
+    top: 50,
+    left: 20,
+    right: 20,
+    zIndex: 5,
+  },
+  newspaperDoubleRule: {
+    borderTopWidth: 2,
+    borderBottomWidth: 1,
+    height: 4,
+    marginBottom: 2,
+  },
+  newspaperSingleRule: {
+    borderBottomWidth: 1,
+    marginTop: 2,
+  },
+  newspaperMastheadLabel: {
+    fontSize: 9.5,
+    letterSpacing: 1.4,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  newspaperFolioLabel: {
+    fontSize: 8.5,
+    letterSpacing: 1.2,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+  },
+  // Template: Oxford Royal Gold Frame
+  oxfordInnerFrame: {
+    position: 'absolute',
+    top: 52,
+    left: 14,
+    right: 14,
+    bottom: 24,
+    borderWidth: 1,
+    zIndex: 5,
+  },
+  cornerBracketTL: {
+    position: 'absolute',
+    top: -1,
+    left: -1,
+    width: 8,
+    height: 8,
+    borderTopWidth: 2.5,
+    borderLeftWidth: 2.5,
+  },
+  cornerBracketTR: {
+    position: 'absolute',
+    top: -1,
+    right: -1,
+    width: 8,
+    height: 8,
+    borderTopWidth: 2.5,
+    borderRightWidth: 2.5,
+  },
+  cornerBracketBL: {
+    position: 'absolute',
+    bottom: -1,
+    left: -1,
+    width: 8,
+    height: 8,
+    borderBottomWidth: 2.5,
+    borderLeftWidth: 2.5,
+  },
+  cornerBracketBR: {
+    position: 'absolute',
+    bottom: -1,
+    right: -1,
+    width: 8,
+    height: 8,
+    borderBottomWidth: 2.5,
+    borderRightWidth: 2.5,
+  },
+  // Template: Kraft Stitched Seam
+  kraftStitchedSeam: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 10,
+    width: 2,
+    borderLeftWidth: 2,
+    borderStyle: 'dashed',
+    zIndex: 5,
+  },
+  // Template: Sage Botanical Frame
+  sageMarginRule: {
+    position: 'absolute',
+    top: 50,
+    bottom: 24,
+    left: 16,
+    right: 16,
+    borderWidth: 1,
+    borderRadius: 8,
+    zIndex: 5,
+  },
+  // Template: Vellum Archive Frame
+  vellumInnerFrame: {
+    position: 'absolute',
+    top: 52,
+    bottom: 26,
+    left: 15,
+    right: 15,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    zIndex: 5,
   },
 });

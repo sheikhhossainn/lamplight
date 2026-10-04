@@ -1175,14 +1175,14 @@ export default function SettingsScreen() {
                       </View>
                     </View>
 
-                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, gap: 4 }}>
                       <Text
-                        style={[typography.eyebrowLabel, { color: isSelected ? colors.flameAmber : colors.fawn, fontSize: 9 }]}
+                        style={[typography.eyebrowLabel, { color: isSelected ? colors.flameAmber : colors.fawn, fontSize: 8.5, flexShrink: 1 }]}
                         numberOfLines={1}
                       >
                         {style.tag}
                       </Text>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3.5, flexShrink: 0 }}>
                         <View
                           style={{
                             width: 6,
@@ -1191,7 +1191,7 @@ export default function SettingsScreen() {
                             backgroundColor: isLamp ? style.background.lampAccent : style.background.dayAccent,
                           }}
                         />
-                        <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 9.5 }]}>
+                        <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 9 }]} numberOfLines={1}>
                           {style.background.swatchLabel}
                         </Text>
                       </View>
@@ -1206,16 +1206,74 @@ export default function SettingsScreen() {
                           backgroundColor: isLamp ? style.background.lampBackground : style.background.dayBackground,
                           borderColor: isSelected ? colors.flameAmber : (isLamp ? style.background.lampSpineColor : style.background.daySpineColor),
                           borderWidth: 1.5,
+                          position: 'relative',
+                          overflow: 'hidden',
                         },
                       ]}
                     >
+                      {/* Template: Newspaper masthead rule */}
+                      {style.background.template === 'newspaper' ? (
+                        <View style={{ marginBottom: 4, borderBottomWidth: 1, borderBottomColor: isLamp ? '#333338' : '#1A1A1A', paddingBottom: 2 }}>
+                          <View style={{ borderTopWidth: 1, borderTopColor: isLamp ? '#333338' : '#1A1A1A', paddingTop: 1 }}>
+                            <Text
+                              style={{
+                                fontSize: 7,
+                                letterSpacing: 0.8,
+                                textAlign: 'center',
+                                color: isLamp ? style.background.lampTextColor : style.background.dayTextColor,
+                                fontWeight: '700',
+                                textTransform: 'uppercase',
+                              }}
+                              numberOfLines={1}
+                            >
+                              {style.background.previewMasthead}
+                            </Text>
+                          </View>
+                        </View>
+                      ) : null}
+
+                      {/* Template: Oxford gold inner frame */}
+                      {style.background.template === 'oxford' ? (
+                        <View
+                          style={{
+                            position: 'absolute',
+                            top: 3,
+                            left: 3,
+                            right: 3,
+                            bottom: 3,
+                            borderWidth: 1,
+                            borderColor: `${isLamp ? style.background.lampAccent : style.background.dayAccent}66`,
+                            borderRadius: 4,
+                          }}
+                          pointerEvents="none"
+                        />
+                      ) : null}
+
+                      {/* Template: Kraft stitched left binding */}
+                      {style.background.template === 'kraft' ? (
+                        <View
+                          style={{
+                            position: 'absolute',
+                            top: 0,
+                            bottom: 0,
+                            left: 5,
+                            width: 2,
+                            borderLeftWidth: 1.5,
+                            borderLeftColor: isLamp ? 'rgba(238, 214, 191, 0.35)' : 'rgba(100, 60, 25, 0.45)',
+                            borderStyle: 'dashed',
+                          }}
+                          pointerEvents="none"
+                        />
+                      ) : null}
+
                       <Text
                         style={{
                           fontFamily: sampleFont,
-                          fontSize: 13,
-                          lineHeight: 22,
+                          fontSize: 12.5,
+                          lineHeight: 20,
                           letterSpacing: style.letterSpacing,
                           color: isLamp ? style.background.lampTextColor : style.background.dayTextColor,
+                          paddingLeft: style.background.template === 'kraft' ? 8 : 0,
                         }}
                         numberOfLines={2}
                       >
