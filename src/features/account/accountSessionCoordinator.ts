@@ -178,7 +178,15 @@ export async function coordinateAuthTransition(options: TransitionOptions): Prom
     console.warn('[SessionCoordinator] Trigger sync error:', err);
   }
 
-  // 6. Record telemetry events without logging email addresses (FULLAPP §6.4 item 5)
+  // 6. Refresh user avatar state
+  try {
+    const { refreshUserAvatar } = await import('@/features/account/userAvatar');
+    await refreshUserAvatar();
+  } catch {
+    // Non-critical
+  }
+
+  // 7. Record telemetry events without logging email addresses (FULLAPP §6.4 item 5)
   try {
     const analytics = await getAnalytics();
     analytics.logEvent(plan.telemetryEvent.eventType, plan.telemetryEvent.payload);
@@ -239,7 +247,15 @@ export async function coordinateSignOut(keepLocalData: boolean = true): Promise<
     console.warn('[SessionCoordinator] Reset entitlements error:', err);
   }
 
-  // 6. Record account_signed_out event without email
+  // 6. Reset user avatar state
+  try {
+    const { setUserAvatar } = await import('@/features/account/userAvatar');
+    await setUserAvatar(null);
+  } catch {
+    // Non-critical
+  }
+
+  // 7. Record account_signed_out event without email
   try {
     const analytics = await getAnalytics();
     analytics.logEvent(plan.telemetryEvent.eventType, plan.telemetryEvent.payload);

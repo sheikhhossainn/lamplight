@@ -4,6 +4,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -11,6 +12,7 @@ import {
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import Svg, { Path } from 'react-native-svg';
+import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 
 import {
   getSession,
@@ -26,6 +28,12 @@ import {
 } from '@/features/account/accountMergeService';
 import { triggerSync } from '@/features/sync/syncWorker';
 import { FlameGlow } from '@/components/FlameGlow';
+import { UserAvatar } from '@/components/UserAvatar';
+import {
+  PRESET_AVATARS,
+  setUserAvatar,
+  refreshUserAvatar,
+} from '@/features/account/userAvatar';
 import { useTheme } from '@/theme/ThemeProvider';
 
 function GoogleIcon() {
@@ -82,6 +90,7 @@ export function AuthCard({
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [otpCode, setOtpCode] = useState('');
+  const [selectedAvatar, setSelectedAvatar] = useState<string>('flame');
 
   // Status
   const [googleLoading, setGoogleLoading] = useState(false);
@@ -111,6 +120,7 @@ export function AuthCard({
       const res = await signInWithGoogle({ snapshot: snapshot || undefined });
 
       if (res.success) {
+        await refreshUserAvatar().catch(() => {});
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         onSuccess?.();
       } else if (!res.cancelled) {
@@ -172,14 +182,19 @@ export function AuthCard({
       const normalizedEmail = email.trim().toLowerCase();
 
       // If guest has local reading data, merge with cloud account
+      let snapshot = localSnapshot;
+      if (!snapshot) {
+        snapshot = await snapshotLocalData().catch(() => null);
+      }
       if (
-        localSnapshot &&
-        (localSnapshot.savedWordsCount > 0 ||
-          localSnapshot.highlightsCount > 0 ||
-          localSnapshot.booksCount > 0 ||
-          localSnapshot.shelvesCount > 0)
+        snapshot &&
+        (snapshot.savedWordsCount > 0 ||
+          snapshot.highlightsCount > 0 ||
+          snapshot.booksCount > 0 ||
+          snapshot.shelvesCount > 0 ||
+          snapshot.readingSessionsCount > 0)
       ) {
-        const mergeRes = await executeAccountMerge(normalizedEmail, trimmedToken, localSnapshot);
+        const mergeRes = await executeAccountMerge(normalizedEmail, trimmedToken, snapshot);
         if (!mergeRes.success) {
           setErrorMessage(mergeRes.message || 'Verification failed.');
           return;
@@ -193,8 +208,11 @@ export function AuthCard({
       }
 
       // If in sign-up mode and display name was provided, persist to profile
-      if (mode === 'signup' && displayName.trim()) {
-        await updateUserProfile(displayName.trim()).catch(() => {});
+      if (mode === 'signup') {
+        if (displayName.trim()) {
+          await updateUserProfile(displayName.trim()).catch(() => {});
+        }
+        await setUserAvatar(`preset:${selectedAvatar}`).catch(() => {});
       }
 
       // Coordinate auth transition
@@ -205,6 +223,8 @@ export function AuthCard({
         type: mode === 'signup' ? 'protect' : 'login',
         preserveOutbox: true,
       }).catch(() => {});
+
+      await refreshUserAvatar().catch(() => {});
 
       void triggerSync();
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -221,19 +241,20 @@ export function AuthCard({
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       style={styles.keyboardWrap}
     >
-      <View
+      <Animated.View
+        layout={LinearTransition.springify().damping(22).stiffness(180)}
         style={[
           styles.card,
           {
             backgroundColor: isLamp ? colors.card : '#FFFFFF',
-            borderColor: isLamp ? 'rgba(245, 166, 35, 0.24)' : colors.hairline,
+            borderColor: isLamp ? 'rgba(245, 166, 35, 0.22)' : colors.hairline,
             borderRadius: radius.card + 4,
             padding: compact ? spacing.lg : spacing.xl,
             shadowColor: '#000',
-            shadowOffset: { width: 0, height: 8 },
-            shadowOpacity: isLamp ? 0.45 : 0.08,
-            shadowRadius: 20,
-            elevation: 6,
+            shadowOffset: { width: 0, height: 6 },
+            shadowOpacity: isLamp ? 0.4 : 0.07,
+            shadowRadius: 18,
+            elevation: 5,
           },
         ]}
       >
@@ -243,39 +264,41 @@ export function AuthCard({
         </View>
 
         {/* Card Title & Description */}
-        <Text
-          style={[
-            typography.wordmark,
-            {
-              color: colors.ink,
-              fontSize: compact ? 20 : 23,
-              lineHeight: 28,
-              textAlign: 'center',
-              marginTop: spacing.xs,
-            },
-          ]}
-        >
-          {title || (mode === 'signin' ? 'Welcome Back' : 'Create an Account')}
-        </Text>
+        <Animated.View layout={LinearTransition.springify().damping(22).stiffness(180)} style={{ alignItems: 'center' }}>
+          <Text
+            style={[
+              typography.wordmark,
+              {
+                color: colors.ink,
+                fontSize: compact ? 20 : 23,
+                lineHeight: 28,
+                textAlign: 'center',
+                marginTop: spacing.xs,
+              },
+            ]}
+          >
+            {title || (mode === 'signin' ? 'Welcome Back' : 'Create an Account')}
+          </Text>
 
-        <Text
-          style={[
-            typography.metadataCaption,
-            {
-              color: colors.fawn,
-              textAlign: 'center',
-              marginTop: 4,
-              marginBottom: spacing.lg,
-              lineHeight: 18,
-              fontSize: 12,
-            },
-          ]}
-        >
-          {subtitle ||
-            (mode === 'signin'
-              ? 'Sign in to access your cloud reading streak, vocabulary notebook & library.'
-              : 'Save reading progress, access 50 daily translations & sync across devices.')}
-        </Text>
+          <Text
+            style={[
+              typography.metadataCaption,
+              {
+                color: colors.fawn,
+                textAlign: 'center',
+                marginTop: 4,
+                marginBottom: spacing.lg,
+                lineHeight: 18,
+                fontSize: 12,
+              },
+            ]}
+          >
+            {subtitle ||
+              (mode === 'signin'
+                ? 'Sign in to access your cloud reading streak, vocabulary notebook & library.'
+                : 'Save reading progress, access 50 daily translations & sync across devices.')}
+          </Text>
+        </Animated.View>
 
         {/* Segmented Mode Switcher (Sign In vs Create Account) */}
         {step === 'form' ? (
@@ -306,7 +329,7 @@ export function AuthCard({
                   {
                     color: mode === 'signin' ? colors.primaryDark : colors.fawn,
                     fontSize: 13,
-                    fontWeight: mode === 'signin' ? '600' : '400',
+                    fontWeight: mode === 'signin' ? '700' : '400',
                   },
                 ]}
               >
@@ -330,7 +353,7 @@ export function AuthCard({
                   {
                     color: mode === 'signup' ? colors.primaryDark : colors.fawn,
                     fontSize: 13,
-                    fontWeight: mode === 'signup' ? '600' : '400',
+                    fontWeight: mode === 'signup' ? '700' : '400',
                   },
                 ]}
               >
@@ -441,34 +464,84 @@ export function AuthCard({
 
         {/* Step 1: Email Form */}
         {step === 'form' ? (
-          <View style={styles.formContainer}>
+          <Animated.View
+            layout={LinearTransition.springify().damping(22).stiffness(180)}
+            style={styles.formContainer}
+          >
             {mode === 'signup' ? (
-              <View style={styles.inputGroup}>
-                <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginBottom: 5 }]}>
-                  YOUR READING NAME
-                </Text>
-                <TextInput
-                  style={[
-                    styles.input,
-                    {
-                      borderColor: colors.hairline,
-                      color: colors.ink,
-                      backgroundColor: isLamp ? '#1E1B22' : colors.parchment,
-                      borderRadius: radius.card,
-                    },
-                  ]}
-                  placeholder="e.g. Ishmael or Eleanor"
-                  placeholderTextColor={colors.straw}
-                  autoCapitalize="words"
-                  autoCorrect={false}
-                  value={displayName}
-                  onChangeText={(val) => {
-                    setDisplayName(val);
-                    if (errorMessage) setErrorMessage(null);
-                  }}
-                  editable={!emailLoading}
-                />
-              </View>
+              <Animated.View
+                entering={FadeIn.duration(220)}
+                exiting={FadeOut.duration(160)}
+                layout={LinearTransition.springify().damping(22).stiffness(180)}
+              >
+                <View style={styles.inputGroup}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <Text style={[typography.eyebrowLabel, { color: colors.fawn, letterSpacing: 0.8 }]}>
+                      CHOOSE YOUR AVATAR
+                    </Text>
+                    <Text style={[typography.metadataCaption, { color: colors.flameAmber, fontSize: 11, fontWeight: '700' }]}>
+                      {PRESET_AVATARS.find((p) => p.id === selectedAvatar)?.label}
+                    </Text>
+                  </View>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.avatarScrollRow}
+                  >
+                    {PRESET_AVATARS.map((preset) => {
+                      const isSelected = selectedAvatar === preset.id;
+                      return (
+                        <Pressable
+                          key={preset.id}
+                          onPress={() => {
+                            void Haptics.selectionAsync();
+                            setSelectedAvatar(preset.id);
+                          }}
+                          style={[
+                            styles.avatarOption,
+                            {
+                              borderColor: isSelected ? colors.flameAmber : 'transparent',
+                              borderWidth: 2,
+                            },
+                          ]}
+                          accessibilityRole="radio"
+                          accessibilityState={{ selected: isSelected }}
+                          accessibilityLabel={preset.label}
+                        >
+                          <UserAvatar avatar={preset.id} size={40} focused={isSelected} />
+                        </Pressable>
+                      );
+                    })}
+                  </ScrollView>
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginBottom: 5, letterSpacing: 0.8 }]}>
+                    YOUR READING NAME
+                  </Text>
+                  <TextInput
+                    style={[
+                      styles.input,
+                      {
+                        borderColor: colors.hairline,
+                        color: colors.ink,
+                        backgroundColor: isLamp ? '#1E1B22' : colors.parchment,
+                        borderRadius: radius.card,
+                      },
+                    ]}
+                    placeholder="e.g. Ishmael or Eleanor"
+                    placeholderTextColor={colors.straw}
+                    autoCapitalize="words"
+                    autoCorrect={false}
+                    value={displayName}
+                    onChangeText={(val) => {
+                      setDisplayName(val);
+                      if (errorMessage) setErrorMessage(null);
+                    }}
+                    editable={!emailLoading}
+                  />
+                </View>
+              </Animated.View>
             ) : null}
 
             <View style={styles.inputGroup}>
@@ -531,10 +604,14 @@ export function AuthCard({
                 </Text>
               )}
             </Pressable>
-          </View>
+          </Animated.View>
         ) : (
           /* Step 2: OTP Verification */
-          <View style={styles.formContainer}>
+          <Animated.View
+            entering={FadeIn.duration(220)}
+            layout={LinearTransition.springify().damping(22).stiffness(180)}
+            style={styles.formContainer}
+          >
             <View style={styles.inputGroup}>
               <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginBottom: 5 }]}>
                 6-DIGIT VERIFICATION CODE
@@ -627,7 +704,7 @@ export function AuthCard({
                 </Text>
               </Pressable>
             </View>
-          </View>
+          </Animated.View>
         )}
 
         {/* Skip / Continue as Guest Option */}
@@ -690,7 +767,7 @@ export function AuthCard({
         >
           By continuing, you agree to Lamplight's Terms of Service and Privacy Policy.
         </Text>
-      </View>
+      </Animated.View>
     </KeyboardAvoidingView>
   );
 }
@@ -702,12 +779,12 @@ const styles = StyleSheet.create({
   },
   card: {
     width: '100%',
-    maxWidth: 380,
+    maxWidth: 390,
     borderWidth: 1,
   },
   headerIconRow: {
     alignItems: 'center',
-    marginBottom: 6,
+    marginBottom: 8,
   },
   segmentedContainer: {
     flexDirection: 'row',
@@ -716,7 +793,7 @@ const styles = StyleSheet.create({
   },
   segmentTab: {
     flex: 1,
-    paddingVertical: 7,
+    paddingVertical: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -728,7 +805,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
+    shadowOpacity: 0.05,
     shadowRadius: 3,
     elevation: 1,
   },
@@ -745,10 +822,21 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   inputGroup: {
-    marginBottom: 12,
+    marginBottom: 13,
+  },
+  avatarScrollRow: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 2,
+    alignItems: 'center',
+  },
+  avatarOption: {
+    padding: 2,
+    borderRadius: 24,
   },
   input: {
-    height: 44,
+    height: 46,
     borderWidth: 1,
     paddingHorizontal: 14,
     fontSize: 14,
@@ -760,7 +848,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   primaryButton: {
-    height: 44,
+    height: 46,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 6,

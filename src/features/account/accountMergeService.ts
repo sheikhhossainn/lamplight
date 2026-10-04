@@ -17,6 +17,7 @@ export type LocalDataSnapshot = {
   booksCount: number;
   shelvesCount: number;
   reviewEventsCount: number;
+  readingSessionsCount: number;
   timestamp: number;
   data: {
     savedWords: any[];
@@ -25,6 +26,7 @@ export type LocalDataSnapshot = {
     shelves: any[];
     shelfItems: any[];
     reviewEvents: any[];
+    readingSessions: any[];
   };
 };
 
@@ -35,7 +37,7 @@ export type LocalDataSnapshot = {
 export async function snapshotLocalData(): Promise<LocalDataSnapshot> {
   const db = await getDb();
 
-  const [savedWords, highlights, readingPositions, shelves, shelfItems, reviewEvents] =
+  const [savedWords, highlights, readingPositions, shelves, shelfItems, reviewEvents, readingSessions] =
     await Promise.all([
       db.getAllAsync<any>('SELECT * FROM saved_words'),
       db.getAllAsync<any>('SELECT * FROM highlights'),
@@ -43,6 +45,7 @@ export async function snapshotLocalData(): Promise<LocalDataSnapshot> {
       db.getAllAsync<any>('SELECT * FROM shelves'),
       db.getAllAsync<any>('SELECT * FROM shelf_items'),
       db.getAllAsync<any>('SELECT * FROM review_events'),
+      db.getAllAsync<any>('SELECT * FROM reading_sessions'),
     ]);
 
   return {
@@ -51,6 +54,7 @@ export async function snapshotLocalData(): Promise<LocalDataSnapshot> {
     booksCount: readingPositions.length,
     shelvesCount: shelves.length,
     reviewEventsCount: reviewEvents.length,
+    readingSessionsCount: readingSessions.length,
     timestamp: Date.now(),
     data: {
       savedWords,
@@ -59,6 +63,7 @@ export async function snapshotLocalData(): Promise<LocalDataSnapshot> {
       shelves,
       shelfItems,
       reviewEvents,
+      readingSessions,
     },
   };
 }
@@ -422,6 +427,27 @@ export async function executeMergeForSession(
             [cloudShelfItem.shelf_id, cloudShelfItem.book_id, new Date(cloudShelfItem.added_at ?? Date.now()).getTime()],
           );
         }
+      }
+
+      // 4.5 Merge Reading Sessions: preserve guest streaks and reading records in cloud
+      for (const localSession of snapshot.data.readingSessions ?? []) {
+        await enqueueMutation(
+          {
+            entityType: 'reading_session',
+            entityId: localSession.id,
+            operation: 'upsert',
+            payload: {
+              id: localSession.id,
+              bookId: localSession.book_id,
+              startedAt: localSession.started_at,
+              endedAt: localSession.ended_at,
+              durationSeconds: localSession.duration_seconds,
+              pagesRead: localSession.pages_read,
+              chapterIndex: localSession.chapter_index,
+            },
+          },
+          tx,
+        );
       }
     });
 
