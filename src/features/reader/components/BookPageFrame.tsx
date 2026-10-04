@@ -49,7 +49,14 @@ const NIGHT_TONES = {
   liftSheen: 'rgba(200, 215, 240, 0.08)',
 };
 
+import { usePageStyle } from '@/features/settings/pageStylePrefs';
+import { getPageStyleConfig } from '@/features/reader/pageStyles';
+
 export function BookPageFrame({ children, themeProgress }: BookPageFrameProps) {
+  const pageStyleId = usePageStyle();
+  const pageStyle = getPageStyleConfig(pageStyleId);
+  const bg = pageStyle.background;
+
   const dayLayerStyle = useAnimatedStyle(() => ({
     opacity: 1 - themeProgress.value,
   }));
@@ -59,23 +66,38 @@ export function BookPageFrame({ children, themeProgress }: BookPageFrameProps) {
   }));
 
   return (
-    <View style={[styles.container, { backgroundColor: LamplightColor.primaryDark }]}>
-      {/* Day Mode Layer: Full-bleed authentic 1890s cotton-rag paper texture + Deckle stack + Leather rim */}
-      <Animated.View style={[StyleSheet.absoluteFill, dayLayerStyle]} pointerEvents="none">
+    <View style={[styles.container, { backgroundColor: bg.lampBackground }]}>
+      {/* Day Mode Layer: Page-specific background + authentic paper texture + deckle stack */}
+      <Animated.View
+        style={[
+          StyleSheet.absoluteFill,
+          dayLayerStyle,
+          { backgroundColor: bg.dayBackground },
+        ]}
+        pointerEvents="none"
+      >
         <Image
           source={ANTIQUE_PAPER_DAY}
-          style={StyleSheet.absoluteFill}
+          style={[StyleSheet.absoluteFill, { opacity: 0.55 }]}
           contentFit="cover"
           priority="high"
           cachePolicy="memory-disk"
         />
 
+        {/* Ambient paper tint for this specific page atmosphere */}
+        <View
+          style={[
+            StyleSheet.absoluteFill,
+            { backgroundColor: bg.paperTint },
+          ]}
+        />
+
         {/* Outer book cover rim peeking behind the stacked leaves along the right */}
         <View style={[styles.coverRim, { backgroundColor: DAY_TONES.coverRim }]} />
 
-        {/* Stacked paper deckle leaf layers along right margin (fore-edge paper depth) */}
+        {/* Stacked paper deckle leaf layers along right margin */}
         <View style={styles.rightDeckleStack}>
-          <View style={[styles.leafLine, { backgroundColor: DAY_TONES.leaf4, right: 0 }]} />
+          <View style={[styles.leafLine, { backgroundColor: bg.dayAccent, opacity: 0.75, right: 0 }]} />
           <View style={[styles.leafLine, { backgroundColor: DAY_TONES.leaf3, right: 1.5 }]} />
           <View style={[styles.leafLine, { backgroundColor: DAY_TONES.leaf2, right: 3 }]} />
           <View style={[styles.leafLine, { backgroundColor: DAY_TONES.leaf1, right: 4.5 }]} />
@@ -84,51 +106,49 @@ export function BookPageFrame({ children, themeProgress }: BookPageFrameProps) {
 
         {/* Left Spine Gutter (Curved Open-Book Binding Roll-off) */}
         <View style={styles.leftSpineShadow}>
-          <View style={[styles.spineBand4, { backgroundColor: DAY_TONES.spineBand4 }]} />
-          <View style={[styles.spineBand3, { backgroundColor: DAY_TONES.spineBand3 }]} />
-          <View style={[styles.spineBand2, { backgroundColor: DAY_TONES.spineBand2 }]} />
-          <View style={[styles.spineBand1, { backgroundColor: DAY_TONES.spineBand1 }]} />
-          <View style={[styles.spineCrease, { backgroundColor: DAY_TONES.spineCrease }]} />
+          <View style={[styles.spineBand4, { backgroundColor: bg.daySpineColor, opacity: 0.15 }]} />
+          <View style={[styles.spineBand3, { backgroundColor: bg.daySpineColor, opacity: 0.3 }]} />
+          <View style={[styles.spineBand2, { backgroundColor: bg.daySpineColor, opacity: 0.55 }]} />
+          <View style={[styles.spineBand1, { backgroundColor: bg.daySpineColor, opacity: 0.8 }]} />
+          <View style={[styles.spineCrease, { backgroundColor: bg.daySpineColor }]} />
         </View>
 
         {/* Turning Edge Lift Sheen */}
         <View style={[styles.turningEdgeCurl, { backgroundColor: DAY_TONES.liftSheen }]} />
       </Animated.View>
 
-      {/* Night (Lamp) Mode Layer: Same antique paper under moonlight */}
+      {/* Night (Lamp) Mode Layer: Page-specific night background */}
       <Animated.View
         style={[
           StyleSheet.absoluteFill,
           nightLayerStyle,
-          { backgroundColor: '#080A12' },
+          { backgroundColor: bg.lampBackground },
         ]}
         pointerEvents="none"
       >
-        {/* The same antique paper — high opacity so the grain, fibers and texture are all visible */}
         <Image
           source={ANTIQUE_PAPER_DAY}
-          style={[StyleSheet.absoluteFill, { opacity: 0.82 }]}
+          style={[StyleSheet.absoluteFill, { opacity: 0.35 }]}
           contentFit="cover"
           priority="high"
           cachePolicy="memory-disk"
         />
 
-        {/* Cool indigo-midnight wash — dims the warm amber of the paper to a moonlit silver-grey.
-            Moonlight doesn't kill texture, it shifts color temperature and reduces brightness. */}
+        {/* Themed night wash */}
         <View
           style={[
             StyleSheet.absoluteFill,
-            { backgroundColor: 'rgba(10, 14, 26, 0.70)' },
+            { backgroundColor: bg.lampPaperTint },
           ]}
         />
 
-        {/* Soft silver moonlight glow from slightly above center — like a window above the reading chair */}
+        {/* Themed atmosphere glow */}
         <Svg width="100%" height="100%" style={StyleSheet.absoluteFill}>
           <Defs>
             <RadialGradient id="moonGlow" cx="50%" cy="30%" rx="55%" ry="50%">
-              <Stop offset="0%"  stopColor="#C8D8F0" stopOpacity="0.12" />
-              <Stop offset="50%" stopColor="#A0B4D8" stopOpacity="0.05" />
-              <Stop offset="100%" stopColor="#0C0E18" stopOpacity="0" />
+              <Stop offset="0%" stopColor={bg.lampAccent} stopOpacity="0.22" />
+              <Stop offset="60%" stopColor={bg.lampBackground} stopOpacity="0.08" />
+              <Stop offset="100%" stopColor={bg.lampBackground} stopOpacity="0" />
             </RadialGradient>
           </Defs>
           <Rect x="0" y="0" width="100%" height="100%" fill="url(#moonGlow)" />
@@ -137,9 +157,9 @@ export function BookPageFrame({ children, themeProgress }: BookPageFrameProps) {
         {/* Outer book cover rim in cool dark slate */}
         <View style={[styles.coverRim, { backgroundColor: NIGHT_TONES.coverRim }]} />
 
-        {/* Stacked paper deckle leaf layers — cool slate tones */}
+        {/* Stacked paper deckle leaf layers */}
         <View style={styles.rightDeckleStack}>
-          <View style={[styles.leafLine, { backgroundColor: NIGHT_TONES.leaf4, right: 0 }]} />
+          <View style={[styles.leafLine, { backgroundColor: bg.lampAccent, opacity: 0.65, right: 0 }]} />
           <View style={[styles.leafLine, { backgroundColor: NIGHT_TONES.leaf3, right: 1.5 }]} />
           <View style={[styles.leafLine, { backgroundColor: NIGHT_TONES.leaf2, right: 3 }]} />
           <View style={[styles.leafLine, { backgroundColor: NIGHT_TONES.leaf1, right: 4.5 }]} />
@@ -148,10 +168,10 @@ export function BookPageFrame({ children, themeProgress }: BookPageFrameProps) {
 
         {/* Left Spine Gutter */}
         <View style={[styles.leftSpineShadow, styles.nightSpineShadow]}>
-          <View style={[styles.spineBand3, { backgroundColor: NIGHT_TONES.spineBand3 }]} />
-          <View style={[styles.spineBand2, { backgroundColor: NIGHT_TONES.spineBand2 }]} />
-          <View style={[styles.spineBand1, { backgroundColor: NIGHT_TONES.spineBand1 }]} />
-          <View style={[styles.spineCrease, { backgroundColor: NIGHT_TONES.spineCrease }]} />
+          <View style={[styles.spineBand3, { backgroundColor: bg.lampSpineColor, opacity: 0.25 }]} />
+          <View style={[styles.spineBand2, { backgroundColor: bg.lampSpineColor, opacity: 0.45 }]} />
+          <View style={[styles.spineBand1, { backgroundColor: bg.lampSpineColor, opacity: 0.7 }]} />
+          <View style={[styles.spineCrease, { backgroundColor: bg.lampSpineColor }]} />
         </View>
 
         {/* Cool silver glint on right turning edge */}
@@ -160,7 +180,6 @@ export function BookPageFrame({ children, themeProgress }: BookPageFrameProps) {
 
       {/* Page Content Container (Typography, Selection Handles, Word Taps) */}
       <View style={styles.contentWrap}>{children}</View>
-
     </View>
   );
 }

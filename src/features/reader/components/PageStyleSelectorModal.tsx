@@ -38,7 +38,8 @@ export function PageStyleSelectorModal({
   onClose,
   isBangla = false,
 }: PageStyleSelectorModalProps) {
-  const { colors, typography, spacing, radius } = useTheme();
+  const { colors, typography, spacing, radius, scheme } = useTheme();
+  const isLamp = scheme === 'lamp';
   const insets = useSafeAreaInsets();
   const currentStyleId = usePageStyle();
   const typographyPrefs = useReadingTypography();
@@ -340,6 +341,40 @@ export function PageStyleSelectorModal({
                           {style.isPremium ? (isPremium ? 'PREMIUM' : '★ PREMIUM') : 'FREE'}
                         </Text>
                       </View>
+
+                      {/* Paper Swatch Badge */}
+                      <View
+                        style={[
+                          styles.swatchPill,
+                          {
+                            backgroundColor: isLamp ? style.background.lampBackground : style.background.dayBackground,
+                            borderColor: isLamp ? style.background.lampSpineColor : style.background.daySpineColor,
+                            borderRadius: radius.pill,
+                          },
+                        ]}
+                      >
+                        <View
+                          style={{
+                            width: 6,
+                            height: 6,
+                            borderRadius: 3,
+                            backgroundColor: isLamp ? style.background.lampAccent : style.background.dayAccent,
+                            marginRight: 4,
+                          }}
+                        />
+                        <Text
+                          style={[
+                            typography.eyebrowLabel,
+                            {
+                              color: isLamp ? style.background.lampTextColor : style.background.dayTextColor,
+                              fontSize: 8.5,
+                              fontWeight: '600',
+                            },
+                          ]}
+                        >
+                          {style.background.swatchLabel}
+                        </Text>
+                      </View>
                     </View>
 
                     {isSelected ? (
@@ -363,14 +398,15 @@ export function PageStyleSelectorModal({
                     {style.description}
                   </Text>
 
-                  {/* Visual typography sample */}
+                  {/* Visual typography sample with authentic page theme background */}
                   <View
                     style={[
                       styles.sampleBox,
                       {
-                        backgroundColor: colors.card,
-                        borderColor: isSelected ? `${colors.flameAmber}44` : colors.hairline,
+                        backgroundColor: isLamp ? style.background.lampBackground : style.background.dayBackground,
+                        borderColor: isSelected ? colors.flameAmber : (isLamp ? style.background.lampSpineColor : style.background.daySpineColor),
                         borderRadius: radius.bookCoverOuter,
+                        borderWidth: 1.5,
                       },
                     ]}
                   >
@@ -380,7 +416,7 @@ export function PageStyleSelectorModal({
                         fontSize: effectiveFontSize,
                         lineHeight: effectiveLineHeight,
                         letterSpacing: isBangla ? style.banglaLetterSpacing : style.letterSpacing,
-                        color: colors.ink,
+                        color: isLamp ? style.background.lampTextColor : style.background.dayTextColor,
                       }}
                       numberOfLines={2}
                     >
@@ -449,6 +485,13 @@ const styles = StyleSheet.create({
   tierBadge: {
     paddingHorizontal: 7,
     paddingVertical: 2,
+  },
+  swatchPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderWidth: 1,
   },
   checkCircle: {
     width: 22,

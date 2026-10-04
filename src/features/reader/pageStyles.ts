@@ -5,12 +5,31 @@ export type PageStyleId =
   | 'modern'
   | 'manuscript'
   | 'editorial'
+  | 'sage'
+  | 'kraft'
   | 'oxford'
   | 'vellum'
   | 'nocturne'
-  | 'zen';
+  | 'zen'
+  | 'dusk'
+  | 'nordic';
 
 export type PageStyleTier = 'free' | 'premium';
+
+export type PageThemeBackground = {
+  dayBackground: string;
+  dayTextColor: string;
+  daySpineColor: string;
+  dayAccent: string;
+  lampBackground: string;
+  lampTextColor: string;
+  lampSpineColor: string;
+  lampAccent: string;
+  paperTint: string;
+  lampPaperTint: string;
+  swatchLabel: string;
+  swatchColor: string;
+};
 
 export type PageStyleConfig = {
   id: PageStyleId;
@@ -34,8 +53,9 @@ export type PageStyleConfig = {
   banglaFontSize: number;
   banglaLineHeight: number;
   banglaLetterSpacing: number;
-  // Aesthetic accents
+  // Aesthetic accents & palette
   borderAccentOpacity: number;
+  background: PageThemeBackground;
 };
 
 export const PAGE_STYLES: Record<PageStyleId, PageStyleConfig> = {
@@ -46,7 +66,7 @@ export const PAGE_STYLES: Record<PageStyleId, PageStyleConfig> = {
     tag: '1890s SERIF',
     tier: 'free',
     isPremium: false,
-    description: 'Timeless letterpress typography modeled after 1890s hardcovers.',
+    description: 'Timeless letterpress typography on warm 1890s hardcover parchment.',
     previewSample: 'The quiet glow of ink upon parchment.',
     previewSampleBangla: 'ধীর আলোয় মুদ্রিত পাতার শান্তি।',
     englishFont: FontFamily.loraRegular,
@@ -60,6 +80,20 @@ export const PAGE_STYLES: Record<PageStyleId, PageStyleConfig> = {
     banglaLineHeight: 34,
     banglaLetterSpacing: 0,
     borderAccentOpacity: 0.08,
+    background: {
+      dayBackground: '#F5EDE1',
+      dayTextColor: '#1C1B1E',
+      daySpineColor: 'rgba(38, 25, 14, 0.35)',
+      dayAccent: '#D8C5B0',
+      lampBackground: '#1C1B1E',
+      lampTextColor: '#F5EDE1',
+      lampSpineColor: 'rgba(10, 14, 28, 0.70)',
+      lampAccent: '#302A24',
+      paperTint: 'rgba(245, 237, 225, 0.72)',
+      lampPaperTint: 'rgba(28, 27, 30, 0.85)',
+      swatchLabel: 'Parchment',
+      swatchColor: '#F5EDE1',
+    },
   },
   modern: {
     id: 'modern',
@@ -68,7 +102,7 @@ export const PAGE_STYLES: Record<PageStyleId, PageStyleConfig> = {
     tag: 'SANCTUARY SANS',
     tier: 'free',
     isPremium: false,
-    description: 'Minimalist contemporary typography for clear, distraction-free focus.',
+    description: 'Minimalist contemporary typography on serene alabaster for clear focus.',
     previewSample: 'The quiet glow of ink upon parchment.',
     previewSampleBangla: 'স্বচ্ছ ও শান্ত আধুনিক পাঠের অভিজ্ঞতা।',
     englishFont: FontFamily.manropeRegular,
@@ -82,6 +116,20 @@ export const PAGE_STYLES: Record<PageStyleId, PageStyleConfig> = {
     banglaLineHeight: 33,
     banglaLetterSpacing: 0.1,
     borderAccentOpacity: 0.04,
+    background: {
+      dayBackground: '#F9F9F8',
+      dayTextColor: '#1A1918',
+      daySpineColor: 'rgba(20, 20, 20, 0.14)',
+      dayAccent: '#EAE8E4',
+      lampBackground: '#141416',
+      lampTextColor: '#E8E6E3',
+      lampSpineColor: 'rgba(8, 8, 12, 0.65)',
+      lampAccent: '#222226',
+      paperTint: 'rgba(249, 249, 248, 0.90)',
+      lampPaperTint: 'rgba(20, 20, 22, 0.92)',
+      swatchLabel: 'Alabaster',
+      swatchColor: '#F9F9F8',
+    },
   },
   manuscript: {
     id: 'manuscript',
@@ -90,7 +138,7 @@ export const PAGE_STYLES: Record<PageStyleId, PageStyleConfig> = {
     tag: 'HANDWRITTEN',
     tier: 'free',
     isPremium: false,
-    description: 'Warm, intimate handwritten ink with natural cursive curves.',
+    description: 'Warm, intimate handwritten ink with natural cursive curves on honey parchment.',
     previewSample: 'The quiet glow of ink upon parchment.',
     previewSampleBangla: 'ধীর আলোয় হাতে লেখা পাতার শান্তি।',
     englishFont: FontFamily.kalamRegular,
@@ -104,6 +152,20 @@ export const PAGE_STYLES: Record<PageStyleId, PageStyleConfig> = {
     banglaLineHeight: 35,
     banglaLetterSpacing: 0.2,
     borderAccentOpacity: 0.18,
+    background: {
+      dayBackground: '#F4EBD9',
+      dayTextColor: '#2B2117',
+      daySpineColor: 'rgba(60, 35, 15, 0.38)',
+      dayAccent: '#E0CEB2',
+      lampBackground: '#1E1914',
+      lampTextColor: '#F4E5CF',
+      lampSpineColor: 'rgba(18, 12, 8, 0.75)',
+      lampAccent: '#33291F',
+      paperTint: 'rgba(244, 235, 217, 0.82)',
+      lampPaperTint: 'rgba(30, 25, 20, 0.88)',
+      swatchLabel: 'Honey Vellum',
+      swatchColor: '#F4EBD9',
+    },
   },
   editorial: {
     id: 'editorial',
@@ -112,7 +174,7 @@ export const PAGE_STYLES: Record<PageStyleId, PageStyleConfig> = {
     tag: 'LITERARY JOURNAL',
     tier: 'free',
     isPremium: false,
-    description: 'Refined literary journal layout with generous leading and delicate balance.',
+    description: 'Refined literary journal layout with generous leading on delicate eggshell paper.',
     previewSample: 'The quiet glow of ink upon parchment.',
     previewSampleBangla: 'পরিমার্জিত সাহিত্য পত্রিকার মার্জিত রূপ।',
     englishFont: FontFamily.loraRegular,
@@ -126,6 +188,92 @@ export const PAGE_STYLES: Record<PageStyleId, PageStyleConfig> = {
     banglaLineHeight: 35,
     banglaLetterSpacing: 0.25,
     borderAccentOpacity: 0.12,
+    background: {
+      dayBackground: '#F7F4EE',
+      dayTextColor: '#191816',
+      daySpineColor: 'rgba(30, 25, 20, 0.22)',
+      dayAccent: '#E4DFD5',
+      lampBackground: '#1A191D',
+      lampTextColor: '#EEEAE1',
+      lampSpineColor: 'rgba(12, 10, 16, 0.68)',
+      lampAccent: '#2A292F',
+      paperTint: 'rgba(247, 244, 238, 0.85)',
+      lampPaperTint: 'rgba(26, 25, 29, 0.90)',
+      swatchLabel: 'Eggshell',
+      swatchColor: '#F7F4EE',
+    },
+  },
+  sage: {
+    id: 'sage',
+    name: 'Sage Botanica',
+    nameBangla: 'ঋষি পাতা (Sage Botanica)',
+    tag: 'SOOTHING SAGE',
+    tier: 'free',
+    isPremium: false,
+    description: 'Calming eucalyptus green paper designed to alleviate eye strain during marathon reading.',
+    previewSample: 'The quiet glow of ink upon parchment.',
+    previewSampleBangla: 'ইউক্যালিপটাস পাতার স্নিগ্ধতায় ক্লান্তিহীন পাঠ।',
+    englishFont: FontFamily.loraRegular,
+    englishBoldFont: FontFamily.loraSemiBold,
+    banglaFont: FontFamily.loraRegular,
+    banglaBoldFont: FontFamily.loraSemiBold,
+    fontSize: 17.5,
+    lineHeight: 33,
+    letterSpacing: 0.1,
+    banglaFontSize: 18,
+    banglaLineHeight: 34,
+    banglaLetterSpacing: 0.05,
+    borderAccentOpacity: 0.10,
+    background: {
+      dayBackground: '#EAF1E7',
+      dayTextColor: '#17231A',
+      daySpineColor: 'rgba(15, 35, 20, 0.28)',
+      dayAccent: '#C9DBC6',
+      lampBackground: '#101B14',
+      lampTextColor: '#DCE7DD',
+      lampSpineColor: 'rgba(8, 18, 12, 0.72)',
+      lampAccent: '#1E2F24',
+      paperTint: 'rgba(234, 241, 231, 0.86)',
+      lampPaperTint: 'rgba(16, 27, 20, 0.92)',
+      swatchLabel: 'Sage Tea',
+      swatchColor: '#EAF1E7',
+    },
+  },
+  kraft: {
+    id: 'kraft',
+    name: 'Cafe Kraft',
+    nameBangla: 'ক্যাফে ক্রাফট (Cafe Kraft)',
+    tag: 'RUSTIC KRAFT',
+    tier: 'free',
+    isPremium: false,
+    description: 'Rustic unbleached kraft paper paired with warm artisan espresso ink.',
+    previewSample: 'The quiet glow of ink upon parchment.',
+    previewSampleBangla: 'হাতে তৈরি খাঁটি ক্রাফট কাগজের উষ্ণ পরশ।',
+    englishFont: FontFamily.kalamRegular,
+    englishBoldFont: FontFamily.kalamBold,
+    banglaFont: FontFamily.atmaRegular,
+    banglaBoldFont: FontFamily.atmaSemiBold,
+    fontSize: 18,
+    lineHeight: 34,
+    letterSpacing: 0.2,
+    banglaFontSize: 18.5,
+    banglaLineHeight: 35,
+    banglaLetterSpacing: 0.15,
+    borderAccentOpacity: 0.16,
+    background: {
+      dayBackground: '#ECE0CD',
+      dayTextColor: '#281C10',
+      daySpineColor: 'rgba(55, 35, 15, 0.40)',
+      dayAccent: '#D6C0A0',
+      lampBackground: '#1F1811',
+      lampTextColor: '#EEDCC6',
+      lampSpineColor: 'rgba(15, 10, 6, 0.75)',
+      lampAccent: '#332619',
+      paperTint: 'rgba(236, 224, 205, 0.84)',
+      lampPaperTint: 'rgba(31, 24, 17, 0.90)',
+      swatchLabel: 'Espresso Kraft',
+      swatchColor: '#ECE0CD',
+    },
   },
   oxford: {
     id: 'oxford',
@@ -134,7 +282,7 @@ export const PAGE_STYLES: Record<PageStyleId, PageStyleConfig> = {
     tag: 'SCHOLARLY SERIF',
     tier: 'premium',
     isPremium: true,
-    description: 'Prestigious academic edition with authoritative serif weight and distinguished cadence.',
+    description: 'Prestigious academic edition on clothbound heavy-stock paper and deep indigo nights.',
     previewSample: 'The quiet glow of ink upon parchment.',
     previewSampleBangla: 'গবেষণামূলক ও ধ্রুপদী প্রকাশনার গম্ভীর ছন্দ।',
     englishFont: FontFamily.loraSemiBold,
@@ -148,6 +296,20 @@ export const PAGE_STYLES: Record<PageStyleId, PageStyleConfig> = {
     banglaLineHeight: 36,
     banglaLetterSpacing: 0.15,
     borderAccentOpacity: 0.22,
+    background: {
+      dayBackground: '#F0EAE0',
+      dayTextColor: '#1B1816',
+      daySpineColor: 'rgba(25, 30, 45, 0.35)',
+      dayAccent: '#D2C8BA',
+      lampBackground: '#131722',
+      lampTextColor: '#DEE3EF',
+      lampSpineColor: 'rgba(8, 12, 22, 0.78)',
+      lampAccent: '#232B3E',
+      paperTint: 'rgba(240, 234, 224, 0.82)',
+      lampPaperTint: 'rgba(19, 23, 34, 0.92)',
+      swatchLabel: 'Indigo Cream',
+      swatchColor: '#F0EAE0',
+    },
   },
   vellum: {
     id: 'vellum',
@@ -156,7 +318,7 @@ export const PAGE_STYLES: Record<PageStyleId, PageStyleConfig> = {
     tag: 'ANTIQUE ARCHIVE',
     tier: 'premium',
     isPremium: true,
-    description: 'Illuminated archive typography with warm historic ink and breathing room.',
+    description: 'Illuminated gold-burnished archive vellum with rich warm historic ink.',
     previewSample: 'The quiet glow of ink upon parchment.',
     previewSampleBangla: 'স্বর্ণখচিত প্রাচীন পাণ্ডুলিপির মায়াবী ছোঁয়া।',
     englishFont: FontFamily.loraItalicMedium,
@@ -170,6 +332,20 @@ export const PAGE_STYLES: Record<PageStyleId, PageStyleConfig> = {
     banglaLineHeight: 37,
     banglaLetterSpacing: 0.3,
     borderAccentOpacity: 0.28,
+    background: {
+      dayBackground: '#EEE1C5',
+      dayTextColor: '#2D2012',
+      daySpineColor: 'rgba(75, 45, 15, 0.45)',
+      dayAccent: '#D4B886',
+      lampBackground: '#221B11',
+      lampTextColor: '#F7E1BE',
+      lampSpineColor: 'rgba(20, 14, 8, 0.80)',
+      lampAccent: '#3A2E1C',
+      paperTint: 'rgba(238, 225, 197, 0.80)',
+      lampPaperTint: 'rgba(34, 27, 17, 0.88)',
+      swatchLabel: 'Gilded Gold',
+      swatchColor: '#EEE1C5',
+    },
   },
   nocturne: {
     id: 'nocturne',
@@ -178,7 +354,7 @@ export const PAGE_STYLES: Record<PageStyleId, PageStyleConfig> = {
     tag: 'DEEP FOCUS',
     tier: 'premium',
     isPremium: true,
-    description: 'Velvet low-light typography designed specifically for prolonged late-night contemplation.',
+    description: 'Pure midnight velvet obsidian background designed for prolonged late-night contemplation.',
     previewSample: 'The quiet glow of ink upon parchment.',
     previewSampleBangla: 'নিস্তব্ধ রাতের গভীর মনোযোগে পাঠের প্রশান্তি।',
     englishFont: FontFamily.manropeRegular,
@@ -192,6 +368,20 @@ export const PAGE_STYLES: Record<PageStyleId, PageStyleConfig> = {
     banglaLineHeight: 34,
     banglaLetterSpacing: 0.35,
     borderAccentOpacity: 0.1,
+    background: {
+      dayBackground: '#E7E4DF',
+      dayTextColor: '#151518',
+      daySpineColor: 'rgba(10, 15, 30, 0.35)',
+      dayAccent: '#C8C4BD',
+      lampBackground: '#0A0B10',
+      lampTextColor: '#D5D9EC',
+      lampSpineColor: 'rgba(4, 5, 8, 0.85)',
+      lampAccent: '#1B1C28',
+      paperTint: 'rgba(231, 228, 223, 0.85)',
+      lampPaperTint: 'rgba(10, 11, 16, 0.95)',
+      swatchLabel: 'Velvet Slate',
+      swatchColor: '#E7E4DF',
+    },
   },
   zen: {
     id: 'zen',
@@ -214,6 +404,92 @@ export const PAGE_STYLES: Record<PageStyleId, PageStyleConfig> = {
     banglaLineHeight: 39,
     banglaLetterSpacing: 0.45,
     borderAccentOpacity: 0.15,
+    background: {
+      dayBackground: '#F1EDE4',
+      dayTextColor: '#1F221E',
+      daySpineColor: 'rgba(25, 30, 25, 0.25)',
+      dayAccent: '#D8D1C2',
+      lampBackground: '#181B17',
+      lampTextColor: '#E1E4DD',
+      lampSpineColor: 'rgba(10, 14, 10, 0.72)',
+      lampAccent: '#272E25',
+      paperTint: 'rgba(241, 237, 228, 0.84)',
+      lampPaperTint: 'rgba(24, 27, 23, 0.90)',
+      swatchLabel: 'Bamboo Washi',
+      swatchColor: '#F1EDE4',
+    },
+  },
+  dusk: {
+    id: 'dusk',
+    name: 'Dusk Rose',
+    nameBangla: 'সন্ধ্যা গোলাপ (Dusk Rose)',
+    tag: 'WARM BLUSH',
+    tier: 'premium',
+    isPremium: true,
+    description: 'Warm terracotta-tinted antique blush paper with soft twilight plum ambiance.',
+    previewSample: 'The quiet glow of ink upon parchment.',
+    previewSampleBangla: 'গোধূলি আলোর শান্ত গোলাপী পাতার আভা।',
+    englishFont: FontFamily.loraItalicMedium,
+    englishBoldFont: FontFamily.loraSemiBoldItalic,
+    banglaFont: FontFamily.atmaMedium,
+    banglaBoldFont: FontFamily.atmaSemiBold,
+    fontSize: 18,
+    lineHeight: 34.5,
+    letterSpacing: 0.25,
+    banglaFontSize: 18.5,
+    banglaLineHeight: 35.5,
+    banglaLetterSpacing: 0.2,
+    borderAccentOpacity: 0.15,
+    background: {
+      dayBackground: '#F6ECE6',
+      dayTextColor: '#261A20',
+      daySpineColor: 'rgba(40, 20, 30, 0.32)',
+      dayAccent: '#DECAC0',
+      lampBackground: '#1D1418',
+      lampTextColor: '#EEDCE4',
+      lampSpineColor: 'rgba(14, 8, 12, 0.76)',
+      lampAccent: '#322029',
+      paperTint: 'rgba(246, 236, 230, 0.86)',
+      lampPaperTint: 'rgba(29, 20, 24, 0.92)',
+      swatchLabel: 'Rose Quartz',
+      swatchColor: '#F6ECE6',
+    },
+  },
+  nordic: {
+    id: 'nordic',
+    name: 'Nordic Frost',
+    nameBangla: 'নর্ডিক তুষার (Nordic Frost)',
+    tag: 'CRISP ALABASTER',
+    tier: 'premium',
+    isPremium: true,
+    description: 'Pristine cool porcelain Scandinavian snow paper with polar fjord slate night.',
+    previewSample: 'The quiet glow of ink upon parchment.',
+    previewSampleBangla: 'শ্বেতশুভ্র শান্ত পোরসেলিনের নির্মল পাঠ।',
+    englishFont: FontFamily.manropeRegular,
+    englishBoldFont: FontFamily.manropeSemiBold,
+    banglaFont: FontFamily.manropeRegular,
+    banglaBoldFont: FontFamily.manropeSemiBold,
+    fontSize: 17,
+    lineHeight: 32,
+    letterSpacing: 0.2,
+    banglaFontSize: 17.5,
+    banglaLineHeight: 33,
+    banglaLetterSpacing: 0.15,
+    borderAccentOpacity: 0.08,
+    background: {
+      dayBackground: '#FBFCFE',
+      dayTextColor: '#111317',
+      daySpineColor: 'rgba(15, 25, 40, 0.20)',
+      dayAccent: '#E1E6EF',
+      lampBackground: '#11141A',
+      lampTextColor: '#E4E9F2',
+      lampSpineColor: 'rgba(7, 10, 16, 0.80)',
+      lampAccent: '#1F2633',
+      paperTint: 'rgba(251, 252, 254, 0.95)',
+      lampPaperTint: 'rgba(17, 20, 26, 0.94)',
+      swatchLabel: 'Polar Snow',
+      swatchColor: '#FBFCFE',
+    },
   },
 };
 
@@ -222,10 +498,14 @@ export const PAGE_STYLE_LIST: PageStyleConfig[] = [
   PAGE_STYLES.modern,
   PAGE_STYLES.manuscript,
   PAGE_STYLES.editorial,
+  PAGE_STYLES.sage,
+  PAGE_STYLES.kraft,
   PAGE_STYLES.oxford,
   PAGE_STYLES.vellum,
   PAGE_STYLES.nocturne,
   PAGE_STYLES.zen,
+  PAGE_STYLES.dusk,
+  PAGE_STYLES.nordic,
 ];
 
 export function getPageStyleConfig(id: PageStyleId): PageStyleConfig {

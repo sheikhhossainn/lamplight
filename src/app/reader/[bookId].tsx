@@ -2858,19 +2858,29 @@ export default function ReaderScreen() {
           texture so any rapid paging cell boundary never flashes white; dark fades in
           with matching midnight antique paper. */}
       <Animated.View style={[StyleSheet.absoluteFill, readerFadeStyle]}>
-        <View style={StyleSheet.absoluteFill} pointerEvents="none">
-        <Image
-          source={ANTIQUE_PAPER_DAY}
-          style={StyleSheet.absoluteFill}
-          contentFit="cover"
-          priority="high"
-          cachePolicy="memory-disk"
+        <View
+          style={[
+            StyleSheet.absoluteFill,
+            { backgroundColor: isLamp ? pageStyleConfig.background.lampBackground : pageStyleConfig.background.dayBackground },
+          ]}
+          pointerEvents="none"
+        >
+          <Image
+            source={ANTIQUE_PAPER_DAY}
+            style={[StyleSheet.absoluteFill, { opacity: isLamp ? 0.35 : 0.55 }]}
+            contentFit="cover"
+            priority="high"
+            cachePolicy="memory-disk"
+          />
+        </View>
+        <Animated.View
+          style={[
+            StyleSheet.absoluteFill,
+            { backgroundColor: isLamp ? pageStyleConfig.background.lampPaperTint : pageStyleConfig.background.paperTint },
+            darkBgStyle,
+          ]}
+          pointerEvents="none"
         />
-      </View>
-      <Animated.View
-        style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(10, 14, 26, 0.62)' }, darkBgStyle]}
-        pointerEvents="none"
-      />
 
       <Animated.FlatList<ReaderPage>
         ref={listRef}
