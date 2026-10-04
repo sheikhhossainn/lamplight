@@ -17,7 +17,7 @@ import { CultureMotif } from '@/components/CultureMotif';
 import { HomeGuideModal } from '@/components/HomeGuideModal';
 import { WordsIllustration } from '@/components/NotebookIllustrations';
 import { ChevronRightIcon, CloseIcon, QuestionIcon } from '@/components/icons';
-import { getBook, listBanglaBooks, listBooks, type BookRow } from '@/db/repositories/books';
+import { getBook, listBanglaBooks, listBooks, upsertBanglaBook, type BookRow } from '@/db/repositories/books';
 import { getSrsMetrics } from '@/db/repositories/savedWords';
 import { getSetting, setSetting } from '@/db/repositories/appSettings';
 import {
@@ -283,6 +283,18 @@ export default function Homescreen() {
       if (targetReadingLanguage === 'bn') {
         const { books } = await fetchBanglaBooks({ limit: 12 });
         if (books.length > 0) {
+          for (const b of books) {
+            void upsertBanglaBook({
+              id: b.id,
+              title: b.title,
+              author: b.author,
+              synopsis: b.synopsis,
+              totalChapters: b.totalChapters,
+              coverUrl: b.coverUrl,
+              categories: [b.genre],
+              isAvailable: true,
+            }).catch(() => {});
+          }
           const b =
             books.find((bk) => bk.coverUrl && bk.synopsis && bk.synopsis.length > 30) ||
             books[0];

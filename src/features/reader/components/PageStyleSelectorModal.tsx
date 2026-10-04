@@ -38,7 +38,8 @@ export function PageStyleSelectorModal({
   onClose,
   isBangla = false,
 }: PageStyleSelectorModalProps) {
-  const { colors, typography, spacing, radius } = useTheme();
+  const { colors, typography, spacing, radius, scheme } = useTheme();
+  const isLamp = scheme === 'lamp';
   const insets = useSafeAreaInsets();
   const currentStyleId = usePageStyle();
   const typographyPrefs = useReadingTypography();
@@ -125,7 +126,11 @@ export function PageStyleSelectorModal({
           {/* Style cards and typography adjustments */}
           <ScrollView
             showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingVertical: 12, gap: 14 }}
+            contentContainerStyle={{
+              paddingVertical: 12,
+              paddingBottom: Math.max(insets.bottom + 48, 64),
+              gap: 14,
+            }}
           >
             {/* Typography scale & line spacing */}
             <View
@@ -285,62 +290,14 @@ export function PageStyleSelectorModal({
                     pressed && { opacity: 0.9 },
                   ]}
                 >
-                  <View style={styles.cardHeader}>
-                    <View style={styles.cardHeaderLeft}>
-                      <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 16 }]}>
-                        {isBangla ? style.nameBangla : style.name}
-                      </Text>
-                      <View
-                        style={[
-                          styles.tagPill,
-                          {
-                            backgroundColor: isSelected
-                              ? colors.flameAmber
-                              : `${colors.fawn}22`,
-                            borderRadius: radius.pill,
-                          },
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            typography.eyebrowLabel,
-                            {
-                              color: isSelected ? colors.primaryDark : colors.fawn,
-                              fontSize: 9,
-                              fontWeight: '700',
-                            },
-                          ]}
-                        >
-                          {style.tag}
-                        </Text>
-                      </View>
-                      <View
-                        style={[
-                          styles.tierBadge,
-                          {
-                            backgroundColor: style.isPremium
-                              ? (isPremium ? `${colors.flameAmber}22` : colors.flameAmber)
-                              : `${colors.fawn}18`,
-                            borderRadius: radius.pill,
-                          },
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            typography.eyebrowLabel,
-                            {
-                              color: style.isPremium
-                                ? (isPremium ? colors.flameAmber : colors.primaryDark)
-                                : colors.fawn,
-                              fontSize: 9,
-                              fontWeight: '700',
-                            },
-                          ]}
-                        >
-                          {style.isPremium ? (isPremium ? 'PREMIUM' : '★ PREMIUM') : 'FREE'}
-                        </Text>
-                      </View>
-                    </View>
+                  {/* Row 1: Title and Status Indicator */}
+                  <View style={styles.cardTitleRow}>
+                    <Text
+                      style={[typography.uiRowTitle, { color: colors.ink, fontSize: 16, flexShrink: 1 }]}
+                      numberOfLines={1}
+                    >
+                      {isBangla ? style.nameBangla : style.name}
+                    </Text>
 
                     {isSelected ? (
                       <View
@@ -351,7 +308,105 @@ export function PageStyleSelectorModal({
                       >
                         <CheckIcon color={colors.primaryDark} size={14} />
                       </View>
+                    ) : style.isPremium && !isPremium ? (
+                      <View
+                        style={[
+                          styles.lockBadge,
+                          { backgroundColor: `${colors.fawn}18`, borderRadius: radius.pill },
+                        ]}
+                      >
+                        <Text style={{ fontSize: 11, color: colors.fawn }}>🔒</Text>
+                      </View>
                     ) : null}
+                  </View>
+
+                  {/* Row 2: Badges Row - wraps gracefully without clipping or going out of bounds */}
+                  <View style={styles.badgeRow}>
+                    <View
+                      style={[
+                        styles.tagPill,
+                        {
+                          backgroundColor: isSelected
+                            ? colors.flameAmber
+                            : `${colors.fawn}22`,
+                          borderRadius: radius.pill,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          typography.eyebrowLabel,
+                          {
+                            color: isSelected ? colors.primaryDark : colors.fawn,
+                            fontSize: 9,
+                            fontWeight: '700',
+                          },
+                        ]}
+                      >
+                        {style.tag}
+                      </Text>
+                    </View>
+
+                    <View
+                      style={[
+                        styles.tierBadge,
+                        {
+                          backgroundColor: style.isPremium
+                            ? (isPremium ? `${colors.flameAmber}22` : colors.flameAmber)
+                            : `${colors.fawn}18`,
+                          borderRadius: radius.pill,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          typography.eyebrowLabel,
+                          {
+                            color: style.isPremium
+                              ? (isPremium ? colors.flameAmber : colors.primaryDark)
+                              : colors.fawn,
+                            fontSize: 9,
+                            fontWeight: '700',
+                          },
+                        ]}
+                      >
+                        {style.isPremium ? (isPremium ? 'PREMIUM' : '★ PREMIUM') : 'FREE'}
+                      </Text>
+                    </View>
+
+                    {/* Paper Swatch Badge */}
+                    <View
+                      style={[
+                        styles.swatchPill,
+                        {
+                          backgroundColor: isLamp ? style.background.lampBackground : style.background.dayBackground,
+                          borderColor: isLamp ? style.background.lampSpineColor : style.background.daySpineColor,
+                          borderRadius: radius.pill,
+                        },
+                      ]}
+                    >
+                      <View
+                        style={{
+                          width: 7,
+                          height: 7,
+                          borderRadius: 3.5,
+                          backgroundColor: isLamp ? style.background.lampAccent : style.background.dayAccent,
+                          marginRight: 5,
+                        }}
+                      />
+                      <Text
+                        style={[
+                          typography.eyebrowLabel,
+                          {
+                            color: isLamp ? style.background.lampTextColor : style.background.dayTextColor,
+                            fontSize: 8.5,
+                            fontWeight: '700',
+                          },
+                        ]}
+                      >
+                        {style.background.swatchLabel}
+                      </Text>
+                    </View>
                   </View>
 
                   <Text
@@ -363,24 +418,107 @@ export function PageStyleSelectorModal({
                     {style.description}
                   </Text>
 
-                  {/* Visual typography sample */}
+                  {/* Visual typography sample with authentic page theme template styling */}
                   <View
                     style={[
                       styles.sampleBox,
                       {
-                        backgroundColor: colors.card,
-                        borderColor: isSelected ? `${colors.flameAmber}44` : colors.hairline,
+                        backgroundColor: isLamp ? style.background.lampBackground : style.background.dayBackground,
+                        borderColor: isSelected
+                          ? colors.flameAmber
+                          : (isLamp ? style.background.lampSpineColor : style.background.daySpineColor),
                         borderRadius: radius.bookCoverOuter,
+                        borderWidth: 1.5,
                       },
                     ]}
                   >
+                    {/* Template: Newspaper masthead rule */}
+                    {style.background.template === 'newspaper' ? (
+                      <View style={{ marginBottom: 6, borderBottomWidth: 1, borderBottomColor: isLamp ? '#333338' : '#1A1A1A', paddingBottom: 3 }}>
+                        <View style={{ borderTopWidth: 1.5, borderTopColor: isLamp ? '#333338' : '#1A1A1A', paddingTop: 2 }}>
+                          <Text
+                            style={{
+                              fontSize: 8,
+                              letterSpacing: 1.1,
+                              textAlign: 'center',
+                              color: isLamp ? style.background.lampTextColor : style.background.dayTextColor,
+                              fontWeight: '700',
+                              textTransform: 'uppercase',
+                            }}
+                          >
+                            {style.background.previewMasthead}
+                          </Text>
+                        </View>
+                      </View>
+                    ) : null}
+
+                    {/* Template: Oxford gold inner frame */}
+                    {style.background.template === 'oxford' ? (
+                      <View
+                        style={{
+                          position: 'absolute',
+                          top: 4,
+                          left: 4,
+                          right: 4,
+                          bottom: 4,
+                          borderWidth: 1,
+                          borderColor: `${isLamp ? style.background.lampAccent : style.background.dayAccent}66`,
+                          borderRadius: 6,
+                        }}
+                        pointerEvents="none"
+                      />
+                    ) : null}
+
+                    {/* Template: Kraft stitched left binding */}
+                    {style.background.template === 'kraft' ? (
+                      <View
+                        style={{
+                          position: 'absolute',
+                          top: 0,
+                          bottom: 0,
+                          left: 6,
+                          width: 2,
+                          borderLeftWidth: 1.5,
+                          borderLeftColor: isLamp ? 'rgba(238, 214, 191, 0.35)' : 'rgba(100, 60, 25, 0.45)',
+                          borderStyle: 'dashed',
+                        }}
+                        pointerEvents="none"
+                      />
+                    ) : null}
+
+                    {/* Template: Antique left spine shadow */}
+                    {style.background.template === 'antique' ? (
+                      <View
+                        style={{
+                          position: 'absolute',
+                          top: 0,
+                          bottom: 0,
+                          left: 0,
+                          width: 8,
+                          backgroundColor: isLamp ? 'rgba(0,0,0,0.30)' : 'rgba(50,30,10,0.15)',
+                        }}
+                        pointerEvents="none"
+                      />
+                    ) : null}
+
+                    {/* Template: Sage botanical indicator */}
+                    {style.background.template === 'sage' ? (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4 }}>
+                        <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: isLamp ? style.background.lampAccent : style.background.dayAccent }} />
+                        <Text style={{ fontSize: 7.5, letterSpacing: 0.8, color: isLamp ? '#8FBF94' : '#2D5A38', fontWeight: '700' }}>
+                          BOTANICA · EYE COMFORT
+                        </Text>
+                      </View>
+                    ) : null}
+
                     <Text
                       style={{
                         fontFamily: sampleFont,
                         fontSize: effectiveFontSize,
                         lineHeight: effectiveLineHeight,
                         letterSpacing: isBangla ? style.banglaLetterSpacing : style.letterSpacing,
-                        color: colors.ink,
+                        color: isLamp ? style.background.lampTextColor : style.background.dayTextColor,
+                        paddingLeft: style.background.template === 'kraft' ? 10 : style.background.template === 'antique' ? 6 : 0,
                       }}
                       numberOfLines={2}
                     >
@@ -432,15 +570,25 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     padding: 16,
   },
-  cardHeader: {
+  cardTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    minHeight: 24,
   },
-  cardHeaderLeft: {
+  badgeRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
+    marginTop: 6,
+    marginBottom: 6,
+  },
+  lockBadge: {
+    width: 22,
+    height: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   tagPill: {
     paddingHorizontal: 8,
@@ -449,6 +597,13 @@ const styles = StyleSheet.create({
   tierBadge: {
     paddingHorizontal: 7,
     paddingVertical: 2,
+  },
+  swatchPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderWidth: 1,
   },
   checkCircle: {
     width: 22,
@@ -459,6 +614,10 @@ const styles = StyleSheet.create({
   sampleBox: {
     padding: 12,
     borderWidth: 1,
+    minHeight: 68,
+    position: 'relative',
+    overflow: 'hidden',
+    justifyContent: 'center',
   },
   controlsContainer: {
     borderWidth: 1,

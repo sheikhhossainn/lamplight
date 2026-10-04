@@ -145,7 +145,7 @@ export function getLocalRecommendations(
   }
 
   // Available candidates: exclude unavailable, dismissed, completed, and currently active books
-  const candidates = books.filter((book) => {
+  let candidates = books.filter((book) => {
     if (!book.isAvailable) return false;
     if (dismissedSet.has(book.id)) return false;
     const pos = positionByBook.get(book.id);
@@ -155,6 +155,16 @@ export function getLocalRecommendations(
     if (pos && pos.percentComplete > 0.02) return false;
     return true;
   });
+
+  // Strict language filtering: recommendations must match the active reading language of the app
+  if (targetLang) {
+    const langCandidates = candidates.filter(
+      (b) => b.sourceLanguage.trim().toLowerCase() === targetLang,
+    );
+    if (langCandidates.length > 0) {
+      candidates = langCandidates;
+    }
+  }
 
   if (candidates.length === 0) return [];
 

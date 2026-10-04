@@ -1,4 +1,4 @@
-import { getSetting, setSetting } from '@/db/repositories/appSettings';
+import { deleteSetting, getSetting, setSetting } from '@/db/repositories/appSettings';
 import {
   clearCredentials,
   getCredentials,
@@ -358,6 +358,7 @@ export async function verifyGuestEmailLink(
 export async function signOutUser(keepLocalData: boolean = true): Promise<void> {
   // 1. Clear session tokens from secure storage (AUTH-01)
   await clearCredentials();
+  await deleteSetting('user_avatar_url').catch(() => {});
 
   // 2. If user chooses to remove local data from this device, wipe user-owned tables
   if (!keepLocalData) {
@@ -398,11 +399,13 @@ export async function getUserProfile(): Promise<{
   email: string | null;
   isProtected: boolean;
   createdAt: string | null;
+  avatarUrl: string | null;
 }> {
-  const [email, isProtected, localName] = await Promise.all([
+  const [email, isProtected, localName, localAvatar] = await Promise.all([
     getUserEmail(),
     isAuthenticatedAccount(),
     getSetting(KEY_USER_DISPLAY_NAME),
+    getSetting('user_avatar_url'),
   ]);
 
   let displayName = localName || (email ? email.split('@')[0] : 'Guest Reader');
@@ -442,6 +445,7 @@ export async function getUserProfile(): Promise<{
     email,
     isProtected,
     createdAt,
+    avatarUrl: localAvatar ?? null,
   };
 }
 
@@ -791,10 +795,19 @@ async function _handleOAuthCallbackUrlInternal(
   if (displayName) {
     await updateUserProfile(displayName).catch(() => {});
   }
-  const avatarUrl = metadata.avatar_url || metadata.picture;
+  const avatarUrl =
+    metadata.avatar_url ||
+    metadata.picture ||
+    (userData as any).identities?.[0]?.identity_data?.avatar_url ||
+    (userData as any).identities?.[0]?.identity_data?.picture ||
+    null;
   if (avatarUrl) {
     await setSetting('user_avatar_url', avatarUrl).catch(() => {});
   }
+  try {
+    const { refreshUserAvatar } = await import('@/features/account/userAvatar');
+    await refreshUserAvatar();
+  } catch {}
 
   // 3. Reconcile / Merge local guest data if present
   let snapshot = options?.snapshot;
@@ -812,7 +825,8 @@ async function _handleOAuthCallbackUrlInternal(
     (snapshot.savedWordsCount > 0 ||
       snapshot.highlightsCount > 0 ||
       snapshot.booksCount > 0 ||
-      snapshot.shelvesCount > 0)
+      snapshot.shelvesCount > 0 ||
+      (snapshot.readingSessionsCount ?? 0) > 0)
   ) {
     try {
       const { executeMergeForSession } = await import('@/features/account/accountMergeService');

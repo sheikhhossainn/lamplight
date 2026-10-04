@@ -23,10 +23,14 @@ const VALID_PAGE_STYLES = new Set<PageStyleId>([
   'modern',
   'manuscript',
   'editorial',
+  'sage',
+  'kraft',
   'oxford',
   'vellum',
   'nocturne',
   'zen',
+  'dusk',
+  'nordic',
 ]);
 
 export async function hydratePageStyle(): Promise<void> {

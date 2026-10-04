@@ -115,14 +115,14 @@ test('entitlement gates and free-tier boundaries', async (t) => {
     const freeStyles = PAGE_STYLE_LIST.filter((s) => s.tier === 'free');
     const premiumStyles = PAGE_STYLE_LIST.filter((s) => s.tier === 'premium');
 
-    assert.equal(freeStyles.length, 4, 'Expected exactly 4 free page styles');
-    assert.equal(premiumStyles.length, 4, 'Expected exactly 4 premium page styles');
+    assert.equal(freeStyles.length, 6, 'Expected exactly 6 free page styles');
+    assert.equal(premiumStyles.length, 6, 'Expected exactly 6 premium page styles');
 
     const freeIds = freeStyles.map((s) => s.id);
-    assert.deepEqual(freeIds, ['classic', 'modern', 'manuscript', 'editorial']);
+    assert.deepEqual(freeIds, ['classic', 'modern', 'manuscript', 'editorial', 'sage', 'kraft']);
 
     const premiumIds = premiumStyles.map((s) => s.id);
-    assert.deepEqual(premiumIds, ['oxford', 'vellum', 'nocturne', 'zen']);
+    assert.deepEqual(premiumIds, ['oxford', 'vellum', 'nocturne', 'zen', 'dusk', 'nordic']);
 
     // Reading body floor rule: never below 17px, line-height ratio never below 1.85
     for (const style of PAGE_STYLE_LIST) {
