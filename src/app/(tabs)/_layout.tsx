@@ -1,8 +1,10 @@
-import { type ComponentType } from 'react';
+import { useEffect, type ComponentType } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Tabs } from 'expo-router';
 
 import { HomeIcon, LibraryIcon, SettingsIcon, VocabularyIcon } from '@/components/icons';
+import { UserAvatar } from '@/components/UserAvatar';
+import { refreshUserAvatar, useUserAvatar } from '@/features/account/userAvatar';
 import { useTheme } from '@/theme/ThemeProvider';
 
 type TabIcon = ComponentType<{ color: string; size?: number }>;
@@ -18,6 +20,29 @@ function ThemeAwareTabIcon({ focused, Icon }: ThemeAwareTabVisualProps) {
   return (
     <View style={styles.tabIcon}>
       <Icon color={focused ? colors.ink : colors.straw} />
+    </View>
+  );
+}
+
+function SettingsTabVisual({ focused }: { focused: boolean }) {
+  const { isAuthenticated, avatar } = useUserAvatar();
+
+  useEffect(() => {
+    void refreshUserAvatar();
+  }, []);
+
+  if (!isAuthenticated) {
+    return <ThemeAwareTabIcon focused={focused} Icon={SettingsIcon} />;
+  }
+
+  return (
+    <View style={styles.tabIcon}>
+      <UserAvatar
+        avatar={avatar}
+        size={22}
+        focused={focused}
+        border
+      />
     </View>
   );
 }
@@ -128,7 +153,7 @@ export default function TabsLayout() {
         name="settings"
         options={{
           title: 'Settings',
-          tabBarIcon: ({ focused }) => <ThemeAwareTabIcon focused={focused} Icon={SettingsIcon} />,
+          tabBarIcon: ({ focused }) => <SettingsTabVisual focused={focused} />,
           tabBarLabel: ({ focused }) => <ThemeAwareTabLabel focused={focused} label="Settings" />,
         }}
       />

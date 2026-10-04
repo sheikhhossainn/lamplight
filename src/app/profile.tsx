@@ -15,6 +15,14 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 
+import * as Haptics from 'expo-haptics';
+import { UserAvatar } from '@/components/UserAvatar';
+import {
+  PRESET_AVATARS,
+  getUserAvatar,
+  setUserAvatar,
+  refreshUserAvatar,
+} from '@/features/account/userAvatar';
 import {
   deleteAccount,
   getUserProfile,
@@ -39,9 +47,14 @@ const { width: screenWidth } = Dimensions.get('window');
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
-  const { colors, typography, radius, spacing } = useTheme();
+  const { colors, typography, radius, spacing, scheme } = useTheme();
+  const isLamp = scheme === 'lamp';
 
   const [loading, setLoading] = useState(true);
+  const [currentAvatar, setCurrentAvatar] = useState<string | null>(null);
+  const [avatarModalVisible, setAvatarModalVisible] = useState(false);
+  const [selectedPresetId, setSelectedPresetId] = useState<string>('flame');
+  const [savingAvatar, setSavingAvatar] = useState(false);
   const [profile, setProfile] = useState<{
     displayName: string;
     email: string | null;
@@ -74,12 +87,13 @@ export default function ProfileScreen() {
 
   const loadData = useCallback(async () => {
     try {
-      const [prof, userStats, weeklyDigestData, calendarData, habitData] = await Promise.all([
+      const [prof, userStats, weeklyDigestData, calendarData, habitData, avatar] = await Promise.all([
         getUserProfile(),
         computeUserReadingStats(),
         computeWeeklyDigest(),
         fetchCalendarHeatmapData(52),
         computeHabitReport({ period: habitPeriod }),
+        getUserAvatar(),
       ]);
       setProfile(prof);
       setStats(userStats);
@@ -87,12 +101,34 @@ export default function ProfileScreen() {
       setHeatmapData(calendarData);
       setHabitReport(habitData);
       setNameInput(prof.displayName);
+      setCurrentAvatar(avatar);
+      if (avatar && avatar.startsWith('preset:')) {
+        setSelectedPresetId(avatar.slice(7));
+      } else if (avatar && PRESET_AVATARS.some((p) => p.id === avatar)) {
+        setSelectedPresetId(avatar);
+      }
     } catch (err) {
       console.warn('[Profile] Error loading data:', err);
     } finally {
       setLoading(false);
     }
   }, [habitPeriod]);
+
+  const handleSaveAvatar = async () => {
+    setSavingAvatar(true);
+    try {
+      await setUserAvatar(`preset:${selectedPresetId}`);
+      setCurrentAvatar(`preset:${selectedPresetId}`);
+      await refreshUserAvatar();
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setAvatarModalVisible(false);
+    } catch (err) {
+      console.warn('[Profile] Error saving avatar:', err);
+      Alert.alert('Error', 'Failed to update avatar.');
+    } finally {
+      setSavingAvatar(false);
+    }
+  };
 
   const handlePeriodChange = async (newPeriod: HabitPeriod) => {
     setHabitPeriod(newPeriod);
@@ -279,21 +315,43 @@ export default function ProfileScreen() {
             ]}
           >
             <View style={styles.profileRow}>
-              {/* Monogram Avatar */}
-              <View
-                style={[
-                  styles.avatarWrap,
-                  {
-                    backgroundColor: colors.parchment,
-                    borderColor: colors.hairline,
-                    borderRadius: radius.card,
-                  },
-                ]}
+              {/* Profile Avatar with Edit Badge */}
+              <Pressable
+                onPress={() => {
+                  void Haptics.selectionAsync();
+                  setAvatarModalVisible(true);
+                }}
+                style={styles.avatarPressable}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Change reading avatar"
               >
-                <Text style={[typography.wordmark, { color: colors.flameAmber, fontSize: 24 }]}>
-                  {profile.displayName.charAt(0).toUpperCase()}
-                </Text>
-              </View>
+                <UserAvatar
+                  avatar={currentAvatar}
+                  size={56}
+                  nameFallback={profile.displayName}
+                  border
+                />
+                <View
+                  style={[
+                    styles.avatarBadge,
+                    {
+                      backgroundColor: colors.flameAmber,
+                      borderColor: colors.card,
+                    },
+                  ]}
+                >
+                  <Svg width={9} height={9} viewBox="0 0 24 24" fill="none">
+                    <Path
+                      d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"
+                      stroke={colors.primaryDark}
+                      strokeWidth={2.5}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </Svg>
+                </View>
+              </Pressable>
 
               <View style={{ flex: 1, minWidth: 0, marginLeft: 14 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -1398,6 +1456,101 @@ export default function ProfileScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      {/* Change Avatar Modal */}
+      <Modal
+        visible={avatarModalVisible}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setAvatarModalVisible(false)}
+      >
+        <Pressable style={styles.modalBackdrop} onPress={() => setAvatarModalVisible(false)}>
+          <Pressable
+            style={[
+              styles.dialogCard,
+              { backgroundColor: colors.card, borderColor: colors.hairline, borderRadius: radius.card, maxWidth: 380 },
+            ]}
+            onPress={() => {}}
+          >
+            <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 16 }]}>
+              Change Reading Avatar
+            </Text>
+            <Text style={[typography.metadataCaption, { color: colors.umber, marginTop: 4, lineHeight: 17 }]}>
+              Select a literary archetype to represent your reading presence.
+            </Text>
+
+            <View style={styles.avatarGrid}>
+              {PRESET_AVATARS.map((preset) => {
+                const isSelected = selectedPresetId === preset.id;
+                return (
+                  <Pressable
+                    key={preset.id}
+                    onPress={() => {
+                      void Haptics.selectionAsync();
+                      setSelectedPresetId(preset.id);
+                    }}
+                    style={[
+                      styles.avatarGridItem,
+                      {
+                        backgroundColor: isSelected
+                          ? (isLamp ? 'rgba(245, 166, 35, 0.16)' : 'rgba(245, 166, 35, 0.12)')
+                          : (isLamp ? '#232025' : colors.parchment),
+                        borderColor: isSelected ? colors.flameAmber : colors.hairline,
+                        borderRadius: radius.card,
+                      },
+                    ]}
+                  >
+                    <UserAvatar avatar={preset.id} size={38} focused={isSelected} />
+                    <Text
+                      numberOfLines={1}
+                      style={[
+                        typography.metadataCaption,
+                        {
+                          color: isSelected ? colors.flameAmber : colors.ink,
+                          fontSize: 10,
+                          marginTop: 4,
+                          fontWeight: isSelected ? '700' : '500',
+                          textAlign: 'center',
+                        },
+                      ]}
+                    >
+                      {preset.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 18 }}>
+              <Pressable
+                onPress={() => setAvatarModalVisible(false)}
+                disabled={savingAvatar}
+                style={[styles.modalButton, { borderRadius: radius.pill }]}
+              >
+                <Text style={[typography.uiRowTitle, { color: colors.umber, fontSize: 13 }]}>Cancel</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={handleSaveAvatar}
+                disabled={savingAvatar}
+                style={[
+                  styles.modalButton,
+                  { backgroundColor: colors.flameAmber, borderRadius: radius.pill },
+                ]}
+              >
+                {savingAvatar ? (
+                  <ActivityIndicator size="small" color={colors.primaryDark} />
+                ) : (
+                  <Text style={[typography.buttonLabel, { color: colors.primaryDark, fontSize: 13, fontWeight: '700' }]}>
+                    Save Avatar
+                  </Text>
+                )}
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -1433,12 +1586,40 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
+  avatarPressable: {
+    position: 'relative',
+  },
+  avatarBadge: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   avatarWrap: {
     width: 54,
     height: 54,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  avatarGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 14,
+    justifyContent: 'space-between',
+  },
+  avatarGridItem: {
+    width: '23%',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 2,
+    borderWidth: 1.5,
   },
   tierBadge: {
     paddingHorizontal: 8,

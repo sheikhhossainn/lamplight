@@ -1,7 +1,8 @@
 import Constants from 'expo-constants';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import Svg, { Path } from 'react-native-svg';
 import Animated, {
   Extrapolation,
   interpolate,
@@ -27,7 +28,18 @@ import {
   isAuthenticatedAccount,
   getUserEmail,
   getUserId,
+  getUserProfile,
+  updateUserProfile,
 } from '@/lib/supabaseAuth';
+import * as Haptics from 'expo-haptics';
+import { FlameGlow } from '@/components/FlameGlow';
+import { UserAvatar } from '@/components/UserAvatar';
+import {
+  PRESET_AVATARS,
+  refreshUserAvatar,
+  setUserAvatar,
+  useUserAvatar,
+} from '@/features/account/userAvatar';
 import { coordinateSignOut } from '@/features/account/accountSessionCoordinator';
 import { getDb } from '@/db/client';
 import { refreshSyncStatus, triggerSync, useSyncStatus, type SyncStatus } from '@/features/sync/syncWorker';
@@ -405,6 +417,14 @@ export default function SettingsScreen() {
   const [isProtected, setIsProtected] = useState(false);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
+  const [displayName, setDisplayName] = useState<string>('Reader');
+  const userAvatarState = useUserAvatar();
+  const [avatarModalVisible, setAvatarModalVisible] = useState(false);
+  const [editNameModalVisible, setEditNameModalVisible] = useState(false);
+  const [nameInput, setNameInput] = useState('');
+  const [savingName, setSavingName] = useState(false);
+  const [savingAvatar, setSavingAvatar] = useState(false);
+  const [selectedPresetId, setSelectedPresetId] = useState<string>('flame');
   const [accountProtectionModalVisible, setAccountProtectionModalVisible] = useState(false);
   const [signOutDialogVisible, setSignOutDialogVisible] = useState(false);
   const [restoreDialogVisible, setRestoreDialogVisible] = useState(false);
@@ -413,18 +433,78 @@ export default function SettingsScreen() {
 
   const refreshAccountStatus = useCallback(async () => {
     try {
-      const [authStatus, email, uid] = await Promise.all([
+      const [authStatus, email, uid, profile] = await Promise.all([
         isAuthenticatedAccount(),
         getUserEmail(),
         getUserId(),
+        getUserProfile().catch(() => null),
       ]);
       setIsProtected(authStatus);
       setUserEmail(email);
       setUserId(uid);
+      if (profile?.displayName) {
+        setDisplayName(profile.displayName);
+      }
+      if (profile?.avatarUrl && !profile.avatarUrl.startsWith('http')) {
+        const clean = profile.avatarUrl.startsWith('preset:') ? profile.avatarUrl.slice(7) : profile.avatarUrl;
+        setSelectedPresetId(clean);
+      }
+      void refreshUserAvatar();
     } catch (err) {
       console.warn('[Settings] Error refreshing account status:', err);
     }
   }, []);
+
+  const handleOpenPromoModal = () => {
+    if (!isProtected) {
+      Alert.alert(
+        'Account Required',
+        'Please sign in or create an account first to redeem a promo code and protect your subscription across devices.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Log In', onPress: () => router.push('/login' as any) },
+          { text: 'Create Account', onPress: () => router.push('/signup' as any) },
+        ],
+      );
+      return;
+    }
+    setPromoModalVisible(true);
+  };
+
+  const handleSaveName = async () => {
+    const trimmed = nameInput.trim();
+    if (!trimmed) {
+      Alert.alert('Invalid Name', 'Display name cannot be empty.');
+      return;
+    }
+    setSavingName(true);
+    try {
+      await updateUserProfile(trimmed);
+      setDisplayName(trimmed);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setEditNameModalVisible(false);
+    } catch (err) {
+      console.warn('[Settings] Error saving display name:', err);
+      Alert.alert('Error', 'Failed to update reading name.');
+    } finally {
+      setSavingName(false);
+    }
+  };
+
+  const handleSaveAvatar = async () => {
+    setSavingAvatar(true);
+    try {
+      await setUserAvatar(`preset:${selectedPresetId}`);
+      await refreshUserAvatar();
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setAvatarModalVisible(false);
+    } catch (err) {
+      console.warn('[Settings] Error saving avatar:', err);
+      Alert.alert('Error', 'Failed to update avatar.');
+    } finally {
+      setSavingAvatar(false);
+    }
+  };
 
   const handleCopySupportId = async () => {
     if (!userId) return;
@@ -711,6 +791,285 @@ export default function SettingsScreen() {
         </View>
       </Animated.View>
 
+      {/* Account Section: Standout Guest Card or User Dashboard */}
+      {!isProtected ? (
+        <Animated.View
+          style={[
+            styles.card,
+            animatedCardStyle,
+            {
+              borderRadius: radius.card,
+              marginBottom: spacing.xl,
+              borderColor: colors.flameAmber,
+              borderWidth: 1.5,
+              padding: spacing.lg,
+            },
+          ]}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10 }}>
+            <View
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 18,
+                backgroundColor: 'rgba(245, 166, 35, 0.16)',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <FlameGlow size={24} showTile={false} variant="flicker" />
+            </View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 15, fontWeight: '700' }]}>
+                Sign In or Join Lamplight
+              </Text>
+              <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11 }]}>
+                Protect your library & sync across devices
+              </Text>
+            </View>
+          </View>
+
+          <Text
+            style={[
+              typography.metadataCaption,
+              {
+                color: colors.ink,
+                fontSize: 12,
+                lineHeight: 18,
+                marginBottom: 14,
+                opacity: 0.88,
+              },
+            ]}
+          >
+            Create an account or sign in to safeguard your reading streaks, saved vocabulary, notes, and highlights with free cloud backup and 50 daily translations.
+          </Text>
+
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <Pressable
+              onPress={() => {
+                void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                router.push('/login' as any);
+              }}
+              style={({ pressed }) => [
+                styles.standoutAuthButton,
+                {
+                  backgroundColor: isLamp ? '#302A24' : colors.segmentedTrack,
+                  borderColor: colors.hairline,
+                  borderWidth: 1,
+                  borderRadius: radius.pill,
+                  opacity: pressed ? 0.75 : 1,
+                },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Log In to your account"
+            >
+              <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
+                Log In
+              </Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() => {
+                void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                router.push('/signup' as any);
+              }}
+              style={({ pressed }) => [
+                styles.standoutAuthButton,
+                {
+                  backgroundColor: colors.flameAmber,
+                  borderRadius: radius.pill,
+                  opacity: pressed ? 0.85 : 1,
+                },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Create a new account"
+            >
+              <Text style={[typography.uiRowTitle, { color: colors.primaryDark, fontSize: 13, fontWeight: '700' }]}>
+                Create Account
+              </Text>
+            </Pressable>
+          </View>
+        </Animated.View>
+      ) : (
+        <Animated.View
+          style={[
+            styles.card,
+            animatedCardStyle,
+            {
+              borderRadius: radius.card,
+              marginBottom: spacing.xl,
+              padding: spacing.md,
+            },
+          ]}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+            <Pressable
+              onPress={() => {
+                void Haptics.selectionAsync();
+                setAvatarModalVisible(true);
+              }}
+              style={styles.avatarPressable}
+              accessibilityRole="button"
+              accessibilityLabel="Change reading avatar"
+            >
+              <UserAvatar
+                avatar={userAvatarState.avatar}
+                size={52}
+                nameFallback={displayName}
+                border
+              />
+              <View
+                style={[
+                  styles.avatarBadge,
+                  {
+                    backgroundColor: colors.flameAmber,
+                    borderColor: colors.card,
+                  },
+                ]}
+              >
+                <Svg width={9} height={9} viewBox="0 0 24 24" fill="none">
+                  <Path
+                    d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"
+                    stroke={colors.primaryDark}
+                    strokeWidth={2.5}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </Svg>
+              </View>
+            </Pressable>
+
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 16 }]} numberOfLines={1}>
+                  {displayName}
+                </Text>
+                <Pressable
+                  onPress={() => {
+                    void Haptics.selectionAsync();
+                    setNameInput(displayName);
+                    setEditNameModalVisible(true);
+                  }}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel="Edit display name"
+                >
+                  <Svg width={12} height={12} viewBox="0 0 24 24" fill="none">
+                    <Path
+                      d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"
+                      stroke={colors.fawn}
+                      strokeWidth={2}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </Svg>
+                </Pressable>
+              </View>
+
+              <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 12, marginTop: 2 }]} numberOfLines={1}>
+                {userEmail || 'Protected Account'}
+              </Text>
+
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 }}>
+                <View
+                  style={{
+                    backgroundColor: canUse('unlimited_learning') ? 'rgba(245, 166, 35, 0.16)' : (isLamp ? '#2B2620' : colors.segmentedTrack),
+                    paddingHorizontal: 8,
+                    paddingVertical: 2,
+                    borderRadius: radius.pill,
+                  }}
+                >
+                  <Text
+                    style={[
+                      typography.metadataCaption,
+                      {
+                        color: canUse('unlimited_learning') ? colors.flameAmber : colors.ink,
+                        fontSize: 10,
+                        fontWeight: '700',
+                      },
+                    ]}
+                  >
+                    {canUse('unlimited_learning') ? 'Scholar Tier' : 'Free Reader'}
+                  </Text>
+                </View>
+
+                {syncStatus === 'syncing' ? (
+                  <Text style={[typography.metadataCaption, { color: colors.flameAmber, fontSize: 10 }]}>
+                    Syncing…
+                  </Text>
+                ) : (
+                  <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 10 }]}>
+                    Cloud Backup Active
+                  </Text>
+                )}
+              </View>
+            </View>
+          </View>
+
+          <View style={[styles.itemDivider, { borderBottomColor: colors.hairline, marginVertical: 12 }]} />
+
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <Pressable
+              onPress={() => {
+                void Haptics.selectionAsync();
+                setAvatarModalVisible(true);
+              }}
+              style={[
+                styles.dashboardPillButton,
+                {
+                  borderColor: colors.hairline,
+                  backgroundColor: isLamp ? '#232026' : colors.parchment,
+                },
+              ]}
+              accessibilityRole="button"
+            >
+              <Text style={[typography.metadataCaption, { color: colors.ink, fontSize: 11, fontWeight: '600' }]}>
+                Change Avatar
+              </Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() => {
+                void Haptics.selectionAsync();
+                setNameInput(displayName);
+                setEditNameModalVisible(true);
+              }}
+              style={[
+                styles.dashboardPillButton,
+                {
+                  borderColor: colors.hairline,
+                  backgroundColor: isLamp ? '#232026' : colors.parchment,
+                },
+              ]}
+              accessibilityRole="button"
+            >
+              <Text style={[typography.metadataCaption, { color: colors.ink, fontSize: 11, fontWeight: '600' }]}>
+                Edit Name
+              </Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() => {
+                void Haptics.selectionAsync();
+                router.push('/profile' as any);
+              }}
+              style={[
+                styles.dashboardPillButton,
+                {
+                  borderColor: colors.hairline,
+                  backgroundColor: isLamp ? '#232026' : colors.parchment,
+                },
+              ]}
+              accessibilityRole="button"
+            >
+              <Text style={[typography.metadataCaption, { color: colors.ink, fontSize: 11, fontWeight: '600' }]}>
+                Reading Stats
+              </Text>
+            </Pressable>
+          </View>
+        </Animated.View>
+      )}
+
       <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginBottom: spacing.sm }]}>
         Reading
       </Text>
@@ -816,36 +1175,111 @@ export default function SettingsScreen() {
                       </View>
                     </View>
 
-                    <Text
-                      style={[typography.eyebrowLabel, { color: isSelected ? colors.flameAmber : colors.fawn, fontSize: 9, marginBottom: 8 }]}
-                      numberOfLines={1}
-                    >
-                      {style.tag}
-                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, gap: 4 }}>
+                      <Text
+                        style={[typography.eyebrowLabel, { color: isSelected ? colors.flameAmber : colors.fawn, fontSize: 8.5, flexShrink: 1 }]}
+                        numberOfLines={1}
+                      >
+                        {style.tag}
+                      </Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3.5, flexShrink: 0 }}>
+                        <View
+                          style={{
+                            width: 6,
+                            height: 6,
+                            borderRadius: 3,
+                            backgroundColor: isLamp ? style.background.lampAccent : style.background.dayAccent,
+                          }}
+                        />
+                        <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 9 }]} numberOfLines={1}>
+                          {style.background.swatchLabel}
+                        </Text>
+                      </View>
+                    </View>
 
-                    {/* Typography preview */}
-                    <Animated.View
+                    {/* Typography & paper background preview */}
+                    <View
                       style={[
                         styles.pageStyleSampleBox,
-                        { borderRadius: radius.bookCoverOuter },
-                        isSelected
-                          ? [animatedSampleBoxStyle, { borderColor: `${colors.flameAmber}44` }]
-                          : animatedSampleBoxStyle,
+                        {
+                          borderRadius: radius.bookCoverOuter,
+                          backgroundColor: isLamp ? style.background.lampBackground : style.background.dayBackground,
+                          borderColor: isSelected ? colors.flameAmber : (isLamp ? style.background.lampSpineColor : style.background.daySpineColor),
+                          borderWidth: 1.5,
+                          position: 'relative',
+                          overflow: 'hidden',
+                        },
                       ]}
                     >
+                      {/* Template: Newspaper masthead rule */}
+                      {style.background.template === 'newspaper' ? (
+                        <View style={{ marginBottom: 4, borderBottomWidth: 1, borderBottomColor: isLamp ? '#333338' : '#1A1A1A', paddingBottom: 2 }}>
+                          <View style={{ borderTopWidth: 1, borderTopColor: isLamp ? '#333338' : '#1A1A1A', paddingTop: 1 }}>
+                            <Text
+                              style={{
+                                fontSize: 7,
+                                letterSpacing: 0.8,
+                                textAlign: 'center',
+                                color: isLamp ? style.background.lampTextColor : style.background.dayTextColor,
+                                fontWeight: '700',
+                                textTransform: 'uppercase',
+                              }}
+                              numberOfLines={1}
+                            >
+                              {style.background.previewMasthead}
+                            </Text>
+                          </View>
+                        </View>
+                      ) : null}
+
+                      {/* Template: Oxford gold inner frame */}
+                      {style.background.template === 'oxford' ? (
+                        <View
+                          style={{
+                            position: 'absolute',
+                            top: 3,
+                            left: 3,
+                            right: 3,
+                            bottom: 3,
+                            borderWidth: 1,
+                            borderColor: `${isLamp ? style.background.lampAccent : style.background.dayAccent}66`,
+                            borderRadius: 4,
+                          }}
+                          pointerEvents="none"
+                        />
+                      ) : null}
+
+                      {/* Template: Kraft stitched left binding */}
+                      {style.background.template === 'kraft' ? (
+                        <View
+                          style={{
+                            position: 'absolute',
+                            top: 0,
+                            bottom: 0,
+                            left: 5,
+                            width: 2,
+                            borderLeftWidth: 1.5,
+                            borderLeftColor: isLamp ? 'rgba(238, 214, 191, 0.35)' : 'rgba(100, 60, 25, 0.45)',
+                            borderStyle: 'dashed',
+                          }}
+                          pointerEvents="none"
+                        />
+                      ) : null}
+
                       <Text
                         style={{
                           fontFamily: sampleFont,
-                          fontSize: 13,
-                          lineHeight: 22,
+                          fontSize: 12.5,
+                          lineHeight: 20,
                           letterSpacing: style.letterSpacing,
-                          color: colors.ink,
+                          color: isLamp ? style.background.lampTextColor : style.background.dayTextColor,
+                          paddingLeft: style.background.template === 'kraft' ? 8 : 0,
                         }}
                         numberOfLines={2}
                       >
                         {sampleText}
                       </Text>
-                    </Animated.View>
+                    </View>
 
                     {/* Status indicator footer */}
                     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
@@ -933,8 +1367,8 @@ export default function SettingsScreen() {
 
         <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 12, lineHeight: 18, marginBottom: 14 }]}>
           {isPremium
-            ? 'All 8 artisan page styles, full atmospheric soundscapes, 14 quote cards, and unlimited translations are unlocked.'
-            : 'Upgrade to unlock all 8 artisan page styles, unlimited word lookups, complete atmospheric soundscapes, and cloud sync.'}
+            ? 'All 12 artisan page styles & atmospheres, soundscapes, 14 quote cards, and unlimited translations are unlocked.'
+            : 'Upgrade to unlock all 12 artisan page styles & atmospheres, unlimited word lookups, complete soundscapes, and cloud sync.'}
         </Text>
 
         {/* Feature bullets */}
@@ -944,7 +1378,7 @@ export default function SettingsScreen() {
               <Text style={{ color: isPremium ? colors.flameAmber : colors.fawn, fontSize: 9 }}>✦</Text>
             </View>
             <Text style={[typography.metadataCaption, { color: colors.ink, fontSize: 12 }]}>
-              8 Handcrafted Page Styles (Oxford, Vellum, Nocturne & Washi)
+              12 Handcrafted Page Styles & Atmospheres (Oxford, Vellum, Sage, Kraft & Washi)
             </Text>
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -1400,7 +1834,7 @@ export default function SettingsScreen() {
         {/* Redeem promo code */}
         <View style={[styles.itemDivider, { borderBottomColor: colors.hairline }]} />
         <Pressable
-          onPress={() => setPromoModalVisible(true)}
+          onPress={handleOpenPromoModal}
           style={[styles.settingsRow, { paddingVertical: 10 }]}
         >
           <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 13 }]}>
@@ -1708,11 +2142,264 @@ export default function SettingsScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      {/* Edit Display Name Modal */}
+      <Modal
+        visible={editNameModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setEditNameModalVisible(false)}
+      >
+        <Pressable
+          style={styles.dialogBackdrop}
+          onPress={() => setEditNameModalVisible(false)}
+        >
+          <Pressable
+            style={[
+              styles.dialogCard,
+              {
+                backgroundColor: isLamp ? '#232026' : colors.card,
+                borderColor: colors.hairline,
+                borderRadius: radius.card,
+              },
+            ]}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 16, marginBottom: 8 }]}>
+              Edit Reader Name
+            </Text>
+            <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 12, marginBottom: 16 }]}>
+              This name is shown on your reading profile and synced across devices.
+            </Text>
+
+            <TextInput
+              value={nameInput}
+              onChangeText={setNameInput}
+              placeholder="Enter your name"
+              placeholderTextColor={colors.straw}
+              style={[
+                styles.dialogInput,
+                {
+                  color: colors.ink,
+                  borderColor: colors.hairline,
+                  backgroundColor: isLamp ? '#1C1B1E' : colors.parchment,
+                  borderRadius: 8,
+                },
+              ]}
+              autoFocus
+              maxLength={40}
+            />
+
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 18 }}>
+              <Pressable
+                onPress={() => setEditNameModalVisible(false)}
+                style={[
+                  styles.modalButton,
+                  {
+                    borderColor: colors.hairline,
+                    borderWidth: 1,
+                    backgroundColor: 'transparent',
+                    borderRadius: radius.pill,
+                  },
+                ]}
+              >
+                <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 13 }]}>
+                  Cancel
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={handleSaveName}
+                disabled={savingName}
+                style={[
+                  styles.modalButton,
+                  {
+                    backgroundColor: colors.flameAmber,
+                    borderRadius: radius.pill,
+                    opacity: savingName ? 0.6 : 1,
+                  },
+                ]}
+              >
+                {savingName ? (
+                  <ActivityIndicator size="small" color={colors.primaryDark} />
+                ) : (
+                  <Text style={[typography.uiRowTitle, { color: colors.primaryDark, fontSize: 13, fontWeight: '700' }]}>
+                    Save
+                  </Text>
+                )}
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Change Avatar Modal */}
+      <Modal
+        visible={avatarModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setAvatarModalVisible(false)}
+      >
+        <Pressable
+          style={styles.dialogBackdrop}
+          onPress={() => setAvatarModalVisible(false)}
+        >
+          <Pressable
+            style={[
+              styles.dialogCard,
+              {
+                backgroundColor: isLamp ? '#232026' : colors.card,
+                borderColor: colors.hairline,
+                borderRadius: radius.card,
+              },
+            ]}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 16, marginBottom: 8 }]}>
+              Choose Reading Avatar
+            </Text>
+            <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 12, marginBottom: 16 }]}>
+              Select an avatar icon to represent your reading journey.
+            </Text>
+
+            <View style={styles.avatarGrid}>
+              {PRESET_AVATARS.map((preset) => {
+                const isSelected = selectedPresetId === preset.id;
+                return (
+                  <Pressable
+                    key={preset.id}
+                    onPress={() => {
+                      void Haptics.selectionAsync();
+                      setSelectedPresetId(preset.id);
+                    }}
+                    style={[
+                      styles.avatarGridItem,
+                      {
+                        borderColor: isSelected ? colors.flameAmber : 'transparent',
+                        backgroundColor: isSelected ? 'rgba(245, 166, 35, 0.12)' : 'transparent',
+                      },
+                    ]}
+                  >
+                    <UserAvatar
+                      avatar={`preset:${preset.id}`}
+                      size={44}
+                      border={isSelected}
+                    />
+                    <Text
+                      style={[
+                        typography.metadataCaption,
+                        {
+                          color: isSelected ? colors.flameAmber : colors.fawn,
+                          fontSize: 10,
+                          marginTop: 4,
+                          fontWeight: isSelected ? '700' : '500',
+                        },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {preset.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
+              <Pressable
+                onPress={() => setAvatarModalVisible(false)}
+                style={[
+                  styles.modalButton,
+                  {
+                    borderColor: colors.hairline,
+                    borderWidth: 1,
+                    backgroundColor: 'transparent',
+                    borderRadius: radius.pill,
+                  },
+                ]}
+              >
+                <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 13 }]}>
+                  Cancel
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={handleSaveAvatar}
+                disabled={savingAvatar}
+                style={[
+                  styles.modalButton,
+                  {
+                    backgroundColor: colors.flameAmber,
+                    borderRadius: radius.pill,
+                    opacity: savingAvatar ? 0.6 : 1,
+                  },
+                ]}
+              >
+                {savingAvatar ? (
+                  <ActivityIndicator size="small" color={colors.primaryDark} />
+                ) : (
+                  <Text style={[typography.uiRowTitle, { color: colors.primaryDark, fontSize: 13, fontWeight: '700' }]}>
+                    Select
+                  </Text>
+                )}
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </Animated.ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
+  avatarPressable: {
+    position: 'relative',
+  },
+  avatarBadge: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dashboardPillButton: {
+    flex: 1,
+    paddingVertical: 7,
+    paddingHorizontal: 8,
+    borderWidth: 1,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dialogInput: {
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    justifyContent: 'space-between',
+  },
+  avatarGridItem: {
+    width: '30%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 2,
+  },
   dialogBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.55)',
@@ -1811,6 +2498,12 @@ const styles = StyleSheet.create({
   upgradeButton: {
     paddingHorizontal: 13,
     paddingVertical: 8,
+  },
+  standoutAuthButton: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   itemDivider: {
     borderBottomWidth: StyleSheet.hairlineWidth,

@@ -174,3 +174,42 @@ test('LIB-04 excludes dismissed books from recommendation list', () => {
   assert.equal(recs.some((r) => r.book.id === 'b1'), false);
   assert.equal(recs.some((r) => r.book.id === 'b2'), true);
 });
+
+test('LIB-04 strictly filters candidate books by target reading language', () => {
+  const books: BookRow[] = [
+    mockBook({
+      id: 'ko-1',
+      title: 'The Wings',
+      sourceLanguage: 'ko',
+      totalChapters: 2,
+      isAvailable: true,
+    }),
+    mockBook({
+      id: 'bn-1',
+      title: 'Gitanjali',
+      sourceLanguage: 'bn',
+      totalChapters: 5,
+      isAvailable: true,
+    }),
+    mockBook({
+      id: 'en-1',
+      title: 'Alice in Wonderland',
+      sourceLanguage: 'en',
+      totalChapters: 12,
+      isAvailable: true,
+    }),
+  ];
+
+  const enRecs = getLocalRecommendations(books, [], { targetLanguage: 'en' });
+  assert.equal(enRecs.length, 1);
+  assert.equal(enRecs[0].book.id, 'en-1');
+
+  const bnRecs = getLocalRecommendations(books, [], { targetLanguage: 'bn' });
+  assert.equal(bnRecs.length, 1);
+  assert.equal(bnRecs[0].book.id, 'bn-1');
+
+  const koRecs = getLocalRecommendations(books, [], { targetLanguage: 'ko' });
+  assert.equal(koRecs.length, 1);
+  assert.equal(koRecs[0].book.id, 'ko-1');
+});
+

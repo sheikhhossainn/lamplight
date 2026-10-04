@@ -571,8 +571,8 @@ function ReaderPageViewImpl({
   const activeSpeechId = useCurrentSpeechId();
 
   const isLamp = mode === 'lamp';
-  const resolvedDayColor = dayTextColor ?? textColor ?? '#1C1B1E';
-  const resolvedLampColor = lampTextColor ?? '#F5EDE1';
+  const resolvedDayColor = pageStyleConfig.background.dayTextColor || dayTextColor || textColor || '#1C1B1E';
+  const resolvedLampColor = pageStyleConfig.background.lampTextColor || lampTextColor || '#F5EDE1';
   const currentTextColor = isLamp ? resolvedLampColor : resolvedDayColor;
 
   const dayTextFadeStyle = useAnimatedStyle(() => {

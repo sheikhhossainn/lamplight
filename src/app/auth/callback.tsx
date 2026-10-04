@@ -34,6 +34,10 @@ export default function AuthCallbackScreen() {
         if (incomingUrl && (incomingUrl.includes('#') || incomingUrl.includes('?'))) {
           const res = await handleOAuthCallbackUrl(incomingUrl);
           if (res.success) {
+            try {
+              const { refreshUserAvatar } = await import('@/features/account/userAvatar');
+              await refreshUserAvatar();
+            } catch {}
             if (isMounted) {
               router.replace('/(tabs)/homescreen');
             }

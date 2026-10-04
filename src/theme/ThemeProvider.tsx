@@ -55,11 +55,7 @@ export function LamplightThemeProvider({ children }: PropsWithChildren) {
     // Japanese culture theme provides generous line-height (+2.5px);
     // Western culture theme prioritizes editorial Lora serif.
     const isJapaneseTheme = cultureTheme === 'japanese';
-    const isWesternTheme = cultureTheme === 'western';
-
-    const readingFont = isWesternTheme
-      ? (styleConfig.id === 'modern' ? styleConfig.englishFont : FontFamily.loraRegular)
-      : styleConfig.englishFont;
+    const readingFont = styleConfig.englishFont;
 
     const readingLineHeight = isJapaneseTheme
       ? styleConfig.lineHeight + 2.5
