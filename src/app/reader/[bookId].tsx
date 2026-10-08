@@ -1087,15 +1087,18 @@ export default function ReaderScreen() {
   const activeReaderPage = pages[currentIndex];
   const currentChapterTitle = activeReaderPage?.chapterTitle ?? `Chapter ${currentChapterIndex + 1}`;
   const handleSaveReaderNote = useCallback(async (noteText: string) => {
-    if (!book || !activeReaderPage || !noteText.trim()) return;
+    const targetBookId = book?.id ?? rawBookId;
+    if (!targetBookId || !noteText.trim()) return;
+    const chIndex = activeReaderPage?.chapterIndex ?? currentChapterIndex ?? 0;
+    const pgIndex = activeReaderPage?.pageIndexInChapter ?? 0;
     const note = await createReaderNote({
-      bookId: book.id,
-      chapterIndex: activeReaderPage.chapterIndex,
-      pageIndex: activeReaderPage.pageIndexInChapter,
+      bookId: targetBookId,
+      chapterIndex: chIndex,
+      pageIndex: pgIndex,
       noteText,
     });
     setReaderNotes((previous) => [note, ...previous]);
-  }, [book, activeReaderPage]);
+  }, [book, rawBookId, activeReaderPage, currentChapterIndex]);
 
   const handleDeleteReaderNote = useCallback(async (noteId: string) => {
     setReaderNotes((previous) => previous.filter((note) => note.id !== noteId));
@@ -3044,13 +3047,15 @@ export default function ReaderScreen() {
           {pages.length > 0 ? (
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Private notes"
+              accessibilityLabel="Book notes"
               testID="reader-notes-button"
               onPress={() => closeChromeMenu(() => setNotesVisible(true))}
               style={styles.chromeMenuRow}
             >
               <Text style={[styles.chromeMenuAa, { color: readerNotes.length > 0 ? colors.flameAmber : isLamp ? READING_TEXT_DARK : READING_TEXT_LIGHT }]}>✎</Text>
-              <Text style={[typography.uiRowTitle, styles.chromeMenuLabel, { color: isLamp ? READING_TEXT_DARK : READING_TEXT_LIGHT }]}>Private Notes</Text>
+              <Text style={[typography.uiRowTitle, styles.chromeMenuLabel, { color: isLamp ? READING_TEXT_DARK : READING_TEXT_LIGHT }]}>
+                Book Notes{readerNotes.length > 0 ? ` (${readerNotes.length})` : ''}
+              </Text>
             </Pressable>
           ) : null}
           {pages.length > 0 ? (
@@ -3536,7 +3541,7 @@ export default function ReaderScreen() {
         visible={companionVisible}
         onClose={() => setCompanionVisible(false)}
         selectedText={companionSelectedText}
-        bookId={book?.id}
+        bookId={book?.id || rawBookId}
         bookTitle={book?.title}
         bookAuthor={book?.author}
         chapterIndex={currentChapterIndex}
@@ -3544,16 +3549,35 @@ export default function ReaderScreen() {
         chapterTitle={readerChapters[currentChapterIndex]?.title}
         pageIndex={currentPage?.pageIndexInChapter}
         totalPages={totalPages}
-        currentChapterText={pages
-          .filter((p) => p.chapterIndex === currentChapterIndex)
-          .map((p) => p.paragraphs.join('\n\n'))
-          .join('\n\n')}
+        currentPageText={currentPage ? currentPage.paragraphs.join('\n\n') : ''}
+        currentPageNumber={currentIndex + 1}
+        currentChapterText={
+          (bookTextState.status === 'ready' &&
+            bookTextState.book.chapters[currentChapterIndex]?.pages
+              .map((p) => p.join('\n\n'))
+              .join('\n\n')) ||
+          pages
+            .filter((p) => p.chapterIndex === currentChapterIndex)
+            .map((p) => p.paragraphs.join('\n\n'))
+            .join('\n\n')
+        }
         priorChapterTexts={readerChapters.slice(0, currentChapterIndex + 1).map((_ch, idx) =>
+          (bookTextState.status === 'ready' &&
+            bookTextState.book.chapters[idx]?.pages
+              .map((p) => p.join('\n\n'))
+              .join('\n\n')) ||
           pages
             .filter((p) => p.chapterIndex === idx)
             .map((p) => p.paragraphs.join('\n\n'))
             .join('\n\n')
         )}
+        onSaveNote={async (noteText) => {
+          await handleSaveReaderNote(noteText);
+        }}
+        onViewNotes={() => {
+          setCompanionVisible(false);
+          setNotesVisible(true);
+        }}
         onUpgradePress={() => router.push('/paywall')}
       />
 

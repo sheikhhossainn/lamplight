@@ -614,26 +614,13 @@ Return a JSON object with key "translations" containing an array of translated s
     'companion_summary',
     'companion_recap_characters',
     'companion_reflective_questions',
+    'companion_page_insight',
+    'companion_ask',
   ];
 
   if (COMPANION_ACTIONS.includes(action)) {
-    // 1. Entitlement check (FULLAPP.md §16.2.2 & §16.4)
-    if (!isPremium) {
-      return new Response(
-        JSON.stringify({
-          error: 'The AI Reading Companion requires Lamplight Premium.',
-          requiresPremium: true,
-          success: false,
-        }),
-        {
-          status: 403,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        },
-      );
-    }
-
-    // 2. Daily usage rate limit accounting (FULLAPP.md §16.2.4)
-    const PREMIUM_DAILY_COMPANION_LIMIT = 60;
+    // Daily usage rate limit accounting (Free tier: 10 daily requests, Premium: 60 daily requests)
+    const userLimit = isPremium ? 60 : 10;
     const today = new Date().toISOString().split('T')[0];
     let currentUsage = 0;
     try {
@@ -648,13 +635,16 @@ Return a JSON object with key "translations" containing an array of translated s
       // non-blocking
     }
 
-    if (currentUsage >= PREMIUM_DAILY_COMPANION_LIMIT) {
+    if (currentUsage >= userLimit) {
       return new Response(
         JSON.stringify({
-          error: `Daily companion limit of ${PREMIUM_DAILY_COMPANION_LIMIT} requests reached. Quota refreshes tomorrow.`,
-          limit: PREMIUM_DAILY_COMPANION_LIMIT,
+          error: isPremium
+            ? `Daily companion limit of ${userLimit} requests reached. Quota refreshes tomorrow.`
+            : `Daily free companion limit of ${userLimit} requests reached. Upgrade to Premium for 60 daily requests.`,
+          limit: userLimit,
           current: currentUsage,
           success: false,
+          requiresPremium: !isPremium,
         }),
         {
           status: 429,
@@ -667,10 +657,16 @@ Return a JSON object with key "translations" containing an array of translated s
     const bookAuthor = body.bookAuthor ? String(body.bookAuthor).trim().slice(0, 100) : '';
     const chapterIndex = typeof body.chapterIndex === 'number' ? body.chapterIndex : 0;
     const chapterTitle = body.chapterTitle ? String(body.chapterTitle).trim().slice(0, 100) : `Chapter ${chapterIndex + 1}`;
+    const motherTongue = String(body.motherTongue || 'bn').trim();
+    const tongueName = TONGUE_NAMES[motherTongue] ?? (motherTongue === 'en' ? 'English' : 'Bengali (বাংলা)');
+
+    const languageInstruction =
+      `\nCRITICAL LANGUAGE REQUIREMENT: The reader is reading the book in a foreign language they are currently learning. You MUST write your entire response (explanations, summaries, narrative analysis, plot descriptions, answers, character roles, statuses, and discussion questions) exclusively and fluently in the reader's native mother tongue: ${tongueName}.\n` +
+      `DO NOT copy-paste or dump raw untranslated sentences or paragraphs from the book. Explain the storyline, context, motivations, and events directly in ${tongueName}. Only cite short original quotes (under 10 words) if strictly necessary to explain specific literary diction.\n`;
 
     // 3. Cache lookup (FULLAPP.md §16.2.8)
-    const excerptHashInput = String(body.excerpt || body.sentence || body.chapterExcerpt || body.textUpToNow || '').slice(0, 500);
-    const cacheKey = await sha256Hex(`companion:${action}:${bookTitle}:${chapterIndex}:${excerptHashInput}:v1`);
+    const excerptHashInput = String(body.pageText || body.excerpt || body.sentence || body.chapterExcerpt || body.textUpToNow || '').slice(0, 500);
+    const cacheKey = await sha256Hex(`companion:${action}:${motherTongue}:${bookTitle}:${chapterIndex}:${excerptHashInput}:v2`);
 
     try {
       const { data: cached } = await supabase
@@ -716,10 +712,11 @@ Return a JSON object with key "translations" containing an array of translated s
           ? `Explain any literary, classical, mythological, philosophical, or historical references in this excerpt.\n`
           : `Explain the difficult meaning, subtle nuances, subtext, and prose craft in this excerpt.\n`) +
         `STRICT SPOILER RULE: Explain ONLY the provided excerpt in the context of ${chapterTitle}. NEVER reveal, hint at, or foreshadow future plot twists, character deaths, or events from future chapters.\n` +
+        languageInstruction +
         `Return ONLY a valid JSON object with these exact keys:\n` +
-        `- "explanation": string (2-3 concise, elegant paragraphs explaining the passage)\n` +
-        `- "keyThemes": array of 1-3 concise strings highlighting themes or motifs\n` +
-        `- "referenceNote": string or null (if any classical/historical allusion is present, explain it briefly; otherwise null)\n` +
+        `- "explanation": string (2-3 concise, elegant paragraphs explaining the passage, written in ${tongueName})\n` +
+        `- "keyThemes": array of 1-3 concise strings highlighting themes or motifs in ${tongueName}\n` +
+        `- "referenceNote": string or null (if any classical/historical allusion is present, explain it briefly in ${tongueName}; otherwise null)\n` +
         `- "version": "v1-groq-companion"`;
 
       userPrompt =
@@ -739,11 +736,12 @@ Return a JSON object with key "translations" containing an array of translated s
 
       systemPrompt =
         `You are Lamplight's AI Reading Companion.\n` +
-        `Simplify the provided complex, archaic, or dense literary sentence into clear, modern English while preserving 100% of its original meaning, nuance, and emotional tone.\n` +
+        `Simplify the provided complex, archaic, or dense literary sentence into clear natural language while preserving 100% of its original meaning, nuance, and emotional tone.\n` +
+        languageInstruction +
         `Return ONLY a valid JSON object with these exact keys:\n` +
-        `- "simplified": string (the crystal-clear modern paraphrase)\n` +
-        `- "originalMeaning": string (1 concise sentence explaining what was originally conveyed)\n` +
-        `- "vocabularyBreakdown": array of up to 3 objects { "archaicWord": string, "modernMeaning": string }\n` +
+        `- "simplified": string (crystal-clear translation and paraphrase in ${tongueName})\n` +
+        `- "originalMeaning": string (1 concise sentence explaining what was originally conveyed, in ${tongueName})\n` +
+        `- "vocabularyBreakdown": array of up to 3 objects { "archaicWord": string, "modernMeaning": string (meaning in ${tongueName}) }\n` +
         `- "version": "v1-groq-companion"`;
 
       userPrompt =
@@ -764,10 +762,11 @@ Return a JSON object with key "translations" containing an array of translated s
         `You are Lamplight's AI Reading Companion.\n` +
         `Summarize Chapter ${chapterIndex + 1} (${chapterTitle}) for a reader.\n` +
         `CRITICAL SPOILER SAFETY: You MUST ONLY summarize what takes place in this specific chapter text. Do NOT reveal, foreshadow, or hint at any deaths, betrayals, twists, or outcomes in subsequent chapters.\n` +
+        languageInstruction +
         `Return ONLY a valid JSON object with these exact keys:\n` +
-        `- "summary": string (2-3 concise, well-crafted paragraphs summarizing key narrative events)\n` +
-        `- "keyDevelopments": array of 3-4 bullet points noting pivotal moments in this chapter\n` +
-        `- "thematicFocus": string (1 sentence summarizing the chapter's central theme or emotional tone)\n` +
+        `- "summary": string (2-3 concise, well-crafted paragraphs narrating the story and events of this chapter in ${tongueName})\n` +
+        `- "keyDevelopments": array of 3-4 bullet points describing pivotal plot moments in this chapter in ${tongueName} (describe the events in ${tongueName}, DO NOT copy-paste raw English sentences)\n` +
+        `- "thematicFocus": string (1 sentence summarizing the chapter's central theme or emotional tone in ${tongueName})\n` +
         `- "spoilerFreeGuarantee": true\n` +
         `- "version": "v1-groq-companion"`;
 
@@ -776,6 +775,37 @@ Return a JSON object with key "translations" containing an array of translated s
         `Chapter: ${chapterTitle} (Chapter ${chapterIndex + 1})\n` +
         `Chapter Text:\n${chapterExcerpt}`;
       maxTokens = 650;
+    } else if (action === 'companion_page_insight') {
+      const pageText = String(body.pageText || '').trim().slice(0, 3000);
+      const pageNumber = typeof body.pageNumber === 'number' ? body.pageNumber : 1;
+
+      if (!pageText) {
+        return new Response(JSON.stringify({ error: 'Page text is required', success: false }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      systemPrompt =
+        `You are Lamplight's AI Reading Companion.\n` +
+        `Analyze the specific page (Page ${pageNumber}) in ${chapterTitle}.\n` +
+        `Tell the story and explain what is actively happening on this page in consistent literary context.\n` +
+        `CRITICAL SPOILER SAFETY: You MUST ONLY analyze what takes place on this specific page text. Do NOT reveal, foreshadow, or hint at any deaths, betrayals, twists, or outcomes that occur later.\n` +
+        languageInstruction +
+        `Return ONLY a valid JSON object with these exact keys:\n` +
+        `- "summary": string (1-2 concise, elegant paragraphs telling what happens on this specific page, explaining the scene and interactions in ${tongueName})\n` +
+        `- "charactersActive": array of strings (names of characters appearing or speaking on this page)\n` +
+        `- "keyMoment": string (1 notable short quote or pivotal dialogue directly from this page in original text)\n` +
+        `- "thematicFocus": string (1 concise sentence describing the tone, tension, or atmospheric focus of this page in ${tongueName})\n` +
+        `- "pageNumber": number (${pageNumber})\n` +
+        `- "version": "v1-groq-companion"`;
+
+      userPrompt =
+        (bookTitle ? `Book: "${bookTitle}" by ${bookAuthor || 'Classic Author'}\n` : '') +
+        `Chapter: ${chapterTitle} (Chapter ${chapterIndex + 1})\n` +
+        `Page: ${pageNumber}\n` +
+        `Page Text:\n${pageText}`;
+      maxTokens = 600;
     } else if (action === 'companion_recap_characters') {
       const textUpToNow = String(body.textUpToNow || '').trim().slice(0, 4000);
 
@@ -790,8 +820,9 @@ Return a JSON object with key "translations" containing an array of translated s
         `You are Lamplight's AI Reading Companion.\n` +
         `Recap the characters encountered in the reader's journey up to Chapter ${chapterIndex + 1} (${chapterTitle}).\n` +
         `CRITICAL SPOILER SAFETY: Describe characters' status, intentions, and roles ONLY as known up to this point in the book. NEVER reveal future secrets, identities, betrayals, or fates from later chapters.\n` +
+        languageInstruction +
         `Return ONLY a valid JSON object with these exact keys:\n` +
-        `- "characters": array of objects { "name": string, "role": string, "statusUpToNow": string, "keyRelationships": string }\n` +
+        `- "characters": array of objects { "name": string, "role": string (in ${tongueName}), "statusUpToNow": string (in ${tongueName}), "keyRelationships": string (in ${tongueName}) }\n` +
         `- "version": "v1-groq-companion"`;
 
       userPrompt =
@@ -813,8 +844,9 @@ Return a JSON object with key "translations" containing an array of translated s
         `You are Lamplight's AI Reading Companion.\n` +
         `Generate 3 thoughtful, reflective discussion questions about Chapter ${chapterIndex + 1} (${chapterTitle}).\n` +
         `Questions should invite the reader to ponder moral choices, character motivations, and universal literary themes. Do NOT ask about future events.\n` +
+        languageInstruction +
         `Return ONLY a valid JSON object with these exact keys:\n` +
-        `- "questions": array of 3 objects { "question": string, "theme": string, "contextNote": string }\n` +
+        `- "questions": array of 3 objects { "question": string (in ${tongueName}), "theme": string (in ${tongueName}), "contextNote": string (in ${tongueName}) }\n` +
         `- "version": "v1-groq-companion"`;
 
       userPrompt =
@@ -822,6 +854,42 @@ Return a JSON object with key "translations" containing an array of translated s
         `Chapter: ${chapterTitle} (Chapter ${chapterIndex + 1})\n` +
         `Chapter Text:\n${chapterExcerpt}`;
       maxTokens = 550;
+    } else if (action === 'companion_ask') {
+      const question = String(body.question || '').trim().slice(0, 500);
+      const passage = body.excerpt ? String(body.excerpt).trim().slice(0, 1500) : '';
+      const pageText = body.pageText ? String(body.pageText).trim().slice(0, 3000) : '';
+      const pageNumber = typeof body.pageNumber === 'number' ? body.pageNumber : undefined;
+      const chapterExcerpt = body.chapterExcerpt ? String(body.chapterExcerpt).trim().slice(0, 2000) : '';
+
+      if (!question) {
+        return new Response(JSON.stringify({ error: 'Question is required', success: false }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      systemPrompt =
+        `You are Lamplight's AI Reading Companion, an erudite, warm, and insightful literary guide.\n` +
+        `Answer the reader's question directly with literary elegance and critical depth.\n` +
+        (pageText
+          ? `The reader is currently reading Page ${pageNumber ?? 'current'}. Answer specifically with respect to what is taking place on this page or leading up to it, narrating the context clearly.\n`
+          : '') +
+        `STRICT SPOILER RULE: Discuss ONLY the provided text and events up to Chapter ${chapterIndex + 1}. NEVER reveal, foreshadow, or hint at any plot twists, deaths, or developments from future chapters.\n` +
+        languageInstruction +
+        `Return ONLY a valid JSON object with these exact keys:\n` +
+        `- "answer": string (2-3 concise paragraphs answering the question directly and thoughtfully in ${tongueName})\n` +
+        `- "keyThemes": array of 1-3 strings highlighting thematic connections in ${tongueName}\n` +
+        `- "version": "v1-groq-companion"`;
+
+      userPrompt =
+        (bookTitle ? `Book: "${bookTitle}" by ${bookAuthor || 'Classic Author'}\n` : '') +
+        `Chapter: ${chapterTitle} (Chapter ${chapterIndex + 1})\n` +
+        (pageNumber ? `Current Page: Page ${pageNumber}\n` : '') +
+        (pageText ? `Current Page Text:\n"${pageText}"\n\n` : '') +
+        (passage ? `Relevant Excerpt:\n"${passage}"\n\n` : '') +
+        (!pageText && chapterExcerpt ? `Chapter Context:\n"${chapterExcerpt.slice(0, 1500)}"\n\n` : '') +
+        `Reader's Question: "${question}"`;
+      maxTokens = 600;
     }
 
     // 5. Call AI (Gemini or Groq)

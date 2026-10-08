@@ -1,22 +1,42 @@
 import { useSyncExternalStore } from 'react';
+import { getSetting, setSetting } from '@/db/repositories/appSettings';
 
 export type ReadingTheme = 'day' | 'lamp';
 
-// In-memory only for now — resets on app restart. Shared between Settings
-// (where the user picks a theme) and the Reader (which the Settings toggle
-// would otherwise have no effect on) via useSyncExternalStore so both stay
-// in sync without prop-drilling or a new state-management dependency.
+const STORAGE_KEY = 'reading_theme';
+
 let currentTheme: ReadingTheme = 'day';
+let hydrated = false;
 const listeners = new Set<() => void>();
+
+function emit(): void {
+  listeners.forEach((listener) => listener());
+}
 
 export function getReadingTheme(): ReadingTheme {
   return currentTheme;
 }
 
 export function setReadingTheme(theme: ReadingTheme): void {
-  if (theme === currentTheme) return;
+  if (theme === currentTheme && hydrated) return;
+  hydrated = true;
   currentTheme = theme;
-  listeners.forEach((listener) => listener());
+  emit();
+  void setSetting(STORAGE_KEY, theme).catch(() => {});
+}
+
+export async function hydrateReadingTheme(loader?: () => Promise<string | null>): Promise<void> {
+  if (hydrated) return;
+  hydrated = true;
+  try {
+    const saved = loader ? await loader() : await getSetting(STORAGE_KEY);
+    if (saved === 'day' || saved === 'lamp') {
+      currentTheme = saved;
+      emit();
+    }
+  } catch {
+    // Keep fallback 'day'
+  }
 }
 
 export function subscribeToReadingTheme(listener: () => void): () => void {
@@ -27,3 +47,10 @@ export function subscribeToReadingTheme(listener: () => void): () => void {
 export function useReadingTheme(): ReadingTheme {
   return useSyncExternalStore(subscribeToReadingTheme, getReadingTheme);
 }
+
+export function _resetReadingThemeForTesting(): void {
+  currentTheme = 'day';
+  hydrated = false;
+  listeners.clear();
+}
+

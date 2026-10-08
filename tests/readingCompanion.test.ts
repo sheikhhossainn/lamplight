@@ -126,3 +126,230 @@ test('COMPANION-01: Extract prior text handles empty or single-chapter book grac
   assert.equal(extractPriorText([], 0), '');
   assert.equal(extractPriorText(['Only chapter'], 0), 'Only chapter');
 });
+
+test('COMPANION-02: Local engine generates passage explanations and detects classical allusions', async () => {
+  const { generateLocalExplanation } = await import(
+    '../src/features/companion/localCompanionEngine'
+  );
+
+  const excerptWithAllusion =
+    'He stood like Prometheus upon the precipice, defying the decrees of the council, though he knew the eagle of retribution would return on the morrow.';
+
+  const result = generateLocalExplanation({
+    excerpt: excerptWithAllusion,
+    bookTitle: 'Frankenstein',
+    bookAuthor: 'Mary Shelley',
+    chapterTitle: 'Chapter 4',
+    chapterIndex: 3,
+  });
+
+  assert.ok(result.explanation.length > 50);
+  assert.ok(result.keyThemes.length > 0);
+  assert.ok(result.referenceNote?.includes('Promethean'));
+  assert.ok(result.version.startsWith('local-literary-'));
+});
+
+test('COMPANION-02: Local engine simplifies archaic prose and breaks down lexicon', async () => {
+  const { generateLocalSimplification } = await import(
+    '../src/features/companion/localCompanionEngine'
+  );
+
+  const archaicSentence =
+    'Doth thou not hearken unto thy brother ere he tarry betwixt two paths?';
+
+  const result = generateLocalSimplification({
+    sentence: archaicSentence,
+  });
+
+  assert.ok(result.simplified.toLowerCase().includes('you'));
+  assert.ok(result.simplified.toLowerCase().includes('listen'));
+  assert.ok(result.vocabularyBreakdown && result.vocabularyBreakdown.length >= 2);
+  const words = result.vocabularyBreakdown?.map((v) => v.archaicWord) || [];
+  assert.ok(words.includes('hearken') || words.includes('tarry') || words.includes('betwixt'));
+});
+
+test('COMPANION-02: Local engine generates spoiler-free chapter summary and key points', async () => {
+  const { generateLocalSummary } = await import(
+    '../src/features/companion/localCompanionEngine'
+  );
+
+  const chapterText =
+    'The morning broke cold and grey over Netherfield Park. Elizabeth walked across the fields with hurried steps.\n\n' +
+    'Upon arriving, she found Jane shivering with fever in the upstairs bedchamber, while Miss Bingley looked on with cool indifference.\n\n' +
+    'Mr. Darcy observed Elizabeths bright eyes from across the parlor, acknowledging in silence that her sisterly devotion had ennobled her countenance.';
+
+  const result = generateLocalSummary({
+    chapterExcerpt: chapterText,
+    chapterIndex: 6,
+    chapterTitle: 'Chapter 7',
+    bookTitle: 'Pride and Prejudice',
+  });
+
+  assert.ok(result.summary.includes('Chapter 7'));
+  assert.ok(result.spoilerFreeGuarantee);
+  assert.ok(result.keyDevelopments.length >= 2);
+  assert.ok(result.thematicFocus.length > 10);
+});
+
+test('COMPANION-02: Local engine recaps characters and produces reflection questions', async () => {
+  const { generateLocalCharacterRecap, generateLocalReflections, generateLocalAnswer } = await import(
+    '../src/features/companion/localCompanionEngine'
+  );
+
+  const text =
+    'Elizabeth spoke with earnest warmth, though Mr. Darcy maintained his customary reserve. Jane smiled weakly from her pillows as Mrs. Bennet bustled into the drawing room.';
+
+  const recap = generateLocalCharacterRecap({
+    textUpToNow: text,
+    chapterIndex: 4,
+  });
+  assert.ok(recap.characters.length >= 2);
+  const names = recap.characters.map((c) => c.name);
+  assert.ok(names.some((n) => n.includes('Elizabeth') || n.includes('Darcy')));
+
+  const reflections = generateLocalReflections({
+    chapterExcerpt: text,
+    chapterIndex: 4,
+  });
+  assert.equal(reflections.questions.length, 3);
+  assert.ok(reflections.questions[0].question.length > 20);
+
+  const answer = generateLocalAnswer({
+    question: 'Why is Darcy so quiet in this scene?',
+    excerpt: text,
+  });
+  assert.ok(answer.answer.length > 50);
+  assert.ok(answer.keyThemes && answer.keyThemes.length > 0);
+});
+
+test('COMPANION-03: Page insight extracts active page narrative and entities', async () => {
+  const { generateLocalPageInsight, generateLocalAnswer } = await import(
+    '../src/features/companion/localCompanionEngine'
+  );
+
+  const page3Text =
+    'Mr. Bennet made no answer. "Do not you want to know who has taken it?" cried his wife impatiently.\n\n' +
+    '"You want to tell me, and I have no objection to hearing it." This was invitation enough.\n\n' +
+    '"Why, my dear, you must know, Mrs. Long says that Netherfield is taken by a young man of large fortune from the north of England; that he came down on Monday in a chaise and four to see the place."';
+
+  const insight = generateLocalPageInsight({
+    pageText: page3Text,
+    pageNumber: 3,
+    chapterTitle: 'Chapter 1',
+    chapterIndex: 0,
+    bookTitle: 'Pride and Prejudice',
+    bookAuthor: 'Jane Austen',
+  });
+
+  assert.equal(insight.pageNumber, 3);
+  assert.ok(insight.summary.includes('Page 3'));
+  assert.ok(insight.summary.includes('Mr. Bennet'));
+  assert.ok(insight.activeCharacters && insight.activeCharacters.length > 0);
+  assert.ok(insight.keyMoment && insight.keyMoment.length > 10);
+  assert.ok(insight.thematicFocus.length > 10);
+
+  // When asked "what is this page about", answer reflects page 3 specifics
+  const pageAnswer = generateLocalAnswer({
+    question: 'What is this page about?',
+    pageText: page3Text,
+    pageNumber: 3,
+    chapterTitle: 'Chapter 1',
+    chapterIndex: 0,
+  });
+
+  assert.ok(pageAnswer.answer.includes('Page 3'));
+  assert.ok(pageAnswer.answer.includes('Mr. Bennet') || pageAnswer.answer.includes('Netherfield'));
+  assert.ok(pageAnswer.keyThemes && pageAnswer.keyThemes.length > 0);
+});
+
+test('COMPANION-04: Mother tongue localization generates responses in native tongue (bn)', async () => {
+  const {
+    generateLocalExplanation,
+    generateLocalSimplification,
+    generateLocalPageInsight,
+    generateLocalSummary,
+    generateLocalCharacterRecap,
+    generateLocalReflections,
+    generateLocalAnswer,
+  } = await import('../src/features/companion/localCompanionEngine');
+
+  const page3Text =
+    'Mr. Bennet made no answer. "Do not you want to know who has taken it?" cried his wife impatiently.\n\n' +
+    '"You want to tell me, and I have no objection to hearing it." This was invitation enough.';
+
+  const isBengali = (text: string) => /[\u0980-\u09FF]/.test(text);
+
+  // 1. Explanation in Bengali
+  const explainBn = generateLocalExplanation({
+    excerpt: 'It is a truth universally acknowledged, that a single man in possession of a good fortune, must be in want of a wife.',
+    chapterTitle: 'Chapter 1',
+    chapterIndex: 0,
+    motherTongue: 'bn',
+  });
+  assert.ok(isBengali(explainBn.explanation));
+  assert.ok(explainBn.explanation.includes('এই অনুচ্ছেদে'));
+  assert.ok(explainBn.keyThemes.length > 0);
+  assert.ok(isBengali(explainBn.keyThemes[0]));
+
+  // 2. Simplification in Bengali
+  const simplifyBn = generateLocalSimplification({
+    sentence: 'Thou hast no cause for grief, nor canst thou alter fate.',
+    motherTongue: 'bn',
+  });
+  assert.ok(isBengali(simplifyBn.originalMeaning));
+  assert.ok(simplifyBn.vocabularyBreakdown && simplifyBn.vocabularyBreakdown.length > 0);
+  assert.ok(isBengali(simplifyBn.vocabularyBreakdown[0].modernMeaning));
+
+  // 3. Page Insight in Bengali
+  const pageInsightBn = generateLocalPageInsight({
+    pageText: page3Text,
+    pageNumber: 3,
+    chapterTitle: 'Chapter 1',
+    chapterIndex: 0,
+    motherTongue: 'bn',
+  });
+  assert.ok(isBengali(pageInsightBn.summary));
+  assert.ok(pageInsightBn.summary.includes('পৃষ্ঠা 3') || pageInsightBn.summary.includes('পৃষ্ঠা ৩'));
+
+  // 4. Chapter Summary in Bengali
+  const summaryBn = generateLocalSummary({
+    chapterExcerpt: page3Text,
+    chapterIndex: 0,
+    chapterTitle: 'Chapter 1',
+    motherTongue: 'bn',
+  });
+  assert.ok(isBengali(summaryBn.summary));
+  assert.ok(summaryBn.summary.includes('সারসংক্ষেপ'));
+
+  // 5. Character Recap in Bengali
+  const recapBn = generateLocalCharacterRecap({
+    textUpToNow: 'Mr. Bennet conversed with Mrs. Bennet while Elizabeth listened.',
+    chapterIndex: 0,
+    motherTongue: 'bn',
+  });
+  assert.ok(recapBn.characters.length > 0);
+  assert.ok(isBengali(recapBn.characters[0].statusUpToNow));
+
+  // 6. Reflections in Bengali
+  const reflectionsBn = generateLocalReflections({
+    chapterExcerpt: page3Text,
+    chapterIndex: 0,
+    chapterTitle: 'Chapter 1',
+    motherTongue: 'bn',
+  });
+  assert.ok(reflectionsBn.questions.length > 0);
+  assert.ok(isBengali(reflectionsBn.questions[0].question));
+
+  // 7. Page Answer in Bengali
+  const answerBn = generateLocalAnswer({
+    question: 'এই পৃষ্ঠা কী নিয়ে?',
+    pageText: page3Text,
+    pageNumber: 3,
+    chapterIndex: 0,
+    motherTongue: 'bn',
+  });
+  assert.ok(isBengali(answerBn.answer));
+  assert.ok(answerBn.answer.includes('পৃষ্ঠা 3') || answerBn.answer.includes('পৃষ্ঠা ৩'));
+});
+
+
