@@ -19,6 +19,7 @@
  * - AI failure never blocks reading or alters source text.
  */
 
+import { getMotherTongue } from '@/features/settings/motherTongue';
 import { getCompanionQuota, incrementCompanionQuota } from './companionQuota';
 import {
   generateLocalAnswer,
@@ -212,6 +213,7 @@ export async function explainPassage(params: {
   chapterTitle?: string;
   chapterIndex?: number;
   isReference?: boolean;
+  motherTongue?: string;
 }): Promise<CompanionResponse<CompanionExplainResult>> {
   const check = await canInvokeCompanion();
   if (!check.allowed) {
@@ -222,6 +224,8 @@ export async function explainPassage(params: {
   if (!bounded) {
     return { success: false, error: 'Passage excerpt cannot be empty' };
   }
+
+  const motherTongue = params.motherTongue ?? getMotherTongue();
 
   // 1. Try remote Edge Function first
   try {
@@ -239,6 +243,7 @@ export async function explainPassage(params: {
       chapterTitle: params.chapterTitle,
       chapterIndex: params.chapterIndex ?? 0,
       isReference: Boolean(params.isReference),
+      motherTongue,
     });
 
     if (res?.success && res.data) {
@@ -257,6 +262,7 @@ export async function explainPassage(params: {
     chapterTitle: params.chapterTitle,
     chapterIndex: params.chapterIndex,
     isReference: params.isReference,
+    motherTongue,
   });
 
   void incrementCompanionQuota();
@@ -271,6 +277,7 @@ export async function simplifySentence(params: {
   bookTitle?: string;
   bookAuthor?: string;
   chapterIndex?: number;
+  motherTongue?: string;
 }): Promise<CompanionResponse<CompanionSimplifyResult>> {
   const check = await canInvokeCompanion();
   if (!check.allowed) {
@@ -281,6 +288,8 @@ export async function simplifySentence(params: {
   if (!bounded) {
     return { success: false, error: 'Sentence cannot be empty' };
   }
+
+  const motherTongue = params.motherTongue ?? getMotherTongue();
 
   // 1. Try remote Edge Function
   try {
@@ -296,6 +305,7 @@ export async function simplifySentence(params: {
       bookTitle: params.bookTitle,
       bookAuthor: params.bookAuthor,
       chapterIndex: params.chapterIndex ?? 0,
+      motherTongue,
     });
 
     if (res?.success && res.data) {
@@ -312,6 +322,7 @@ export async function simplifySentence(params: {
     bookTitle: params.bookTitle,
     bookAuthor: params.bookAuthor,
     chapterIndex: params.chapterIndex,
+    motherTongue,
   });
 
   void incrementCompanionQuota();
@@ -328,6 +339,7 @@ export async function getPageInsight(params: {
   chapterTitle?: string;
   bookTitle?: string;
   bookAuthor?: string;
+  motherTongue?: string;
 }): Promise<CompanionResponse<CompanionPageInsightResult>> {
   const check = await canInvokeCompanion();
   if (!check.allowed) {
@@ -338,6 +350,8 @@ export async function getPageInsight(params: {
   if (!bounded) {
     return { success: false, error: 'Page content cannot be empty' };
   }
+
+  const motherTongue = params.motherTongue ?? getMotherTongue();
 
   // 1. Try remote Edge Function
   try {
@@ -355,6 +369,7 @@ export async function getPageInsight(params: {
       chapterTitle: params.chapterTitle,
       bookTitle: params.bookTitle,
       bookAuthor: params.bookAuthor,
+      motherTongue,
     });
 
     if (res?.success && res.data) {
@@ -373,6 +388,7 @@ export async function getPageInsight(params: {
     chapterTitle: params.chapterTitle,
     bookTitle: params.bookTitle,
     bookAuthor: params.bookAuthor,
+    motherTongue,
   });
 
   void incrementCompanionQuota();
@@ -388,6 +404,7 @@ export async function summarizeChapter(params: {
   chapterTitle?: string;
   bookTitle?: string;
   bookAuthor?: string;
+  motherTongue?: string;
 }): Promise<CompanionResponse<CompanionSummaryResult>> {
   const check = await canInvokeCompanion();
   if (!check.allowed) {
@@ -398,6 +415,8 @@ export async function summarizeChapter(params: {
   if (!bounded) {
     return { success: false, error: 'Chapter content cannot be empty' };
   }
+
+  const motherTongue = params.motherTongue ?? getMotherTongue();
 
   // 1. Try remote Edge Function
   try {
@@ -414,6 +433,7 @@ export async function summarizeChapter(params: {
       chapterTitle: params.chapterTitle,
       bookTitle: params.bookTitle,
       bookAuthor: params.bookAuthor,
+      motherTongue,
     });
 
     if (res?.success && res.data) {
@@ -431,6 +451,7 @@ export async function summarizeChapter(params: {
     chapterTitle: params.chapterTitle,
     bookTitle: params.bookTitle,
     bookAuthor: params.bookAuthor,
+    motherTongue,
   });
 
   void incrementCompanionQuota();
@@ -446,6 +467,7 @@ export async function recapCharacters(params: {
   chapterTitle?: string;
   bookTitle?: string;
   bookAuthor?: string;
+  motherTongue?: string;
 }): Promise<CompanionResponse<CompanionCharactersResult>> {
   const check = await canInvokeCompanion();
   if (!check.allowed) {
@@ -456,6 +478,8 @@ export async function recapCharacters(params: {
   if (!bounded) {
     return { success: false, error: 'Reading context cannot be empty' };
   }
+
+  const motherTongue = params.motherTongue ?? getMotherTongue();
 
   // 1. Try remote Edge Function
   try {
@@ -472,6 +496,7 @@ export async function recapCharacters(params: {
       chapterTitle: params.chapterTitle,
       bookTitle: params.bookTitle,
       bookAuthor: params.bookAuthor,
+      motherTongue,
     });
 
     if (res?.success && res.data) {
@@ -488,6 +513,7 @@ export async function recapCharacters(params: {
     chapterIndex: params.chapterIndex,
     chapterTitle: params.chapterTitle,
     bookTitle: params.bookTitle,
+    motherTongue,
   });
 
   void incrementCompanionQuota();
@@ -503,6 +529,7 @@ export async function generateReflectiveQuestions(params: {
   chapterTitle?: string;
   bookTitle?: string;
   bookAuthor?: string;
+  motherTongue?: string;
 }): Promise<CompanionResponse<CompanionReflectionsResult>> {
   const check = await canInvokeCompanion();
   if (!check.allowed) {
@@ -513,6 +540,8 @@ export async function generateReflectiveQuestions(params: {
   if (!bounded) {
     return { success: false, error: 'Chapter content cannot be empty' };
   }
+
+  const motherTongue = params.motherTongue ?? getMotherTongue();
 
   // 1. Try remote Edge Function
   try {
@@ -529,6 +558,7 @@ export async function generateReflectiveQuestions(params: {
       chapterTitle: params.chapterTitle,
       bookTitle: params.bookTitle,
       bookAuthor: params.bookAuthor,
+      motherTongue,
     });
 
     if (res?.success && res.data) {
@@ -544,6 +574,7 @@ export async function generateReflectiveQuestions(params: {
     chapterExcerpt: bounded,
     chapterIndex: params.chapterIndex,
     chapterTitle: params.chapterTitle,
+    motherTongue,
   });
 
   void incrementCompanionQuota();
@@ -564,6 +595,7 @@ export async function askCompanionQuestion(params: {
   chapterTitle?: string;
   chapterIndex?: number;
   textUpToNow?: string;
+  motherTongue?: string;
 }): Promise<CompanionResponse<CompanionAskResult>> {
   const check = await canInvokeCompanion();
   if (!check.allowed) {
@@ -578,6 +610,7 @@ export async function askCompanionQuestion(params: {
   const boundedExcerpt = params.excerpt ? boundExcerpt(params.excerpt, 1500) : undefined;
   const boundedPageText = params.pageText ? boundExcerpt(params.pageText, 3000) : undefined;
   const boundedChapter = params.chapterExcerpt ? boundExcerpt(params.chapterExcerpt, 3000) : undefined;
+  const motherTongue = params.motherTongue ?? getMotherTongue();
 
   // 1. Try remote Edge Function
   try {
@@ -598,6 +631,7 @@ export async function askCompanionQuestion(params: {
       bookAuthor: params.bookAuthor,
       chapterTitle: params.chapterTitle,
       chapterIndex: params.chapterIndex ?? 0,
+      motherTongue,
     });
 
     if (res?.success && res.data) {
@@ -619,6 +653,7 @@ export async function askCompanionQuestion(params: {
     bookAuthor: params.bookAuthor,
     chapterTitle: params.chapterTitle,
     chapterIndex: params.chapterIndex,
+    motherTongue,
   });
 
   void incrementCompanionQuota();

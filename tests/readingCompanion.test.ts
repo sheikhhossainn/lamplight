@@ -146,7 +146,7 @@ test('COMPANION-02: Local engine generates passage explanations and detects clas
   assert.ok(result.explanation.length > 50);
   assert.ok(result.keyThemes.length > 0);
   assert.ok(result.referenceNote?.includes('Promethean'));
-  assert.equal(result.version, 'local-literary-v1');
+  assert.ok(result.version.startsWith('local-literary-'));
 });
 
 test('COMPANION-02: Local engine simplifies archaic prose and breaks down lexicon', async () => {
@@ -260,6 +260,92 @@ test('COMPANION-03: Page insight extracts active page narrative and entities', a
   assert.ok(pageAnswer.answer.includes('Page 3'));
   assert.ok(pageAnswer.answer.includes('Mr. Bennet') || pageAnswer.answer.includes('Netherfield'));
   assert.ok(pageAnswer.keyThemes && pageAnswer.keyThemes.length > 0);
+});
+
+test('COMPANION-04: Mother tongue localization generates responses in native tongue (bn)', async () => {
+  const {
+    generateLocalExplanation,
+    generateLocalSimplification,
+    generateLocalPageInsight,
+    generateLocalSummary,
+    generateLocalCharacterRecap,
+    generateLocalReflections,
+    generateLocalAnswer,
+  } = await import('../src/features/companion/localCompanionEngine');
+
+  const page3Text =
+    'Mr. Bennet made no answer. "Do not you want to know who has taken it?" cried his wife impatiently.\n\n' +
+    '"You want to tell me, and I have no objection to hearing it." This was invitation enough.';
+
+  const isBengali = (text: string) => /[\u0980-\u09FF]/.test(text);
+
+  // 1. Explanation in Bengali
+  const explainBn = generateLocalExplanation({
+    excerpt: 'It is a truth universally acknowledged, that a single man in possession of a good fortune, must be in want of a wife.',
+    chapterTitle: 'Chapter 1',
+    chapterIndex: 0,
+    motherTongue: 'bn',
+  });
+  assert.ok(isBengali(explainBn.explanation));
+  assert.ok(explainBn.explanation.includes('এই অনুচ্ছেদে'));
+
+  // 2. Simplification in Bengali
+  const simplifyBn = generateLocalSimplification({
+    sentence: 'Thou hast no cause for grief, nor canst thou alter fate.',
+    motherTongue: 'bn',
+  });
+  assert.ok(isBengali(simplifyBn.originalMeaning));
+
+  // 3. Page Insight in Bengali
+  const pageInsightBn = generateLocalPageInsight({
+    pageText: page3Text,
+    pageNumber: 3,
+    chapterTitle: 'Chapter 1',
+    chapterIndex: 0,
+    motherTongue: 'bn',
+  });
+  assert.ok(isBengali(pageInsightBn.summary));
+  assert.ok(pageInsightBn.summary.includes('পৃষ্ঠা 3') || pageInsightBn.summary.includes('পৃষ্ঠা ৩'));
+
+  // 4. Chapter Summary in Bengali
+  const summaryBn = generateLocalSummary({
+    chapterExcerpt: page3Text,
+    chapterIndex: 0,
+    chapterTitle: 'Chapter 1',
+    motherTongue: 'bn',
+  });
+  assert.ok(isBengali(summaryBn.summary));
+  assert.ok(summaryBn.summary.includes('সারসংক্ষেপ'));
+
+  // 5. Character Recap in Bengali
+  const recapBn = generateLocalCharacterRecap({
+    textUpToNow: 'Mr. Bennet conversed with Mrs. Bennet while Elizabeth listened.',
+    chapterIndex: 0,
+    motherTongue: 'bn',
+  });
+  assert.ok(recapBn.characters.length > 0);
+  assert.ok(isBengali(recapBn.characters[0].statusUpToNow));
+
+  // 6. Reflections in Bengali
+  const reflectionsBn = generateLocalReflections({
+    chapterExcerpt: page3Text,
+    chapterIndex: 0,
+    chapterTitle: 'Chapter 1',
+    motherTongue: 'bn',
+  });
+  assert.ok(reflectionsBn.questions.length > 0);
+  assert.ok(isBengali(reflectionsBn.questions[0].question));
+
+  // 7. Page Answer in Bengali
+  const answerBn = generateLocalAnswer({
+    question: 'এই পৃষ্ঠা কী নিয়ে?',
+    pageText: page3Text,
+    pageNumber: 3,
+    chapterIndex: 0,
+    motherTongue: 'bn',
+  });
+  assert.ok(isBengali(answerBn.answer));
+  assert.ok(answerBn.answer.includes('পৃষ্ঠা 3') || answerBn.answer.includes('পৃষ্ঠা ৩'));
 });
 
 

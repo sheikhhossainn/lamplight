@@ -38,6 +38,7 @@ import { createReaderNote } from '@/db/repositories/readerNotes';
 import { useTheme } from '@/theme/ThemeProvider';
 import { LamplightColor, Spacing } from '@/theme/tokens';
 import { FontFamily } from '@/theme/typography';
+import { useMotherTongue } from '@/features/settings/motherTongue';
 import { getCompanionQuota, type CompanionQuotaStatus } from './companionQuota';
 import {
   askCompanionQuestion,
@@ -109,6 +110,8 @@ export function ReadingCompanionModal({
   const insets = useSafeAreaInsets();
   const { colors, typography, radius, scheme } = useTheme();
   const isLamp = scheme === 'lamp';
+  const motherTongue = useMotherTongue();
+  const isBn = motherTongue === 'bn';
 
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [isInputFocused, setIsInputFocused] = useState(false);
@@ -222,7 +225,7 @@ export function ReadingCompanionModal({
       if (action === 'explain') {
         if (explainData) return;
         setLoading(true);
-        setLoadingStep('Reading passage closely...');
+        setLoadingStep(isBn ? 'অনুচ্ছেদটি মনোযোগ দিয়ে পড়া হচ্ছে...' : 'Reading passage closely...');
         const res = await explainPassage({
           excerpt: selectedText,
           bookTitle,
@@ -230,13 +233,14 @@ export function ReadingCompanionModal({
           chapterTitle,
           chapterIndex,
           isReference: false,
+          motherTongue,
         });
         setLoading(false);
         if (res.data) setExplainData(res.data);
       } else if (action === 'reference') {
         if (referenceData) return;
         setLoading(true);
-        setLoadingStep('Unearthing classical allusions...');
+        setLoadingStep(isBn ? 'চিরায়ত সাহিত্যের ইঙ্গিত খোঁজা হচ্ছে...' : 'Unearthing classical allusions...');
         const res = await explainPassage({
           excerpt: selectedText,
           bookTitle,
@@ -244,32 +248,37 @@ export function ReadingCompanionModal({
           chapterTitle,
           chapterIndex,
           isReference: true,
+          motherTongue,
         });
         setLoading(false);
         if (res.data) setReferenceData(res.data);
       } else if (action === 'simplify') {
         if (simplifyData) return;
         setLoading(true);
-        setLoadingStep('Translating archaic prose into modern English...');
+        setLoadingStep(isBn ? 'সহজ ভাষায় রূপান্তর করা হচ্ছে...' : 'Translating archaic prose into modern English...');
         const res = await simplifySentence({
           sentence: selectedText,
           bookTitle,
           bookAuthor,
           chapterIndex,
+          motherTongue,
         });
         setLoading(false);
         if (res.data) setSimplifyData(res.data);
       } else if (action === 'tone') {
         if (toneData) return;
         setLoading(true);
-        setLoadingStep('Analyzing literary tone & imagery...');
+        setLoadingStep(isBn ? 'সাহিত্যিক সুর ও ভাব বিশ্লেষণ করা হচ্ছে...' : 'Analyzing literary tone & imagery...');
         const res = await askCompanionQuestion({
-          question: 'Analyze the literary tone, dramatic tension, and prose style of this passage.',
+          question: isBn
+            ? 'এই অনুচ্ছেদের সাহিত্যিক সুর, অন্তর্নিহিত টানাপোড়েন এবং ভাষার ভাব প্রকাশ বিশ্লেষণ করুন।'
+            : 'Analyze the literary tone, dramatic tension, and prose style of this passage.',
           excerpt: selectedText,
           bookTitle,
           bookAuthor,
           chapterTitle,
           chapterIndex,
+          motherTongue,
         });
         setLoading(false);
         if (res.data) setToneData(res.data);
@@ -279,7 +288,7 @@ export function ReadingCompanionModal({
       if (action === 'page') {
         if (pageInsightData) return;
         setLoading(true);
-        setLoadingStep('Reading this page closely...');
+        setLoadingStep(isBn ? 'পৃষ্ঠাটি মনোযোগ দিয়ে পড়া হচ্ছে...' : 'Reading this page closely...');
         const res = await getPageInsight({
           pageText: currentPageText || currentChapterText.slice(0, 2000),
           pageNumber: currentPageNumber ?? (pageIndex !== undefined ? pageIndex + 1 : 1),
@@ -287,26 +296,28 @@ export function ReadingCompanionModal({
           chapterTitle,
           bookTitle,
           bookAuthor,
+          motherTongue,
         });
         setLoading(false);
         if (res.data) setPageInsightData(res.data);
       } else if (action === 'summary') {
         if (summaryData) return;
         setLoading(true);
-        setLoadingStep('Synthesizing chapter events (spoiler-free)...');
+        setLoadingStep(isBn ? 'অধ্যায়ের সারসংক্ষেপ প্রস্তুত হচ্ছে...' : 'Synthesizing chapter events (spoiler-free)...');
         const res = await summarizeChapter({
           chapterExcerpt: currentChapterText || 'Chapter excerpt unavailable.',
           chapterIndex,
           chapterTitle,
           bookTitle,
           bookAuthor,
+          motherTongue,
         });
         setLoading(false);
         if (res.data) setSummaryData(res.data);
       } else if (action === 'characters') {
         if (charactersData) return;
         setLoading(true);
-        setLoadingStep('Tracking named characters up to this chapter...');
+        setLoadingStep(isBn ? 'চরিত্রগুলোর বিবরণ সাজানো হচ্ছে...' : 'Tracking named characters up to this chapter...');
         const priorText = extractPriorText(priorChapterTexts, chapterIndex, currentChapterText);
         const res = await recapCharacters({
           textUpToNow: priorText || currentChapterText || 'Text unavailable.',
@@ -314,19 +325,21 @@ export function ReadingCompanionModal({
           chapterTitle,
           bookTitle,
           bookAuthor,
+          motherTongue,
         });
         setLoading(false);
         if (res.data) setCharactersData(res.data);
       } else if (action === 'reflections') {
         if (reflectionsData) return;
         setLoading(true);
-        setLoadingStep('Formulating philosophical reflection questions...');
+        setLoadingStep(isBn ? 'চিন্তাশীল প্রশ্নমালা তৈরি করা হচ্ছে...' : 'Formulating philosophical reflection questions...');
         const res = await generateReflectiveQuestions({
           chapterExcerpt: currentChapterText || 'Chapter excerpt unavailable.',
           chapterIndex,
           chapterTitle,
           bookTitle,
           bookAuthor,
+          motherTongue,
         });
         setLoading(false);
         if (res.data) setReflectionsData(res.data);
@@ -346,6 +359,8 @@ export function ReadingCompanionModal({
     pageIndex,
     currentChapterText,
     priorChapterTexts,
+    motherTongue,
+    isBn,
     pageInsightData,
     explainData,
     referenceData,
@@ -392,7 +407,7 @@ export function ReadingCompanionModal({
     Keyboard.dismiss();
     setCustomQuestion('');
     setLoading(true);
-    setLoadingStep('Consulting companion on your question...');
+    setLoadingStep(isBn ? 'প্রশ্নের উত্তর তৈরি করা হচ্ছে...' : 'Consulting companion on your question...');
 
     const res = await askCompanionQuestion({
       question: q,
@@ -404,6 +419,7 @@ export function ReadingCompanionModal({
       bookAuthor,
       chapterTitle,
       chapterIndex,
+      motherTongue,
     });
 
     setLoading(false);
@@ -655,7 +671,7 @@ export function ReadingCompanionModal({
                       { color: selectionAction === 'explain' ? LamplightColor.primaryDark : colors.ink },
                     ]}
                   >
-                    Deep Meaning
+                    {isBn ? 'গভীর অর্থ' : 'Deep Meaning'}
                   </Text>
                 </Pressable>
 
@@ -677,7 +693,7 @@ export function ReadingCompanionModal({
                       { color: selectionAction === 'reference' ? LamplightColor.primaryDark : colors.ink },
                     ]}
                   >
-                    Classical Allusions
+                    {isBn ? 'সাহিত্যিক ইঙ্গিত' : 'Classical Allusions'}
                   </Text>
                 </Pressable>
 
@@ -699,7 +715,7 @@ export function ReadingCompanionModal({
                       { color: selectionAction === 'simplify' ? LamplightColor.primaryDark : colors.ink },
                     ]}
                   >
-                    Simplify Prose
+                    {isBn ? 'সহজ ভাষা' : 'Simplify Prose'}
                   </Text>
                 </Pressable>
 
@@ -721,7 +737,7 @@ export function ReadingCompanionModal({
                       { color: selectionAction === 'tone' ? LamplightColor.primaryDark : colors.ink },
                     ]}
                   >
-                    Tone & Subtext
+                    {isBn ? 'সুর ও অন্তর্দৃষ্টি' : 'Tone & Subtext'}
                   </Text>
                 </Pressable>
 
@@ -743,7 +759,7 @@ export function ReadingCompanionModal({
                       { color: selectionAction === 'ask' ? LamplightColor.primaryDark : colors.ink },
                     ]}
                   >
-                    Ask Question
+                    {isBn ? 'প্রশ্ন করুন' : 'Ask Question'}
                   </Text>
                 </Pressable>
               </>
@@ -767,7 +783,7 @@ export function ReadingCompanionModal({
                       { color: chapterAction === 'page' ? LamplightColor.primaryDark : colors.ink },
                     ]}
                   >
-                    This Page
+                    {isBn ? 'এই পৃষ্ঠা' : 'This Page'}
                   </Text>
                 </Pressable>
 
@@ -789,7 +805,7 @@ export function ReadingCompanionModal({
                       { color: chapterAction === 'summary' ? LamplightColor.primaryDark : colors.ink },
                     ]}
                   >
-                    Chapter Summary
+                    {isBn ? 'অধ্যায়ের সারসংক্ষেপ' : 'Chapter Summary'}
                   </Text>
                 </Pressable>
 
@@ -811,7 +827,7 @@ export function ReadingCompanionModal({
                       { color: chapterAction === 'characters' ? LamplightColor.primaryDark : colors.ink },
                     ]}
                   >
-                    Character Dossier
+                    {isBn ? 'চরিত্রের রূপরেখা' : 'Character Dossier'}
                   </Text>
                 </Pressable>
 
@@ -833,7 +849,7 @@ export function ReadingCompanionModal({
                       { color: chapterAction === 'reflections' ? LamplightColor.primaryDark : colors.ink },
                     ]}
                   >
-                    Reflections
+                    {isBn ? 'ভাবনার খোরাক' : 'Reflections'}
                   </Text>
                 </Pressable>
 
@@ -855,7 +871,7 @@ export function ReadingCompanionModal({
                       { color: chapterAction === 'ask' ? LamplightColor.primaryDark : colors.ink },
                     ]}
                   >
-                    Ask Question
+                    {isBn ? 'প্রশ্ন করুন' : 'Ask Question'}
                   </Text>
                 </Pressable>
               </>
@@ -1306,11 +1322,17 @@ export function ReadingCompanionModal({
           >
             <TextInput
               placeholder={
-                isSelectionMode
-                  ? 'Ask about this passage...'
-                  : chapterAction === 'page'
-                    ? `Ask about page ${currentPageNumber ?? 1}...`
-                    : 'Ask about this chapter...'
+                isBn
+                  ? isSelectionMode
+                    ? 'এই অনুচ্ছেদ সম্পর্কে প্রশ্ন করুন...'
+                    : chapterAction === 'page'
+                      ? `পৃষ্ঠা ${currentPageNumber ?? 1} সম্পর্কে প্রশ্ন করুন...`
+                      : 'এই অধ্যায় সম্পর্কে প্রশ্ন করুন...'
+                  : isSelectionMode
+                    ? 'Ask about this passage...'
+                    : chapterAction === 'page'
+                      ? `Ask about page ${currentPageNumber ?? 1}...`
+                      : 'Ask about this chapter...'
               }
               placeholderTextColor={colors.fawn}
               value={customQuestion}
