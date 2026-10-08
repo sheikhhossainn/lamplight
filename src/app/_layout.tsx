@@ -1,3 +1,4 @@
+import '@/lib/suppressWarnings';
 import { Amiri_400Regular, Amiri_700Bold } from '@expo-google-fonts/amiri';
 import { Atma_400Regular, Atma_500Medium, Atma_600SemiBold } from '@expo-google-fonts/atma';
 import { Kalam_400Regular, Kalam_700Bold } from '@expo-google-fonts/kalam';
@@ -23,13 +24,6 @@ import { AppState, LogBox, View } from 'react-native';
 
 WebBrowser.maybeCompleteAuthSession();
 
-LogBox.ignoreLogs([
-  'ProgressBarAndroid has been extracted',
-  'SafeAreaView has been deprecated',
-  'Clipboard has been extracted',
-  'InteractionManager has been deprecated',
-  'PushNotificationIOS has been extracted',
-]);
 
 import { triggerSync } from '@/features/sync/syncWorker';
 import { flushAnalyticsQueue } from '@/features/analytics/analytics';
