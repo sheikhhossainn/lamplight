@@ -737,16 +737,155 @@ export function SendIcon({ size = 18, color = '#1C1B1E' }: { size?: number; colo
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
       <Path
-        d="M22 2L11 13"
+        d="M12 19V5M5 12L12 5L19 12"
         stroke={color}
-        strokeWidth={2}
+        strokeWidth={2.2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
+export function DocumentTextIcon({ color, size = 16 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M14 2H6C5.44772 2 5 2.44772 5 3V21C5 21.5523 5.44772 22 6 22H18C18.5523 22 19 21.5523 19 21V7L14 2Z"
+        stroke={color}
+        strokeWidth={1.7}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path d="M14 2V7H19" stroke={color} strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" />
+      <Line x1="9" y1="13" x2="15" y2="13" stroke={color} strokeWidth={1.7} strokeLinecap="round" />
+      <Line x1="9" y1="17" x2="13" y2="17" stroke={color} strokeWidth={1.7} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+export function UsersIcon({ color, size = 16 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M17 21V19C17 17.3431 15.6569 16 14 16H6C4.34315 16 3 17.3431 3 19V21"
+        stroke={color}
+        strokeWidth={1.7}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Circle cx="10" cy="8" r="3.8" stroke={color} strokeWidth={1.7} />
+      <Path
+        d="M21 21V19C20.9986 17.6521 19.9822 16.5192 18.64 16.3"
+        stroke={color}
+        strokeWidth={1.7}
+        strokeLinecap="round"
+      />
+      <Path
+        d="M16 4.3C17.33 4.7 18.25 5.95 18.25 7.45C18.25 8.95 17.33 10.2 16 10.6"
+        stroke={color}
+        strokeWidth={1.7}
+        strokeLinecap="round"
+      />
+    </Svg>
+  );
+}
+
+export function LightbulbIcon({ color, size = 16 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M9 18H15M10 21H14M12 2C8.13401 2 5 5.13401 5 9C5 11.38 6.19 13.47 8 14.74V16C8 16.5523 8.44772 17 9 17H15C15.5523 17 16 16.5523 16 16V14.74C17.81 13.47 19 11.38 19 9C19 5.13401 15.866 2 12 2Z"
+        stroke={color}
+        strokeWidth={1.7}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
+export function ChatBubbleIcon({ color, size = 16 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M21 11.5C21 15.642 17.193 19 12.5 19C11.162 19 9.897 18.72 8.784 18.219L3 20L4.767 15.719C3.666 14.516 3 13.082 3 11.5C3 7.358 6.807 4 11.5 4C16.193 4 20 7.358 20 11.5"
+        stroke={color}
+        strokeWidth={1.7}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
+export function CopyIcon({ color, size = 15 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Rect
+        x="9"
+        y="9"
+        width="11"
+        height="11"
+        rx="2"
+        stroke={color}
+        strokeWidth={1.7}
         strokeLinecap="round"
         strokeLinejoin="round"
       />
       <Path
-        d="M22 2L15 22L11 13L2 9L22 2Z"
-        fill={color}
+        d="M5 15H4C3.44772 15 3 14.5523 3 14V4C3 3.44772 3.44772 3 4 3H14C14.5523 3 15 3.44772 15 4V5"
+        stroke={color}
+        strokeWidth={1.7}
+        strokeLinecap="round"
+        strokeLinejoin="round"
       />
+    </Svg>
+  );
+}
+
+export function FeatherIcon({ color, size = 16 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M20.24 12.24A6 6 0 0 0 16 4C10.5 4 6 8.5 6 14c0 1.5.34 2.91.95 4.18L3 21l2.82-3.95C7.09 17.66 8.5 18 10 18a6 6 0 0 0 8.24-2.24l2-3.52z"
+        stroke={color}
+        strokeWidth={1.7}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path d="M16 8L7 17" stroke={color} strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+export function PillarIcon({ color, size = 16 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Line x1="4" y1="4" x2="20" y2="4" stroke={color} strokeWidth={1.7} strokeLinecap="round" />
+      <Line x1="6" y1="7" x2="18" y2="7" stroke={color} strokeWidth={1.7} strokeLinecap="round" />
+      <Line x1="8" y1="7" x2="8" y2="17" stroke={color} strokeWidth={1.7} strokeLinecap="round" />
+      <Line x1="12" y1="7" x2="12" y2="17" stroke={color} strokeWidth={1.7} strokeLinecap="round" />
+      <Line x1="16" y1="7" x2="16" y2="17" stroke={color} strokeWidth={1.7} strokeLinecap="round" />
+      <Line x1="6" y1="17" x2="18" y2="17" stroke={color} strokeWidth={1.7} strokeLinecap="round" />
+      <Line x1="4" y1="20" x2="20" y2="20" stroke={color} strokeWidth={1.7} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+export function MaskIcon({ color, size = 16 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M4 11C4 6.58172 7.58172 3 12 3C16.4183 3 20 6.58172 20 11C20 15.5 16 20 12 20C8 20 4 15.5 4 11Z"
+        stroke={color}
+        strokeWidth={1.7}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Circle cx="9" cy="10" r="1.5" fill={color} />
+      <Circle cx="15" cy="10" r="1.5" fill={color} />
+      <Path d="M9 15C10 16 14 16 15 15" stroke={color} strokeWidth={1.7} strokeLinecap="round" />
     </Svg>
   );
 }

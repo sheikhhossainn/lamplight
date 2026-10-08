@@ -16,13 +16,22 @@ import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 
 import {
+  BookmarkIcon,
+  ChatBubbleIcon,
   CheckIcon,
   CloseIcon,
   CompanionIcon,
+  CopyIcon,
+  DocumentTextIcon,
+  FeatherIcon,
+  LightbulbIcon,
+  MaskIcon,
+  PillarIcon,
   ReloadIcon,
   SendIcon,
   ShieldIcon,
   SparkleIcon,
+  UsersIcon,
 } from '@/components/icons';
 import { ReaderOverlay } from '@/features/reader/components/ReaderOverlay';
 import { createReaderNote } from '@/db/repositories/readerNotes';
@@ -496,7 +505,10 @@ export function ReadingCompanionModal({
             backgroundColor: colors.libraryBackground,
             borderTopColor: colors.hairline,
             maxHeight: keyboardHeight > 0 ? screenHeight - Math.max(insets.top, 24) : screenHeight * 0.88,
-            paddingBottom: keyboardHeight > 0 ? keyboardHeight : Math.max(insets.bottom, 12),
+            paddingBottom:
+              keyboardHeight > 0
+                ? keyboardHeight + (Platform.OS === 'android' ? 14 : 6)
+                : Math.max(insets.bottom, 14),
           },
         ]}
       >
@@ -597,13 +609,17 @@ export function ReadingCompanionModal({
                     selectionAction === 'explain' && { backgroundColor: colors.flameAmber, borderColor: colors.flameAmber },
                   ]}
                 >
+                  <SparkleIcon
+                    size={13}
+                    color={selectionAction === 'explain' ? LamplightColor.primaryDark : colors.flameAmber}
+                  />
                   <Text
                     style={[
                       styles.chipText,
                       { color: selectionAction === 'explain' ? LamplightColor.primaryDark : colors.ink },
                     ]}
                   >
-                    💡 Deep Meaning
+                    Deep Meaning
                   </Text>
                 </Pressable>
 
@@ -615,13 +631,17 @@ export function ReadingCompanionModal({
                     selectionAction === 'reference' && { backgroundColor: colors.flameAmber, borderColor: colors.flameAmber },
                   ]}
                 >
+                  <PillarIcon
+                    size={13}
+                    color={selectionAction === 'reference' ? LamplightColor.primaryDark : colors.flameAmber}
+                  />
                   <Text
                     style={[
                       styles.chipText,
                       { color: selectionAction === 'reference' ? LamplightColor.primaryDark : colors.ink },
                     ]}
                   >
-                    🏛️ Classical Allusions
+                    Classical Allusions
                   </Text>
                 </Pressable>
 
@@ -633,13 +653,17 @@ export function ReadingCompanionModal({
                     selectionAction === 'simplify' && { backgroundColor: colors.flameAmber, borderColor: colors.flameAmber },
                   ]}
                 >
+                  <FeatherIcon
+                    size={13}
+                    color={selectionAction === 'simplify' ? LamplightColor.primaryDark : colors.flameAmber}
+                  />
                   <Text
                     style={[
                       styles.chipText,
                       { color: selectionAction === 'simplify' ? LamplightColor.primaryDark : colors.ink },
                     ]}
                   >
-                    🪶 Simplify Prose
+                    Simplify Prose
                   </Text>
                 </Pressable>
 
@@ -651,13 +675,17 @@ export function ReadingCompanionModal({
                     selectionAction === 'tone' && { backgroundColor: colors.flameAmber, borderColor: colors.flameAmber },
                   ]}
                 >
+                  <MaskIcon
+                    size={13}
+                    color={selectionAction === 'tone' ? LamplightColor.primaryDark : colors.flameAmber}
+                  />
                   <Text
                     style={[
                       styles.chipText,
                       { color: selectionAction === 'tone' ? LamplightColor.primaryDark : colors.ink },
                     ]}
                   >
-                    🎭 Tone & Subtext
+                    Tone & Subtext
                   </Text>
                 </Pressable>
 
@@ -669,13 +697,17 @@ export function ReadingCompanionModal({
                     selectionAction === 'ask' && { backgroundColor: colors.flameAmber, borderColor: colors.flameAmber },
                   ]}
                 >
+                  <ChatBubbleIcon
+                    size={13}
+                    color={selectionAction === 'ask' ? LamplightColor.primaryDark : colors.flameAmber}
+                  />
                   <Text
                     style={[
                       styles.chipText,
                       { color: selectionAction === 'ask' ? LamplightColor.primaryDark : colors.ink },
                     ]}
                   >
-                    💬 Ask Question
+                    Ask Question
                   </Text>
                 </Pressable>
               </>
@@ -689,13 +721,17 @@ export function ReadingCompanionModal({
                     chapterAction === 'summary' && { backgroundColor: colors.flameAmber, borderColor: colors.flameAmber },
                   ]}
                 >
+                  <DocumentTextIcon
+                    size={13}
+                    color={chapterAction === 'summary' ? LamplightColor.primaryDark : colors.flameAmber}
+                  />
                   <Text
                     style={[
                       styles.chipText,
                       { color: chapterAction === 'summary' ? LamplightColor.primaryDark : colors.ink },
                     ]}
                   >
-                    📜 Chapter Summary
+                    Chapter Summary
                   </Text>
                 </Pressable>
 
@@ -707,13 +743,17 @@ export function ReadingCompanionModal({
                     chapterAction === 'characters' && { backgroundColor: colors.flameAmber, borderColor: colors.flameAmber },
                   ]}
                 >
+                  <UsersIcon
+                    size={13}
+                    color={chapterAction === 'characters' ? LamplightColor.primaryDark : colors.flameAmber}
+                  />
                   <Text
                     style={[
                       styles.chipText,
                       { color: chapterAction === 'characters' ? LamplightColor.primaryDark : colors.ink },
                     ]}
                   >
-                    👥 Character Dossier
+                    Character Dossier
                   </Text>
                 </Pressable>
 
@@ -725,13 +765,17 @@ export function ReadingCompanionModal({
                     chapterAction === 'reflections' && { backgroundColor: colors.flameAmber, borderColor: colors.flameAmber },
                   ]}
                 >
+                  <LightbulbIcon
+                    size={13}
+                    color={chapterAction === 'reflections' ? LamplightColor.primaryDark : colors.flameAmber}
+                  />
                   <Text
                     style={[
                       styles.chipText,
                       { color: chapterAction === 'reflections' ? LamplightColor.primaryDark : colors.ink },
                     ]}
                   >
-                    💭 Reflections
+                    Reflections
                   </Text>
                 </Pressable>
 
@@ -743,13 +787,17 @@ export function ReadingCompanionModal({
                     chapterAction === 'ask' && { backgroundColor: colors.flameAmber, borderColor: colors.flameAmber },
                   ]}
                 >
+                  <ChatBubbleIcon
+                    size={13}
+                    color={chapterAction === 'ask' ? LamplightColor.primaryDark : colors.flameAmber}
+                  />
                   <Text
                     style={[
                       styles.chipText,
                       { color: chapterAction === 'ask' ? LamplightColor.primaryDark : colors.ink },
                     ]}
                   >
-                    💬 Ask Question
+                    Ask Question
                   </Text>
                 </Pressable>
               </>
@@ -1017,9 +1065,12 @@ export function ReadingCompanionModal({
                         </Text>
                       </>
                     ) : (
-                      <Text style={[typography.metadataCaption, { color: colors.ink }]}>
-                        📋 Copy Insight
-                      </Text>
+                      <>
+                        <CopyIcon size={14} color={colors.umber} />
+                        <Text style={[typography.metadataCaption, { color: colors.ink, marginLeft: 6 }]}>
+                          Copy Insight
+                        </Text>
+                      </>
                     )}
                   </Pressable>
 
@@ -1039,9 +1090,12 @@ export function ReadingCompanionModal({
                           </Text>
                         </>
                       ) : (
-                        <Text style={[typography.metadataCaption, { color: colors.ink }]}>
-                          🔖 Save to Notes
-                        </Text>
+                        <>
+                          <BookmarkIcon size={14} color={colors.umber} />
+                          <Text style={[typography.metadataCaption, { color: colors.ink, marginLeft: 6 }]}>
+                            Save to Notes
+                          </Text>
+                        </>
                       )}
                     </Pressable>
                   ) : null}
@@ -1170,13 +1224,12 @@ export function ReadingCompanionModal({
               placeholderTextColor={colors.fawn}
               value={customQuestion}
               onChangeText={setCustomQuestion}
+              multiline
               onFocus={() => {
                 setIsInputFocused(true);
                 setTimeout(() => bodyScrollRef.current?.scrollToEnd({ animated: true }), 150);
               }}
               onBlur={() => setIsInputFocused(false)}
-              onSubmitEditing={() => handleAskQuestion()}
-              returnKeyType="send"
               style={[styles.textInput, { color: colors.ink }]}
             />
             {customQuestion.length > 0 && (
@@ -1203,7 +1256,7 @@ export function ReadingCompanionModal({
             ]}
           >
             <SendIcon
-              size={15}
+              size={17}
               color={customQuestion.trim() && !loading ? LamplightColor.primaryDark : colors.fawn}
             />
           </Pressable>
@@ -1320,6 +1373,9 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: 16,
@@ -1521,37 +1577,47 @@ const styles = StyleSheet.create({
   },
   inputBar: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-end',
     paddingHorizontal: Spacing.xl,
-    paddingVertical: 10,
+    paddingTop: 8,
+    paddingBottom: 10,
     borderTopWidth: 1,
   },
   inputBoxContainer: {
     flex: 1,
     flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 20,
+    alignItems: 'flex-end',
+    borderRadius: 18,
     borderWidth: 1,
     paddingHorizontal: 12,
-    height: 40,
+    paddingVertical: Platform.OS === 'android' ? 4 : 6,
+    minHeight: 40,
+    maxHeight: 110,
   },
   clearInputButton: {
-    padding: 4,
-    marginLeft: 4,
+    padding: 6,
+    marginBottom: 4,
+    marginLeft: 2,
   },
   textInput: {
     flex: 1,
-    height: 40,
+    minHeight: 28,
+    maxHeight: 96,
     fontSize: 14,
+    lineHeight: 20,
     fontFamily: FontFamily.manropeRegular,
     paddingHorizontal: 4,
+    paddingTop: Platform.OS === 'android' ? 4 : 4,
+    paddingBottom: Platform.OS === 'android' ? 4 : 4,
+    textAlignVertical: 'center',
   },
   sendButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 8,
+    marginBottom: 1,
   },
 });
