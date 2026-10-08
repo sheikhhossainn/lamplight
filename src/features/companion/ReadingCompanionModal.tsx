@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   Dimensions,
   Keyboard,
-  KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
@@ -29,6 +28,7 @@ import { ReaderOverlay } from '@/features/reader/components/ReaderOverlay';
 import { createReaderNote } from '@/db/repositories/readerNotes';
 import { useTheme } from '@/theme/ThemeProvider';
 import { LamplightColor, Spacing } from '@/theme/tokens';
+import { FontFamily } from '@/theme/typography';
 import { getCompanionQuota, type CompanionQuotaStatus } from './companionQuota';
 import {
   askCompanionQuestion,
@@ -92,7 +92,38 @@ export function ReadingCompanionModal({
   onViewNotes,
 }: ReadingCompanionModalProps) {
   const insets = useSafeAreaInsets();
-  const { colors, typography, radius } = useTheme();
+  const { colors, typography, radius, scheme } = useTheme();
+  const isLamp = scheme === 'lamp';
+
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [isInputFocused, setIsInputFocused] = useState(false);
+  const bodyScrollRef = useRef<ScrollView>(null);
+
+  useEffect(() => {
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvt, (e) => {
+      setKeyboardHeight(e.endCoordinates?.height ?? 0);
+      setTimeout(() => {
+        bodyScrollRef.current?.scrollToEnd({ animated: true });
+      }, 120);
+    });
+    const hideSub = Keyboard.addListener(hideEvt, () => {
+      setKeyboardHeight(0);
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!visible) {
+      Keyboard.dismiss();
+      setKeyboardHeight(0);
+      setIsInputFocused(false);
+    }
+  }, [visible]);
 
   const isSelectionMode = Boolean(selectedText && selectedText.trim().length > 0);
 
@@ -337,6 +368,11 @@ export function ReadingCompanionModal({
     setLoading(false);
 
     if (res.data) {
+      if (isSelectionMode) {
+        setSelectionAction('ask');
+      } else {
+        setChapterAction('ask');
+      }
       setChatHistory((prev) => [
         ...prev,
         {
@@ -345,6 +381,9 @@ export function ReadingCompanionModal({
           themes: res.data!.keyThemes,
         },
       ]);
+      setTimeout(() => {
+        bodyScrollRef.current?.scrollToEnd({ animated: true });
+      }, 100);
     }
 
     void refreshQuota();
@@ -450,15 +489,14 @@ export function ReadingCompanionModal({
 
   return (
     <ReaderOverlay visible={visible} onClosed={onClose} variant="bottomSheet">
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      <View
         style={[
           styles.sheetContainer,
           {
             backgroundColor: colors.libraryBackground,
             borderTopColor: colors.hairline,
-            maxHeight: screenHeight * 0.88,
-            paddingBottom: Math.max(insets.bottom, 12),
+            maxHeight: keyboardHeight > 0 ? screenHeight - Math.max(insets.top, 24) : screenHeight * 0.88,
+            paddingBottom: keyboardHeight > 0 ? keyboardHeight : Math.max(insets.bottom, 12),
           },
         ]}
       >
@@ -470,14 +508,14 @@ export function ReadingCompanionModal({
         {/* Top Header */}
         <View style={styles.header}>
           <View style={styles.headerTitleRow}>
-            <View style={[styles.iconWrap, { backgroundColor: colors.card }]}>
+            <View style={[styles.iconWrap, { backgroundColor: isLamp ? '#2B2621' : '#F0E7D8' }]}>
               <CompanionIcon size={18} color={colors.flameAmber} />
             </View>
-            <View style={{ marginLeft: 10 }}>
+            <View style={{ marginLeft: 10, flex: 1, minWidth: 0 }}>
               <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 16, fontWeight: '700' }]}>
                 Reading Companion
               </Text>
-              <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11 }]}>
+              <Text numberOfLines={1} style={[typography.metadataCaption, { color: colors.fawn, fontSize: 11, marginTop: 1 }]}>
                 {scopeLabel}
               </Text>
             </View>
@@ -488,9 +526,9 @@ export function ReadingCompanionModal({
             <Pressable
               onPress={onClose}
               hitSlop={12}
-              style={[styles.closeButton, { backgroundColor: colors.card }]}
+              style={[styles.closeButton, { backgroundColor: colors.card, borderColor: colors.hairline, borderWidth: 1 }]}
             >
-              <CloseIcon size={14} color={colors.umber} />
+              <CloseIcon size={13} color={colors.umber} />
             </Pressable>
           </View>
         </View>
@@ -499,7 +537,7 @@ export function ReadingCompanionModal({
         {isSelectionMode && selectedText ? (
           <View style={[styles.excerptCard, { backgroundColor: colors.card, borderColor: colors.hairline }]}>
             <View style={styles.excerptHeader}>
-              <Text style={[typography.metadataCaption, { color: colors.flameAmber, fontWeight: '700' }]}>
+              <Text style={[styles.eyebrow, { color: colors.flameAmber }]}>
                 SELECTED PASSAGE
               </Text>
               <Pressable
@@ -523,15 +561,21 @@ export function ReadingCompanionModal({
             </Text>
           </View>
         ) : (
-          <View style={[styles.chapterScopeBanner, { backgroundColor: colors.card, borderColor: colors.hairline }]}>
-            <View style={styles.shieldRow}>
-              <ShieldIcon size={15} color={colors.flameAmber} />
-              <Text style={[typography.metadataCaption, { color: colors.flameAmber, fontWeight: '700', marginLeft: 6 }]}>
-                Spoiler-Free Guarantee
+          <View
+            style={[
+              styles.chapterScopeBanner,
+              {
+                backgroundColor: isLamp ? 'rgba(245, 166, 35, 0.1)' : 'rgba(245, 166, 35, 0.08)',
+                borderColor: isLamp ? 'rgba(245, 166, 35, 0.22)' : 'rgba(245, 166, 35, 0.25)',
+              },
+            ]}
+          >
+            <ShieldIcon size={13} color={colors.flameAmber} />
+            <Text numberOfLines={1} style={[styles.scopeBannerText, { color: colors.ink }]}>
+              Spoiler-Free Guarantee{' '}
+              <Text style={{ color: colors.fawn }}>
+                · bounded strictly up to this chapter
               </Text>
-            </View>
-            <Text style={[typography.metadataCaption, { color: colors.umber, fontSize: 11, marginTop: 2 }]}>
-              Scope strictly bounded to Chapter {chapterIndex + 1} and prior pages. Future plots remain sacred.
             </Text>
           </View>
         )}
@@ -714,7 +758,13 @@ export function ReadingCompanionModal({
         </View>
 
         {/* Body Content */}
-        <ScrollView style={styles.bodyScroll} contentContainerStyle={styles.bodyContent}>
+        <ScrollView
+          ref={bodyScrollRef}
+          style={styles.bodyScroll}
+          contentContainerStyle={styles.bodyContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
           {loading ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="small" color={colors.flameAmber} />
@@ -732,16 +782,16 @@ export function ReadingCompanionModal({
                 <>
                   {selectionAction === 'explain' && explainData && (
                     <View>
-                      <Text style={[styles.literaryBodyText, { color: colors.ink }]}>
+                      <Text style={[styles.analysisBodyText, { color: colors.ink }]}>
                         {explainData.explanation}
                       </Text>
 
                       {explainData.referenceNote ? (
                         <View style={[styles.referenceCard, { backgroundColor: colors.card, borderColor: colors.hairline }]}>
-                          <Text style={[typography.metadataCaption, { color: colors.flameAmber, fontWeight: '700', marginBottom: 4 }]}>
+                          <Text style={[styles.eyebrow, { color: colors.flameAmber, marginBottom: 4 }]}>
                             LITERARY ALLUSION
                           </Text>
-                          <Text style={[typography.readingBody, { color: colors.ink, fontSize: 15 }]}>
+                          <Text style={[styles.analysisBodyText, { color: colors.ink }]}>
                             {explainData.referenceNote}
                           </Text>
                         </View>
@@ -763,16 +813,16 @@ export function ReadingCompanionModal({
 
                   {selectionAction === 'reference' && referenceData && (
                     <View>
-                      <Text style={[styles.literaryBodyText, { color: colors.ink }]}>
+                      <Text style={[styles.analysisBodyText, { color: colors.ink }]}>
                         {referenceData.explanation}
                       </Text>
 
                       {referenceData.referenceNote ? (
-                        <View style={[styles.referenceCard, { backgroundColor: colors.card, borderColor: colors.flameAmber }]}>
-                          <Text style={[typography.metadataCaption, { color: colors.flameAmber, fontWeight: '700', marginBottom: 4 }]}>
+                        <View style={[styles.referenceCard, { backgroundColor: colors.card, borderColor: colors.flameAmber + '40' }]}>
+                          <Text style={[styles.eyebrow, { color: colors.flameAmber, marginBottom: 4 }]}>
                             CANONICAL ALLUSION
                           </Text>
-                          <Text style={[typography.readingBody, { color: colors.ink, fontSize: 15 }]}>
+                          <Text style={[styles.analysisBodyText, { color: colors.ink }]}>
                             {referenceData.referenceNote}
                           </Text>
                         </View>
@@ -783,34 +833,34 @@ export function ReadingCompanionModal({
                   {selectionAction === 'simplify' && simplifyData && (
                     <View>
                       <View style={[styles.simplifiedCard, { backgroundColor: colors.card, borderColor: colors.hairline }]}>
-                        <Text style={[typography.metadataCaption, { color: colors.flameAmber, fontWeight: '700', marginBottom: 6 }]}>
+                        <Text style={[styles.eyebrow, { color: colors.flameAmber, marginBottom: 6 }]}>
                           CLEAR MODERN PARAPHRASE
                         </Text>
-                        <Text style={[styles.literaryBodyText, { color: colors.ink }]}>
+                        <Text style={[styles.analysisBodyText, { color: colors.ink }]}>
                           {simplifyData.simplified}
                         </Text>
                       </View>
 
                       <View style={{ marginTop: 14 }}>
-                        <Text style={[typography.metadataCaption, { color: colors.fawn, fontWeight: '600', marginBottom: 4 }]}>
+                        <Text style={[styles.eyebrow, { color: colors.fawn, marginBottom: 4 }]}>
                           ORIGINAL INTENT
                         </Text>
-                        <Text style={[typography.readingBody, { color: colors.umber, fontSize: 15 }]}>
+                        <Text style={[styles.analysisBodyText, { color: colors.umber }]}>
                           {simplifyData.originalMeaning}
                         </Text>
                       </View>
 
                       {simplifyData.vocabularyBreakdown && simplifyData.vocabularyBreakdown.length > 0 && (
                         <View style={{ marginTop: 18 }}>
-                          <Text style={[typography.metadataCaption, { color: colors.flameAmber, fontWeight: '700', marginBottom: 8 }]}>
+                          <Text style={[styles.eyebrow, { color: colors.flameAmber, marginBottom: 8 }]}>
                             ARCHAIC VOCABULARY BREAKDOWN
                           </Text>
                           {simplifyData.vocabularyBreakdown.map((item, idx) => (
                             <View key={idx} style={[styles.vocabRow, { borderBottomColor: colors.hairline }]}>
-                              <Text style={[typography.uiRowTitle, { color: colors.flameAmber, fontSize: 14, fontFamily: 'Lora' }]}>
+                              <Text style={[typography.uiRowTitle, { color: colors.flameAmber, fontSize: 14, fontFamily: FontFamily.loraItalicMedium }]}>
                                 {item.archaicWord}
                               </Text>
-                              <Text style={[typography.readingBody, { color: colors.ink, fontSize: 14 }]}>
+                              <Text style={[styles.analysisBodyText, { color: colors.ink, fontSize: 13.5 }]}>
                                 → {item.modernMeaning}
                               </Text>
                             </View>
@@ -822,7 +872,7 @@ export function ReadingCompanionModal({
 
                   {selectionAction === 'tone' && toneData && (
                     <View>
-                      <Text style={[styles.literaryBodyText, { color: colors.ink }]}>
+                      <Text style={[styles.analysisBodyText, { color: colors.ink }]}>
                         {toneData.answer}
                       </Text>
 
@@ -853,13 +903,13 @@ export function ReadingCompanionModal({
 
                       {summaryData.keyDevelopments?.length > 0 && (
                         <View style={{ marginTop: 18 }}>
-                          <Text style={[typography.metadataCaption, { color: colors.flameAmber, fontWeight: '700', marginBottom: 8 }]}>
+                          <Text style={[styles.eyebrow, { color: colors.flameAmber, marginBottom: 8 }]}>
                             KEY CHAPTER TURNING POINTS
                           </Text>
                           {summaryData.keyDevelopments.map((dev, i) => (
-                            <View key={i} style={styles.bulletRow}>
-                              <Text style={{ color: colors.flameAmber, marginRight: 8, fontSize: 16 }}>•</Text>
-                              <Text style={[typography.readingBody, { color: colors.ink, flex: 1, fontSize: 15 }]}>
+                            <View key={i} style={[styles.turningPointCard, { backgroundColor: colors.card, borderColor: colors.hairline }]}>
+                              <View style={styles.bulletDot} />
+                              <Text style={[styles.bulletPointText, { color: colors.ink }]}>
                                 {dev}
                               </Text>
                             </View>
@@ -868,11 +918,11 @@ export function ReadingCompanionModal({
                       )}
 
                       {summaryData.thematicFocus ? (
-                        <View style={[styles.referenceCard, { backgroundColor: colors.card, borderColor: colors.hairline, marginTop: 16 }]}>
-                          <Text style={[typography.metadataCaption, { color: colors.flameAmber, fontWeight: '700', marginBottom: 4 }]}>
+                        <View style={[styles.thematicCard, { backgroundColor: colors.card, borderColor: colors.hairline }]}>
+                          <Text style={[styles.eyebrow, { color: colors.flameAmber, marginBottom: 4 }]}>
                             THEMATIC FOCUS
                           </Text>
-                          <Text style={[typography.readingBody, { color: colors.ink, fontSize: 15 }]}>
+                          <Text style={[styles.analysisBodyText, { color: colors.ink }]}>
                             {summaryData.thematicFocus}
                           </Text>
                         </View>
@@ -885,16 +935,16 @@ export function ReadingCompanionModal({
                       {charactersData.characters.map((char, i) => (
                         <View key={i} style={[styles.characterCard, { backgroundColor: colors.card, borderColor: colors.hairline }]}>
                           <View style={styles.characterHeaderRow}>
-                            <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 16 }]}>
+                            <Text style={[typography.uiRowTitle, { color: colors.ink, fontSize: 15, fontWeight: '700' }]}>
                               {char.name}
                             </Text>
-                            <View style={[styles.roleBadge, { backgroundColor: colors.flameAmber + '15', borderColor: colors.flameAmber }]}>
-                              <Text style={[typography.metadataCaption, { color: colors.flameAmber, fontSize: 11, fontWeight: '700' }]}>
+                            <View style={[styles.roleBadge, { backgroundColor: colors.flameAmber + '18', borderColor: colors.flameAmber + '40' }]}>
+                              <Text style={[typography.metadataCaption, { color: colors.flameAmber, fontSize: 11, fontWeight: '600' }]}>
                                 {char.role}
                               </Text>
                             </View>
                           </View>
-                          <Text style={[typography.readingBody, { color: colors.umber, marginTop: 6, fontSize: 14 }]}>
+                          <Text style={[styles.characterStatusText, { color: colors.umber, marginTop: 6 }]}>
                             {char.statusUpToNow}
                           </Text>
                           {char.keyRelationships ? (
@@ -912,15 +962,15 @@ export function ReadingCompanionModal({
                       {reflectionsData.questions.map((q, i) => (
                         <View key={i} style={[styles.reflectionCard, { backgroundColor: colors.card, borderColor: colors.hairline }]}>
                           <View style={styles.themePillInline}>
-                            <Text style={[typography.metadataCaption, { color: colors.flameAmber, fontSize: 11, fontWeight: '700' }]}>
+                            <Text style={[styles.eyebrow, { color: colors.flameAmber }]}>
                               {q.theme.toUpperCase()}
                             </Text>
                           </View>
-                          <Text style={[styles.literaryBodyText, { color: colors.ink, fontSize: 16, marginTop: 8 }]}>
+                          <Text style={[styles.reflectionQuestionText, { color: colors.ink, marginTop: 8 }]}>
                             {q.question}
                           </Text>
                           {q.contextNote ? (
-                            <Text style={[typography.metadataCaption, { color: colors.fawn, marginTop: 6, fontStyle: 'italic' }]}>
+                            <Text style={[styles.reflectionNoteText, { color: colors.fawn, marginTop: 6 }]}>
                               {q.contextNote}
                             </Text>
                           ) : null}
@@ -934,7 +984,7 @@ export function ReadingCompanionModal({
               {/* CONVERSATIONAL CHAT HISTORY */}
               {chatHistory.length > 0 && (
                 <View style={{ marginTop: 20 }}>
-                  <Text style={[typography.metadataCaption, { color: colors.flameAmber, fontWeight: '700', marginBottom: 12 }]}>
+                  <Text style={[styles.eyebrow, { color: colors.flameAmber, marginBottom: 12 }]}>
                     YOUR QUESTIONS
                   </Text>
                   {chatHistory.map((item, idx) => (
@@ -944,7 +994,7 @@ export function ReadingCompanionModal({
                           Q: {item.question}
                         </Text>
                       </View>
-                      <Text style={[styles.literaryBodyText, { color: colors.ink, fontSize: 16, marginTop: 8 }]}>
+                      <Text style={[styles.analysisBodyText, { color: colors.ink, marginTop: 8 }]}>
                         {item.answer}
                       </Text>
                     </View>
@@ -1106,21 +1156,50 @@ export function ReadingCompanionModal({
 
         {/* Bottom Interactive Question Bar */}
         <View style={[styles.inputBar, { backgroundColor: colors.card, borderTopColor: colors.hairline }]}>
-          <TextInput
-            placeholder={isSelectionMode ? 'Ask anything about this passage...' : 'Ask about this chapter...'}
-            placeholderTextColor={colors.fawn}
-            value={customQuestion}
-            onChangeText={setCustomQuestion}
-            onSubmitEditing={() => handleAskQuestion()}
-            returnKeyType="send"
-            style={[styles.textInput, { color: colors.ink }]}
-          />
+          <View
+            style={[
+              styles.inputBoxContainer,
+              {
+                backgroundColor: isLamp ? '#232023' : '#FDFCFA',
+                borderColor: isInputFocused ? colors.flameAmber : colors.hairline,
+              },
+            ]}
+          >
+            <TextInput
+              placeholder={isSelectionMode ? 'Ask about this passage...' : 'Ask about this chapter...'}
+              placeholderTextColor={colors.fawn}
+              value={customQuestion}
+              onChangeText={setCustomQuestion}
+              onFocus={() => {
+                setIsInputFocused(true);
+                setTimeout(() => bodyScrollRef.current?.scrollToEnd({ animated: true }), 150);
+              }}
+              onBlur={() => setIsInputFocused(false)}
+              onSubmitEditing={() => handleAskQuestion()}
+              returnKeyType="send"
+              style={[styles.textInput, { color: colors.ink }]}
+            />
+            {customQuestion.length > 0 && (
+              <Pressable
+                onPress={() => setCustomQuestion('')}
+                hitSlop={8}
+                style={styles.clearInputButton}
+              >
+                <CloseIcon size={12} color={colors.fawn} />
+              </Pressable>
+            )}
+          </View>
           <Pressable
             onPress={() => handleAskQuestion()}
             disabled={!customQuestion.trim() || loading}
             style={[
               styles.sendButton,
-              { backgroundColor: customQuestion.trim() && !loading ? colors.flameAmber : colors.libraryBackground },
+              {
+                backgroundColor:
+                  customQuestion.trim() && !loading ? colors.flameAmber : colors.card,
+                borderColor: colors.hairline,
+                borderWidth: customQuestion.trim() && !loading ? 0 : 1,
+              },
             ]}
           >
             <SendIcon
@@ -1129,7 +1208,7 @@ export function ReadingCompanionModal({
             />
           </Pressable>
         </View>
-      </KeyboardAvoidingView>
+      </View>
     </ReaderOverlay>
   );
 }
@@ -1204,21 +1283,33 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   excerptText: {
-    fontFamily: 'Lora',
-    fontStyle: 'italic',
+    fontFamily: FontFamily.loraItalicMedium,
     fontSize: 14,
     lineHeight: 20,
   },
   chapterScopeBanner: {
     marginHorizontal: Spacing.xl,
     marginTop: 6,
-    padding: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     borderRadius: 10,
     borderWidth: 1,
-  },
-  shieldRow: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  scopeBannerText: {
+    flex: 1,
+    marginLeft: 8,
+    fontFamily: FontFamily.manropeSemiBold,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  eyebrow: {
+    fontFamily: FontFamily.manropeBold,
+    fontSize: 11,
+    lineHeight: 14,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
   },
   actionChipsWrapper: {
     marginTop: 10,
@@ -1235,7 +1326,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   chipText: {
-    fontFamily: 'Manrope_600SemiBold',
+    fontFamily: FontFamily.manropeSemiBold,
     fontSize: 12,
   },
   bodyScroll: {
@@ -1246,9 +1337,14 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
   },
   literaryBodyText: {
-    fontFamily: 'Lora',
-    fontSize: 17,
-    lineHeight: 17 * 1.85,
+    fontFamily: FontFamily.loraRegular,
+    fontSize: 15.5,
+    lineHeight: 24,
+  },
+  analysisBodyText: {
+    fontFamily: FontFamily.manropeRegular,
+    fontSize: 14.5,
+    lineHeight: 21,
   },
   loadingContainer: {
     alignItems: 'center',
@@ -1284,10 +1380,33 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderBottomWidth: 1,
   },
-  bulletRow: {
+  turningPointCard: {
     flexDirection: 'row',
     alignItems: 'flex-start',
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
     marginBottom: 8,
+  },
+  bulletDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: LamplightColor.flameAmber,
+    marginTop: 7,
+    marginRight: 10,
+  },
+  bulletPointText: {
+    flex: 1,
+    fontFamily: FontFamily.manropeRegular,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  thematicCard: {
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: 14,
   },
   characterCard: {
     padding: 14,
@@ -1306,6 +1425,11 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
   },
+  characterStatusText: {
+    fontFamily: FontFamily.manropeRegular,
+    fontSize: 13.5,
+    lineHeight: 19,
+  },
   reflectionCard: {
     padding: 14,
     borderRadius: 12,
@@ -1314,6 +1438,17 @@ const styles = StyleSheet.create({
   },
   themePillInline: {
     alignSelf: 'flex-start',
+  },
+  reflectionQuestionText: {
+    fontFamily: FontFamily.loraItalicMedium,
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  reflectionNoteText: {
+    fontFamily: FontFamily.manropeRegular,
+    fontSize: 12.5,
+    lineHeight: 17,
+    fontStyle: 'italic',
   },
   chatCard: {
     padding: 14,
@@ -1391,17 +1526,30 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderTopWidth: 1,
   },
+  inputBoxContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 20,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    height: 40,
+  },
+  clearInputButton: {
+    padding: 4,
+    marginLeft: 4,
+  },
   textInput: {
     flex: 1,
     height: 40,
     fontSize: 14,
-    fontFamily: 'Manrope_400Regular',
-    paddingHorizontal: 8,
+    fontFamily: FontFamily.manropeRegular,
+    paddingHorizontal: 4,
   },
   sendButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 8,

@@ -1087,15 +1087,18 @@ export default function ReaderScreen() {
   const activeReaderPage = pages[currentIndex];
   const currentChapterTitle = activeReaderPage?.chapterTitle ?? `Chapter ${currentChapterIndex + 1}`;
   const handleSaveReaderNote = useCallback(async (noteText: string) => {
-    if (!book || !activeReaderPage || !noteText.trim()) return;
+    const targetBookId = book?.id ?? rawBookId;
+    if (!targetBookId || !noteText.trim()) return;
+    const chIndex = activeReaderPage?.chapterIndex ?? currentChapterIndex ?? 0;
+    const pgIndex = activeReaderPage?.pageIndexInChapter ?? 0;
     const note = await createReaderNote({
-      bookId: book.id,
-      chapterIndex: activeReaderPage.chapterIndex,
-      pageIndex: activeReaderPage.pageIndexInChapter,
+      bookId: targetBookId,
+      chapterIndex: chIndex,
+      pageIndex: pgIndex,
       noteText,
     });
     setReaderNotes((previous) => [note, ...previous]);
-  }, [book, activeReaderPage]);
+  }, [book, rawBookId, activeReaderPage, currentChapterIndex]);
 
   const handleDeleteReaderNote = useCallback(async (noteId: string) => {
     setReaderNotes((previous) => previous.filter((note) => note.id !== noteId));

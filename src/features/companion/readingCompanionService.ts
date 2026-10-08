@@ -105,7 +105,9 @@ export function computeScopeLabel(params: CompanionScopeParams): string {
   }
 
   const chNum = params.chapterIndex + 1;
-  const titlePart = params.chapterTitle ? `: ${params.chapterTitle}` : '';
+  const rawTitle = (params.chapterTitle || '').trim();
+  const isRedundantTitle = rawTitle.toLowerCase() === `chapter ${chNum}` || rawTitle.toLowerCase() === `chapter ${params.chapterIndex + 1}`;
+  const titlePart = rawTitle && !isRedundantTitle ? `: ${rawTitle}` : '';
 
   if (typeof params.pageIndex === 'number' && params.pageIndex >= 0 && params.totalPages) {
     return `Chapter ${chNum}${titlePart} (Page ${params.pageIndex + 1} of ${params.totalPages})`;

@@ -57,7 +57,7 @@ export async function listReaderNotesForBook(bookId: string): Promise<ReaderNote
 export async function listAllReaderNotes(): Promise<ReaderNoteWithBook[]> {
   const db = await getDatabase();
   const rows = await db.getAllAsync<ReaderNoteSqlRow & { book_title?: string; book_author?: string; cover_image?: string }>(
-    `SELECT n.*, b.title AS book_title, b.author AS book_author, b.cover_image
+    `SELECT n.*, b.title AS book_title, b.author AS book_author, b.cover_url AS cover_image
      FROM reader_notes n
      LEFT JOIN books b ON b.id = n.book_id
      ORDER BY n.updated_at DESC`,
