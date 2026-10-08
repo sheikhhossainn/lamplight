@@ -288,6 +288,8 @@ test('COMPANION-04: Mother tongue localization generates responses in native ton
   });
   assert.ok(isBengali(explainBn.explanation));
   assert.ok(explainBn.explanation.includes('এই অনুচ্ছেদে'));
+  assert.ok(explainBn.keyThemes.length > 0);
+  assert.ok(isBengali(explainBn.keyThemes[0]));
 
   // 2. Simplification in Bengali
   const simplifyBn = generateLocalSimplification({
@@ -295,6 +297,8 @@ test('COMPANION-04: Mother tongue localization generates responses in native ton
     motherTongue: 'bn',
   });
   assert.ok(isBengali(simplifyBn.originalMeaning));
+  assert.ok(simplifyBn.vocabularyBreakdown && simplifyBn.vocabularyBreakdown.length > 0);
+  assert.ok(isBengali(simplifyBn.vocabularyBreakdown[0].modernMeaning));
 
   // 3. Page Insight in Bengali
   const pageInsightBn = generateLocalPageInsight({

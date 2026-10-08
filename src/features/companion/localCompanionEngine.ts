@@ -162,12 +162,155 @@ const ALLUSIONS_DATABASE: Array<{
   },
 ];
 
+const ALLUSIONS_DATABASE_BN: Record<string, { title: string; note: string }> = {
+  'Homeric Epics (Iliad)': {
+    title: 'হোমারের মহাকাব্য (ইলিয়াড)',
+    note: 'গ্রিক বীর একিলিসের ইঙ্গিত—যার অসীম বীরত্বের সাথে জড়িয়ে ছিল চরম আত্মঅহংকার ও বেদনাদায়ক নিয়তি।',
+  },
+  'Biblical Genesis & Miltonic Fall': {
+    title: 'স্বর্গচ্যুতি ও নির্দোষতার অবসান (জেনেসিস ও মিল্টন)',
+    note: 'নিষিদ্ধ ফলের আস্বাদন ও স্বর্গ হারানোর রূপক—যা নৈতিক স্খলন ও পূর্বের নিষ্পাপ অবস্থা চিরতরে হারানোর প্রতীক।',
+  },
+  'Tower of Babel (Genesis 11)': {
+    title: 'ব্যাবিলের রূপক (জেনেসিস ১১)',
+    note: 'মানুষের সীমাহীন ঔদ্ধত্যের কারণে পারস্পরিক ভাষা ও যোগাযোগের বিভ্রাট এবং বিচ্ছিন্নতার ইঙ্গিত।',
+  },
+  'The Book of Job': {
+    title: 'আইয়ুবের পরীক্ষা (বুক অব জব)',
+    note: 'নির্দোষ হওয়া সত্ত্বেও অবর্ণনীয় দুঃখ-কষ্ট সহ্য করা এবং গভীর আধ্যাত্মিক সংকটের মধ্য দিয়ে যাওয়া।',
+  },
+  'Promethean Myth': {
+    title: 'প্রমিথিউসের মিথ',
+    note: 'মানবকল্যাণে স্বর্গ থেকে আলো ছিনিয়ে আনার রূপক—যার পেছনে রয়েছে আত্মত্যাগ ও নির্মম নিয়তির সাথে আপসহীন লড়াই।',
+  },
+  'River Lethe (Classical Underworld)': {
+    title: 'লেথে নদী (বিস্মৃতির প্রতীক)',
+    note: 'পাতালপুরীর পৌরাণিক নদী যার জলপান অতীত দুঃখ, স্মৃতি ও অপরাধবোধ সম্পূর্ণ মুছে ফেলে।',
+  },
+  'Stygian Crossing (Underworld)': {
+    title: 'স্টিজিয়ান পারাপার (জীবন ও মৃত্যুর সীমানা)',
+    note: 'জীবন ও মৃত্যুর অপরিবর্তনীয় সীমানা—যা মানবজীবনের নশ্বরতা ও চূড়ান্ত পরিসমাপ্তি নির্দেশ করে।',
+  },
+  'Myth of Icarus': {
+    title: 'ইকারুসের মিথ',
+    note: 'অতি-উচ্চাকাঙ্ক্ষার কারণে সূর্যের খুব কাছে গিয়ে ডানার মোম গলে পতনের করুণ রূপক।',
+  },
+  'Roman History & Shakespearean Tragedy': {
+    title: 'রোমান ইতিহাস ও ট্র্যাজেডি',
+    note: 'রুবিকন নদী পার হওয়ার মতো অপরিবর্তনীয় সিদ্ধান্ত ও নিকটজনের অপ্রত্যাশিত বিশ্বাসঘাতকতার প্রতীক।',
+  },
+  'Faustian Bargain': {
+    title: 'ফাউস্টীয় চুক্তি',
+    note: 'ক্ষণস্থায়ী ক্ষমতা বা জ্ঞানের লোভে নৈতিক সততা ও আত্মাকে বিসর্জন দেওয়ার রূপক।',
+  },
+  'Greek Nemesis (Divine Retribution)': {
+    title: 'নেমেসিস (নিয়তির শাস্তি)',
+    note: 'অহংকারী শক্তির অনিবার্য পতন এবং মহাজাগতিক ন্যায়বিচারের অমোঘ বিধান।',
+  },
+  'King Midas': {
+    title: 'রাজা মাইডাস (স্বর্ণস্পর্শের শিক্ষা)',
+    note: 'অন্ধ পার্থিব আকাঙ্ক্ষা কীভাবে জীবনের প্রকৃত আনন্দ ও মানবিক সম্পর্ককে বিনষ্ট করে তার দৃষ্টান্ত।',
+  },
+};
+
+const ARCHAIC_LEXICON_BN: Record<string, string> = {
+  abhor: 'তীব্র ঘৃণা বা অপছন্দ করা',
+  afeard: 'ভীত বা শঙ্কিত',
+  alack: 'আক্ষেপ বা দুঃখ প্রকাশের উক্তি',
+  anon: 'শীঘ্রই বা অল্প সময়ের মধ্যে',
+  art: 'হও',
+  beguile: 'মুগ্ধ করা বা মিষ্টি কথায় ভুলানো',
+  beseech: 'অনুনয়-বিনয় বা ব্যাকুল প্রার্থনা করা',
+  betwixt: 'মাঝখানে',
+  chide: 'তিরস্কার করা',
+  cleave: 'দৃঢ়ভাবে আঁকড়ে থাকা',
+  countenance: 'মুখাবয়ব বা বাহ্যিক ভাবভঙ্গি',
+  cuckold: 'প্রতারিত স্বামী',
+  disposition: 'সহজাত স্বভাব বা মানসিক প্রকৃতি',
+  dost: 'করো',
+  doth: 'করে',
+  ere: 'পূর্বে বা আগে',
+  fain: 'সানন্দে বা স্বেচ্ছায়',
+  forbear: 'ধৈর্য ধারণ করা বা বিরত থাকা',
+  forsooth: 'সত্যিই বা প্রকৃতপক্ষে',
+  fortnight: 'চৌদ্দ দিন (এক পক্ষকাল)',
+  hark: 'মনোযোগ দিয়ে শোনো',
+  hast: 'আছে',
+  hath: 'আছে',
+  hearken: 'মনোযোগ দিয়ে শোনা ও মান্য করা',
+  heretofore: 'এই সময়ের পূর্ব পর্যন্ত',
+  hither: 'এদিকে',
+  importune: 'পীড়াপীড়ি করা',
+  inasmuch: 'যেহেতু',
+  kine: 'গবাদি পশু',
+  lo: 'দেখো',
+  melancholy: 'গভীর বিষাদ',
+  nay: 'না, বরং',
+  nigh: 'কাছে বা নিকটে',
+  parley: 'আলোচনা বা বৈঠক',
+  perchance: 'সম্ভবত বা হয়তো',
+  plight: 'দুর্দশা',
+  quoth: 'বলল সে',
+  raiment: 'পোশাক',
+  recompense: 'পুরস্কার বা ক্ষতিপূরণ',
+  scant: 'অপ্রতুল বা সামান্য',
+  shalt: 'করবে',
+  smite: 'সজোরে আঘাত করা',
+  sunder: 'বিচ্ছিন্ন করা',
+  surfeit: 'আতিশয্য',
+  tarry: 'বিলম্ব করা বা অপেক্ষা করা',
+  thee: 'তোমাকে বা আপনাকে',
+  thine: 'তোমার বা আপনার',
+  thou: 'তুমি বা আপনি',
+  thy: 'তোমার বা আপনার',
+  unwonted: 'অস্বাভাবিক',
+  vex: 'বিরক্ত বা মর্মাহত করা',
+  visage: 'মুখমণ্ডল',
+  vouchsafe: 'মঞ্জুর করা',
+  wan: 'ফ্যাকাশে বা দুর্বল',
+  wherefore: 'কেন বা কী কারণে',
+  whilst: 'যখন',
+  wilt: 'চাইবে বা করবে',
+  wistful: 'আকুতিপূর্ণ বা বিষাদময়',
+  withal: 'অধিকন্তু',
+  woe: 'চরম দুর্দশা বা শোক',
+  wont: 'অভ্যাস বা স্বাভাবিক রীতি',
+  ye: 'তোমরা বা আপনারা',
+  yield: 'সমর্পণ করা',
+  yonder: 'ওই দূরবর্তী স্থানে',
+  zeal: 'তীব্র একাগ্রতা',
+};
+
+const THEMES_BN: Record<string, string> = {
+  'Pride & Social Standing': 'মর্যাদাবোধ ও সামাজিক অবস্থান',
+  'Devotion & Vulnerability': 'অনুরাগ ও আত্মনিবেদন',
+  'Moral Duty & Honor': 'নৈতিক দায়িত্ব ও সম্মানবোধ',
+  'Mortality & Loss': 'নশ্বরতা ও শোক',
+  'Nature as Mirror of the Soul': 'প্রকৃতি ও অন্তরের প্রতিচ্ছবি',
+  'Providence & Destiny': 'নিয়তি ও ভাগ্য',
+  'Appearance vs Reality': 'বাহ্যিক রূপ বনাম বাস্তবতা',
+  'Inner Conflict & Reflection': 'অন্তর্দ্বন্দ্ব ও আত্মোপলব্ধি',
+  'Human Folly & Grace': 'মানবিক দুর্বলতা ও সহমর্মিতা',
+};
+
+const TONES_BN: Record<string, string> = {
+  'contemplative and measured': 'গভীর ও পরিমিতিবোধসম্পন্ন',
+  'dramatic and impassioned': 'নাটকীয় ও আবেগময়',
+  'wryly satirical and observant': 'সূক্ষ্ম ব্যঙ্গাত্মক ও পর্যবেক্ষণমূলক',
+  'elegiac and melancholic': 'বিষাদময় ও শোকগাথাধর্মী',
+  'reverent and meditative': 'শ্রদ্ধাপূর্ণ ও ধ্যানমগ্ন',
+};
+
 /**
  * Detects classical and historical allusions in an excerpt.
  */
-function detectAllusions(text: string): string | null {
+function detectAllusions(text: string, isBn = false): string | null {
   for (const item of ALLUSIONS_DATABASE) {
     if (item.pattern.test(text)) {
+      if (isBn && ALLUSIONS_DATABASE_BN[item.title]) {
+        const bnItem = ALLUSIONS_DATABASE_BN[item.title];
+        return `${bnItem.title}: ${bnItem.note}`;
+      }
       return `${item.title}: ${item.note}`;
     }
   }
@@ -177,7 +320,7 @@ function detectAllusions(text: string): string | null {
 /**
  * Extracts archaic words and pairs them with modern meanings.
  */
-function findArchaicVocab(text: string): Array<{ archaicWord: string; modernMeaning: string }> {
+function findArchaicVocab(text: string, isBn = false): Array<{ archaicWord: string; modernMeaning: string }> {
   const words = text.toLowerCase().match(/\b[a-z']+\b/g) || [];
   const found: Array<{ archaicWord: string; modernMeaning: string }> = [];
   const seen = new Set<string>();
@@ -185,9 +328,10 @@ function findArchaicVocab(text: string): Array<{ archaicWord: string; modernMean
   for (const w of words) {
     if (ARCHAIC_LEXICON[w] && !seen.has(w)) {
       seen.add(w);
+      const meaning = isBn ? (ARCHAIC_LEXICON_BN[w] || ARCHAIC_LEXICON[w]) : ARCHAIC_LEXICON[w];
       found.push({
         archaicWord: w,
-        modernMeaning: ARCHAIC_LEXICON[w],
+        modernMeaning: meaning,
       });
       if (found.length >= 4) break;
     }
@@ -199,59 +343,68 @@ function findArchaicVocab(text: string): Array<{ archaicWord: string; modernMean
 /**
  * Analyzes narrative tone, sentence structure, and literary motifs.
  */
-function analyzeLiteraryCraft(text: string): {
+function analyzeLiteraryCraft(text: string, isBn = false): {
   tone: string;
   themes: string[];
   subtext: string;
 } {
   const lower = text.toLowerCase();
-  const themes: string[] = [];
+  const rawThemes: string[] = [];
 
   // Theme detection
   if (/pride|vanity|haughty|esteem|reputation|condescend/i.test(lower)) {
-    themes.push('Pride & Social Standing');
+    rawThemes.push('Pride & Social Standing');
   }
   if (/love|affection|heart|tender|passion|beloved/i.test(lower)) {
-    themes.push('Devotion & Vulnerability');
+    rawThemes.push('Devotion & Vulnerability');
   }
   if (/duty|obligation|honor|conduct|propriety|virtue/i.test(lower)) {
-    themes.push('Moral Duty & Honor');
+    rawThemes.push('Moral Duty & Honor');
   }
   if (/death|grave|perish|mortal|grief|mourn|sorrow/i.test(lower)) {
-    themes.push('Mortality & Loss');
+    rawThemes.push('Mortality & Loss');
   }
   if (/nature|sea|storm|woods|sky|wind|tempest/i.test(lower)) {
-    themes.push('Nature as Mirror of the Soul');
+    rawThemes.push('Nature as Mirror of the Soul');
   }
   if (/fate|destiny|fortune|chance|providence/i.test(lower)) {
-    themes.push('Providence & Destiny');
+    rawThemes.push('Providence & Destiny');
   }
   if (/deceit|false|guile|betray|treachery|mask/i.test(lower)) {
-    themes.push('Appearance vs Reality');
+    rawThemes.push('Appearance vs Reality');
   }
 
-  if (themes.length === 0) {
-    themes.push('Inner Conflict & Reflection', 'Human Folly & Grace');
+  if (rawThemes.length === 0) {
+    rawThemes.push('Inner Conflict & Reflection', 'Human Folly & Grace');
   }
 
   // Tone detection
-  let tone = 'contemplative and measured';
+  let rawTone = 'contemplative and measured';
   if (/!|\?.*\!|alas|heavens|horror|fury/i.test(text)) {
-    tone = 'dramatic and impassioned';
+    rawTone = 'dramatic and impassioned';
   } else if (/irony|amused|folly|ridicule|civility|polite/i.test(lower)) {
-    tone = 'wryly satirical and observant';
+    rawTone = 'wryly satirical and observant';
   } else if (/sorrow|weep|dark|night|solitary|tear/i.test(lower)) {
-    tone = 'elegiac and melancholic';
+    rawTone = 'elegiac and melancholic';
   } else if (/solemn|sacred|divine|eternal|prayer/i.test(lower)) {
-    tone = 'reverent and meditative';
+    rawTone = 'reverent and meditative';
+  }
+
+  if (isBn) {
+    const toneBn = TONES_BN[rawTone] || 'গভীর ও পরিমিতিবোধসম্পন্ন';
+    const themesBn = rawThemes.map((t) => THEMES_BN[t] || t);
+    const subtextBn =
+      `গল্পের বয়ানে ${toneBn} আবহ বজায় রাখা হয়েছে, যেখানে চরিত্রগুলোর বাহ্যিক আনুষ্ঠানিকতার নিচে গভীর মানসিক টানাপোড়েন ক্রিয়াশীল। সংলাপে না-বলা কথাগুলোর অন্তর্নিহিত অর্থ ও সম্পর্কের জটিলতা অনুধাবন করার জন্য লেখক চমৎকার সাহিত্যিক পরিমণ্ডল সৃষ্টি করেছেন।`;
+
+    return { tone: toneBn, themes: themesBn, subtext: subtextBn };
   }
 
   // Subtext distillation
   const subtext =
-    `The prose operates through a ${tone} atmosphere, contrasting surface civility with suppressed interior tension. ` +
+    `The prose operates through a ${rawTone} atmosphere, contrasting surface civility with suppressed interior tension. ` +
     `Notice how the sentence rhythm quickens around pivotal emotional revelations, inviting the reader to listen beneath spoken dialogue for unspoken motives.`;
 
-  return { tone, themes, subtext };
+  return { tone: rawTone, themes: rawThemes, subtext };
 }
 
 /**
@@ -268,8 +421,8 @@ export function generateLocalExplanation(params: {
 }): CompanionExplainResult {
   const { excerpt, bookTitle, bookAuthor, chapterTitle, isReference, motherTongue } = params;
   const isBn = motherTongue === 'bn';
-  const allusion = detectAllusions(excerpt);
-  const craft = analyzeLiteraryCraft(excerpt);
+  const allusion = detectAllusions(excerpt, isBn);
+  const craft = analyzeLiteraryCraft(excerpt, isBn);
 
   if (isBn) {
     const chapterRef = chapterTitle ? ` (${chapterTitle})` : '';
@@ -325,7 +478,7 @@ export function generateLocalSimplification(params: {
 }): CompanionSimplifyResult {
   const { sentence, motherTongue } = params;
   const isBn = motherTongue === 'bn';
-  const vocab = findArchaicVocab(sentence);
+  const vocab = findArchaicVocab(sentence, isBn);
 
   // Modern paraphrase transform
   let modern = sentence.trim();
@@ -368,8 +521,12 @@ export function generateLocalSimplification(params: {
     ? `মূল বাক্যে ধ্রুপদী আনুষ্ঠানিকতার সাহায্যে মনের গভীর ভাব ও মানবিক মর্যাদা সরাসরি প্রকাশ করা হয়েছে।`
     : `The original prose expresses an unadorned sentiment using formal classical rhetoric: addressing the listener directly with heightened poetic gravity.`;
 
+  const simplified = isBn
+    ? `${modern}\n\n(সহজ ভাবার্থ: অলঙ্কৃত রূপ পরিহার করে মূল বক্তব্যকে সরাসরি ব্যক্ত করা হয়েছে।)`
+    : modern;
+
   return {
-    simplified: modern,
+    simplified,
     originalMeaning,
     vocabularyBreakdown: vocab.length > 0 ? vocab : undefined,
     version: 'local-literary-v2',
@@ -416,7 +573,7 @@ export function generateLocalSummary(params: {
     );
   }
 
-  const craft = analyzeLiteraryCraft(chapterExcerpt);
+  const craft = analyzeLiteraryCraft(chapterExcerpt, isBn);
 
   if (isBn) {
     return {
@@ -672,7 +829,7 @@ export function generateLocalPageInsight(params: {
     }
   }
 
-  const craft = analyzeLiteraryCraft(pageText);
+  const craft = analyzeLiteraryCraft(pageText, isBn);
 
   return {
     pageNumber,
@@ -807,7 +964,7 @@ export function generateLocalAnswer(params: {
       keyThemes.push('Interior Motivation', 'Pride vs Duty');
     }
   } else if (/mean|meaning|symbol|metaphor|signif/i.test(qLower) || /অর্থ|তাৎপর্য|প্রতীক/i.test(question)) {
-    const allusion = detectAllusions(activeText);
+    const allusion = detectAllusions(activeText, isBn);
     if (isBn) {
       answer = allusion
         ? `এই মুহূর্তে একটি ধ্রুপদী সাহিত্যিক রূপক রয়েছে: ${allusion}\n\nভাবার্থের দিক থেকে এটি অন্তর্নিহিত বিশ্বাস ও সামাজিক প্রত্যাশার সংঘাত নির্দেশ করে।`
@@ -827,7 +984,7 @@ export function generateLocalAnswer(params: {
       }
     }
   } else if (/tone|mood|atmosphere/i.test(qLower) || /আবহ|সুর|টোন/i.test(question)) {
-    const craft = analyzeLiteraryCraft(activeText);
+    const craft = analyzeLiteraryCraft(activeText, isBn);
     if (isBn) {
       answer = `পৃষ্ঠা ${pageLabel}-এর আবহ অত্যন্ত পরিশীলিত ও গম্ভীর (${craft.tone})। ভাষা অতিরঞ্জনমুক্ত এবং প্রতিটি বাক্যে সম্পর্কের গভীর টানাপোড়েন স্পষ্ট।`;
       keyThemes.push('আবহ ও সুর', 'সাহিত্যিক ভাষা');
