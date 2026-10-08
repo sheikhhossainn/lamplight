@@ -36,7 +36,8 @@ export function segmentWords(text: string, locale?: string): WordSegment[] {
   }
 
   const segments: WordSegment[] = [];
-  const pattern = /[\p{L}\p{M}\p{N}\p{Pc}\u200C\u200D]+|[^\p{L}\p{M}\p{N}\p{Pc}\u200C\u200D]+/gu;
+  const pattern =
+    /[\p{L}\p{M}\p{N}\p{Pc}\u200C\u200D]+(?:['’][\p{L}\p{M}\p{N}\p{Pc}\u200C\u200D]+)*|[^\p{L}\p{M}\p{N}\p{Pc}\u200C\u200D]+/gu;
   for (const match of text.matchAll(pattern)) {
     const segment = match[0];
     const start = match.index ?? 0;
@@ -44,7 +45,7 @@ export function segmentWords(text: string, locale?: string): WordSegment[] {
       text: segment,
       start,
       end: start + segment.length,
-      isWordLike: /^[\p{L}\p{M}\p{N}\p{Pc}\u200C\u200D]+$/u.test(segment),
+      isWordLike: /^[\p{L}\p{M}\p{N}\p{Pc}\u200C\u200D]+(?:['’][\p{L}\p{M}\p{N}\p{Pc}\u200C\u200D]+)*$/u.test(segment),
     });
   }
   return segments;
