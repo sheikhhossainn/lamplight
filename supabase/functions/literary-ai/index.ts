@@ -614,6 +614,7 @@ Return a JSON object with key "translations" containing an array of translated s
     'companion_summary',
     'companion_recap_characters',
     'companion_reflective_questions',
+    'companion_ask',
   ];
 
   if (COMPANION_ACTIONS.includes(action)) {
@@ -822,6 +823,33 @@ Return a JSON object with key "translations" containing an array of translated s
         `Chapter: ${chapterTitle} (Chapter ${chapterIndex + 1})\n` +
         `Chapter Text:\n${chapterExcerpt}`;
       maxTokens = 550;
+    } else if (action === 'companion_ask') {
+      const question = String(body.question || '').trim().slice(0, 500);
+      const passage = body.excerpt ? String(body.excerpt).trim().slice(0, 1500) : '';
+
+      if (!question) {
+        return new Response(JSON.stringify({ error: 'Question is required', success: false }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      systemPrompt =
+        `You are Lamplight's AI Reading Companion, an erudite, warm, and insightful literary guide.\n` +
+        `Answer the reader's question directly with literary elegance and critical depth.\n` +
+        `STRICT SPOILER RULE: Discuss ONLY the provided text and events up to Chapter ${chapterIndex + 1}. NEVER reveal, foreshadow, or hint at any plot twists, deaths, or developments from future chapters.\n` +
+        `Return ONLY a valid JSON object with these exact keys:\n` +
+        `- "answer": string (2-3 concise paragraphs answering the question directly and thoughtfully)\n` +
+        `- "keyThemes": array of 1-3 strings highlighting thematic connections\n` +
+        `- "suggestedFollowUps": array of 2-3 short follow-up questions the reader might explore\n` +
+        `- "version": "v1-groq-companion"`;
+
+      userPrompt =
+        (bookTitle ? `Book: "${bookTitle}" by ${bookAuthor || 'Classic Author'}\n` : '') +
+        `Chapter: ${chapterTitle} (Chapter ${chapterIndex + 1})\n` +
+        (passage ? `Relevant Excerpt:\n"${passage}"\n\n` : '') +
+        `Reader's Question: "${question}"`;
+      maxTokens = 600;
     }
 
     // 5. Call AI (Gemini or Groq)

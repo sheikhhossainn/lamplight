@@ -39,6 +39,7 @@ import { seedKoreanCatalog } from '@/features/content-ingestion/koreanApi';
 import { hydrateTargetLanguage } from '@/features/settings/languagePair';
 import { hydrateTargetReadingLanguage } from '@/features/settings/targetReadingLanguage';
 import { hydrateLiteraryTheme } from '@/features/settings/literaryTheme';
+import { hydrateReadingTheme } from '@/features/settings/readingTheme';
 import { hydrateOnboardingStatus } from '@/features/settings/onboardingStatus';
 import { hydratePageStyle } from '@/features/settings/pageStylePrefs';
 import { hydrateReadingTypography } from '@/features/settings/readingPrefs';
@@ -87,6 +88,7 @@ export default function RootLayout() {
       hydrateMotherTongue().catch(() => {}),
       hydratePageStyle().catch(() => {}),
       hydrateReadingTypography().catch(() => {}),
+      hydrateReadingTheme().catch(() => {}),
       hydrateLiteraryTheme().catch(() => {}),
       hydrateEntitlements().catch(() => {}),
       cleanupPartialDownloads().catch(() => {}),
@@ -97,12 +99,17 @@ export default function RootLayout() {
     ]).catch(() => {});
   }, []);
 
-  // Resolve the has-onboarded flag before the Stack mounts, so the "/" splash
-  // route can redirect straight past itself instead of flashing then bouncing.
+  // Resolve the has-onboarded flag and reading theme before the Stack mounts, so the "/" splash
+  // route can redirect straight past itself instead of flashing then bouncing, and renders
+  // directly in the user's persisted reading theme (Day/Lamp) without flashing light mode.
   useEffect(() => {
-    void Promise.all([hydrateOnboardingStatus(), hydrateWhatsNewStatus()]).then(() =>
-      setOnboardingChecked(true),
-    );
+    void Promise.all([
+      hydrateOnboardingStatus(),
+      hydrateWhatsNewStatus(),
+      hydrateReadingTheme(),
+    ])
+      .catch(() => {})
+      .then(() => setOnboardingChecked(true));
   }, []);
 
   // Trigger local-first sync, flush offline analytics, and refresh remote app config on launch and when returning to foreground

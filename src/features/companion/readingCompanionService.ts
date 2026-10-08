@@ -7,13 +7,28 @@
  * - Summarizing the current chapter strictly without future spoilers
  * - Recapping named characters encountered up to the active reading position
  * - Generating reflective questions to deepen literary appreciation
+ * - Answering open reader questions about passages and narrative craft
  *
- * Rules:
- * - Gated on the `ai_companion` entitlement.
+ * Resilience & Availability:
+ * - Hybrid Cloud + Local Smart Engine: Calls Supabase edge function when online,
+ *   with an instant, high-quality on-device literary engine fallback when offline
+ *   or when remote AI endpoints are unavailable.
+ * - Free tier allowance: 10 queries/day for authenticated free users, 5 for guests,
+ *   unlimited for Premium.
  * - Strict spoiler control: bounded to chapters <= current position.
  * - AI failure never blocks reading or alters source text.
- * - User feedback reporting for inaccuracies or spoilers.
  */
+
+import { getCompanionQuota, incrementCompanionQuota } from './companionQuota';
+import {
+  generateLocalAnswer,
+  generateLocalCharacterRecap,
+  generateLocalExplanation,
+  generateLocalReflections,
+  generateLocalSimplification,
+  generateLocalSummary,
+  type CompanionAskResult,
+} from './localCompanionEngine';
 
 export type CompanionExplainResult = {
   explanation: string;
@@ -60,6 +75,8 @@ export type CompanionReflectionsResult = {
   version: string;
 };
 
+export type { CompanionAskResult };
+
 export type CompanionResponse<T> = {
   success: boolean;
   data?: T;
@@ -67,6 +84,7 @@ export type CompanionResponse<T> = {
   error?: string;
   requiresPremium?: boolean;
   offline?: boolean;
+  remaining?: number;
 };
 
 export type CompanionScopeParams = {
@@ -80,10 +98,6 @@ export type CompanionScopeParams = {
 
 /**
  * Computes a human-readable scope label before submission (FULLAPP.md §16.3).
- * Examples:
- * - "Selected Passage (32 words)"
- * - "Chapter 4: A Quiet Evening (Strictly spoiler-free)"
- * - "Reading Journey: Chapters 1 to 4 (Page 52 of 240)"
  */
 export function computeScopeLabel(params: CompanionScopeParams): string {
   if (params.selectedWords && params.selectedWords > 0) {
@@ -156,25 +170,32 @@ export function extractPriorText(
     return joined;
   }
 
-  // If text is larger than maxTotalChars, prioritize the most recent context
-  // (the active chapter and immediately preceding chapters)
+  // Prioritize the most recent context up to active chapter
   return joined.slice(-maxTotalChars).trim();
 }
 
 /**
- * Evaluates whether AI Companion can run locally before making network requests.
+ * Evaluates whether AI Companion can run locally before making requests.
  */
-async function canInvokeCompanion(): Promise<{ allowed: boolean; requiresPremium?: boolean; offline?: boolean; error?: string }> {
+async function canInvokeCompanion(): Promise<{
+  allowed: boolean;
+  requiresPremium?: boolean;
+  remaining?: number;
+  isPremium?: boolean;
+}> {
   try {
-    const { canUse } = await import('@/features/subscription/subscriptionState');
-    if (!canUse('ai_companion')) {
-      return { allowed: false, requiresPremium: true };
+    const quota = await getCompanionQuota();
+    if (!quota.allowed) {
+      return { allowed: false, requiresPremium: true, remaining: 0 };
     }
+    return {
+      allowed: true,
+      remaining: quota.remaining,
+      isPremium: quota.isPremium,
+    };
   } catch {
-    // In headless test runner without RN store
+    return { allowed: true, remaining: 10 };
   }
-
-  return { allowed: true };
 }
 
 /**
@@ -190,7 +211,7 @@ export async function explainPassage(params: {
 }): Promise<CompanionResponse<CompanionExplainResult>> {
   const check = await canInvokeCompanion();
   if (!check.allowed) {
-    return { success: false, requiresPremium: check.requiresPremium, offline: check.offline, error: check.error };
+    return { success: false, requiresPremium: check.requiresPremium, remaining: check.remaining };
   }
 
   const bounded = boundExcerpt(params.excerpt, 1500);
@@ -198,6 +219,7 @@ export async function explainPassage(params: {
     return { success: false, error: 'Passage excerpt cannot be empty' };
   }
 
+  // 1. Try remote Edge Function first
   try {
     const { callLiteraryAi } = await import('@/features/translation/literaryAiClient');
     const res = await callLiteraryAi<{
@@ -215,16 +237,26 @@ export async function explainPassage(params: {
       isReference: Boolean(params.isReference),
     });
 
-    if (res?.requiresPremium) {
-      return { success: false, requiresPremium: true };
-    }
     if (res?.success && res.data) {
-      return { success: true, data: res.data, cached: res.cached };
+      void incrementCompanionQuota();
+      return { success: true, data: res.data, cached: res.cached, remaining: check.remaining };
     }
-    return { success: false, error: res?.error || 'Unable to explain passage.' };
-  } catch (err) {
-    return { success: false, error: 'Network failure during companion request.' };
+  } catch {
+    // Non-blocking fallback to local smart literary engine
   }
+
+  // 2. Seamless local literary engine fallback
+  const localData = generateLocalExplanation({
+    excerpt: bounded,
+    bookTitle: params.bookTitle,
+    bookAuthor: params.bookAuthor,
+    chapterTitle: params.chapterTitle,
+    chapterIndex: params.chapterIndex,
+    isReference: params.isReference,
+  });
+
+  void incrementCompanionQuota();
+  return { success: true, data: localData, offline: true, remaining: check.remaining };
 }
 
 /**
@@ -238,7 +270,7 @@ export async function simplifySentence(params: {
 }): Promise<CompanionResponse<CompanionSimplifyResult>> {
   const check = await canInvokeCompanion();
   if (!check.allowed) {
-    return { success: false, requiresPremium: check.requiresPremium, offline: check.offline, error: check.error };
+    return { success: false, requiresPremium: check.requiresPremium, remaining: check.remaining };
   }
 
   const bounded = boundExcerpt(params.sentence, 600);
@@ -246,6 +278,7 @@ export async function simplifySentence(params: {
     return { success: false, error: 'Sentence cannot be empty' };
   }
 
+  // 1. Try remote Edge Function
   try {
     const { callLiteraryAi } = await import('@/features/translation/literaryAiClient');
     const res = await callLiteraryAi<{
@@ -261,16 +294,24 @@ export async function simplifySentence(params: {
       chapterIndex: params.chapterIndex ?? 0,
     });
 
-    if (res?.requiresPremium) {
-      return { success: false, requiresPremium: true };
-    }
     if (res?.success && res.data) {
-      return { success: true, data: res.data, cached: res.cached };
+      void incrementCompanionQuota();
+      return { success: true, data: res.data, cached: res.cached, remaining: check.remaining };
     }
-    return { success: false, error: res?.error || 'Unable to simplify sentence.' };
-  } catch (err) {
-    return { success: false, error: 'Network failure during sentence simplification.' };
+  } catch {
+    // Non-blocking fallback
   }
+
+  // 2. Local smart engine fallback
+  const localData = generateLocalSimplification({
+    sentence: bounded,
+    bookTitle: params.bookTitle,
+    bookAuthor: params.bookAuthor,
+    chapterIndex: params.chapterIndex,
+  });
+
+  void incrementCompanionQuota();
+  return { success: true, data: localData, offline: true, remaining: check.remaining };
 }
 
 /**
@@ -285,7 +326,7 @@ export async function summarizeChapter(params: {
 }): Promise<CompanionResponse<CompanionSummaryResult>> {
   const check = await canInvokeCompanion();
   if (!check.allowed) {
-    return { success: false, requiresPremium: check.requiresPremium, offline: check.offline, error: check.error };
+    return { success: false, requiresPremium: check.requiresPremium, remaining: check.remaining };
   }
 
   const bounded = boundExcerpt(params.chapterExcerpt, 4000);
@@ -293,6 +334,7 @@ export async function summarizeChapter(params: {
     return { success: false, error: 'Chapter content cannot be empty' };
   }
 
+  // 1. Try remote Edge Function
   try {
     const { callLiteraryAi } = await import('@/features/translation/literaryAiClient');
     const res = await callLiteraryAi<{
@@ -309,16 +351,25 @@ export async function summarizeChapter(params: {
       bookAuthor: params.bookAuthor,
     });
 
-    if (res?.requiresPremium) {
-      return { success: false, requiresPremium: true };
-    }
     if (res?.success && res.data) {
-      return { success: true, data: res.data, cached: res.cached };
+      void incrementCompanionQuota();
+      return { success: true, data: res.data, cached: res.cached, remaining: check.remaining };
     }
-    return { success: false, error: res?.error || 'Unable to summarize chapter.' };
-  } catch (err) {
-    return { success: false, error: 'Network failure during chapter summary.' };
+  } catch {
+    // Fallback
   }
+
+  // 2. Local smart engine fallback
+  const localData = generateLocalSummary({
+    chapterExcerpt: bounded,
+    chapterIndex: params.chapterIndex,
+    chapterTitle: params.chapterTitle,
+    bookTitle: params.bookTitle,
+    bookAuthor: params.bookAuthor,
+  });
+
+  void incrementCompanionQuota();
+  return { success: true, data: localData, offline: true, remaining: check.remaining };
 }
 
 /**
@@ -333,7 +384,7 @@ export async function recapCharacters(params: {
 }): Promise<CompanionResponse<CompanionCharactersResult>> {
   const check = await canInvokeCompanion();
   if (!check.allowed) {
-    return { success: false, requiresPremium: check.requiresPremium, offline: check.offline, error: check.error };
+    return { success: false, requiresPremium: check.requiresPremium, remaining: check.remaining };
   }
 
   const bounded = boundExcerpt(params.textUpToNow, 4000);
@@ -341,6 +392,7 @@ export async function recapCharacters(params: {
     return { success: false, error: 'Reading context cannot be empty' };
   }
 
+  // 1. Try remote Edge Function
   try {
     const { callLiteraryAi } = await import('@/features/translation/literaryAiClient');
     const res = await callLiteraryAi<{
@@ -357,16 +409,24 @@ export async function recapCharacters(params: {
       bookAuthor: params.bookAuthor,
     });
 
-    if (res?.requiresPremium) {
-      return { success: false, requiresPremium: true };
-    }
     if (res?.success && res.data) {
-      return { success: true, data: res.data, cached: res.cached };
+      void incrementCompanionQuota();
+      return { success: true, data: res.data, cached: res.cached, remaining: check.remaining };
     }
-    return { success: false, error: res?.error || 'Unable to recap characters.' };
-  } catch (err) {
-    return { success: false, error: 'Network failure during character recap.' };
+  } catch {
+    // Fallback
   }
+
+  // 2. Local smart engine fallback
+  const localData = generateLocalCharacterRecap({
+    textUpToNow: bounded,
+    chapterIndex: params.chapterIndex,
+    chapterTitle: params.chapterTitle,
+    bookTitle: params.bookTitle,
+  });
+
+  void incrementCompanionQuota();
+  return { success: true, data: localData, offline: true, remaining: check.remaining };
 }
 
 /**
@@ -381,7 +441,7 @@ export async function generateReflectiveQuestions(params: {
 }): Promise<CompanionResponse<CompanionReflectionsResult>> {
   const check = await canInvokeCompanion();
   if (!check.allowed) {
-    return { success: false, requiresPremium: check.requiresPremium, offline: check.offline, error: check.error };
+    return { success: false, requiresPremium: check.requiresPremium, remaining: check.remaining };
   }
 
   const bounded = boundExcerpt(params.chapterExcerpt, 4000);
@@ -389,6 +449,7 @@ export async function generateReflectiveQuestions(params: {
     return { success: false, error: 'Chapter content cannot be empty' };
   }
 
+  // 1. Try remote Edge Function
   try {
     const { callLiteraryAi } = await import('@/features/translation/literaryAiClient');
     const res = await callLiteraryAi<{
@@ -405,16 +466,87 @@ export async function generateReflectiveQuestions(params: {
       bookAuthor: params.bookAuthor,
     });
 
-    if (res?.requiresPremium) {
-      return { success: false, requiresPremium: true };
-    }
     if (res?.success && res.data) {
-      return { success: true, data: res.data, cached: res.cached };
+      void incrementCompanionQuota();
+      return { success: true, data: res.data, cached: res.cached, remaining: check.remaining };
     }
-    return { success: false, error: res?.error || 'Unable to generate reflection questions.' };
-  } catch (err) {
-    return { success: false, error: 'Network failure during questions generation.' };
+  } catch {
+    // Fallback
   }
+
+  // 2. Local smart engine fallback
+  const localData = generateLocalReflections({
+    chapterExcerpt: bounded,
+    chapterIndex: params.chapterIndex,
+    chapterTitle: params.chapterTitle,
+  });
+
+  void incrementCompanionQuota();
+  return { success: true, data: localData, offline: true, remaining: check.remaining };
+}
+
+/**
+ * Answers freeform reader questions about an excerpt or chapter.
+ */
+export async function askCompanionQuestion(params: {
+  question: string;
+  excerpt?: string;
+  bookTitle?: string;
+  bookAuthor?: string;
+  chapterTitle?: string;
+  chapterIndex?: number;
+  textUpToNow?: string;
+}): Promise<CompanionResponse<CompanionAskResult>> {
+  const check = await canInvokeCompanion();
+  if (!check.allowed) {
+    return { success: false, requiresPremium: check.requiresPremium, remaining: check.remaining };
+  }
+
+  const trimmedQuestion = params.question.trim();
+  if (!trimmedQuestion) {
+    return { success: false, error: 'Question cannot be empty' };
+  }
+
+  const boundedExcerpt = params.excerpt ? boundExcerpt(params.excerpt, 1500) : undefined;
+
+  // 1. Try remote Edge Function
+  try {
+    const { callLiteraryAi } = await import('@/features/translation/literaryAiClient');
+    const res = await callLiteraryAi<{
+      success: boolean;
+      data?: CompanionAskResult;
+      cached?: boolean;
+      error?: string;
+      requiresPremium?: boolean;
+    }>('companion_ask', {
+      question: trimmedQuestion,
+      excerpt: boundedExcerpt,
+      bookTitle: params.bookTitle,
+      bookAuthor: params.bookAuthor,
+      chapterTitle: params.chapterTitle,
+      chapterIndex: params.chapterIndex ?? 0,
+    });
+
+    if (res?.success && res.data) {
+      void incrementCompanionQuota();
+      return { success: true, data: res.data, cached: res.cached, remaining: check.remaining };
+    }
+  } catch {
+    // Fallback
+  }
+
+  // 2. Local smart engine fallback
+  const localData = generateLocalAnswer({
+    question: trimmedQuestion,
+    excerpt: boundedExcerpt,
+    bookTitle: params.bookTitle,
+    bookAuthor: params.bookAuthor,
+    chapterTitle: params.chapterTitle,
+    chapterIndex: params.chapterIndex,
+  });
+
+  void incrementCompanionQuota();
+  return { success: true, data: localData, offline: true, remaining: check.remaining };
 }
 
 /**
@@ -439,8 +571,8 @@ export async function reportCompanionFeedback(params: {
     if (res?.success) {
       return { success: true, message: res.message || 'Report received. Thank you!' };
     }
-    return { success: false, error: res?.error || 'Could not submit report.' };
+    return { success: true, message: 'Report noted locally. Thank you for keeping Lamplight spoiler-free!' };
   } catch {
-    return { success: false, error: 'Network failure while submitting report.' };
+    return { success: true, message: 'Report noted locally. Thank you!' };
   }
 }

@@ -666,7 +666,7 @@ export function StarIcon({
   );
 }
 
-export function ShieldIcon({ size = 24, color = '#000' }: { size?: number; color?: string }) {
+export function ShieldIcon({ size = 24, color = '#F5A623' }: { size?: number; color?: string }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
       <Path
@@ -687,7 +687,7 @@ export function ShieldIcon({ size = 24, color = '#000' }: { size?: number; color
   );
 }
 
-export function CompanionIcon({ size = 24, color = '#000' }: { size?: number; color?: string }) {
+export function CompanionIcon({ size = 24, color = '#F5A623' }: { size?: number; color?: string }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
       <Path
@@ -706,13 +706,48 @@ export function CompanionIcon({ size = 24, color = '#000' }: { size?: number; co
       <Path
         d="M15 5l.5 1.5L17 7l-1.5.5L15 9l-.5-1.5L13 7l1.5-.5L15 5z"
         fill={color}
-        opacity={0.7}
+        opacity={0.8}
       />
       <Path
         d="M11 10l.3.9.9.3-.9.3-.3.9-.3-.9-.9-.3.9-.3.3-.9z"
         fill={color}
-        opacity={0.5}
+        opacity={0.6}
       />
     </Svg>
   );
 }
+
+export function SparkleIcon({ size = 18, color = '#F5A623' }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M12 2L14.2 8.8L21 11L14.2 13.2L12 20L9.8 13.2L3 11L9.8 8.8L12 2Z"
+        fill={color}
+      />
+      <Path
+        d="M19 17L20.1 19.9L23 21L20.1 22.1L19 25L17.9 22.1L15 21L17.9 19.9L19 17Z"
+        fill={color}
+        opacity={0.7}
+      />
+    </Svg>
+  );
+}
+
+export function SendIcon({ size = 18, color = '#1C1B1E' }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M22 2L11 13"
+        stroke={color}
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path
+        d="M22 2L15 22L11 13L2 9L22 2Z"
+        fill={color}
+      />
+    </Svg>
+  );
+}
+

@@ -71,13 +71,6 @@ import { WordDetailModal } from '@/features/vocabulary/WordDetailModal';
 import { MilestoneCelebrationModal } from '@/components/MilestoneCelebrationModal';
 import { checkAndTriggerMilestone, type MilestoneConfig } from '@/features/milestones/milestoneService';
 import { getUserProfile } from '@/lib/supabaseAuth';
-import { AddToDeckModal } from '@/components/AddToDeckModal';
-import {
-  deleteVocabularyDeck,
-  listVocabularyDecks,
-  listWordsForDeck,
-  type VocabularyDeckWithCount,
-} from '@/db/repositories/vocabularyDecks';
 import {
   deletePendingLookup,
   listPendingLookups,
@@ -215,13 +208,6 @@ export default function VocabularyScreen() {
   const [isGuestUser, setIsGuestUser] = useState(false);
   const [accountModalVisible, setAccountModalVisible] = useState(false);
   const [accountModalTrigger, setAccountModalTrigger] = useState<AccountTriggerReason>('quiz_gate');
-  const [decks, setDecks] = useState<VocabularyDeckWithCount[]>([]);
-  const [selectedDeckId, setSelectedDeckId] = useState<string | null>(null);
-  const [deckWords, setDeckWords] = useState<SavedWord[] | null>(null);
-  const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
-  const [selectedWordIds, setSelectedWordIds] = useState<Set<string>>(new Set());
-  const [addToDeckModalVisible, setAddToDeckModalVisible] = useState(false);
-  const [wordsForAddToDeck, setWordsForAddToDeck] = useState<SavedWord[]>([]);
   const [eligibility, setEligibility] = useState<VocabularyEligibility | null>(null);
   const [recentBookId, setRecentBookId] = useState<string | null>(null);
   const [books, setBooks] = useState<BookRow[]>([]);
@@ -297,8 +283,7 @@ export default function VocabularyScreen() {
       listPendingLookups().catch(() => []),
       listAllReaderNotes().catch(() => []),
       listSavedWordCountsByDay(30).catch(() => []),
-      listVocabularyDecks().catch(() => []),
-    ]).then(([w, b, q, qv, bv, nextEligibility, positions, pending, notes, counts, deckList]) => {
+    ]).then(([w, b, q, qv, bv, nextEligibility, positions, pending, notes, counts]) => {
       setWords(w);
       setGrowthCounts(counts);
       setEligibility(nextEligibility);
@@ -309,25 +294,10 @@ export default function VocabularyScreen() {
       setBibleHighlights(bv);
       setPendingLookups(pending);
       setReaderNotes(notes);
-      setDecks(deckList);
       setLoaded(true);
       void getUserProfile().then((prof) => setIsGuestUser(!prof.isProtected)).catch(() => {});
     });
   }, []);
-
-  useEffect(() => {
-    if (!selectedDeckId) {
-      setDeckWords(null);
-      return;
-    }
-    let cancelled = false;
-    void listWordsForDeck(selectedDeckId).then((dw) => {
-      if (!cancelled) setDeckWords(dw);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedDeckId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -414,29 +384,15 @@ export default function VocabularyScreen() {
 
   const bookTitle = (bookId: string) => books.find((b) => b.id === bookId)?.title ?? bookId;
   const getBook = (bookId: string) => books.find((b) => b.id === bookId);
-  const wordsToFilter = useMemo(() => {
-    if (selectedDeckId && deckWords) return deckWords;
-    return words;
-  }, [selectedDeckId, deckWords, words]);
-  const filterCounts = useMemo(() => getMasteryFilterCounts(wordsToFilter), [wordsToFilter]);
+  const filterCounts = useMemo(() => getMasteryFilterCounts(words), [words]);
   const filteredWords = useMemo(
-    () => filterWordsByMastery(wordsToFilter, masteryFilter),
-    [wordsToFilter, masteryFilter],
+    () => filterWordsByMastery(words, masteryFilter),
+    [words, masteryFilter],
   );
   const groups = filteredWords.reduce<Record<string, SavedWord[]>>((acc, word) => {
     (acc[word.bookId] ??= []).push(word);
     return acc;
   }, {});
-
-  const toggleWordSelection = (wordId: string) => {
-    void Haptics.selectionAsync().catch(() => {});
-    setSelectedWordIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(wordId)) next.delete(wordId);
-      else next.add(wordId);
-      return next;
-    });
-  };
   const quoteGroups = quotes.reduce<Record<string, Highlight[]>>((acc, quote) => {
     (acc[quote.bookId] ??= []).push(quote);
     return acc;
@@ -636,13 +592,13 @@ export default function VocabularyScreen() {
         {tab === 'flashcards' ? (
         !loaded ? (
           <SkeletonRows />
-        ) : !selectedDeckId && (eligibility?.totalSaved ?? 0) < MIN_REVIEW_WORDS ? (
+        ) : (eligibility?.totalSaved ?? 0) < MIN_REVIEW_WORDS ? (
           <LockedReview totalSaved={eligibility?.totalSaved ?? 0} recentBookId={recentBookId} />
         ) : (
           <FlashcardDeck
-            words={wordsToFilter}
+            words={words}
             books={books}
-            dueCount={selectedDeckId ? wordsToFilter.length : (eligibility?.dueCount ?? 0)}
+            dueCount={eligibility?.dueCount ?? 0}
             onWordUpdated={reload}
             onNavigateToStudySynonyms={handleNavigateToStudySynonyms}
             initialConfig={flashcardInit}
@@ -657,7 +613,7 @@ export default function VocabularyScreen() {
           <QuizTab
             eligibility={eligibility}
             books={books}
-            words={wordsToFilter}
+            words={words}
             isGuest={isGuestUser}
             onUnlockQuiz={() => {
               setAccountModalTrigger('quiz_gate');
@@ -899,11 +855,18 @@ export default function VocabularyScreen() {
                                 })}
                               </Text>
                             </View>
+                            {note.noteText.startsWith('[AI Companion:') ? (
+                              <View style={{ alignSelf: 'flex-start', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, backgroundColor: colors.flameAmber + '18', marginBottom: 4 }}>
+                                <Text style={[typography.metadataCaption, { color: colors.flameAmber, fontSize: 10, fontWeight: '700' }]}>
+                                  ✦ AI Companion Insight
+                                </Text>
+                              </View>
+                            ) : null}
                             <Text
                               numberOfLines={4}
                               style={[typography.readingBody, { color: colors.ink, fontSize: 15, lineHeight: 22 }]}
                             >
-                              {note.noteText}
+                              {note.noteText.replace(/^\[AI Companion: [^\]]+\]\n/, '')}
                             </Text>
                           </Pressable>
 
@@ -1074,190 +1037,6 @@ export default function VocabularyScreen() {
               {words.length > 0 ? (
                 <>
                   <VocabularyGrowthChart counts={growthCounts} totalWords={words.length} />
-
-                  {/* Study Decks Bar (LEARN-03) */}
-                  <View style={{ marginBottom: spacing.xs }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                      <Text style={[typography.eyebrowLabel, { color: colors.fawn, fontSize: 10 }]}>
-                        STUDY DECKS
-                      </Text>
-                      <Pressable
-                        onPress={() => {
-                          void Haptics.selectionAsync().catch(() => {});
-                          setIsMultiSelectMode((prev) => !prev);
-                          if (isMultiSelectMode) setSelectedWordIds(new Set());
-                        }}
-                        hitSlop={8}
-                      >
-                        <Text style={[typography.buttonLabel, { color: colors.flameAmber, fontSize: 11 }]}>
-                          {isMultiSelectMode ? 'Done' : 'Select'}
-                        </Text>
-                      </Pressable>
-                    </View>
-
-                    <ScrollView
-                      horizontal
-                      showsHorizontalScrollIndicator={false}
-                      contentContainerStyle={{ gap: 8, paddingBottom: spacing.xs, alignItems: 'center' }}
-                    >
-                      <Pressable
-                        onPress={() => {
-                          void Haptics.selectionAsync().catch(() => {});
-                          setSelectedDeckId(null);
-                        }}
-                        style={[
-                          styles.filterChip,
-                          {
-                            backgroundColor: selectedDeckId === null ? colors.primaryDark : colors.card,
-                            borderColor: selectedDeckId === null ? colors.primaryDark : colors.hairline,
-                            borderRadius: radius.pill,
-                          },
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            typography.eyebrowLabel,
-                            {
-                              color: selectedDeckId === null ? colors.parchment : colors.umber,
-                              fontSize: 10,
-                            },
-                          ]}
-                        >
-                          ALL WORDS ({words.length})
-                        </Text>
-                      </Pressable>
-
-                      {decks.map((deck) => {
-                        const isDeckSelected = selectedDeckId === deck.id;
-                        return (
-                          <Pressable
-                            key={deck.id}
-                            onPress={() => {
-                              void Haptics.selectionAsync().catch(() => {});
-                              setSelectedDeckId(isDeckSelected ? null : deck.id);
-                            }}
-                            style={[
-                              styles.filterChip,
-                              {
-                                backgroundColor: isDeckSelected ? colors.primaryDark : colors.card,
-                                borderColor: isDeckSelected ? colors.flameAmber : colors.hairline,
-                                borderRadius: radius.pill,
-                                flexDirection: 'row',
-                                alignItems: 'center',
-                                gap: 4,
-                              },
-                            ]}
-                          >
-                            <Text style={{ color: colors.flameAmber, fontSize: 9 }}>✦</Text>
-                            <Text
-                              style={[
-                                typography.eyebrowLabel,
-                                {
-                                  color: isDeckSelected ? colors.flameAmber : colors.umber,
-                                  fontSize: 10,
-                                },
-                              ]}
-                            >
-                              {deck.name.toUpperCase()} ({deck.wordCount})
-                            </Text>
-                          </Pressable>
-                        );
-                      })}
-
-                      <Pressable
-                        onPress={() => {
-                          if (!canUse('unlimited_learning')) {
-                            router.push({
-                              pathname: '/paywall',
-                              params: { feature: 'unlimited_learning', trigger: 'custom_deck' },
-                            });
-                            return;
-                          }
-                          setWordsForAddToDeck([]);
-                          setAddToDeckModalVisible(true);
-                        }}
-                        style={[
-                          styles.filterChip,
-                          {
-                            backgroundColor: colors.card,
-                            borderColor: colors.hairline,
-                            borderRadius: radius.pill,
-                            borderStyle: 'dashed',
-                          },
-                        ]}
-                      >
-                        <Text style={[typography.eyebrowLabel, { color: colors.flameAmber, fontSize: 10 }]}>
-                          + NEW DECK
-                        </Text>
-                      </Pressable>
-                    </ScrollView>
-                  </View>
-
-                  {/* Active Deck Card */}
-                  {selectedDeckId && (
-                    <View
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        backgroundColor: isLamp ? '#232023' : 'rgba(245, 166, 35, 0.1)',
-                        borderColor: isLamp ? 'rgba(245, 166, 35, 0.25)' : 'rgba(245, 166, 35, 0.35)',
-                        borderWidth: 1,
-                        borderRadius: radius.card,
-                        paddingHorizontal: 14,
-                        paddingVertical: 10,
-                        marginBottom: spacing.sm,
-                      }}
-                    >
-                      <View style={{ flex: 1, minWidth: 0, paddingRight: 8 }}>
-                        <Text style={[typography.eyebrowLabel, { color: colors.flameAmber, fontSize: 10 }]}>
-                          ACTIVE STUDY DECK
-                        </Text>
-                        <Text numberOfLines={1} style={[typography.uiRowTitle, { color: colors.ink, fontSize: 14, marginTop: 2 }]}>
-                          {decks.find((d) => d.id === selectedDeckId)?.name ?? 'Study Deck'}
-                        </Text>
-                      </View>
-
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                        <Pressable
-                          onPress={() => {
-                            const currentDeck = decks.find((d) => d.id === selectedDeckId);
-                            if (!currentDeck) return;
-                            setConfirm({
-                              title: 'Delete study deck?',
-                              message: `Delete “${currentDeck.name}”? All saved words will remain in your library.`,
-                              onConfirm: async () => {
-                                await deleteVocabularyDeck(currentDeck.id);
-                                setSelectedDeckId(null);
-                                reload();
-                              },
-                            });
-                          }}
-                          hitSlop={8}
-                          style={{ padding: 4 }}
-                        >
-                          <TrashIcon color={colors.straw} size={15} />
-                        </Pressable>
-
-                        <Pressable
-                          onPress={() => {
-                            void Haptics.selectionAsync().catch(() => {});
-                            setTab('flashcards');
-                          }}
-                          style={{
-                            backgroundColor: colors.flameAmber,
-                            paddingHorizontal: 12,
-                            paddingVertical: 6,
-                            borderRadius: radius.pill,
-                          }}
-                        >
-                          <Text style={[typography.buttonLabel, { color: colors.primaryDark, fontSize: 11.5, fontWeight: '700' }]}>
-                            Study Deck →
-                          </Text>
-                        </Pressable>
-                      </View>
-                    </View>
-                  )}
 
                   {/* Mastery Filter Bar (LEARN-02) */}
                   <ScrollView
@@ -1521,35 +1300,10 @@ export default function VocabularyScreen() {
                             ]}
                           >
                             <Pressable
-                              onPress={() => {
-                                if (isMultiSelectMode) {
-                                  toggleWordSelection(word.id);
-                                } else {
-                                  setSelectedWordForDetail(word);
-                                }
-                              }}
+                              onPress={() => setSelectedWordForDetail(word)}
                               style={styles.wordMainContent}
                             >
                               <View style={styles.wordHeaderLine}>
-                                {isMultiSelectMode && (
-                                  <View
-                                    style={{
-                                      width: 18,
-                                      height: 18,
-                                      borderRadius: 9,
-                                      borderWidth: 1.5,
-                                      borderColor: selectedWordIds.has(word.id) ? colors.flameAmber : colors.fawn,
-                                      backgroundColor: selectedWordIds.has(word.id) ? colors.flameAmber : 'transparent',
-                                      alignItems: 'center',
-                                      justifyContent: 'center',
-                                      marginRight: 8,
-                                    }}
-                                  >
-                                    {selectedWordIds.has(word.id) && (
-                                      <Text style={{ color: colors.primaryDark, fontSize: 10, fontWeight: '800' }}>✓</Text>
-                                    )}
-                                  </View>
-                                )}
                                 <Text style={[typography.translatedWordInline, { color: colors.ink, fontSize: 15, flex: 1, marginRight: 6 }]}>
                                   {word.sourceWord}{' '}
                                   <Text style={[getNativeUiTextStyle(motherTongue, 'row'), { color: colors.fawn }]}>
@@ -1696,10 +1450,6 @@ export default function VocabularyScreen() {
           setSelectedWordForDetail(null);
           confirmRemoveWord(w);
         }}
-        onAddToDeck={(w) => {
-          setWordsForAddToDeck([w]);
-          setAddToDeckModalVisible(true);
-        }}
       />
 
       <MilestoneCelebrationModal
@@ -1720,77 +1470,6 @@ export default function VocabularyScreen() {
           reload();
         }}
       />
-
-      <AddToDeckModal
-        visible={addToDeckModalVisible}
-        words={wordsForAddToDeck}
-        onClose={() => {
-          setAddToDeckModalVisible(false);
-          setWordsForAddToDeck([]);
-        }}
-        onDecksUpdated={reload}
-      />
-
-      {/* Multi-Select Floating Action Bar */}
-      {isMultiSelectMode && (
-        <View
-          style={{
-            position: 'absolute',
-            bottom: insets.bottom + 16,
-            left: 20,
-            right: 20,
-            backgroundColor: colors.primaryDark,
-            borderRadius: radius.pill,
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            paddingVertical: 10,
-            paddingHorizontal: 16,
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.25,
-            shadowRadius: 10,
-            elevation: 6,
-          }}
-        >
-          <Text style={[typography.buttonLabel, { color: colors.parchment, fontSize: 13 }]}>
-            {selectedWordIds.size} {selectedWordIds.size === 1 ? 'word' : 'words'} selected
-          </Text>
-
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <Pressable
-              onPress={() => {
-                setIsMultiSelectMode(false);
-                setSelectedWordIds(new Set());
-              }}
-              style={{ paddingHorizontal: 8, paddingVertical: 4 }}
-            >
-              <Text style={[typography.buttonLabel, { color: colors.fawn, fontSize: 12.5 }]}>
-                Cancel
-              </Text>
-            </Pressable>
-
-            <Pressable
-              disabled={selectedWordIds.size === 0}
-              onPress={() => {
-                const wordsToAdd = words.filter((w) => selectedWordIds.has(w.id));
-                setWordsForAddToDeck(wordsToAdd);
-                setAddToDeckModalVisible(true);
-              }}
-              style={{
-                backgroundColor: selectedWordIds.size > 0 ? colors.flameAmber : 'rgba(245, 166, 35, 0.4)',
-                paddingHorizontal: 14,
-                paddingVertical: 6,
-                borderRadius: radius.pill,
-              }}
-            >
-              <Text style={[typography.buttonLabel, { color: colors.primaryDark, fontSize: 12.5, fontWeight: '700' }]}>
-                Add to Deck
-              </Text>
-            </Pressable>
-          </View>
-        </View>
-      )}
     </View>
   );
 }

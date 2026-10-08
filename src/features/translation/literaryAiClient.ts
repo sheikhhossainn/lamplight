@@ -31,8 +31,14 @@ export async function callLiteraryAi<T>(
     });
     clearTimeout(timer);
 
-    if (!res.ok) return null;
-    return (await res.json()) as T;
+    const body = (await res.json().catch(() => null)) as T | null;
+    if (!res.ok) {
+      if (body && typeof body === 'object') {
+        return body;
+      }
+      return null;
+    }
+    return body;
   } catch (err) {
     console.warn(`[literaryAiClient] Action "${action}" failed:`, err);
     return null;

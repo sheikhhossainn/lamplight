@@ -126,3 +126,99 @@ test('COMPANION-01: Extract prior text handles empty or single-chapter book grac
   assert.equal(extractPriorText([], 0), '');
   assert.equal(extractPriorText(['Only chapter'], 0), 'Only chapter');
 });
+
+test('COMPANION-02: Local engine generates passage explanations and detects classical allusions', async () => {
+  const { generateLocalExplanation } = await import(
+    '../src/features/companion/localCompanionEngine'
+  );
+
+  const excerptWithAllusion =
+    'He stood like Prometheus upon the precipice, defying the decrees of the council, though he knew the eagle of retribution would return on the morrow.';
+
+  const result = generateLocalExplanation({
+    excerpt: excerptWithAllusion,
+    bookTitle: 'Frankenstein',
+    bookAuthor: 'Mary Shelley',
+    chapterTitle: 'Chapter 4',
+    chapterIndex: 3,
+  });
+
+  assert.ok(result.explanation.length > 50);
+  assert.ok(result.keyThemes.length > 0);
+  assert.ok(result.referenceNote?.includes('Promethean'));
+  assert.equal(result.version, 'local-literary-v1');
+});
+
+test('COMPANION-02: Local engine simplifies archaic prose and breaks down lexicon', async () => {
+  const { generateLocalSimplification } = await import(
+    '../src/features/companion/localCompanionEngine'
+  );
+
+  const archaicSentence =
+    'Doth thou not hearken unto thy brother ere he tarry betwixt two paths?';
+
+  const result = generateLocalSimplification({
+    sentence: archaicSentence,
+  });
+
+  assert.ok(result.simplified.toLowerCase().includes('you'));
+  assert.ok(result.simplified.toLowerCase().includes('listen'));
+  assert.ok(result.vocabularyBreakdown && result.vocabularyBreakdown.length >= 2);
+  const words = result.vocabularyBreakdown?.map((v) => v.archaicWord) || [];
+  assert.ok(words.includes('hearken') || words.includes('tarry') || words.includes('betwixt'));
+});
+
+test('COMPANION-02: Local engine generates spoiler-free chapter summary and key points', async () => {
+  const { generateLocalSummary } = await import(
+    '../src/features/companion/localCompanionEngine'
+  );
+
+  const chapterText =
+    'The morning broke cold and grey over Netherfield Park. Elizabeth walked across the fields with hurried steps.\n\n' +
+    'Upon arriving, she found Jane shivering with fever in the upstairs bedchamber, while Miss Bingley looked on with cool indifference.\n\n' +
+    'Mr. Darcy observed Elizabeths bright eyes from across the parlor, acknowledging in silence that her sisterly devotion had ennobled her countenance.';
+
+  const result = generateLocalSummary({
+    chapterExcerpt: chapterText,
+    chapterIndex: 6,
+    chapterTitle: 'Chapter 7',
+    bookTitle: 'Pride and Prejudice',
+  });
+
+  assert.ok(result.summary.includes('Chapter 7'));
+  assert.ok(result.spoilerFreeGuarantee);
+  assert.ok(result.keyDevelopments.length >= 2);
+  assert.ok(result.thematicFocus.length > 10);
+});
+
+test('COMPANION-02: Local engine recaps characters and produces reflection questions', async () => {
+  const { generateLocalCharacterRecap, generateLocalReflections, generateLocalAnswer } = await import(
+    '../src/features/companion/localCompanionEngine'
+  );
+
+  const text =
+    'Elizabeth spoke with earnest warmth, though Mr. Darcy maintained his customary reserve. Jane smiled weakly from her pillows as Mrs. Bennet bustled into the drawing room.';
+
+  const recap = generateLocalCharacterRecap({
+    textUpToNow: text,
+    chapterIndex: 4,
+  });
+  assert.ok(recap.characters.length >= 2);
+  const names = recap.characters.map((c) => c.name);
+  assert.ok(names.some((n) => n.includes('Elizabeth') || n.includes('Darcy')));
+
+  const reflections = generateLocalReflections({
+    chapterExcerpt: text,
+    chapterIndex: 4,
+  });
+  assert.equal(reflections.questions.length, 3);
+  assert.ok(reflections.questions[0].question.length > 20);
+
+  const answer = generateLocalAnswer({
+    question: 'Why is Darcy so quiet in this scene?',
+    excerpt: text,
+  });
+  assert.ok(answer.answer.length > 50);
+  assert.ok(answer.keyThemes && answer.keyThemes.length > 0);
+});
+

@@ -77,8 +77,8 @@ export function ReaderNotesModal({
         >
           <View style={[styles.headerRow, { borderBottomColor: colors.hairline }]}>
             <View style={styles.headerCopy}>
-              <Text style={[typography.uiRowTitle, styles.title, { color: colors.ink }]}>Private notes</Text>
-              <Text style={[typography.metadataCaption, { color: colors.fawn, marginTop: 2 }]}>Saved only on this device</Text>
+              <Text style={[typography.uiRowTitle, styles.title, { color: colors.ink }]}>Book Notes</Text>
+              <Text style={[typography.metadataCaption, { color: colors.fawn, marginTop: 2 }]}>Personal reflections & saved AI insights</Text>
             </View>
             <Pressable onPress={onExport} accessibilityRole="button" accessibilityLabel="Export notes" hitSlop={8} style={styles.exportButton}>
               <Text style={[typography.buttonLabel, { color: colors.flameAmber, fontSize: 13 }]}>Export</Text>
@@ -194,12 +194,29 @@ export function ReaderNotesModal({
                         </View>
                       </>
                     ) : (
-                      <Text style={[typography.metadataCaption, styles.noteText, { color: colors.umber }]}>{note.noteText}</Text>
+                      <>
+                        {note.noteText.startsWith('[AI Companion:') ? (
+                          <View style={{ alignSelf: 'flex-start', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6, backgroundColor: colors.flameAmber + '18', marginBottom: 6 }}>
+                            <Text style={[typography.metadataCaption, { color: colors.flameAmber, fontSize: 11, fontWeight: '700' }]}>
+                              ✦ AI Companion Insight
+                            </Text>
+                          </View>
+                        ) : null}
+                        <Text style={[typography.metadataCaption, styles.noteText, { color: colors.umber }]}>
+                          {note.noteText.replace(/^\[AI Companion: [^\]]+\]\n/, '')}
+                        </Text>
+                      </>
                     )}
                   </View>
                 ))}
               </View>
-            ) : null}
+            ) : (
+              <View style={{ marginTop: 32, paddingHorizontal: 20, alignItems: 'center' }}>
+                <Text style={[typography.readingBody, { color: colors.fawn, textAlign: 'center', fontSize: 14 }]}>
+                  No notes in this book yet. Jot down reflections above, or tap "Save to Notes" on any AI Companion insight while reading.
+                </Text>
+              </View>
+            )}
           </ScrollView>
         </View>
       )}

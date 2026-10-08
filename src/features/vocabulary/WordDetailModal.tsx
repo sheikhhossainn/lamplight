@@ -27,7 +27,6 @@ type WordDetailModalProps = {
   onClose: () => void;
   onReadInBook: (word: SavedWord) => void;
   onDeleteWord: (word: SavedWord) => void;
-  onAddToDeck?: (word: SavedWord) => void;
 };
 
 export function WordDetailModal({
@@ -37,7 +36,6 @@ export function WordDetailModal({
   onClose,
   onReadInBook,
   onDeleteWord,
-  onAddToDeck,
 }: WordDetailModalProps) {
   const insets = useSafeAreaInsets();
   const { colors, typography, radius, spacing, scheme } = useTheme();
@@ -391,23 +389,6 @@ export function WordDetailModal({
               </Svg>
             </Pressable>
 
-            {onAddToDeck && (
-              <Pressable
-                onPress={() => onAddToDeck(word)}
-                style={[
-                  styles.deckBtn,
-                  { borderColor: colors.hairline, backgroundColor: colors.parchment, borderRadius: radius.pill },
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel="Add to study deck"
-              >
-                <Text style={{ color: colors.flameAmber, fontSize: 13, marginRight: 4 }}>✦</Text>
-                <Text style={[typography.buttonLabel, { color: colors.ink, fontSize: 12.5 }]}>
-                  Deck
-                </Text>
-              </Pressable>
-            )}
-
             <Pressable
               onPress={() => onReadInBook(word)}
               style={[
@@ -518,14 +499,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  deckBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 14,
-    height: 44,
-    borderWidth: 1,
   },
   readBtn: {
     flex: 1,
