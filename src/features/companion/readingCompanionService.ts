@@ -330,6 +330,23 @@ export async function simplifySentence(params: {
 }
 
 /**
+ * Helper to translate raw book narrative passages into the reader's mother tongue.
+ */
+async function translateToMotherTongue(text: string, motherTongue: string): Promise<string | null> {
+  if (!text || !motherTongue || motherTongue === 'en') return null;
+  try {
+    const { cloudTranslationProvider } = await import('@/features/translation/cloudTranslationProvider');
+    const res = await cloudTranslationProvider.translateSelection(text, 'en', motherTongue as any);
+    if (res?.translatedText && res.translatedText.trim().toLowerCase() !== text.trim().toLowerCase()) {
+      return res.translatedText.trim();
+    }
+  } catch {
+    // Non-blocking fallback
+  }
+  return null;
+}
+
+/**
  * Generates an instant literary breakdown of the specific active reading page.
  */
 export async function getPageInsight(params: {
@@ -380,7 +397,7 @@ export async function getPageInsight(params: {
     // Fallback
   }
 
-  // 2. Local smart engine fallback
+  // 2. Local smart engine fallback with dynamic contextual translation
   const localData = generateLocalPageInsight({
     pageText: bounded,
     pageNumber: params.pageNumber,
@@ -390,6 +407,47 @@ export async function getPageInsight(params: {
     bookAuthor: params.bookAuthor,
     motherTongue,
   });
+
+  if (motherTongue && motherTongue !== 'en') {
+    try {
+      const paragraphs = bounded
+        .split(/\n\n+/)
+        .map((p) => p.replace(/\s+/g, ' ').trim())
+        .filter((p) => p.length > 20);
+
+      const quoteMatches: string[] = [];
+      const quoteRegex = /["“]([^"”]{10,250})["”]/g;
+      let qm: RegExpExecArray | null;
+      while ((qm = quoteRegex.exec(bounded)) !== null) {
+        quoteMatches.push(qm[1].trim());
+        if (quoteMatches.length >= 2) break;
+      }
+
+      const pFirst = paragraphs[0]?.slice(0, 300);
+      const pMid = quoteMatches[0]?.slice(0, 250) || (paragraphs.length > 2 ? paragraphs[Math.floor(paragraphs.length / 2)]?.slice(0, 250) : undefined);
+      const pLast = paragraphs.length > 1 ? paragraphs[paragraphs.length - 1]?.slice(0, 300) : undefined;
+
+      const [transFirst, transMid, transLast] = await Promise.all([
+        pFirst ? translateToMotherTongue(pFirst, motherTongue) : null,
+        pMid ? translateToMotherTongue(pMid, motherTongue) : null,
+        pLast ? translateToMotherTongue(pLast, motherTongue) : null,
+      ]);
+
+      const parts: string[] = [];
+      if (transFirst) parts.push(`• সূচনা:\n${transFirst}`);
+      if (transMid) parts.push(`• মূল মোড় বা সংলাপ:\n${transMid}`);
+      if (transLast && transLast !== transFirst) parts.push(`• সমাপ্তি:\n${transLast}`);
+
+      if (parts.length > 0) {
+        localData.summary =
+          `${params.chapterTitle || `Chapter ${(params.chapterIndex ?? 0) + 1}`}-এর পৃষ্ঠা ${params.pageNumber}-এর প্রেক্ষাপট ও ঘটনাপ্রবাহ:\n\n` +
+          parts.join('\n\n') +
+          `\n\n(ভবিষ্যতের কোনো স্পয়লার ছাড়াই কেবল এই পৃষ্ঠার মূল ঘটনাপ্রবাহ ও তাৎক্ষণিক পরিস্থিতির ভাব সরাসরি উপস্থাপন করা হয়েছে।)`;
+      }
+    } catch {
+      // Non-blocking fallback
+    }
+  }
 
   void incrementCompanionQuota();
   return { success: true, data: localData, offline: true, remaining: check.remaining };
@@ -444,7 +502,7 @@ export async function summarizeChapter(params: {
     // Fallback
   }
 
-  // 2. Local smart engine fallback
+  // 2. Local smart engine fallback with dynamic contextual translation
   const localData = generateLocalSummary({
     chapterExcerpt: bounded,
     chapterIndex: params.chapterIndex,
@@ -453,6 +511,41 @@ export async function summarizeChapter(params: {
     bookAuthor: params.bookAuthor,
     motherTongue,
   });
+
+  if (motherTongue && motherTongue !== 'en') {
+    try {
+      const paragraphs = bounded
+        .split(/\n\n+/)
+        .map((p) => p.replace(/\s+/g, ' ').trim())
+        .filter((p) => p.length > 30);
+
+      const pFirst = paragraphs[0]?.slice(0, 300);
+      const midIdx = Math.floor(paragraphs.length / 2);
+      const pMid = paragraphs.length > 2 ? paragraphs[midIdx]?.slice(0, 300) : undefined;
+      const pLast = paragraphs.length > 1 ? paragraphs[paragraphs.length - 1]?.slice(0, 300) : undefined;
+
+      const [transFirst, transMid, transLast] = await Promise.all([
+        pFirst ? translateToMotherTongue(pFirst, motherTongue) : null,
+        pMid ? translateToMotherTongue(pMid, motherTongue) : null,
+        pLast ? translateToMotherTongue(pLast, motherTongue) : null,
+      ]);
+
+      const devPoints: string[] = [];
+      if (transFirst) devPoints.push(`অধ্যায়ের সূচনা: ${transFirst}`);
+      if (transMid) devPoints.push(`মূল মোড়: ${transMid}`);
+      if (transLast) devPoints.push(`পরিসমাপ্তি: ${transLast}`);
+
+      if (devPoints.length > 0) {
+        localData.keyDevelopments = devPoints;
+        localData.summary =
+          `${params.chapterTitle || `Chapter ${params.chapterIndex + 1}`}-এর কাহিনী সংক্ষেপ:\n\n` +
+          devPoints.map((d) => `• ${d}`).join('\n\n') +
+          `\n\n(এই অধ্যায়ের বাস্তব ঘটনাপ্রবাহ থেকে সরাসরি অনূদিত ও সংক্ষেপিত।)`;
+      }
+    } catch {
+      // Non-blocking fallback
+    }
+  }
 
   void incrementCompanionQuota();
   return { success: true, data: localData, offline: true, remaining: check.remaining };
@@ -642,7 +735,7 @@ export async function askCompanionQuestion(params: {
     // Fallback
   }
 
-  // 2. Local smart engine fallback
+  // 2. Local smart engine fallback with dynamic contextual translation
   const localData = generateLocalAnswer({
     question: trimmedQuestion,
     excerpt: boundedExcerpt,
@@ -655,6 +748,39 @@ export async function askCompanionQuestion(params: {
     chapterIndex: params.chapterIndex,
     motherTongue,
   });
+
+  if (motherTongue && motherTongue !== 'en') {
+    try {
+      const targetText = boundedPageText || boundedExcerpt || boundedChapter || '';
+      const paragraphs = targetText
+        .split(/\n\n+/)
+        .map((p) => p.replace(/\s+/g, ' ').trim())
+        .filter((p) => p.length > 20);
+
+      const isPageQuery =
+        /what.*(this page|page \d+|is happening|about|going on|scene)|summarize.*page|explain.*page/i.test(trimmedQuestion) ||
+        /এই পৃষ্ঠা|পৃষ্ঠা.*সম্পর্কে|কী হচ্ছে|ঘটনাবলী/i.test(trimmedQuestion);
+
+      if (isPageQuery && paragraphs.length > 0) {
+        const pFirst = paragraphs[0]?.slice(0, 300);
+        const pLast = paragraphs.length > 1 ? paragraphs[paragraphs.length - 1]?.slice(0, 300) : undefined;
+        const [transFirst, transLast] = await Promise.all([
+          pFirst ? translateToMotherTongue(pFirst, motherTongue) : null,
+          pLast ? translateToMotherTongue(pLast, motherTongue) : null,
+        ]);
+
+        if (transFirst) {
+          const endingPart = transLast && transLast !== transFirst ? `\n\n• সমাপ্তি:\n${transLast}` : '';
+          localData.answer =
+            `পৃষ্ঠা ${params.pageNumber ?? ''}-এর মূল ঘটনাপ্রবাহ:\n\n` +
+            `• সূচনা:\n${transFirst}${endingPart}\n\n` +
+            `এই পৃষ্ঠায় চরিত্রগুলোর তাৎক্ষণিক কার্যকলাপ ও পরিস্থিতির ওপর দৃষ্টি নিবদ্ধ রাখা হয়েছে, কোনো ভবিষ্যৎ ঘটনার স্পয়লার ব্যতিরেকে।`;
+        }
+      }
+    } catch {
+      // Non-blocking fallback
+    }
+  }
 
   void incrementCompanionQuota();
   return { success: true, data: localData, offline: true, remaining: check.remaining };
