@@ -614,6 +614,7 @@ Return a JSON object with key "translations" containing an array of translated s
     'companion_summary',
     'companion_recap_characters',
     'companion_reflective_questions',
+    'companion_page_insight',
     'companion_ask',
   ];
 
@@ -670,7 +671,7 @@ Return a JSON object with key "translations" containing an array of translated s
     const chapterTitle = body.chapterTitle ? String(body.chapterTitle).trim().slice(0, 100) : `Chapter ${chapterIndex + 1}`;
 
     // 3. Cache lookup (FULLAPP.md §16.2.8)
-    const excerptHashInput = String(body.excerpt || body.sentence || body.chapterExcerpt || body.textUpToNow || '').slice(0, 500);
+    const excerptHashInput = String(body.pageText || body.excerpt || body.sentence || body.chapterExcerpt || body.textUpToNow || '').slice(0, 500);
     const cacheKey = await sha256Hex(`companion:${action}:${bookTitle}:${chapterIndex}:${excerptHashInput}:v1`);
 
     try {
@@ -777,6 +778,36 @@ Return a JSON object with key "translations" containing an array of translated s
         `Chapter: ${chapterTitle} (Chapter ${chapterIndex + 1})\n` +
         `Chapter Text:\n${chapterExcerpt}`;
       maxTokens = 650;
+    } else if (action === 'companion_page_insight') {
+      const pageText = String(body.pageText || '').trim().slice(0, 3000);
+      const pageNumber = typeof body.pageNumber === 'number' ? body.pageNumber : 1;
+
+      if (!pageText) {
+        return new Response(JSON.stringify({ error: 'Page text is required', success: false }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      systemPrompt =
+        `You are Lamplight's AI Reading Companion.\n` +
+        `Analyze the specific page (Page ${pageNumber}) in ${chapterTitle}.\n` +
+        `Provide a concise literary synopsis of what is actively happening on this page right now.\n` +
+        `CRITICAL SPOILER SAFETY: You MUST ONLY analyze what takes place on this specific page text. Do NOT reveal, foreshadow, or hint at any deaths, betrayals, twists, or outcomes that occur later.\n` +
+        `Return ONLY a valid JSON object with these exact keys:\n` +
+        `- "summary": string (1-2 concise, elegant paragraphs explaining what happens on this specific page)\n` +
+        `- "charactersActive": array of strings (names of characters appearing or speaking on this page)\n` +
+        `- "keyMoment": string (1 notable quote or pivotal sentence directly from this page)\n` +
+        `- "thematicFocus": string (1 concise sentence describing the tone, tension, or atmospheric focus of this page)\n` +
+        `- "pageNumber": number (${pageNumber})\n` +
+        `- "version": "v1-groq-companion"`;
+
+      userPrompt =
+        (bookTitle ? `Book: "${bookTitle}" by ${bookAuthor || 'Classic Author'}\n` : '') +
+        `Chapter: ${chapterTitle} (Chapter ${chapterIndex + 1})\n` +
+        `Page: ${pageNumber}\n` +
+        `Page Text:\n${pageText}`;
+      maxTokens = 600;
     } else if (action === 'companion_recap_characters') {
       const textUpToNow = String(body.textUpToNow || '').trim().slice(0, 4000);
 
@@ -826,6 +857,9 @@ Return a JSON object with key "translations" containing an array of translated s
     } else if (action === 'companion_ask') {
       const question = String(body.question || '').trim().slice(0, 500);
       const passage = body.excerpt ? String(body.excerpt).trim().slice(0, 1500) : '';
+      const pageText = body.pageText ? String(body.pageText).trim().slice(0, 3000) : '';
+      const pageNumber = typeof body.pageNumber === 'number' ? body.pageNumber : undefined;
+      const chapterExcerpt = body.chapterExcerpt ? String(body.chapterExcerpt).trim().slice(0, 2000) : '';
 
       if (!question) {
         return new Response(JSON.stringify({ error: 'Question is required', success: false }), {
@@ -837,17 +871,22 @@ Return a JSON object with key "translations" containing an array of translated s
       systemPrompt =
         `You are Lamplight's AI Reading Companion, an erudite, warm, and insightful literary guide.\n` +
         `Answer the reader's question directly with literary elegance and critical depth.\n` +
+        (pageText
+          ? `The reader is currently reading Page ${pageNumber ?? 'current'}. Answer specifically with respect to what is taking place on this page or leading up to it.\n`
+          : '') +
         `STRICT SPOILER RULE: Discuss ONLY the provided text and events up to Chapter ${chapterIndex + 1}. NEVER reveal, foreshadow, or hint at any plot twists, deaths, or developments from future chapters.\n` +
         `Return ONLY a valid JSON object with these exact keys:\n` +
         `- "answer": string (2-3 concise paragraphs answering the question directly and thoughtfully)\n` +
         `- "keyThemes": array of 1-3 strings highlighting thematic connections\n` +
-        `- "suggestedFollowUps": array of 2-3 short follow-up questions the reader might explore\n` +
         `- "version": "v1-groq-companion"`;
 
       userPrompt =
         (bookTitle ? `Book: "${bookTitle}" by ${bookAuthor || 'Classic Author'}\n` : '') +
         `Chapter: ${chapterTitle} (Chapter ${chapterIndex + 1})\n` +
+        (pageNumber ? `Current Page: Page ${pageNumber}\n` : '') +
+        (pageText ? `Current Page Text:\n"${pageText}"\n\n` : '') +
         (passage ? `Relevant Excerpt:\n"${passage}"\n\n` : '') +
+        (!pageText && chapterExcerpt ? `Chapter Context:\n"${chapterExcerpt.slice(0, 1500)}"\n\n` : '') +
         `Reader's Question: "${question}"`;
       maxTokens = 600;
     }

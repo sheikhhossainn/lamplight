@@ -509,66 +509,205 @@ export function generateLocalReflections(params: {
   };
 }
 
+function extractPageNarrative(text: string) {
+  const paragraphs = text
+    .split(/\n\n+/)
+    .map((p) => p.replace(/\s+/g, ' ').trim())
+    .filter((p) => p.length > 20);
+
+  const quoteMatches: string[] = [];
+  const quoteRegex = /["“]([^"”]{10,250})["”]/g;
+  let qm: RegExpExecArray | null;
+  while ((qm = quoteRegex.exec(text)) !== null) {
+    quoteMatches.push(qm[1].trim());
+    if (quoteMatches.length >= 4) break;
+  }
+
+  const nameRegex = /\b(Mr\.|Mrs\.|Miss|Lady|Lord|Sir|Dr\.|Captain|Count|Countess)?\s*([A-Z][a-z]{2,15})\b/g;
+  const commonWords = new Set([
+    'The', 'Then', 'There', 'They', 'This', 'That', 'When', 'What', 'Where', 'While',
+    'After', 'Before', 'Soon', 'Here', 'Now', 'One', 'Two', 'Chapter', 'Page', 'Book',
+    'Some', 'All', 'Every', 'God', 'Heaven', 'Lord', 'Lady', 'Sir', 'Father', 'Mother',
+    'Yes', 'No', 'Indeed', 'Perhaps', 'Nothing', 'Something', 'Everything', 'Looking',
+  ]);
+  const namesFound: string[] = [];
+  let nm: RegExpExecArray | null;
+  while ((nm = nameRegex.exec(text)) !== null) {
+    const title = nm[1] ? `${nm[1]} ` : '';
+    const raw = nm[2];
+    if (commonWords.has(raw)) continue;
+    const full = `${title}${raw}`.trim();
+    if (!namesFound.includes(full)) {
+      namesFound.push(full);
+      if (namesFound.length >= 6) break;
+    }
+  }
+
+  return { paragraphs, quoteMatches, namesFound };
+}
+
+export type CompanionPageInsightResult = {
+  pageNumber: number;
+  summary: string;
+  activeCharacters?: string[];
+  charactersActive?: string[];
+  keyMoment?: string;
+  thematicFocus: string;
+  version: string;
+};
+
 /**
- * Answers freeform reader questions about the text.
+ * Generates an instant literary breakdown of a specific reading page.
+ */
+export function generateLocalPageInsight(params: {
+  pageText: string;
+  pageNumber: number;
+  bookTitle?: string;
+  bookAuthor?: string;
+  chapterTitle?: string;
+  chapterIndex?: number;
+}): CompanionPageInsightResult {
+  const { pageText, pageNumber, chapterTitle, chapterIndex } = params;
+  const chLabel = chapterTitle || (typeof chapterIndex === 'number' ? `Chapter ${chapterIndex + 1}` : 'this chapter');
+  const { paragraphs, quoteMatches, namesFound } = extractPageNarrative(pageText);
+
+  let summary = '';
+  if (paragraphs.length >= 2) {
+    const opening = paragraphs[0].slice(0, 160).replace(/\s+[^ ]*$/, '');
+    const ending = paragraphs[paragraphs.length - 1].slice(0, 160).replace(/\s+[^ ]*$/, '');
+    summary =
+      `On Page ${pageNumber} of ${chLabel}, the scene opens with: "${opening}..."\n\n` +
+      (quoteMatches.length > 0 ? `The central dialogue revolves around: "${quoteMatches[0]}".\n\n` : '') +
+      `The passage progresses toward: "${ending}..."`;
+  } else if (paragraphs.length === 1) {
+    summary = `Page ${pageNumber} focuses on: "${paragraphs[0].slice(0, 260)}..."`;
+  } else {
+    summary = `Page ${pageNumber} of ${chLabel} marks a key literary transition in the scene.`;
+  }
+
+  const craft = analyzeLiteraryCraft(pageText);
+
+  return {
+    pageNumber,
+    summary,
+    activeCharacters: namesFound.length > 0 ? namesFound : undefined,
+    charactersActive: namesFound.length > 0 ? namesFound : undefined,
+    keyMoment: quoteMatches.length > 0 ? `"${quoteMatches[0]}"` : (paragraphs[0]?.slice(0, 120) ? `"${paragraphs[0].slice(0, 120)}..."` : undefined),
+    thematicFocus: `Atmosphere: ${craft.tone}. Focal themes include ${craft.themes.join(', ')}.`,
+    version: 'local-literary-v2',
+  };
+}
+
+/**
+ * Answers freeform reader questions about the text with genuine page awareness.
  */
 export function generateLocalAnswer(params: {
   question: string;
   excerpt?: string;
+  pageText?: string;
+  pageNumber?: number;
+  chapterExcerpt?: string;
   bookTitle?: string;
   bookAuthor?: string;
   chapterTitle?: string;
   chapterIndex?: number;
 }): CompanionAskResult {
-  const { question, excerpt, bookTitle, bookAuthor, chapterTitle } = params;
+  const { question, excerpt, pageText, pageNumber, chapterExcerpt, bookTitle, chapterTitle, chapterIndex } = params;
   const qLower = question.toLowerCase();
+  const activeText = pageText || excerpt || chapterExcerpt || '';
+  const { paragraphs, quoteMatches, namesFound } = extractPageNarrative(activeText);
+
+  const pageLabel = pageNumber ? `Page ${pageNumber}` : 'this page';
+  const chLabel = chapterTitle || (typeof chapterIndex === 'number' ? `Chapter ${chapterIndex + 1}` : 'this chapter');
 
   let answer = '';
   const keyThemes: string[] = [];
 
-  const contextPart = excerpt ? `examining the passage "${excerpt.slice(0, 90)}..."` : 'reviewing this chapter';
-  const authorPart = bookAuthor ? `in ${bookAuthor}'s world` : '';
+  const isPageSummaryQuery =
+    /what.*(this page|page \d+|is happening|about|going on|scene)|summarize.*page|explain.*page/i.test(qLower);
 
-  if (/who|character|name|person/i.test(qLower)) {
-    answer =
-      `In ${contextPart}, the character dynamic reflects classical social choreography. ` +
-      `Characters often communicate in layered codes: polite inquiries signal deeper social testing, while silence or brief retorts denote suppressed disagreement. ` +
-      `Notice how their speech mirrors their position within the social hierarchy.`;
-    keyThemes.push('Character Motivations', 'Social Hierarchy');
+  if (isPageSummaryQuery && activeText) {
+    if (paragraphs.length > 0) {
+      const charPart = namesFound.length > 0 ? ` featuring ${namesFound.slice(0, 3).join(', ')}` : '';
+      const quotePart = quoteMatches.length > 0 ? ` Key dialogue captures this moment: "${quoteMatches[0]}".` : '';
+      const opening = paragraphs[0].slice(0, 180).trim();
+      const ending = paragraphs.length > 1 ? ` The page concludes as: "${paragraphs[paragraphs.length - 1].slice(0, 160).trim()}..."` : '';
+
+      answer =
+        `On ${pageLabel} of ${chLabel}${charPart}, the scene unfolds directly around: "${opening}..."${ending}\n\n` +
+        `${quotePart} The narrative focuses intently on the interpersonal tension and immediate choices unfolding in this scene.`;
+    } else {
+      answer = `On ${pageLabel} of ${chLabel}, the narrative focuses on the immediate progression of the scene without future plot interference.`;
+    }
+    keyThemes.push('Active Scene', 'Page Context');
+  } else if (/who|character|name|person/i.test(qLower)) {
+    const matchedName = namesFound.find((n) => qLower.includes(n.toLowerCase()));
+    if (matchedName) {
+      const sentenceWithName = activeText.split(/[.!?]+/).find((s) => s.includes(matchedName))?.trim();
+      answer =
+        `In this scene on ${pageLabel}, ${matchedName} is directly present. ` +
+        (sentenceWithName ? `The text notes: "${sentenceWithName.slice(0, 180)}". ` : '') +
+        `Their role here influences the social balance and emotional subtext of the conversation.`;
+      keyThemes.push(`${matchedName}'s Role`, 'Character Interaction');
+    } else if (namesFound.length > 0) {
+      answer =
+        `The active figures on ${pageLabel} include ${namesFound.join(', ')}. ` +
+        `Their presence shapes the dialogue and unspoken dynamics of this scene.`;
+      keyThemes.push('Present Characters', 'Social Dynamics');
+    } else {
+      answer =
+        `In ${pageLabel}, the character interaction reflects classical social choreography. ` +
+        `Characters communicate through measured formal restraint, where small gestures and brief retorts signal deeper internal feelings.`;
+      keyThemes.push('Character Dynamics');
+    }
   } else if (/why|reason|motive|purpose/i.test(qLower)) {
-    answer =
-      `The underlying motive here springs from the tension between honor and vulnerability. ` +
-      `Rather than acting purely out of logic, the characters are guided by fear of misjudgment and adherence to code. ` +
-      `The author constructs this scene so that what appears stubborn on the surface is rooted in protective self-preservation.`;
-    keyThemes.push('Interior Motivation', 'Pride vs Self-Preservation');
+    if (quoteMatches.length > 0) {
+      answer =
+        `The underlying motivation here is reflected in the exchange: "${quoteMatches[0]}". ` +
+        `Rather than acting purely on impulse, the characters navigate personal pride, duty, and the fear of vulnerability. ` +
+        `What appears stubborn or reserved on the surface is rooted in self-protection.`;
+    } else {
+      answer =
+        `The underlying motive here springs from the tension between duty and private feeling. ` +
+        `The characters are guided by social expectations and personal pride, balancing outward decorum against interior resolve.`;
+    }
+    keyThemes.push('Interior Motivation', 'Pride vs Duty');
   } else if (/mean|meaning|symbol|metaphor|signif/i.test(qLower)) {
-    answer =
-      `This moment functions on two distinct literary levels. Literally, it advances the immediate plot. ` +
-      `Symbolically, it dramatizes the struggle between inward conviction and external decorum. ` +
-      `The specific imagery employed by the author reinforces themes of isolation, awakening, and the slow unraveling of assumptions.`;
-    keyThemes.push('Literary Symbolism', 'Theme Awakening');
+    const allusion = detectAllusions(activeText);
+    if (allusion) {
+      answer =
+        `This moment carries a classical literary allusion: ${allusion}\n\n` +
+        `On a thematic level, it dramatizes the struggle between inward conviction and external expectations.`;
+      keyThemes.push('Literary Allusion', 'Thematic Depth');
+    } else {
+      answer =
+        `This scene operates on both a narrative and symbolic level. Directly, it advances the interaction between the characters. ` +
+        `Symbolically, it underscores the themes of perception, social boundaries, and the quiet shift in mutual understanding.`;
+      keyThemes.push('Literary Meaning', 'Thematic Shift');
+    }
   } else if (/tone|mood|atmosphere/i.test(qLower)) {
-    const craft = excerpt ? analyzeLiteraryCraft(excerpt) : { tone: 'restrained and pensive', themes: ['Atmospheric Tension'] };
+    const craft = analyzeLiteraryCraft(activeText);
     answer =
-      `The tone is ${craft.tone}. The prose avoids sensationalism, relying instead on deliberate syntax and rhythmic pacing ` +
-      `to cultivate a rich, quiet tension that mirrors the protagonist's guarded mindset.`;
-    keyThemes.push('Tone & Atmosphere', 'Literary Craft');
+      `The tone on ${pageLabel} is ${craft.tone}. The prose avoids sensationalism, relying instead on deliberate diction ` +
+      `and measured rhythm to evoke a palpable tension between the characters.`;
+    keyThemes.push('Tone & Atmosphere', 'Literary Diction');
   } else {
-    answer =
-      `Looking closely at ${contextPart}${authorPart ? ` ${authorPart}` : ''}, the narrative invites the reader to ponder the quiet complexity of human choice. ` +
-      `The scene balances moral responsibility with emotional longing, rewarding close attention to subtle shifts in diction and gaze. ` +
-      `Every gesture carries weight, demonstrating how timeless classics weave profound truths into intimate personal moments.`;
-    keyThemes.push('Literary Reflection', 'Human Complexity');
+    if (paragraphs.length > 0) {
+      const snippet = paragraphs[0].slice(0, 180).trim();
+      answer =
+        `Looking closely at ${pageLabel} ("${snippet}..."), the narrative examines the nuances of the characters' decisions. ` +
+        `The scene balances emotional tension with social convention, revealing character through diction and silence rather than overt exposition.`;
+    } else {
+      answer =
+        `Looking closely at ${pageLabel}${bookTitle ? ` in *${bookTitle}*` : ''}, the narrative examines the nuance of character choice and moral responsibility. ` +
+        `Every gesture carries weight, showing how timeless prose weaves universal truths into intimate scenes.`;
+    }
+    keyThemes.push('Literary Insight', 'Page Reflection');
   }
 
   return {
     answer,
     keyThemes,
-    suggestedFollowUps: [
-      'What underlying emotion is being concealed here?',
-      'How does this reflect the broader theme of the book?',
-      'Explain the historical customs surrounding this interaction.',
-    ],
-    version: 'local-literary-v1',
+    version: 'local-literary-v2',
   };
 }

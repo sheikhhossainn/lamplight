@@ -222,3 +222,44 @@ test('COMPANION-02: Local engine recaps characters and produces reflection quest
   assert.ok(answer.keyThemes && answer.keyThemes.length > 0);
 });
 
+test('COMPANION-03: Page insight extracts active page narrative and entities', async () => {
+  const { generateLocalPageInsight, generateLocalAnswer } = await import(
+    '../src/features/companion/localCompanionEngine'
+  );
+
+  const page3Text =
+    'Mr. Bennet made no answer. "Do not you want to know who has taken it?" cried his wife impatiently.\n\n' +
+    '"You want to tell me, and I have no objection to hearing it." This was invitation enough.\n\n' +
+    '"Why, my dear, you must know, Mrs. Long says that Netherfield is taken by a young man of large fortune from the north of England; that he came down on Monday in a chaise and four to see the place."';
+
+  const insight = generateLocalPageInsight({
+    pageText: page3Text,
+    pageNumber: 3,
+    chapterTitle: 'Chapter 1',
+    chapterIndex: 0,
+    bookTitle: 'Pride and Prejudice',
+    bookAuthor: 'Jane Austen',
+  });
+
+  assert.equal(insight.pageNumber, 3);
+  assert.ok(insight.summary.includes('Page 3'));
+  assert.ok(insight.summary.includes('Mr. Bennet'));
+  assert.ok(insight.activeCharacters && insight.activeCharacters.length > 0);
+  assert.ok(insight.keyMoment && insight.keyMoment.length > 10);
+  assert.ok(insight.thematicFocus.length > 10);
+
+  // When asked "what is this page about", answer reflects page 3 specifics
+  const pageAnswer = generateLocalAnswer({
+    question: 'What is this page about?',
+    pageText: page3Text,
+    pageNumber: 3,
+    chapterTitle: 'Chapter 1',
+    chapterIndex: 0,
+  });
+
+  assert.ok(pageAnswer.answer.includes('Page 3'));
+  assert.ok(pageAnswer.answer.includes('Mr. Bennet') || pageAnswer.answer.includes('Netherfield'));
+  assert.ok(pageAnswer.keyThemes && pageAnswer.keyThemes.length > 0);
+});
+
+

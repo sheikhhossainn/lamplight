@@ -24,10 +24,12 @@ import {
   generateLocalAnswer,
   generateLocalCharacterRecap,
   generateLocalExplanation,
+  generateLocalPageInsight,
   generateLocalReflections,
   generateLocalSimplification,
   generateLocalSummary,
   type CompanionAskResult,
+  type CompanionPageInsightResult,
 } from './localCompanionEngine';
 
 export type CompanionExplainResult = {
@@ -75,7 +77,7 @@ export type CompanionReflectionsResult = {
   version: string;
 };
 
-export type { CompanionAskResult };
+export type { CompanionAskResult, CompanionPageInsightResult };
 
 export type CompanionResponse<T> = {
   success: boolean;
@@ -317,6 +319,67 @@ export async function simplifySentence(params: {
 }
 
 /**
+ * Generates an instant literary breakdown of the specific active reading page.
+ */
+export async function getPageInsight(params: {
+  pageText: string;
+  pageNumber: number;
+  chapterIndex: number;
+  chapterTitle?: string;
+  bookTitle?: string;
+  bookAuthor?: string;
+}): Promise<CompanionResponse<CompanionPageInsightResult>> {
+  const check = await canInvokeCompanion();
+  if (!check.allowed) {
+    return { success: false, requiresPremium: check.requiresPremium, remaining: check.remaining };
+  }
+
+  const bounded = boundExcerpt(params.pageText, 3500);
+  if (!bounded) {
+    return { success: false, error: 'Page content cannot be empty' };
+  }
+
+  // 1. Try remote Edge Function
+  try {
+    const { callLiteraryAi } = await import('@/features/translation/literaryAiClient');
+    const res = await callLiteraryAi<{
+      success: boolean;
+      data?: CompanionPageInsightResult;
+      cached?: boolean;
+      error?: string;
+      requiresPremium?: boolean;
+    }>('companion_page_insight', {
+      pageText: bounded,
+      pageNumber: params.pageNumber,
+      chapterIndex: params.chapterIndex,
+      chapterTitle: params.chapterTitle,
+      bookTitle: params.bookTitle,
+      bookAuthor: params.bookAuthor,
+    });
+
+    if (res?.success && res.data) {
+      void incrementCompanionQuota();
+      return { success: true, data: res.data, cached: res.cached, remaining: check.remaining };
+    }
+  } catch {
+    // Fallback
+  }
+
+  // 2. Local smart engine fallback
+  const localData = generateLocalPageInsight({
+    pageText: bounded,
+    pageNumber: params.pageNumber,
+    chapterIndex: params.chapterIndex,
+    chapterTitle: params.chapterTitle,
+    bookTitle: params.bookTitle,
+    bookAuthor: params.bookAuthor,
+  });
+
+  void incrementCompanionQuota();
+  return { success: true, data: localData, offline: true, remaining: check.remaining };
+}
+
+/**
  * Summarizes the current chapter without future spoilers.
  */
 export async function summarizeChapter(params: {
@@ -493,6 +556,9 @@ export async function generateReflectiveQuestions(params: {
 export async function askCompanionQuestion(params: {
   question: string;
   excerpt?: string;
+  pageText?: string;
+  pageNumber?: number;
+  chapterExcerpt?: string;
   bookTitle?: string;
   bookAuthor?: string;
   chapterTitle?: string;
@@ -510,6 +576,8 @@ export async function askCompanionQuestion(params: {
   }
 
   const boundedExcerpt = params.excerpt ? boundExcerpt(params.excerpt, 1500) : undefined;
+  const boundedPageText = params.pageText ? boundExcerpt(params.pageText, 3000) : undefined;
+  const boundedChapter = params.chapterExcerpt ? boundExcerpt(params.chapterExcerpt, 3000) : undefined;
 
   // 1. Try remote Edge Function
   try {
@@ -523,6 +591,9 @@ export async function askCompanionQuestion(params: {
     }>('companion_ask', {
       question: trimmedQuestion,
       excerpt: boundedExcerpt,
+      pageText: boundedPageText,
+      pageNumber: params.pageNumber,
+      chapterExcerpt: boundedChapter,
       bookTitle: params.bookTitle,
       bookAuthor: params.bookAuthor,
       chapterTitle: params.chapterTitle,
@@ -541,6 +612,9 @@ export async function askCompanionQuestion(params: {
   const localData = generateLocalAnswer({
     question: trimmedQuestion,
     excerpt: boundedExcerpt,
+    pageText: boundedPageText,
+    pageNumber: params.pageNumber,
+    chapterExcerpt: boundedChapter,
     bookTitle: params.bookTitle,
     bookAuthor: params.bookAuthor,
     chapterTitle: params.chapterTitle,

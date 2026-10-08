@@ -46,6 +46,7 @@ import {
   explainPassage,
   extractPriorText,
   generateReflectiveQuestions,
+  getPageInsight,
   recapCharacters,
   reportCompanionFeedback,
   simplifySentence,
@@ -53,6 +54,7 @@ import {
   type CompanionAskResult,
   type CompanionCharactersResult,
   type CompanionExplainResult,
+  type CompanionPageInsightResult,
   type CompanionReflectionsResult,
   type CompanionSimplifyResult,
   type CompanionSummaryResult,
@@ -72,6 +74,8 @@ export type ReadingCompanionModalProps = {
   chapterTitle?: string;
   pageIndex?: number;
   totalPages?: number;
+  currentPageNumber?: number;
+  currentPageText?: string;
   currentChapterText?: string;
   priorChapterTexts?: string[];
   onUpgradePress?: () => void;
@@ -80,7 +84,7 @@ export type ReadingCompanionModalProps = {
 };
 
 type SelectionAction = 'explain' | 'reference' | 'simplify' | 'tone' | 'ask';
-type ChapterAction = 'summary' | 'characters' | 'reflections' | 'ask';
+type ChapterAction = 'page' | 'summary' | 'characters' | 'reflections' | 'ask';
 
 export function ReadingCompanionModal({
   visible,
@@ -94,6 +98,8 @@ export function ReadingCompanionModal({
   chapterTitle,
   pageIndex,
   totalPages,
+  currentPageNumber,
+  currentPageText,
   currentChapterText = '',
   priorChapterTexts = [],
   onUpgradePress,
@@ -138,7 +144,7 @@ export function ReadingCompanionModal({
 
   // Active action pill
   const [selectionAction, setSelectionAction] = useState<SelectionAction>('explain');
-  const [chapterAction, setChapterAction] = useState<ChapterAction>('summary');
+  const [chapterAction, setChapterAction] = useState<ChapterAction>('page');
 
   // Loading & Quota state
   const [loading, setLoading] = useState(false);
@@ -149,6 +155,7 @@ export function ReadingCompanionModal({
   const [excerptExpanded, setExcerptExpanded] = useState(false);
 
   // Cached responses per session
+  const [pageInsightData, setPageInsightData] = useState<CompanionPageInsightResult | null>(null);
   const [explainData, setExplainData] = useState<CompanionExplainResult | null>(null);
   const [referenceData, setReferenceData] = useState<CompanionExplainResult | null>(null);
   const [simplifyData, setSimplifyData] = useState<CompanionSimplifyResult | null>(null);
@@ -156,6 +163,10 @@ export function ReadingCompanionModal({
   const [summaryData, setSummaryData] = useState<CompanionSummaryResult | null>(null);
   const [charactersData, setCharactersData] = useState<CompanionCharactersResult | null>(null);
   const [reflectionsData, setReflectionsData] = useState<CompanionReflectionsResult | null>(null);
+
+  useEffect(() => {
+    setPageInsightData(null);
+  }, [currentPageNumber, chapterIndex]);
 
   // Interactive Question State
   const [customQuestion, setCustomQuestion] = useState('');
@@ -265,7 +276,21 @@ export function ReadingCompanionModal({
       }
     } else {
       // Chapter mode
-      if (action === 'summary') {
+      if (action === 'page') {
+        if (pageInsightData) return;
+        setLoading(true);
+        setLoadingStep('Reading this page closely...');
+        const res = await getPageInsight({
+          pageText: currentPageText || currentChapterText.slice(0, 2000),
+          pageNumber: currentPageNumber ?? (pageIndex !== undefined ? pageIndex + 1 : 1),
+          chapterIndex,
+          chapterTitle,
+          bookTitle,
+          bookAuthor,
+        });
+        setLoading(false);
+        if (res.data) setPageInsightData(res.data);
+      } else if (action === 'summary') {
         if (summaryData) return;
         setLoading(true);
         setLoadingStep('Synthesizing chapter events (spoiler-free)...');
@@ -316,8 +341,12 @@ export function ReadingCompanionModal({
     bookAuthor,
     chapterTitle,
     chapterIndex,
+    currentPageText,
+    currentPageNumber,
+    pageIndex,
     currentChapterText,
     priorChapterTexts,
+    pageInsightData,
     explainData,
     referenceData,
     simplifyData,
@@ -368,6 +397,9 @@ export function ReadingCompanionModal({
     const res = await askCompanionQuestion({
       question: q,
       excerpt: selectedText || undefined,
+      pageText: currentPageText,
+      pageNumber: currentPageNumber,
+      chapterExcerpt: currentChapterText,
       bookTitle,
       bookAuthor,
       chapterTitle,
@@ -474,6 +506,9 @@ export function ReadingCompanionModal({
       if (selectionAction === 'simplify' && simplifyData) return `${simplifyData.simplified}\n\n${simplifyData.originalMeaning}`;
       if (selectionAction === 'tone' && toneData) return toneData.answer;
     } else {
+      if (chapterAction === 'page' && pageInsightData) {
+        return `${pageInsightData.summary}${pageInsightData.keyMoment ? `\n\n"${pageInsightData.keyMoment}"` : ''}${pageInsightData.thematicFocus ? `\n\nTheme: ${pageInsightData.thematicFocus}` : ''}`;
+      }
       if (chapterAction === 'summary' && summaryData) return summaryData.summary;
       if (chapterAction === 'characters' && charactersData) {
         return charactersData.characters.map((c) => `${c.name} (${c.role}): ${c.statusUpToNow}`).join('\n\n');
@@ -487,6 +522,7 @@ export function ReadingCompanionModal({
     isSelectionMode,
     selectionAction,
     chapterAction,
+    pageInsightData,
     explainData,
     referenceData,
     simplifyData,
@@ -714,6 +750,28 @@ export function ReadingCompanionModal({
             ) : (
               <>
                 <Pressable
+                  onPress={() => handleSelectAction('page')}
+                  style={[
+                    styles.chip,
+                    { borderColor: colors.hairline, backgroundColor: colors.card },
+                    chapterAction === 'page' && { backgroundColor: colors.flameAmber, borderColor: colors.flameAmber },
+                  ]}
+                >
+                  <DocumentTextIcon
+                    size={13}
+                    color={chapterAction === 'page' ? LamplightColor.primaryDark : colors.flameAmber}
+                  />
+                  <Text
+                    style={[
+                      styles.chipText,
+                      { color: chapterAction === 'page' ? LamplightColor.primaryDark : colors.ink },
+                    ]}
+                  >
+                    This Page
+                  </Text>
+                </Pressable>
+
+                <Pressable
                   onPress={() => handleSelectAction('summary')}
                   style={[
                     styles.chip,
@@ -721,7 +779,7 @@ export function ReadingCompanionModal({
                     chapterAction === 'summary' && { backgroundColor: colors.flameAmber, borderColor: colors.flameAmber },
                   ]}
                 >
-                  <DocumentTextIcon
+                  <PillarIcon
                     size={13}
                     color={chapterAction === 'summary' ? LamplightColor.primaryDark : colors.flameAmber}
                   />
@@ -943,6 +1001,57 @@ export function ReadingCompanionModal({
               {/* CHAPTER MODE CONTENT */}
               {!isSelectionMode && (
                 <>
+                  {chapterAction === 'page' && pageInsightData && (
+                    <View>
+                      <Text style={[styles.literaryBodyText, { color: colors.ink }]}>
+                        {pageInsightData.summary}
+                      </Text>
+
+                      {(() => {
+                        const activeChars = pageInsightData.charactersActive ?? pageInsightData.activeCharacters;
+                        if (!activeChars || activeChars.length === 0) return null;
+                        return (
+                          <View style={{ marginTop: 16 }}>
+                            <Text style={[styles.eyebrow, { color: colors.flameAmber, marginBottom: 8 }]}>
+                              ACTIVE CHARACTERS ON THIS PAGE
+                            </Text>
+                            <View style={styles.themesWrapper}>
+                              {activeChars.map((charName: string, i: number) => (
+                                <View key={i} style={[styles.themeChip, { backgroundColor: colors.card, borderColor: colors.hairline }]}>
+                                  <Text style={[typography.metadataCaption, { color: colors.flameAmber, fontSize: 11, fontWeight: '600' }]}>
+                                    {charName}
+                                  </Text>
+                                </View>
+                              ))}
+                            </View>
+                          </View>
+                        );
+                      })()}
+
+                      {pageInsightData.keyMoment ? (
+                        <View style={[styles.referenceCard, { backgroundColor: colors.card, borderColor: colors.hairline, marginTop: 16 }]}>
+                          <Text style={[styles.eyebrow, { color: colors.flameAmber, marginBottom: 4 }]}>
+                            KEY PASSAGE
+                          </Text>
+                          <Text style={[styles.analysisBodyText, { color: colors.ink, fontStyle: 'italic' }]}>
+                            “{pageInsightData.keyMoment}”
+                          </Text>
+                        </View>
+                      ) : null}
+
+                      {pageInsightData.thematicFocus ? (
+                        <View style={[styles.thematicCard, { backgroundColor: colors.card, borderColor: colors.hairline, marginTop: 12 }]}>
+                          <Text style={[styles.eyebrow, { color: colors.flameAmber, marginBottom: 4 }]}>
+                            THEMATIC ATMOSPHERE
+                          </Text>
+                          <Text style={[styles.analysisBodyText, { color: colors.ink }]}>
+                            {pageInsightData.thematicFocus}
+                          </Text>
+                        </View>
+                      ) : null}
+                    </View>
+                  )}
+
                   {chapterAction === 'summary' && summaryData && (
                     <View>
                       <Text style={[styles.literaryBodyText, { color: colors.ink }]}>
@@ -1123,30 +1232,6 @@ export function ReadingCompanionModal({
                 </View>
               )}
 
-              {/* Question Suggestions */}
-              {(isSelectionMode ? selectionAction === 'ask' : chapterAction === 'ask') && (
-                <View style={{ marginTop: 14 }}>
-                  <Text style={[typography.metadataCaption, { color: colors.fawn, marginBottom: 8 }]}>
-                    SUGGESTED QUESTIONS:
-                  </Text>
-                  {[
-                    'What subtle irony or subtext is at play here?',
-                    'Explain the moral or philosophical choice being made.',
-                    'How does this scene reflect the historical period?',
-                  ].map((sug, i) => (
-                    <Pressable
-                      key={i}
-                      onPress={() => handleAskQuestion(sug)}
-                      style={[styles.suggestionChip, { backgroundColor: colors.card, borderColor: colors.hairline }]}
-                    >
-                      <Text style={[typography.metadataCaption, { color: colors.ink, fontSize: 13 }]}>
-                        ✦ {sug}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </View>
-              )}
-
               {/* Feedback Footer */}
               <View style={styles.feedbackFooter}>
                 {feedbackSubmitted ? (
@@ -1220,7 +1305,13 @@ export function ReadingCompanionModal({
             ]}
           >
             <TextInput
-              placeholder={isSelectionMode ? 'Ask about this passage...' : 'Ask about this chapter...'}
+              placeholder={
+                isSelectionMode
+                  ? 'Ask about this passage...'
+                  : chapterAction === 'page'
+                    ? `Ask about page ${currentPageNumber ?? 1}...`
+                    : 'Ask about this chapter...'
+              }
               placeholderTextColor={colors.fawn}
               value={customQuestion}
               onChangeText={setCustomQuestion}

@@ -3549,6 +3549,8 @@ export default function ReaderScreen() {
         chapterTitle={readerChapters[currentChapterIndex]?.title}
         pageIndex={currentPage?.pageIndexInChapter}
         totalPages={totalPages}
+        currentPageText={currentPage ? currentPage.paragraphs.join('\n\n') : ''}
+        currentPageNumber={currentIndex + 1}
         currentChapterText={
           (bookTextState.status === 'ready' &&
             bookTextState.book.chapters[currentChapterIndex]?.pages
