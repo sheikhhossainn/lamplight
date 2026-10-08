@@ -1092,28 +1092,16 @@ export default function LibraryScreen() {
       <View>
         <View style={[styles.shelfHeader, { marginBottom: spacing.md }]}>
           <Text style={[getNativeUiTextStyle(motherTongue, 'row'), { color: colors.fawn }]}>{scriptureLabels.sectionTitle}</Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-            <Pressable
-              onPress={() => {
-                void hapticOpenInquiry();
-                router.push('/mood-verses/reflect');
-              }}
-              hitSlop={8}
-              style={styles.filterHeader}
-            >
-              <Text style={[getNativeUiTextStyle(motherTongue, 'metadata'), { color: colors.fawn }]}>{scriptureLabels.reflectLabel}</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => {
-                void hapticOpenInquiry();
-                router.push('/mood-verses/ask');
-              }}
-              hitSlop={8}
-              style={styles.filterHeader}
-            >
-              <Text style={[getNativeUiTextStyle(motherTongue, 'metadata'), { color: colors.flameAmber }]}>{scriptureLabels.askLabel}</Text>
-            </Pressable>
-          </View>
+          <Pressable
+            onPress={() => {
+              void hapticOpenInquiry();
+              router.push('/mood-verses/ask');
+            }}
+            hitSlop={8}
+            style={styles.filterHeader}
+          >
+            <Text style={[getNativeUiTextStyle(motherTongue, 'metadata'), { color: colors.flameAmber }]}>{scriptureLabels.askLabel}</Text>
+          </Pressable>
         </View>
         <ScrollView
           horizontal

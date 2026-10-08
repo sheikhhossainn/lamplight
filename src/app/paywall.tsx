@@ -1,13 +1,27 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Alert, Dimensions, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Svg, { Defs, Path, RadialGradient, Rect, Stop } from 'react-native-svg';
+import * as Haptics from 'expo-haptics';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { FlameGlow } from '@/components/FlameGlow';
+import { CloseIcon } from '@/components/icons';
 import { RedeemPromoModal } from '@/components/RedeemPromoModal';
 import { useBilling } from '@/features/billing/BillingProvider';
 import type { PremiumPackage } from '@/features/billing/billingTypes';
 import { useAppFlag } from '@/features/config/appConfig';
+import {
+  getEntitlementSnapshot,
+  refreshEntitlements,
+  subscribeToEntitlements,
+  type EntitlementSnapshot,
+} from '@/features/subscription/entitlementService';
 import { useTheme } from '@/theme/ThemeProvider';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
@@ -89,9 +103,11 @@ const DEFAULT_DETAIL: FeatureDetail = {
 
 function packageForPlan(packages: PremiumPackage[], plan: Plan): PremiumPackage | null {
   const desiredType = plan === 'yearly' ? 'ANNUAL' : 'MONTHLY';
-  return packages.find((item) => item.packageType.toUpperCase().includes(desiredType))
-    ?? packages.find((item) => item.identifier.toLowerCase().includes(plan === 'yearly' ? 'annual' : 'month'))
-    ?? null;
+  return (
+    packages.find((item) => item.packageType.toUpperCase().includes(desiredType)) ??
+    packages.find((item) => item.identifier.toLowerCase().includes(plan === 'yearly' ? 'annual' : 'month')) ??
+    null
+  );
 }
 
 function CheckIcon() {
@@ -104,14 +120,57 @@ function CheckIcon() {
 
 export default function PaywallScreen() {
   const { colors, typography, spacing, radius, layout } = useTheme();
+  const insets = useSafeAreaInsets();
   const { feature, trigger } = useLocalSearchParams<{ feature?: string; trigger?: string }>();
   const { status, packages, isLoadingPackages, purchase, restore, openManagement } = useBilling();
+  const [entitlement, setEntitlement] = useState<EntitlementSnapshot>(getEntitlementSnapshot);
   const [plan, setPlan] = useState<Plan>('yearly');
+  const [containerWidth, setContainerWidth] = useState(0);
   const [busy, setBusy] = useState(false);
   const [promoModalVisible, setPromoModalVisible] = useState(false);
 
+  useEffect(() => {
+    return subscribeToEntitlements(setEntitlement);
+  }, []);
+
+  const activeIndex = useSharedValue(plan === 'yearly' ? 1 : 0);
+
+  const handleSelectPlan = (nextPlan: Plan) => {
+    if (nextPlan === plan) return;
+    void Haptics.selectionAsync();
+    setPlan(nextPlan);
+    activeIndex.value = withSpring(nextPlan === 'yearly' ? 1 : 0, {
+      damping: 22,
+      stiffness: 260,
+      mass: 0.6,
+    });
+  };
+
+  const pillAnimatedStyle = useAnimatedStyle(() => {
+    if (containerWidth <= 0) {
+      return { opacity: 0 };
+    }
+    const padding = 4;
+    const availableWidth = containerWidth - padding * 2;
+    const tabWidth = availableWidth / 2;
+    return {
+      opacity: 1,
+      width: tabWidth,
+      transform: [{ translateX: activeIndex.value * tabWidth }],
+    };
+  });
+
+  const monthlyPkg = useMemo(() => packageForPlan(packages, 'monthly'), [packages]);
+  const yearlyPkg = useMemo(() => packageForPlan(packages, 'yearly'), [packages]);
   const selectedPackage = useMemo(() => packageForPlan(packages, plan), [packages, plan]);
-  const isPremium = status.state === 'premium';
+
+  const hasEntitlementActive =
+    entitlement.status === 'premium' ||
+    entitlement.status === 'trial' ||
+    entitlement.status === 'grace' ||
+    Boolean(entitlement.features?.unlimited_learning);
+
+  const isPremium = status.state === 'premium' || hasEntitlementActive;
   const billingUnavailable = status.state === 'unavailable';
 
   const detail = useMemo(() => {
@@ -143,6 +202,10 @@ export default function PaywallScreen() {
   }, [feature, trigger]);
 
   const startPremium = async () => {
+    if (isPremium) {
+      router.back();
+      return;
+    }
     if (!selectedPackage || busy) {
       Alert.alert('Premium is unavailable', 'Premium packages are still loading. Please try again shortly.');
       return;
@@ -176,11 +239,21 @@ export default function PaywallScreen() {
 
   if (!premiumVisible) {
     return (
-      <View style={[styles.container, { backgroundColor: colors.primaryDark, justifyContent: 'center', alignItems: 'center', padding: spacing.xl }]}>
+      <View
+        style={[
+          styles.container,
+          { backgroundColor: colors.primaryDark, justifyContent: 'center', alignItems: 'center', padding: spacing.xl },
+        ]}
+      >
         <Text style={[typography.screenTitle, { color: colors.flameAmber, textAlign: 'center', marginBottom: spacing.sm }]}>
           Store Maintenance
         </Text>
-        <Text style={[typography.metadataCaption, { color: colors.mutedOnDark, textAlign: 'center', marginBottom: spacing.lg, fontSize: 14, lineHeight: 20 }]}>
+        <Text
+          style={[
+            typography.metadataCaption,
+            { color: colors.mutedOnDark, textAlign: 'center', marginBottom: spacing.lg, fontSize: 14, lineHeight: 20 },
+          ]}
+        >
           Subscription upgrades are temporarily unavailable. Core reading, offline downloads, bookmarks, and private notes remain 100% free and active.
         </Text>
         <Pressable
@@ -210,17 +283,35 @@ export default function PaywallScreen() {
         <Rect x={0} y={0} width={screenWidth} height={screenHeight} fill="url(#paywallGlow)" />
       </Svg>
 
-      <View style={[styles.topRow, { paddingHorizontal: spacing.xl }]}>
+      <View
+        style={[
+          styles.topRow,
+          {
+            paddingTop: Math.max(insets.top + 8, 28),
+            paddingHorizontal: spacing.xl,
+          },
+        ]}
+      >
         <View />
-        <Pressable onPress={() => router.back()} hitSlop={12}>
-          <Svg width={16} height={16} viewBox="0 0 20 20">
-            <Path d="M4 4l12 12M16 4L4 16" stroke={colors.mutedOnDark} strokeWidth={1.8} strokeLinecap="round" />
-          </Svg>
+        <Pressable
+          onPress={() => router.back()}
+          hitSlop={12}
+          accessibilityLabel="Close paywall"
+          accessibilityRole="button"
+          style={({ pressed }) => [
+            styles.closeButton,
+            {
+              backgroundColor: pressed ? 'rgba(255, 255, 255, 0.16)' : 'rgba(255, 255, 255, 0.08)',
+              borderColor: 'rgba(255, 255, 255, 0.12)',
+            },
+          ]}
+        >
+          <CloseIcon color={colors.mutedOnDark} size={15} />
         </Pressable>
       </View>
 
       <ScrollView
-        contentContainerStyle={[styles.content, { paddingHorizontal: spacing.xxl, paddingTop: 6, paddingBottom: spacing.md }]}
+        contentContainerStyle={[styles.content, { paddingHorizontal: spacing.xxl, paddingTop: 4, paddingBottom: spacing.md }]}
         showsVerticalScrollIndicator={false}
       >
         <FlameGlow size={52} variant="flicker" />
@@ -231,16 +322,45 @@ export default function PaywallScreen() {
             { color: colors.lampText, fontSize: 25, lineHeight: 32, marginTop: spacing.sm, textAlign: 'center' },
           ]}
         >
-          {detail.title}
+          {isPremium ? 'The lamp is shining' : detail.title}
         </Text>
+
+        {isPremium && (
+          <View
+            style={[
+              styles.activeStatusBadge,
+              {
+                backgroundColor: 'rgba(245, 166, 35, 0.14)',
+                borderColor: 'rgba(245, 166, 35, 0.45)',
+              },
+            ]}
+          >
+            <Text style={{ fontSize: 11, color: colors.flameAmber }}>✦</Text>
+            <Text
+              style={[
+                typography.eyebrowLabel,
+                {
+                  color: colors.flameAmber,
+                  fontSize: 11,
+                  fontWeight: '700',
+                  letterSpacing: 1.2,
+                },
+              ]}
+            >
+              PREMIUM ACTIVATED
+            </Text>
+            <Text style={{ fontSize: 11, color: colors.flameAmber }}>✦</Text>
+          </View>
+        )}
+
         <Text
           style={[
             typography.metadataCaption,
-            { color: colors.mutedOnDark, textAlign: 'center', marginTop: spacing.xs, maxWidth: 300, lineHeight: 18 },
+            { color: colors.mutedOnDark, textAlign: 'center', marginTop: isPremium ? 8 : spacing.xs, maxWidth: 310, lineHeight: 19 },
           ]}
         >
           {isPremium
-            ? 'Your Lamplight Premium subscription is active.'
+            ? 'You are already using Lamplight Premium. All sanctuary features, unlimited translations, and soundscapes are active.'
             : detail.subtitle}
         </Text>
 
@@ -257,38 +377,87 @@ export default function PaywallScreen() {
           ))}
         </View>
 
-        <View style={[styles.segmented, { backgroundColor: colors.ember, borderRadius: radius.pill }]}>
-          <Pressable
-            onPress={() => setPlan('monthly')}
+        <View
+          onLayout={(e) => {
+            const w = e.nativeEvent.layout.width;
+            if (w > 0 && w !== containerWidth) {
+              setContainerWidth(w);
+            }
+          }}
+          style={[styles.segmented, { backgroundColor: colors.ember, borderRadius: radius.pill }]}
+        >
+          <Animated.View
             style={[
-              styles.segment,
-              plan === 'monthly' && { backgroundColor: colors.flameAmber, borderRadius: radius.pill },
+              styles.animatedPill,
+              {
+                backgroundColor: colors.flameAmber,
+                borderRadius: radius.pill,
+              },
+              pillAnimatedStyle,
             ]}
+          />
+
+          <Pressable
+            onPress={() => handleSelectPlan('monthly')}
+            style={styles.segment}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: plan === 'monthly' }}
           >
             <Text
               style={[
                 typography.uiRowTitle,
-                { fontSize: 12, color: plan === 'monthly' ? colors.primaryDark : colors.mutedOnDark },
+                styles.segmentText,
+                {
+                  color: plan === 'monthly' ? colors.primaryDark : colors.mutedOnDark,
+                  fontWeight: plan === 'monthly' ? '700' : '500',
+                },
               ]}
+              numberOfLines={1}
             >
-              Monthly{plan === 'monthly' && selectedPackage ? ` · ${selectedPackage.priceString}` : ''}
+              Monthly{monthlyPkg ? ` · ${monthlyPkg.priceString}` : ''}
             </Text>
           </Pressable>
+
           <Pressable
-            onPress={() => setPlan('yearly')}
-            style={[
-              styles.segment,
-              plan === 'yearly' && { backgroundColor: colors.flameAmber, borderRadius: radius.pill },
-            ]}
+            onPress={() => handleSelectPlan('yearly')}
+            style={styles.segment}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: plan === 'yearly' }}
           >
-            <Text
-              style={[
-                typography.uiRowTitle,
-                { fontSize: 12, color: plan === 'yearly' ? colors.primaryDark : colors.mutedOnDark },
-              ]}
-            >
-              Yearly{plan === 'yearly' && selectedPackage ? ` · ${selectedPackage.priceString}` : ''}
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+              <Text
+                style={[
+                  typography.uiRowTitle,
+                  styles.segmentText,
+                  {
+                    color: plan === 'yearly' ? colors.primaryDark : colors.mutedOnDark,
+                    fontWeight: plan === 'yearly' ? '700' : '500',
+                  },
+                ]}
+                numberOfLines={1}
+              >
+                Yearly{yearlyPkg ? ` · ${yearlyPkg.priceString}` : ''}
+              </Text>
+              <View
+                style={[
+                  styles.saveBadge,
+                  {
+                    backgroundColor: plan === 'yearly' ? colors.primaryDark : 'rgba(245, 166, 35, 0.25)',
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.saveBadgeText,
+                    {
+                      color: colors.flameAmber,
+                    },
+                  ]}
+                >
+                  SAVE 35%
+                </Text>
+              </View>
+            </View>
           </Pressable>
         </View>
 
@@ -340,33 +509,50 @@ export default function PaywallScreen() {
         </View>
       </ScrollView>
 
-      <View style={{ paddingHorizontal: spacing.xxl, paddingBottom: 22, paddingTop: 4 }}>
+      <View style={{ paddingHorizontal: spacing.xxl, paddingBottom: Math.max(insets.bottom + 8, 22), paddingTop: 4 }}>
         <Pressable
           onPress={startPremium}
-          disabled={busy || billingUnavailable || !selectedPackage || isPremium}
-          style={[
+          disabled={!isPremium && (busy || billingUnavailable || !selectedPackage)}
+          style={({ pressed }) => [
             styles.cta,
             {
               backgroundColor: colors.flameAmber,
               borderRadius: radius.pill,
               height: layout.buttonHeight,
-              opacity: busy || billingUnavailable || !selectedPackage || isPremium ? 0.55 : 1,
+              opacity: !isPremium && (busy || billingUnavailable || !selectedPackage) ? 0.55 : pressed ? 0.9 : 1,
             },
           ]}
         >
-          <Text style={[typography.buttonLabel, { color: colors.primaryDark }]}>
-            {isPremium ? 'Premium is active' : busy ? 'Connecting to the store…' : selectedPackage ? `Start Premium — ${selectedPackage.priceString}` : isLoadingPackages ? 'Loading Premium…' : 'Premium unavailable'}
+          <Text style={[typography.buttonLabel, { color: colors.primaryDark, fontSize: 15 }]}>
+            {isPremium
+              ? '✓ You are already using Premium'
+              : busy
+                ? 'Connecting to the store…'
+                : selectedPackage
+                  ? `Start Premium — ${selectedPackage.priceString}`
+                  : isLoadingPackages
+                    ? 'Loading Premium…'
+                    : 'Premium unavailable'}
           </Text>
         </Pressable>
-        <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 10.5, textAlign: 'center', marginBottom: 6 }]}>
-          {plan === 'yearly' ? 'Annual plan. ' : 'Monthly plan. '}
-          Renews automatically until cancelled in store account settings. Cancel anytime.
-        </Text>
-        {billingUnavailable ? (
-          <Text style={[typography.metadataCaption, { color: colors.mutedOnDark, textAlign: 'center', marginBottom: 6 }]}>
-            Billing is not configured for this build yet.
+
+        {isPremium ? (
+          <Text style={[typography.metadataCaption, { color: colors.mutedOnDark, fontSize: 11, textAlign: 'center', marginBottom: 8 }]}>
+            Active on this device · Tap above to return to reading
           </Text>
-        ) : null}
+        ) : (
+          <>
+            <Text style={[typography.metadataCaption, { color: colors.fawn, fontSize: 10.5, textAlign: 'center', marginBottom: 6 }]}>
+              {plan === 'yearly' ? 'Annual plan. ' : 'Monthly plan. '}
+              Renews automatically until cancelled in store account settings. Cancel anytime.
+            </Text>
+            {billingUnavailable ? (
+              <Text style={[typography.metadataCaption, { color: colors.mutedOnDark, textAlign: 'center', marginBottom: 6 }]}>
+                Billing is not configured for this build yet.
+              </Text>
+            ) : null}
+          </>
+        )}
 
         <View style={styles.actionLinksRow}>
           <Pressable onPress={handleRestore} disabled={busy || billingUnavailable} style={styles.secondaryAction}>
@@ -378,7 +564,7 @@ export default function PaywallScreen() {
           </Pressable>
         </View>
 
-        {isPremium ? (
+        {isPremium && status.state === 'premium' ? (
           <Pressable onPress={() => void openManagement()} disabled={busy} style={styles.secondaryAction}>
             <Text style={[typography.uiRowTitle, { color: colors.flameAmber, fontSize: 12 }]}>Manage Subscription</Text>
           </Pressable>
@@ -393,7 +579,9 @@ export default function PaywallScreen() {
           </Pressable>
         </View>
         <Pressable onPress={() => router.back()} style={styles.maybeLater}>
-          <Text style={[typography.uiRowTitle, { color: colors.fawn, fontSize: 12 }]}>Maybe later</Text>
+          <Text style={[typography.uiRowTitle, { color: colors.fawn, fontSize: 12 }]}>
+            {isPremium ? 'Back to Sanctuary' : 'Maybe later'}
+          </Text>
         </Pressable>
       </View>
 
@@ -402,7 +590,7 @@ export default function PaywallScreen() {
         onClose={() => setPromoModalVisible(false)}
         onSuccess={() => {
           setPromoModalVisible(false);
-          router.back();
+          void refreshEntitlements('paywall_promo_redeem');
         }}
       />
     </View>
@@ -416,11 +604,30 @@ const styles = StyleSheet.create({
   topRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingTop: 18,
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  closeButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   content: {
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  activeStatusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderWidth: 1,
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    marginTop: 10,
   },
   featureList: {
     width: '100%',
@@ -444,11 +651,33 @@ const styles = StyleSheet.create({
     padding: 4,
     width: '100%',
     marginTop: 18,
+    position: 'relative',
+  },
+  animatedPill: {
+    position: 'absolute',
+    top: 4,
+    bottom: 4,
+    left: 4,
   },
   segment: {
     flex: 1,
     alignItems: 'center',
+    justifyContent: 'center',
     paddingVertical: 9,
+    zIndex: 2,
+  },
+  segmentText: {
+    fontSize: 12.5,
+  },
+  saveBadge: {
+    paddingHorizontal: 5,
+    paddingVertical: 1.5,
+    borderRadius: 6,
+  },
+  saveBadgeText: {
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
   freeTierBox: {
     width: '100%',

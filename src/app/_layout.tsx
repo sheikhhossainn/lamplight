@@ -244,13 +244,8 @@ function AppShell() {
           options={{ contentStyle: { backgroundColor: colors.libraryBackground } }}
         />
         <Stack.Screen name="quran/index" options={{ contentStyle: { backgroundColor: colors.libraryBackground } }} />
-        {/* Wood-table backdrop is fixed art, not a theme token — matches the
-            gradient's darkest stop so the fade_from_bottom transition doesn't
-            flash libraryBackground before the gradient paints. */}
-        <Stack.Screen name="mood-verses/table" options={{ contentStyle: { backgroundColor: '#4A3620' } }} />
         <Stack.Screen name="mood-verses/ask" options={{ contentStyle: { backgroundColor: colors.parchment } }} />
         <Stack.Screen name="mood-verses/inquiry" options={{ contentStyle: { backgroundColor: colors.parchment } }} />
-        <Stack.Screen name="mood-verses/reflect" options={{ contentStyle: { backgroundColor: colors.parchment } }} />
         <Stack.Screen name="login" options={{ contentStyle: { backgroundColor: colors.parchment } }} />
         <Stack.Screen name="signup" options={{ contentStyle: { backgroundColor: colors.parchment } }} />
         <Stack.Screen name="auth/callback" options={{ contentStyle: { backgroundColor: colors.parchment } }} />
