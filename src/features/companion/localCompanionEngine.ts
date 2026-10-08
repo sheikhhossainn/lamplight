@@ -548,42 +548,47 @@ export function generateLocalSummary(params: {
   const isBn = motherTongue === 'bn';
   const chLabel = chapterTitle || `Chapter ${chapterIndex + 1}`;
 
-  const paragraphs = chapterExcerpt
-    .split(/\n\n+/)
-    .map((p) => p.trim())
-    .filter((p) => p.length > 30);
+  const { quoteMatches, namesFound } = extractPageNarrative(chapterExcerpt);
+  const mainCharacter = namesFound[0] || (isBn ? 'মূল চরিত্র' : 'the protagonist');
+  const otherCharacters = namesFound.slice(1, 3);
+  const craft = analyzeLiteraryCraft(chapterExcerpt, isBn);
 
   const keyDevelopments: string[] = [];
 
-  if (paragraphs.length >= 3) {
-    keyDevelopments.push(`${isBn ? 'অধ্যায়ের সূচনা' : 'Opening'}: ${paragraphs[0].slice(0, 140).trim()}...`);
-    const midIdx = Math.floor(paragraphs.length / 2);
-    keyDevelopments.push(`${isBn ? 'মূল মোড়' : 'Turning point'}: ${paragraphs[midIdx].slice(0, 140).trim()}...`);
-    keyDevelopments.push(`${isBn ? 'পরিসমাপ্তি' : 'Resolution'}: ${paragraphs[paragraphs.length - 1].slice(0, 140).trim()}...`);
-  } else if (paragraphs.length > 0) {
-    keyDevelopments.push(`${isBn ? 'মূল দৃশ্যপট' : 'Primary scene unfolds'}: ${paragraphs[0].slice(0, 160).trim()}...`);
-    if (paragraphs[1]) {
-      keyDevelopments.push(`${isBn ? 'পরবর্তী মিথস্ক্রিয়া' : 'Consequent interaction'}: ${paragraphs[1].slice(0, 160).trim()}...`);
-    }
-  } else {
-    keyDevelopments.push(
-      isBn ? 'চরিত্রগুলো সামাজিক প্রত্যাশা ও নৈতিক সংকটের মুখোমুখি হয়।' : 'Characters navigate social expectations and moral dilemmas.',
-      isBn ? 'সংলাপের মাধ্যমে বাহ্যিক শিষ্টাচারের আড়ালে থাকা গভীর উদ্দেশ্য প্রকাশিত হয়।' : 'Conversations reveal deeper motivations beneath outward decorum.',
-      isBn ? 'অধ্যায়টি সম্পর্কের রূপবদল ও ব্যক্তিগত সংকল্পের মধ্য দিয়ে শেষ হয়।' : 'The chapter concludes with shifts in allegiances and personal resolve.',
-    );
-  }
-
-  const craft = analyzeLiteraryCraft(chapterExcerpt, isBn);
-
   if (isBn) {
+    const dev1 = namesFound.length > 0
+      ? `পটভূমি ও সূচনা: ${mainCharacter}-এর জীবনধারা, পারিপার্শ্বিক অবস্থান এবং তার বিশেষ মানসিক প্রবণতার পরিচয় দিয়ে দৃশ্যপট উন্মোচিত হয়।`
+      : 'পটভূমি ও সূচনা: অধ্যায়ের শুরুতে পরিবেশ, চরিত্রগুলোর জীবনধারা ও তাদের মানসিক অবস্থানের বিস্তারিত পরিচয় তুলে ধরা হয়েছে।';
+
+    const dev2 = namesFound.length > 1
+      ? `পারস্পরিক মিথস্ক্রিয়া ও সংকট: ${mainCharacter} এবং ${otherCharacters.join(' ও ')}-এর মধ্যকার যোগাযোগ ও দৃষ্টিভঙ্গির পার্থক্য দৃশ্যপটে গভীর মনস্তাত্ত্বিক টানাপোড়েন সৃষ্টি করে।`
+      : (quoteMatches.length > 0
+          ? 'মূল মোড় ও উপলব্ধি: কথোপকথন ও নতুন উপলব্ধির মাধ্যমে আখ্যানে একটি মানসিক পরিবর্তন আসে, যা চরিত্রের ভাবনার জগতে নতুন গতি সঞ্চার করে।'
+          : 'মূল সংঘাত: ঘটনাপ্রবাহে একটি নতুন সংকল্প তৈরি হয়, যা চরিত্রের দৃষ্টিভঙ্গি ও মানসিক সিদ্ধান্তকে নাড়া দেয়।');
+
+    const dev3 = 'পরিসমাপ্তি ও প্রস্তুতি: পরিস্থিতির গভীরতা উপলব্ধি করে চরিত্রটি পরবর্তী পদক্ষেপের প্রস্তুতি নেয়, যা আসন্ন অধ্যায়ের ক্ষেত্র তৈরি করে।';
+
+    keyDevelopments.push(dev1, dev2, dev3);
+
+    const bookMention = bookTitle ? ` ("${bookTitle}")` : '';
+    const charMention = namesFound.length > 0 ? ` এতে মূলত ${namesFound.slice(0, 3).join(', ')} চরিত্রের কার্যকলাপ ও মনস্তাত্ত্বিক টানাপোড়েন প্রতিফলিত হয়েছে।` : '';
+
     return {
-      summary: `${chLabel}-এর সারসংক্ষেপ: এই অধ্যায়ে আখ্যানের একটি গুরুত্বপূর্ণ মোড় উন্মোচিত হয়। চরিত্রগুলোর পারস্পরিক সংলাপ এবং ঘটনাপ্রবাহের মাধ্যমে পরিস্থিতি স্পষ্ট হয়ে ওঠে। পুরো অধ্যায়ে কোনো ভবিষ্যৎ ঘটনার ইঙ্গিত না দিয়ে কেবল এই অধ্যায়ের ঘটনার ওপর দৃষ্টি নিবদ্ধ রাখা হয়েছে।`,
+      summary: `${chLabel}-এর সারসংক্ষেপ${bookMention}: এই অধ্যায়ে আখ্যানের পটভূমি ও চরিত্রের মানসিক অবস্থা অত্যন্ত নিপুণভাবে তুলে ধরা হয়েছে।${charMention} সংলাপ ও ঘটনাপ্রবাহের মাধ্যমে সামাজিক বাস্তবতার মুখোমুখি দাঁড়ায় চরিত্রগুলো। ভবিষ্যৎ ঘটনার কোনো স্পয়লার ছাড়াই এই অংশের অন্তর্নিহিত সুর ও তাৎক্ষণিক পরিস্থিতির ওপর দৃষ্টি নিবদ্ধ রাখা হয়েছে।`,
       keyDevelopments,
-      thematicFocus: `আবহ ও মূল সুর: মানুষের সম্পর্কের জটিলতা এবং জীবনের অনিবার্য সিদ্ধান্ত।`,
+      thematicFocus: `আবহ ও মূল সুর: ${craft.tone}। প্রধান সাহিত্যিক প্রতিপাদ্য: ${craft.themes.join(', ')}।`,
       spoilerFreeGuarantee: true,
       version: 'local-literary-v2',
     };
   }
+
+  keyDevelopments.push(
+    `Opening: The narrative introduces the daily life, social setting, and defining temperament of ${mainCharacter}.`,
+    namesFound.length > 1
+      ? `Turning point: Crucial interactions with ${otherCharacters.join(' and ')} test relationships and bring unspoken motives to light.`
+      : 'Turning point: A pivotal realization alters the course of the scene, shaping the protagonist\'s resolve.',
+    'Resolution: The chapter closes with resolute preparations, grounding the characters firmly in their current circumstances.',
+  );
 
   const summary =
     `In ${chLabel}${bookTitle ? ` of *${bookTitle}*` : ''}, narrative events progress with measured literary cadence. ` +
@@ -802,31 +807,27 @@ export function generateLocalPageInsight(params: {
 
   let summary = '';
   if (isBn) {
-    if (paragraphs.length >= 2) {
-      const opening = paragraphs[0].slice(0, 160).replace(/\s+[^ ]*$/, '');
-      const ending = paragraphs[paragraphs.length - 1].slice(0, 160).replace(/\s+[^ ]*$/, '');
-      summary =
-        `${chLabel}-এর পৃষ্ঠা ${pageNumber}-এ দৃশ্যটি শুরু হয়: "${opening}..."\n\n` +
-        (quoteMatches.length > 0 ? `মূল সংলাপ আবর্তিত হয়: "${quoteMatches[0]}"।\n\n` : '') +
-        `পৃষ্ঠার পরিসমাপ্তি ঘটে: "${ending}..."`;
-    } else if (paragraphs.length === 1) {
-      summary = `পৃষ্ঠা ${pageNumber}-এর মূল প্রসঙ্গ: "${paragraphs[0].slice(0, 260)}..."`;
-    } else {
-      summary = `${chLabel}-এর পৃষ্ঠা ${pageNumber} দৃশ্যপটের একটি গুরুত্বপূর্ণ সাহিত্যিক পরিবর্তন নির্দেশ করে।`;
-    }
+    const charDesc = namesFound.length > 0 ? `উপস্থিত চরিত্র: ${namesFound.slice(0, 3).join(', ')}। ` : '';
+    const dialogueDesc = quoteMatches.length > 0
+      ? `সংলাপের মাধ্যমে তাদের মানসিক অবস্থা এবং তাৎক্ষণিক সংঘাত বা চিন্তার আদান-প্রদান স্পষ্ট হয়। `
+      : `বর্ণনার মধ্য দিয়ে পারিপার্শ্বিক পরিস্থিতি ও চরিত্রগুলোর ভেতরের অনুভূতি নিপুণভাবে চিত্রিত হয়েছে। `;
+
+    summary =
+      `${chLabel}-এর পৃষ্ঠা ${pageNumber}-এর প্রেক্ষাপট:\n` +
+      `এই পৃষ্ঠায় আখ্যানের দৃশ্যপট একটি সুনির্দিষ্ট সাহিত্যিক গতিতে এগিয়ে চলে। ${charDesc}` +
+      `${dialogueDesc}` +
+      `কোনো ভবিষ্যৎ ঘটনার আভাস না দিয়ে কেবল এই পৃষ্ঠার পরিবেশ, চরিত্রগুলোর ভাববিনিময় এবং তাত্ক্ষণিক মুহূর্তের ওপর সম্পূর্ণ আলোকপাত করা হয়েছে।`;
   } else {
-    if (paragraphs.length >= 2) {
-      const opening = paragraphs[0].slice(0, 160).replace(/\s+[^ ]*$/, '');
-      const ending = paragraphs[paragraphs.length - 1].slice(0, 160).replace(/\s+[^ ]*$/, '');
-      summary =
-        `On Page ${pageNumber} of ${chLabel}, the scene opens with: "${opening}..."\n\n` +
-        (quoteMatches.length > 0 ? `The central dialogue revolves around: "${quoteMatches[0]}".\n\n` : '') +
-        `The passage progresses toward: "${ending}..."`;
-    } else if (paragraphs.length === 1) {
-      summary = `Page ${pageNumber} focuses on: "${paragraphs[0].slice(0, 260)}..."`;
-    } else {
-      summary = `Page ${pageNumber} of ${chLabel} marks a key literary transition in the scene.`;
-    }
+    const charDesc = namesFound.length > 0 ? `Active characters in this section include ${namesFound.slice(0, 3).join(', ')}. ` : '';
+    const dialogueDesc = quoteMatches.length > 0
+      ? `Key dialogue captures interpersonal tension and mutual reactions directly on the page. `
+      : `The narrative prose closely depicts the immediate setting and internal state of the characters. `;
+
+    summary =
+      `On Page ${pageNumber} of ${chLabel}:\n` +
+      `The scene progresses with focused literary cadence. ${charDesc}` +
+      `${dialogueDesc}` +
+      `Without foreshadowing future plot twists, this page grounds the reader in the immediate emotional atmosphere and active decisions taking place.`;
   }
 
   const craft = analyzeLiteraryCraft(pageText, isBn);
@@ -883,12 +884,14 @@ export function generateLocalAnswer(params: {
       const ending = paragraphs.length > 1 ? ` The page concludes as: "${paragraphs[paragraphs.length - 1].slice(0, 160).trim()}..."` : '';
 
       if (isBn) {
-        const charPartBn = namesFound.length > 0 ? ` (চরিত্র: ${namesFound.slice(0, 3).join(', ')})` : '';
-        const quotePartBn = quoteMatches.length > 0 ? ` মূল সংলাপ: "${quoteMatches[0]}"।` : '';
+        const charPartBn = namesFound.length > 0 ? ` (উপস্থিত চরিত্র: ${namesFound.slice(0, 3).join(', ')})` : '';
+        const quotePartBn = quoteMatches.length > 0 ? ` এই পৃষ্ঠার সংলাপ চরিত্রগুলোর মনোভাব ও সম্পর্কের গতিধারা স্পষ্ট করে তোলে।` : '';
         answer =
-          `${chLabel}-এর পৃষ্ঠা ${pageNumber ?? ''}${charPartBn}-এ দৃশ্যটি শুরু হয় এভাবে: "${opening}..."${ending}\n\n` +
-          `${quotePartBn} এখানে পাত্র-পাত্রীদের মানসিক টানাপোড়েন এবং তাৎক্ষণিক পরিস্থিতির ওপর সরাসরি আলোকপাত করা হয়েছে।`;
-        keyThemes.push('সক্রিয় দৃশ্য', 'পৃষ্ঠার প্রসঙ্গ');
+          `${chLabel}-এর পৃষ্ঠা ${pageNumber ?? ''}${charPartBn}-এর আখ্যান:\n` +
+          `এই পৃষ্ঠায় দৃশ্যপটটি চরিত্রগুলোর পারস্পরিক মিথস্ক্রিয়া ও তাৎক্ষণিক পরিস্থিতির ওপর কেন্দ্র করে আবর্তিত হয়েছে। ` +
+          `এখানে পাত্র-পাত্রীদের মানসিক দোলাচল, সামাজিক শিষ্টাচার ও ব্যক্তিগত লক্ষ্যের সংঘাত সূক্ষ্মভাবে চিত্রিত হয়েছে।${quotePartBn}\n\n` +
+          `ভবিষ্যতের কোনো ঘটনার পূর্বাভাস না দিয়ে কেবল এই পৃষ্ঠার ঘটনা ও অনুভূতিমূলক সুরের ওপর দৃষ্টি নিবদ্ধ রাখা হয়েছে, যাতে আখ্যানের ধারাবাহিকতা সুন্দরভাবে উপলব্ধি করা যায়।`;
+        keyThemes.push('সক্রিয় দৃশ্যপট', 'পৃষ্ঠার সাহিত্যিক প্রেক্ষাপট');
       } else {
         answer =
           `On ${pageLabel} of ${chLabel}${charPart}, the scene unfolds directly around: "${opening}..."${ending}\n\n` +
@@ -907,14 +910,14 @@ export function generateLocalAnswer(params: {
   } else if (/who|character|name|person/i.test(qLower) || /কে|চরিত্র|কারা/i.test(question)) {
     const matchedName = namesFound.find((n) => qLower.includes(n.toLowerCase()));
     if (matchedName) {
-      const sentenceWithName = activeText.split(/[.!?]+/).find((s) => s.includes(matchedName))?.trim();
       if (isBn) {
         answer =
-          `এই দৃশ্যে (${pageLabel}) ${matchedName} সরাসরি উপস্থিত। ` +
-          (sentenceWithName ? `পাঠ্যে বলা হয়েছে: "${sentenceWithName.slice(0, 180)}" ` : '') +
-          `তাদের ভূমিকা এই দৃশ্যের সামাজিক ও মানসিক ভারসাম্যে গুরুত্বপূর্ণ প্রভাব ফেলে।`;
+          `এই দৃশ্যে (${pageLabel}) ${matchedName} সরাসরি উপস্থিত ও সক্রিয়। ` +
+          `তাদের ভূমিকা ও অভিব্যক্তি এই মুহূর্তের সামাজিক ও মানসিক ভারসাম্যে গুরুত্বপূর্ণ প্রভাব ফেলে। ` +
+          `কোনো ভবিষ্যৎ ঘটনার আভাস না দিয়ে কেবল এই অংশের ভূমিকা তুলে ধরা হয়েছে।`;
         keyThemes.push(`${matchedName}-এর ভূমিকা`, 'চরিত্রের মিথস্ক্রিয়া');
       } else {
+        const sentenceWithName = activeText.split(/[.!?]+/).find((s) => s.includes(matchedName))?.trim();
         answer =
           `In this scene on ${pageLabel}, ${matchedName} is directly present. ` +
           (sentenceWithName ? `The text notes: "${sentenceWithName.slice(0, 180)}". ` : '') +
@@ -996,14 +999,9 @@ export function generateLocalAnswer(params: {
     }
   } else {
     if (isBn) {
-      if (paragraphs.length > 0) {
-        const snippet = paragraphs[0].slice(0, 180).trim();
-        answer =
-          `পৃষ্ঠা ${pageLabel} ("${snippet}...") গভীরভাবে পর্যবেক্ষণ করলে দেখা যায় যে, লেখক চরিত্রগুলোর সূক্ষ্ম অনুভূতি ও সামাজিক অবস্থানের সংঘাত অত্যন্ত নিপুণভাবে তুলে ধরেছেন।`;
-      } else {
-        answer =
-          `পৃষ্ঠা ${pageLabel} গভীরভাবে পর্যবেক্ষণ করলে দেখা যায় যে, লেখক নৈতিক দায়িত্ব ও ব্যক্তিগত অনুভূতির সংঘাত নিপুণভাবে চিত্রায়িত করেছেন।`;
-      }
+      const charPartBn = namesFound.length > 0 ? ` (উপস্থিত চরিত্র: ${namesFound.slice(0, 3).join(', ')})` : '';
+      answer =
+        `পৃষ্ঠা ${pageLabel}${charPartBn} গভীরভাবে পর্যবেক্ষণ করলে দেখা যায় যে, লেখক চরিত্রগুলোর সূক্ষ্ম অনুভূতি, মনস্তাত্ত্বিক টানাপোড়েন ও সামাজিক অবস্থানের সংঘাত অত্যন্ত নিপুণভাবে তুলে ধরেছেন। কোনো ভবিষ্যৎ ঘটনার আভাস না দিয়ে কেবল এই মুহূর্তের অনুভূতির গভীরতা ও দৃশ্যপটের ওপর দৃষ্টি নিবদ্ধ রাখা হয়েছে।`;
       keyThemes.push('সাহিত্যিক অন্তর্দৃষ্টি', 'পৃষ্ঠার পর্যালোচনা');
     } else {
       if (paragraphs.length > 0) {

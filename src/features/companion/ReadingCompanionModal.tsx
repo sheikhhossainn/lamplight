@@ -602,14 +602,14 @@ export function ReadingCompanionModal({
           <View style={[styles.excerptCard, { backgroundColor: colors.card, borderColor: colors.hairline }]}>
             <View style={styles.excerptHeader}>
               <Text style={[styles.eyebrow, { color: colors.flameAmber }]}>
-                SELECTED PASSAGE
+                {isBn ? 'নির্বাচিত অনুচ্ছেদ' : 'SELECTED PASSAGE'}
               </Text>
               <Pressable
                 onPress={() => setExcerptExpanded(!excerptExpanded)}
                 hitSlop={8}
               >
                 <Text style={[typography.metadataCaption, { color: colors.umber, fontSize: 11 }]}>
-                  {excerptExpanded ? 'Show less' : 'Expand full'}
+                  {excerptExpanded ? (isBn ? 'সংক্ষিপ্ত করুন' : 'Show less') : (isBn ? 'সম্পূর্ণ দেখুন' : 'Expand full')}
                 </Text>
               </Pressable>
             </View>
@@ -636,9 +636,9 @@ export function ReadingCompanionModal({
           >
             <ShieldIcon size={13} color={colors.flameAmber} />
             <Text numberOfLines={1} style={[styles.scopeBannerText, { color: colors.ink }]}>
-              Spoiler-Free Guarantee{' '}
+              {isBn ? 'স্পয়লার-মুক্ত সুরক্ষা' : 'Spoiler-Free Guarantee'}{' '}
               <Text style={{ color: colors.fawn }}>
-                · bounded strictly up to this chapter
+                · {isBn ? 'এই অধ্যায়ের সীমানার মধ্যে আবদ্ধ' : 'bounded strictly up to this chapter'}
               </Text>
             </Text>
           </View>
@@ -1047,7 +1047,7 @@ export function ReadingCompanionModal({
                       {pageInsightData.keyMoment ? (
                         <View style={[styles.referenceCard, { backgroundColor: colors.card, borderColor: colors.hairline, marginTop: 16 }]}>
                           <Text style={[styles.eyebrow, { color: colors.flameAmber, marginBottom: 4 }]}>
-                            KEY PASSAGE
+                            {isBn ? 'মূল উদ্ধৃতি বা সংলাপ' : 'KEY PASSAGE'}
                           </Text>
                           <Text style={[styles.analysisBodyText, { color: colors.ink, fontStyle: 'italic' }]}>
                             “{pageInsightData.keyMoment}”
@@ -1058,7 +1058,7 @@ export function ReadingCompanionModal({
                       {pageInsightData.thematicFocus ? (
                         <View style={[styles.thematicCard, { backgroundColor: colors.card, borderColor: colors.hairline, marginTop: 12 }]}>
                           <Text style={[styles.eyebrow, { color: colors.flameAmber, marginBottom: 4 }]}>
-                            THEMATIC ATMOSPHERE
+                            {isBn ? 'আবহ ও সুর' : 'THEMATIC ATMOSPHERE'}
                           </Text>
                           <Text style={[styles.analysisBodyText, { color: colors.ink }]}>
                             {pageInsightData.thematicFocus}
@@ -1077,7 +1077,7 @@ export function ReadingCompanionModal({
                       {summaryData.keyDevelopments?.length > 0 && (
                         <View style={{ marginTop: 18 }}>
                           <Text style={[styles.eyebrow, { color: colors.flameAmber, marginBottom: 8 }]}>
-                            KEY CHAPTER TURNING POINTS
+                            {isBn ? 'অধ্যায়ের গুরুত্বপূর্ণ মোড়' : 'KEY CHAPTER TURNING POINTS'}
                           </Text>
                           {summaryData.keyDevelopments.map((dev, i) => (
                             <View key={i} style={[styles.turningPointCard, { backgroundColor: colors.card, borderColor: colors.hairline }]}>
@@ -1093,7 +1093,7 @@ export function ReadingCompanionModal({
                       {summaryData.thematicFocus ? (
                         <View style={[styles.thematicCard, { backgroundColor: colors.card, borderColor: colors.hairline }]}>
                           <Text style={[styles.eyebrow, { color: colors.flameAmber, marginBottom: 4 }]}>
-                            THEMATIC FOCUS
+                            {isBn ? 'মূল সাহিত্যিক প্রতিপাদ্য' : 'THEMATIC FOCUS'}
                           </Text>
                           <Text style={[styles.analysisBodyText, { color: colors.ink }]}>
                             {summaryData.thematicFocus}
@@ -1158,7 +1158,7 @@ export function ReadingCompanionModal({
               {chatHistory.length > 0 && (
                 <View style={{ marginTop: 20 }}>
                   <Text style={[styles.eyebrow, { color: colors.flameAmber, marginBottom: 12 }]}>
-                    YOUR QUESTIONS
+                    {isBn ? 'আপনার প্রশ্নসমূহ' : 'YOUR QUESTIONS'}
                   </Text>
                   {chatHistory.map((item, idx) => (
                     <View key={idx} style={[styles.chatCard, { backgroundColor: colors.card, borderColor: colors.hairline }]}>
@@ -1186,14 +1186,14 @@ export function ReadingCompanionModal({
                       <>
                         <CheckIcon size={14} color={colors.flameAmber} />
                         <Text style={[typography.metadataCaption, { color: colors.flameAmber, marginLeft: 6 }]}>
-                          Copied
+                          {isBn ? 'অনুলিপি সম্পন্ন' : 'Copied'}
                         </Text>
                       </>
                     ) : (
                       <>
                         <CopyIcon size={14} color={colors.umber} />
                         <Text style={[typography.metadataCaption, { color: colors.ink, marginLeft: 6 }]}>
-                          Copy Insight
+                          {isBn ? 'অনুলিপি করুন' : 'Copy Insight'}
                         </Text>
                       </>
                     )}
@@ -1211,14 +1211,14 @@ export function ReadingCompanionModal({
                         <>
                           <CheckIcon size={14} color={colors.flameAmber} />
                           <Text style={[typography.metadataCaption, { color: colors.flameAmber, marginLeft: 6 }]}>
-                            Saved to Notes
+                            {isBn ? 'নোটবুকে সংরক্ষিত' : 'Saved to Notes'}
                           </Text>
                         </>
                       ) : (
                         <>
                           <BookmarkIcon size={14} color={colors.umber} />
                           <Text style={[typography.metadataCaption, { color: colors.ink, marginLeft: 6 }]}>
-                            Save to Notes
+                            {isBn ? 'নোটবুকে সংরক্ষণ' : 'Save to Notes'}
                           </Text>
                         </>
                       )}
@@ -1231,7 +1231,7 @@ export function ReadingCompanionModal({
                       style={[styles.toolButton, { backgroundColor: colors.flameAmber + '20', borderColor: colors.flameAmber }]}
                     >
                       <Text style={[typography.metadataCaption, { color: colors.flameAmber, fontWeight: '700' }]}>
-                        View Notes →
+                        {isBn ? 'নোট দেখুন →' : 'View Notes →'}
                       </Text>
                     </Pressable>
                   ) : null}
@@ -1242,7 +1242,7 @@ export function ReadingCompanionModal({
                   >
                     <ReloadIcon size={13} color={colors.umber} />
                     <Text style={[typography.metadataCaption, { color: colors.umber, marginLeft: 6 }]}>
-                      Refresh
+                      {isBn ? 'পুনরায় দেখুন' : 'Refresh'}
                     </Text>
                   </Pressable>
                 </View>
