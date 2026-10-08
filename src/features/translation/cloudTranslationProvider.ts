@@ -1,5 +1,6 @@
 import { getCachedTranslation, setCachedTranslation } from '@/db/repositories/translationCache';
 import { callLiteraryAi } from './literaryAiClient';
+import { extractTranslatedText } from './translationExtract';
 import type { LanguageCode, TranslationProvider, TranslationResult } from './TranslationProvider';
 
 // Thin wrapper around the unofficial (but widely used, key-free) Google Translate
@@ -39,19 +40,22 @@ async function fetchTranslation(
 
   // 3. Network fetch (Primary: Google Translate)
   try {
-    const url = `${ENDPOINT}?client=gtx&sl=${from}&tl=${to}&dt=t&q=${encodeURIComponent(text)}`;
+    const url = `${ENDPOINT}?client=gtx&sl=${from}&tl=${to}&dt=t&dt=bd&dt=at&q=${encodeURIComponent(text)}`;
     const response = await fetch(url);
     if (response.ok) {
       const data = (await response.json()) as unknown;
-      const translatedText = extractTranslatedText(data);
-      const result: TranslationResult = { sourceText: text, translatedText };
-      
-      cache.set(key, result);
-      void setCachedTranslation(text, translatedText, from, to).catch((err) =>
-        console.warn('[translation] Persistent cache write error:', err),
-      );
+      const translatedText = extractTranslatedText(data, text);
+      const isIdentical = from !== to && translatedText.toLowerCase() === text.trim().toLowerCase();
 
-      return result;
+      // If translation succeeded and produced a distinct word, cache and return
+      if (!isIdentical) {
+        const result: TranslationResult = { sourceText: text, translatedText };
+        cache.set(key, result);
+        void setCachedTranslation(text, translatedText, from, to).catch((err) =>
+          console.warn('[translation] Persistent cache write error:', err),
+        );
+        return result;
+      }
     }
   } catch (err) {
     console.warn('[translation] Primary Google Translate failed, attempting server Edge Function fallback:', err);
@@ -77,24 +81,7 @@ async function fetchTranslation(
   throw new Error(`Translation request failed for "${text}"`);
 }
 
-function extractTranslatedText(data: unknown): string {
-  // Response shape: [[["translated chunk","source chunk",...], ...], ...]
-  if (!Array.isArray(data) || !Array.isArray(data[0])) {
-    throw new Error('Unexpected translation response shape');
-  }
-  const segments = data[0] as unknown[];
-  // Google splits multi-sentence input into one segment per sentence/clause.
-  // A single word/short selection was always exactly one segment, so joining
-  // with '' was invisible — but a whole translated page is many segments,
-  // and '' glues them into one unbroken run with no space between sentences,
-  // which Text can't wrap (renders as one line spilling past the margins).
-  // Join with a space and collapse any doubled-up whitespace that introduces.
-  return segments
-    .map((segment) => (Array.isArray(segment) ? String(segment[0] ?? '') : ''))
-    .join(' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
+export { extractTranslatedText } from './translationExtract';
 
 export const cloudTranslationProvider: TranslationProvider = {
   translateWord: (word, from, to) => fetchTranslation(word, from, to),

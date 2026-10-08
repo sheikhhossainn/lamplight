@@ -5,7 +5,10 @@ export function tokenizeParagraph(paragraph: string): string[] {
 }
 
 export function cleanWordForLookup(token: string): string {
-  return token.normalize('NFC').replace(/^[^\p{L}\p{M}\p{N}\p{Pc}\u200C\u200D']+|[^\p{L}\p{M}\p{N}\p{Pc}\u200C\u200D']+$/gu, '');
+  return token
+    .normalize('NFC')
+    .replace(/^[^\p{L}\p{M}\p{N}\p{Pc}\u200C\u200D']+|[^\p{L}\p{M}\p{N}\p{Pc}\u200C\u200D']+$/gu, '')
+    .replace(/^['"‘’“”]+|['"‘’“”]+$/gu, '');
 }
 
 // Splits a paragraph into sentence chunks (each keeping its trailing
