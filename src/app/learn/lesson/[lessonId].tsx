@@ -24,7 +24,6 @@ import { MatchPairs } from '@/features/learn/components/MatchPairs';
 import {
   completeLesson,
   getCourseProgress,
-  updateCourseItemSrs,
   updateExerciseIndex,
   upsertCourseItem,
 } from '@/db/repositories/courseRepo';
@@ -39,6 +38,7 @@ export default function LessonRunnerScreen() {
   const [coursePkg] = useState(() => loadCoursePackage('ja', 'bn'));
   const [queue, setQueue] = useState<ExerciseItem[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [initialQueueLength, setInitialQueueLength] = useState(0);
   const [selectedOption, setSelectedOption] = useState<ExerciseOption | null>(null);
   const [isChecked, setIsChecked] = useState(false);
   const [isCorrect, setIsCorrect] = useState(false);
@@ -96,6 +96,7 @@ export default function LessonRunnerScreen() {
         if (!isMounted) return;
 
         setQueue(initialQueue);
+        setInitialQueueLength(initialQueue.length);
         if (
           progress &&
           progress.exerciseIndex > 0 &&
@@ -111,6 +112,7 @@ export default function LessonRunnerScreen() {
       .catch(() => {
         if (isMounted) {
           setQueue(initialQueue);
+          setInitialQueueLength(initialQueue.length);
           setIsLoading(false);
         }
       });
@@ -163,24 +165,28 @@ export default function LessonRunnerScreen() {
       void updateExerciseIndex('ja', lesson.id, nextIdx);
     } else {
       // Completed all exercises!
-      const initialCount = Math.max(1, queue.length - mistakesCount);
+      const initialCount = Math.max(1, initialQueueLength || queue.length);
       const accuracy = Math.max(0, Math.min(1, (initialCount - mistakesCount) / initialCount));
 
-      await completeLesson('ja', lesson.id, accuracy);
+      try {
+        await completeLesson('ja', lesson.id, accuracy);
 
-      // Upsert SRS records for all learned items in lesson
-      const now = Date.now();
-      for (const itemId of lesson.itemIds) {
-        await upsertCourseItem({
-          lang: 'ja',
-          itemId,
-          srsStage: 1,
-          srsIntervalDays: 1,
-          srsEaseFactor: 2.5,
-          srsDueDate: now + 24 * 60 * 60 * 1000, // Due in 24 hours
-          srsReps: 1,
-          srsLapses: 0,
-        });
+        // Upsert SRS records for all learned items in lesson
+        const now = Date.now();
+        for (const itemId of lesson.itemIds) {
+          await upsertCourseItem({
+            lang: 'ja',
+            itemId,
+            srsStage: 1,
+            srsIntervalDays: 1,
+            srsEaseFactor: 2.5,
+            srsDueDate: now + 24 * 60 * 60 * 1000, // Due in 24 hours
+            srsReps: 1,
+            srsLapses: 0,
+          });
+        }
+      } catch (err) {
+        console.warn('[LessonRunner] Failed to persist lesson completion:', err);
       }
 
       setIsCompleted(true);
@@ -260,7 +266,9 @@ export default function LessonRunnerScreen() {
           <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.hairline }]}>
             <View style={styles.statCol}>
               <Text style={[typography.screenTitle, { color: colors.flameAmber, fontSize: 22 }]}>
-                {mistakesCount === 0 ? '১০০%' : `${Math.round(Math.max(0, 1 - mistakesCount / queue.length) * 100)}%`}
+                {mistakesCount === 0
+                  ? '১০০%'
+                  : `${Math.round(Math.max(0, 1 - mistakesCount / Math.max(1, initialQueueLength || queue.length)) * 100)}%`}
               </Text>
               <Text style={[typography.metadataCaption, { color: colors.umber }]}>নির্ভুলতা</Text>
             </View>

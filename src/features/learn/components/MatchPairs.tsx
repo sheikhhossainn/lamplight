@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import * as Haptics from 'expo-haptics';
 
@@ -32,6 +32,9 @@ export function MatchPairs({
   const { colors, typography, scheme } = useTheme();
   const isLamp = scheme === 'lamp';
 
+  const onCompleteRef = useRef(onComplete);
+  onCompleteRef.current = onComplete;
+
   // Left items stay in initial order, right items shuffled once on mount / pairs change
   const leftItems = useMemo(() => pairs.map((p) => ({ id: p.leftId, text: p.leftText })), [pairs]);
   const rightItems = useMemo(
@@ -48,11 +51,11 @@ export function MatchPairs({
   useEffect(() => {
     if (pairs.length > 0 && matchedIds.size === pairs.length) {
       const timer = setTimeout(() => {
-        onComplete();
+        onCompleteRef.current();
       }, 400);
       return () => clearTimeout(timer);
     }
-  }, [matchedIds, pairs.length, onComplete]);
+  }, [matchedIds.size, pairs.length]);
 
   const handleSelectLeft = (id: string, text: string) => {
     if (disabled || matchedIds.has(id) || mismatchIds) return;

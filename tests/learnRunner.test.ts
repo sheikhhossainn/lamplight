@@ -82,4 +82,38 @@ describe('Learn exercise runner logic & queue progression', () => {
       assert.ok(pair.rightText.length > 0);
     }
   });
+
+  it('generates valid exercise queues across all Hiragana (Unit 1) and Katakana (Unit 2) lessons', () => {
+    const pkg = loadCoursePackage('ja', 'bn')!;
+    const units = pkg.manifest.units.filter((u) => u.number === 1 || u.number === 2);
+
+    for (const unit of units) {
+      for (const lesson of unit.lessons) {
+        const queue = buildExerciseQueue({
+          lesson,
+          unit,
+          allItems: pkg.items,
+          allSentences: pkg.sentences,
+          strings: pkg.strings,
+        });
+
+        assert.ok(queue.length > 0, `Lesson ${lesson.id} should produce non-empty exercise queue`);
+
+        for (const ex of queue) {
+          assert.ok(ex.id, `Exercise must have an ID in ${lesson.id}`);
+          assert.ok(ex.type, `Exercise must have a type in ${lesson.id}`);
+
+          if (ex.type === 'letter_read' || ex.type === 'letter_listen') {
+            assert.ok(ex.options && ex.options.length >= 2, `Exercise ${ex.id} must have >= 2 options`);
+            const correct = ex.options.filter((o) => o.isCorrect);
+            assert.equal(correct.length, 1, `Exercise ${ex.id} must have exactly one correct option`);
+          }
+
+          if (ex.type === 'match_pairs') {
+            assert.ok(ex.pairs && ex.pairs.length >= 4, `Exercise ${ex.id} must have >= 4 pairs`);
+          }
+        }
+      }
+    }
+  });
 });

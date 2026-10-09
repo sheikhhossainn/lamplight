@@ -1,9 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import * as Haptics from 'expo-haptics';
-
 import { SpeakerIcon } from '@/components/icons';
-import { speakWord } from '@/features/audio/pronunciationEngine';
+import {
+  toggleSpeech,
+  useCurrentSpeechId,
+} from '@/features/audio/pronunciationEngine';
 import { useTheme } from '@/theme/ThemeProvider';
 
 export type AudioButtonProps = {
@@ -22,41 +24,36 @@ export function AudioButton({
   size = 'normal',
 }: AudioButtonProps) {
   const { colors, typography, scheme } = useTheme();
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [isSlowPlaying, setIsSlowPlaying] = useState(false);
+  const currentSpeechId = useCurrentSpeechId();
+  // Derive stable IDs for this button instance
+  const normalId = `audio-${text}-normal`;
+  const slowId = `audio-${text}-slow`;
+  const isPlaying = currentSpeechId === normalId;
+  const isSlowPlaying = currentSpeechId === slowId;
 
+  // autoPlay fires exactly once per (text, autoPlay=true) combination
+  const autoPlayedRef = useRef<string | null>(null);
   useEffect(() => {
     if (!autoPlay || !text.trim()) return;
+    if (autoPlayedRef.current === text) return; // already fired for this text
+    autoPlayedRef.current = text;
 
     const timer = setTimeout(() => {
-      void play('normal');
+      void toggleSpeech(normalId, text, lang, 'normal');
     }, 280);
 
     return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [text, autoPlay]);
 
-  const play = async (rate: 'normal' | 'slow') => {
-    if (!text.trim()) return;
-
-    if (rate === 'slow') {
-      setIsSlowPlaying(true);
-    } else {
-      setIsPlaying(true);
-    }
-
+  const handlePlayNormal = () => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    void toggleSpeech(normalId, text, lang, 'normal');
+  };
 
-    try {
-      await speakWord(text, lang, rate);
-    } catch {
-      // Audio fallback error handled silently
-    } finally {
-      if (rate === 'slow') {
-        setIsSlowPlaying(false);
-      } else {
-        setIsPlaying(false);
-      }
-    }
+  const handlePlaySlow = () => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    void toggleSpeech(slowId, text, lang, 'slow');
   };
 
   const isLamp = scheme === 'lamp';
@@ -72,7 +69,7 @@ export function AudioButton({
     <View style={styles.container}>
       {/* Primary Normal Speed Button */}
       <Pressable
-        onPress={() => void play('normal')}
+        onPress={handlePlayNormal}
         accessibilityRole="button"
         accessibilityLabel="উচ্চারণ শুনুন (Play pronunciation)"
         hitSlop={8}
@@ -97,7 +94,7 @@ export function AudioButton({
       {/* Slow Speed Button (Turtle 🐢) */}
       {showSlow && (
         <Pressable
-          onPress={() => void play('slow')}
+          onPress={handlePlaySlow}
           accessibilityRole="button"
           accessibilityLabel="ধীরে শুনুন (Play slowly)"
           hitSlop={8}

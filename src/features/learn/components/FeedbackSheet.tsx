@@ -91,9 +91,10 @@ export function FeedbackSheet({
             </Text>
             <Text
               style={[
-                typography.readingBody,
+                typography.titleUiContext,
                 {
                   color: colors.ink,
+                  fontSize: 18,
                   fontWeight: '600',
                   marginTop: 2,
                 },

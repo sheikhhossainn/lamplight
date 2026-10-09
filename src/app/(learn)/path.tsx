@@ -205,7 +205,16 @@ export default function LearnPathScreen() {
                           {lesson.title}
                         </Text>
                         <Text style={[typography.metadataCaption, { color: colors.umber, marginTop: 2 }]}>
-                          Lesson {lIdx + 1} of {unit.lessons.length} · {lesson.type}
+                          পাঠ {lIdx + 1}/{unit.lessons.length} ·{' '}
+                          {lesson.type === 'letter'
+                            ? 'অক্ষর'
+                            : lesson.type === 'vocab'
+                              ? 'শব্দভাণ্ডার'
+                              : lesson.type === 'grammar'
+                                ? 'ব্যাকরণ'
+                                : lesson.type === 'reading'
+                                  ? 'পঠন'
+                                  : 'অনুশীলন'}
                         </Text>
                       </View>
 
