@@ -2,13 +2,24 @@ import { useEffect } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Animated, {
   Easing,
+  Extrapolation,
   interpolate,
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
+  withDelay,
   withRepeat,
   withTiming,
 } from 'react-native-reanimated';
-import Svg, { Defs, LinearGradient, Path, RadialGradient, Rect, Stop } from 'react-native-svg';
+import Svg, {
+  Defs,
+  Ellipse,
+  LinearGradient,
+  Path,
+  RadialGradient,
+  Rect,
+  Stop,
+} from 'react-native-svg';
 
 import { LamplightColor } from '@/theme/tokens';
 
@@ -20,7 +31,16 @@ type FlameGlowProps = {
   variant?: 'flicker' | 'glowPulse' | 'static';
   showTile?: boolean;
   lit?: boolean;
+  // Splash ignition: spark at the wick, flame flares up, light blooms, embers drift.
+  ignite?: boolean;
 };
+
+const IGNITE_MS = 1800;
+const EMBERS = [
+  { delay: 0, duration: 3800, drift: 1, x: -0.02 },
+  { delay: 1300, duration: 4600, drift: -1, x: 0.015 },
+  { delay: 2500, duration: 4200, drift: 1, x: 0.03 },
+];
 
 // Coordinate system: 0-96 standard icon box
 const FLAME_BBOX = { x: 33.6, y: 22.08, width: 28.8, height: 36.48 };
@@ -54,11 +74,92 @@ const CORE_OPACITY = [0.92, 0.98, 0.88, 0.97, 0.92, 0.92];
 // Ambient glow breath (slow, rhythmic respiration)
 const GLOW_INTENSITY = [0.55, 0.72, 0.85, 0.68, 0.78, 0.55];
 
-export function FlameGlow({ size = 96, variant = 'flicker', showTile = true, lit = true }: FlameGlowProps) {
+function Ember({ size, delay, duration, drift, x }: { size: number } & (typeof EMBERS)[number]) {
+  const p = useSharedValue(0);
+
+  useEffect(() => {
+    p.value = withDelay(
+      IGNITE_MS + delay,
+      withRepeat(withTiming(1, { duration, easing: Easing.linear }), -1, false),
+    );
+  }, [p, delay, duration]);
+
+  const dot = Math.max(1.5, size * 0.018);
+  const style = useAnimatedStyle(() => ({
+    opacity: interpolate(p.value, [0, 0.15, 0.7, 1], [0, 0.9, 0.45, 0]),
+    transform: [
+      { translateX: Math.sin(p.value * Math.PI * 2) * size * 0.035 * drift },
+      { translateY: -p.value * size * 0.4 },
+      { scale: 1 - p.value * 0.5 },
+    ],
+  }));
+
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        {
+          position: 'absolute',
+          left: size * (0.5 + x) - dot / 2,
+          top: size * 0.32,
+          width: dot,
+          height: dot,
+          borderRadius: dot / 2,
+          backgroundColor: '#FFD27A',
+        },
+        style,
+      ]}
+    />
+  );
+}
+
+export function FlameGlow({
+  size = 96,
+  variant = 'flicker',
+  showTile = true,
+  lit = true,
+  ignite = false,
+}: FlameGlowProps) {
+  const reduced = useReducedMotion();
+  const animateIn = ignite && lit && !reduced;
   // Two independent harmonic oscillators for genuine out-of-phase organic fluid motion
   const mantlePhase = useSharedValue(0);
   const corePhase = useSharedValue(0);
   const breathe = useSharedValue(0.5);
+  // 0 → 1 once, drives the ignition sequence (1 = already lit, no intro)
+  const ignition = useSharedValue(animateIn ? 0 : 1);
+
+  useEffect(() => {
+    if (!animateIn) return;
+    ignition.value = withTiming(1, { duration: IGNITE_MS, easing: Easing.linear });
+  }, [animateIn, ignition]);
+
+  const igniteFlameStyle = useAnimatedStyle(() => {
+    const t = ignition.value;
+    return {
+      opacity: interpolate(t, [0.06, 0.3], [0, 1], Extrapolation.CLAMP),
+      transform: [
+        { scaleX: interpolate(t, [0.06, 0.45, 0.7, 1], [0.55, 1.05, 0.99, 1], Extrapolation.CLAMP) },
+        {
+          scaleY: interpolate(t, [0.06, 0.22, 0.45, 0.7, 1], [0.15, 0.7, 1.1, 0.97, 1], Extrapolation.CLAMP),
+        },
+      ],
+    };
+  });
+
+  const igniteBloomStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(ignition.value, [0.15, 0.75], [0, 1], Extrapolation.CLAMP),
+    transform: [{ scale: interpolate(ignition.value, [0.15, 0.85], [0.55, 1], Extrapolation.CLAMP) }],
+  }));
+
+  const sparkStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(ignition.value, [0, 0.04, 0.16, 0.3], [0, 1, 0.9, 0], Extrapolation.CLAMP),
+    transform: [{ scale: interpolate(ignition.value, [0, 0.16, 0.3], [0.5, 1.6, 0.6], Extrapolation.CLAMP) }],
+  }));
+
+  const baseStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(ignition.value, [0, 0.08], [0, 1], Extrapolation.CLAMP),
+  }));
 
   useEffect(() => {
     if (!lit) return;
@@ -135,6 +236,7 @@ export function FlameGlow({ size = 96, variant = 'flicker', showTile = true, lit
     <View style={{ width: size, height: size }}>
       {/* Dynamic Multi-Stage Ambient Glow Bloom */}
       <Animated.View style={[StyleSheet.absoluteFill, glowStyle]} pointerEvents="none">
+        <Animated.View style={[StyleSheet.absoluteFill, igniteBloomStyle]}>
         <Svg width={size} height={size} viewBox="0 0 96 96">
           <Defs>
             {/* Wide soft atmospheric aura */}
@@ -152,8 +254,38 @@ export function FlameGlow({ size = 96, variant = 'flicker', showTile = true, lit
           </Defs>
           <Rect x={0} y={0} width={96} height={96} fill="url(#outerAura)" />
           <Rect x={0} y={0} width={96} height={96} fill="url(#innerBloom)" />
+          {ignite ? (
+            <>
+              <Defs>
+                <RadialGradient id="pageSpill" cx="48" cy="67.5" r="22" gradientUnits="userSpaceOnUse">
+                  <Stop offset="0%" stopColor={LamplightColor.flameAmber} stopOpacity={0.35} />
+                  <Stop offset="100%" stopColor={LamplightColor.flameAmber} stopOpacity={0} />
+                </RadialGradient>
+              </Defs>
+              <Ellipse cx={48} cy={67.5} rx={22} ry={5} fill="url(#pageSpill)" />
+            </>
+          ) : null}
         </Svg>
+        </Animated.View>
       </Animated.View>
+
+      {/* Parchment page bars the lamp rests on (splash only; the tile variant draws its own) */}
+      {ignite && !showTile ? (
+        <Animated.View style={[StyleSheet.absoluteFill, baseStyle]} pointerEvents="none">
+          <Svg width={size} height={size} viewBox="0 0 96 96">
+            <Rect x={34.56} y={67.2} width={26.88} height={2.88} rx={1.44} fill={LamplightColor.parchment} />
+            <Rect
+              x={39.36}
+              y={73.92}
+              width={17.28}
+              height={2.88}
+              rx={1.44}
+              fill={LamplightColor.parchment}
+              opacity={0.5}
+            />
+          </Svg>
+        </Animated.View>
+      ) : null}
 
       {/* Static Tile & Parchment Paper Bars */}
       {showTile ? (
@@ -184,6 +316,9 @@ export function FlameGlow({ size = 96, variant = 'flicker', showTile = true, lit
           height: flameHeight,
         }}
       >
+        <Animated.View
+          style={[StyleSheet.absoluteFill, { transformOrigin: '50% 100%' }, igniteFlameStyle]}
+        >
         {/* Layer 1: Fluid Aerodynamic Outer Mantle */}
         <Animated.View
           style={[
@@ -256,7 +391,30 @@ export function FlameGlow({ size = 96, variant = 'flicker', showTile = true, lit
             </Svg>
           </Animated.View>
         ) : null}
+        </Animated.View>
       </View>
+
+      {animateIn ? (
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            {
+              position: 'absolute',
+              left: size * 0.5 - size * 0.03,
+              top: (58 / 96) * size - size * 0.03,
+              width: size * 0.06,
+              height: size * 0.06,
+              borderRadius: size * 0.03,
+              backgroundColor: '#FFF4D0',
+            },
+            sparkStyle,
+          ]}
+        />
+      ) : null}
+
+      {animateIn && variant === 'flicker'
+        ? EMBERS.map((e, i) => <Ember key={i} size={size} {...e} />)
+        : null}
     </View>
   );
 }
