@@ -1,0 +1,67 @@
+[
+  {
+    "id": "s-u3-01",
+    "unit": 3,
+    "tokens": [
+      { "text": "これ", "itemId": "word:kore" },
+      { "text": "は", "itemId": "word:wa" },
+      { "text": "ねこ", "itemId": "word:neko" },
+      { "text": "です", "itemId": "word:desu" }
+    ],
+    "accepted": [
+      ["これ", "は", "ねこ", "です"]
+    ]
+  },
+  {
+    "id": "s-u3-02",
+    "unit": 3,
+    "tokens": [
+      { "text": "それ", "itemId": "word:sore" },
+      { "text": "は", "itemId": "word:wa" },
+      { "text": "ほん", "itemId": "word:hon" },
+      { "text": "です", "itemId": "word:desu" }
+    ],
+    "accepted": [
+      ["それ", "は", "ほん", "です"]
+    ]
+  },
+  {
+    "id": "s-u3-03",
+    "unit": 3,
+    "tokens": [
+      { "text": "あれ", "itemId": "word:are" },
+      { "text": "は", "itemId": "word:wa" },
+      { "text": "くるま", "itemId": "word:kuruma" },
+      { "text": "です", "itemId": "word:desu" }
+    ],
+    "accepted": [
+      ["あれ", "は", "くるま", "です"]
+    ]
+  },
+  {
+    "id": "s-u3-04",
+    "unit": 3,
+    "tokens": [
+      { "text": "わたし", "itemId": "word:watashi" },
+      { "text": "は", "itemId": "word:wa" },
+      { "text": "がくせい", "itemId": "word:gakusei" },
+      { "text": "です", "itemId": "word:desu" }
+    ],
+    "accepted": [
+      ["わたし", "は", "がくせい", "です"]
+    ]
+  },
+  {
+    "id": "s-u3-05",
+    "unit": 3,
+    "tokens": [
+      { "text": "これ", "itemId": "word:kore" },
+      { "text": "は", "itemId": "word:wa" },
+      { "text": "いぬ", "itemId": "word:inu" },
+      { "text": "です", "itemId": "word:desu" }
+    ],
+    "accepted": [
+      ["これ", "は", "いぬ", "です"]
+    ]
+  }
+]

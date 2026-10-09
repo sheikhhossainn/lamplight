@@ -1,0 +1,97 @@
+[
+  { "id": "letter:あ", "kind": "letter", "char": "あ", "roman": "a", "say": "あ", "scriptSetId": "hiragana" },
+  { "id": "letter:い", "kind": "letter", "char": "い", "roman": "i", "say": "い", "scriptSetId": "hiragana" },
+  { "id": "letter:う", "kind": "letter", "char": "う", "roman": "u", "say": "う", "scriptSetId": "hiragana" },
+  { "id": "letter:え", "kind": "letter", "char": "え", "roman": "e", "say": "え", "scriptSetId": "hiragana" },
+  { "id": "letter:お", "kind": "letter", "char": "お", "roman": "o", "say": "お", "scriptSetId": "hiragana" },
+
+  { "id": "letter:か", "kind": "letter", "char": "か", "roman": "ka", "say": "か", "scriptSetId": "hiragana" },
+  { "id": "letter:き", "kind": "letter", "char": "き", "roman": "ki", "say": "き", "scriptSetId": "hiragana" },
+  { "id": "letter:く", "kind": "letter", "char": "く", "roman": "ku", "say": "く", "scriptSetId": "hiragana" },
+  { "id": "letter:け", "kind": "letter", "char": "け", "roman": "ke", "say": "け", "scriptSetId": "hiragana" },
+  { "id": "letter:こ", "kind": "letter", "char": "こ", "roman": "ko", "say": "こ", "scriptSetId": "hiragana" },
+
+  { "id": "letter:さ", "kind": "letter", "char": "さ", "roman": "sa", "say": "さ", "scriptSetId": "hiragana" },
+  { "id": "letter:し", "kind": "letter", "char": "し", "roman": "shi", "say": "し", "scriptSetId": "hiragana" },
+  { "id": "letter:す", "kind": "letter", "char": "す", "roman": "su", "say": "す", "scriptSetId": "hiragana" },
+  { "id": "letter:せ", "kind": "letter", "char": "せ", "roman": "se", "say": "せ", "scriptSetId": "hiragana" },
+  { "id": "letter:そ", "kind": "letter", "char": "そ", "roman": "so", "say": "そ", "scriptSetId": "hiragana" },
+
+  { "id": "letter:た", "kind": "letter", "char": "た", "roman": "ta", "say": "た", "scriptSetId": "hiragana" },
+  { "id": "letter:ち", "kind": "letter", "char": "ち", "roman": "chi", "say": "ち", "scriptSetId": "hiragana" },
+  { "id": "letter:つ", "kind": "letter", "char": "つ", "roman": "tsu", "say": "つ", "scriptSetId": "hiragana" },
+  { "id": "letter:て", "kind": "letter", "char": "て", "roman": "te", "say": "て", "scriptSetId": "hiragana" },
+  { "id": "letter:と", "kind": "letter", "char": "と", "roman": "to", "say": "と", "scriptSetId": "hiragana" },
+
+  { "id": "letter:な", "kind": "letter", "char": "な", "roman": "na", "say": "な", "scriptSetId": "hiragana" },
+  { "id": "letter:に", "kind": "letter", "char": "に", "roman": "ni", "say": "に", "scriptSetId": "hiragana" },
+  { "id": "letter:ぬ", "kind": "letter", "char": "ぬ", "roman": "nu", "say": "ぬ", "scriptSetId": "hiragana" },
+  { "id": "letter:ね", "kind": "letter", "char": "ね", "roman": "ne", "say": "ね", "scriptSetId": "hiragana" },
+  { "id": "letter:の", "kind": "letter", "char": "の", "roman": "no", "say": "の", "scriptSetId": "hiragana" },
+
+  { "id": "letter:は", "kind": "letter", "char": "は", "roman": "ha", "say": "は", "scriptSetId": "hiragana" },
+  { "id": "letter:ひ", "kind": "letter", "char": "ひ", "roman": "hi", "say": "ひ", "scriptSetId": "hiragana" },
+  { "id": "letter:ふ", "kind": "letter", "char": "ふ", "roman": "fu", "say": "ふ", "scriptSetId": "hiragana" },
+  { "id": "letter:へ", "kind": "letter", "char": "へ", "roman": "he", "say": "へ", "scriptSetId": "hiragana" },
+  { "id": "letter:ほ", "kind": "letter", "char": "ほ", "roman": "ho", "say": "ほ", "scriptSetId": "hiragana" },
+
+  { "id": "letter:ま", "kind": "letter", "char": "ま", "roman": "ma", "say": "ま", "scriptSetId": "hiragana" },
+  { "id": "letter:み", "kind": "letter", "char": "み", "roman": "mi", "say": "み", "scriptSetId": "hiragana" },
+  { "id": "letter:む", "kind": "letter", "char": "む", "roman": "mu", "say": "む", "scriptSetId": "hiragana" },
+  { "id": "letter:め", "kind": "letter", "char": "め", "roman": "me", "say": "め", "scriptSetId": "hiragana" },
+  { "id": "letter:も", "kind": "letter", "char": "も", "roman": "mo", "say": "も", "scriptSetId": "hiragana" },
+
+  { "id": "letter:や", "kind": "letter", "char": "や", "roman": "ya", "say": "や", "scriptSetId": "hiragana" },
+  { "id": "letter:ゆ", "kind": "letter", "char": "ゆ", "roman": "yu", "say": "ゆ", "scriptSetId": "hiragana" },
+  { "id": "letter:よ", "kind": "letter", "char": "よ", "roman": "yo", "say": "よ", "scriptSetId": "hiragana" },
+
+  { "id": "letter:ら", "kind": "letter", "char": "ら", "roman": "ra", "say": "ら", "scriptSetId": "hiragana" },
+  { "id": "letter:り", "kind": "letter", "char": "り", "roman": "ri", "say": "り", "scriptSetId": "hiragana" },
+  { "id": "letter:る", "kind": "letter", "char": "る", "roman": "ru", "say": "る", "scriptSetId": "hiragana" },
+  { "id": "letter:れ", "kind": "letter", "char": "れ", "roman": "re", "say": "れ", "scriptSetId": "hiragana" },
+  { "id": "letter:ろ", "kind": "letter", "char": "ろ", "roman": "ro", "say": "ろ", "scriptSetId": "hiragana" },
+
+  { "id": "letter:わ", "kind": "letter", "char": "わ", "roman": "wa", "say": "わ", "scriptSetId": "hiragana" },
+  { "id": "letter:を", "kind": "letter", "char": "を", "roman": "wo", "say": "を", "scriptSetId": "hiragana" },
+  { "id": "letter:ん", "kind": "letter", "char": "ん", "roman": "n", "say": "ん", "scriptSetId": "hiragana" },
+
+  { "id": "letter:ア", "kind": "letter", "char": "ア", "roman": "a", "say": "ア", "scriptSetId": "katakana" },
+  { "id": "letter:イ", "kind": "letter", "char": "イ", "roman": "i", "say": "イ", "scriptSetId": "katakana" },
+  { "id": "letter:ウ", "kind": "letter", "char": "ウ", "roman": "u", "say": "ウ", "scriptSetId": "katakana" },
+  { "id": "letter:エ", "kind": "letter", "char": "エ", "roman": "e", "say": "エ", "scriptSetId": "katakana" },
+  { "id": "letter:オ", "kind": "letter", "char": "オ", "roman": "o", "say": "オ", "scriptSetId": "katakana" },
+
+  { "id": "letter:カ", "kind": "letter", "char": "カ", "roman": "ka", "say": "カ", "scriptSetId": "katakana" },
+  { "id": "letter:キ", "kind": "letter", "char": "キ", "roman": "ki", "say": "キ", "scriptSetId": "katakana" },
+  { "id": "letter:ク", "kind": "letter", "char": "ク", "roman": "ku", "say": "ク", "scriptSetId": "katakana" },
+  { "id": "letter:ケ", "kind": "letter", "char": "ケ", "roman": "ke", "say": "ケ", "scriptSetId": "katakana" },
+  { "id": "letter:コ", "kind": "letter", "char": "コ", "roman": "ko", "say": "コ", "scriptSetId": "katakana" },
+
+  { "id": "letter:サ", "kind": "letter", "char": "サ", "roman": "sa", "say": "サ", "scriptSetId": "katakana" },
+  { "id": "letter:シ", "kind": "letter", "char": "シ", "roman": "shi", "say": "シ", "scriptSetId": "katakana" },
+  { "id": "letter:ス", "kind": "letter", "char": "ス", "roman": "su", "say": "ス", "scriptSetId": "katakana" },
+  { "id": "letter:セ", "kind": "letter", "char": "セ", "roman": "se", "say": "セ", "scriptSetId": "katakana" },
+  { "id": "letter:ソ", "kind": "letter", "char": "ソ", "roman": "so", "say": "ソ", "scriptSetId": "katakana" },
+
+  { "id": "letter:タ", "kind": "letter", "char": "タ", "roman": "ta", "say": "タ", "scriptSetId": "katakana" },
+  { "id": "letter:チ", "kind": "letter", "char": "チ", "roman": "chi", "say": "チ", "scriptSetId": "katakana" },
+  { "id": "letter:ツ", "kind": "letter", "char": "ツ", "roman": "tsu", "say": "ツ", "scriptSetId": "katakana" },
+  { "id": "letter:テ", "kind": "letter", "char": "テ", "roman": "te", "say": "テ", "scriptSetId": "katakana" },
+  { "id": "letter:ト", "kind": "letter", "char": "ト", "roman": "to", "say": "ト", "scriptSetId": "katakana" },
+
+  { "id": "word:kore", "kind": "word", "text": "これ", "reading": "これ", "roman": "kore", "pos": "pronoun" },
+  { "id": "word:sore", "kind": "word", "text": "それ", "reading": "それ", "roman": "sore", "pos": "pronoun" },
+  { "id": "word:are", "kind": "word", "text": "あれ", "reading": "あれ", "roman": "are", "pos": "pronoun" },
+  { "id": "word:neko", "kind": "word", "text": "ねこ", "reading": "ねこ", "roman": "neko", "pos": "noun" },
+  { "id": "word:inu", "kind": "word", "text": "いぬ", "reading": "いぬ", "roman": "inu", "pos": "noun" },
+  { "id": "word:hon", "kind": "word", "text": "ほん", "reading": "ほん", "roman": "hon", "pos": "noun" },
+  { "id": "word:kuruma", "kind": "word", "text": "くるま", "reading": "くるま", "roman": "kuruma", "pos": "noun" },
+  { "id": "word:watashi", "kind": "word", "text": "わたし", "reading": "わたし", "roman": "watashi", "pos": "pronoun" },
+  { "id": "word:gakusei", "kind": "word", "text": "がくせい", "reading": "がくせい", "roman": "gakusei", "pos": "noun" },
+  { "id": "word:sensei", "kind": "word", "text": "せんせい", "reading": "せんせい", "roman": "sensei", "pos": "noun" },
+  { "id": "word:wa", "kind": "word", "text": "は", "reading": "わ", "roman": "wa", "pos": "particle" },
+  { "id": "word:desu", "kind": "word", "text": "です", "reading": "です", "roman": "desu", "pos": "verb" },
+
+  { "id": "grammar:wa", "kind": "grammar", "pattern": "A は B", "exampleIds": ["s-u3-01", "s-u3-04"] },
+  { "id": "grammar:desu", "kind": "grammar", "pattern": "… です", "exampleIds": ["s-u3-01", "s-u3-02", "s-u3-03"] }
+]

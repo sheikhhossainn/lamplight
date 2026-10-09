@@ -1,0 +1,130 @@
+{
+  "targetLang": "ja",
+  "title": "Japanese for Bangla Speakers",
+  "units": [
+    {
+      "id": "unit-1",
+      "number": 1,
+      "title": "Hiragana",
+      "grammarTheme": "Basic Script",
+      "lessons": [
+        {
+          "id": "ja-u1-l1",
+          "title": "Vowels: a, i, u, e, o",
+          "type": "letter",
+          "itemIds": ["letter:あ", "letter:い", "letter:う", "letter:え", "letter:お"]
+        },
+        {
+          "id": "ja-u1-l2",
+          "title": "K-row: ka, ki, ku, ke, ko",
+          "type": "letter",
+          "itemIds": ["letter:か", "letter:き", "letter:く", "letter:け", "letter:こ"]
+        },
+        {
+          "id": "ja-u1-l3",
+          "title": "S-row: sa, shi, su, se, so",
+          "type": "letter",
+          "itemIds": ["letter:さ", "letter:し", "letter:す", "letter:せ", "letter:そ"]
+        },
+        {
+          "id": "ja-u1-l4",
+          "title": "T-row: ta, chi, tsu, te, to",
+          "type": "letter",
+          "itemIds": ["letter:た", "letter:ち", "letter:つ", "letter:て", "letter:と"]
+        },
+        {
+          "id": "ja-u1-l5",
+          "title": "N-row: na, ni, nu, ne, no",
+          "type": "letter",
+          "itemIds": ["letter:な", "letter:に", "letter:ぬ", "letter:ね", "letter:の"]
+        },
+        {
+          "id": "ja-u1-l6",
+          "title": "H-row: ha, hi, fu, he, ho",
+          "type": "letter",
+          "itemIds": ["letter:は", "letter:ひ", "letter:ふ", "letter:へ", "letter:ほ"]
+        },
+        {
+          "id": "ja-u1-l7",
+          "title": "M-row: ma, mi, mu, me, mo",
+          "type": "letter",
+          "itemIds": ["letter:ま", "letter:み", "letter:む", "letter:め", "letter:も"]
+        },
+        {
+          "id": "ja-u1-l8",
+          "title": "Y, R, W, N rows",
+          "type": "letter",
+          "itemIds": [
+            "letter:や", "letter:ゆ", "letter:よ",
+            "letter:ら", "letter:り", "letter:る", "letter:れ", "letter:ろ",
+            "letter:わ", "letter:を", "letter:ん"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "unit-2",
+      "number": 2,
+      "title": "Katakana",
+      "grammarTheme": "Foreign Words & Names",
+      "lessons": [
+        {
+          "id": "ja-u2-l1",
+          "title": "Katakana Vowels & K-row",
+          "type": "letter",
+          "itemIds": [
+            "letter:ア", "letter:イ", "letter:ウ", "letter:エ", "letter:オ",
+            "letter:カ", "letter:キ", "letter:ク", "letter:ケ", "letter:コ"
+          ]
+        },
+        {
+          "id": "ja-u2-l2",
+          "title": "Katakana S & T rows",
+          "type": "letter",
+          "itemIds": [
+            "letter:サ", "letter:シ", "letter:ス", "letter:セ", "letter:ソ",
+            "letter:タ", "letter:チ", "letter:ツ", "letter:テ", "letter:ト"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "unit-3",
+      "number": 3,
+      "title": "AはBです",
+      "grammarTheme": "Topic Marker は & Copula です",
+      "lessons": [
+        {
+          "id": "ja-u3-l1",
+          "title": "This & That: kore, sore, are",
+          "type": "vocab",
+          "itemIds": ["word:kore", "word:sore", "word:are", "word:neko", "word:inu"]
+        },
+        {
+          "id": "ja-u3-l2",
+          "title": "Basic Pattern: A は B です",
+          "type": "grammar",
+          "itemIds": ["grammar:wa", "grammar:desu", "word:wa", "word:desu"],
+          "sentenceIds": ["s-u3-01", "s-u3-02", "s-u3-05"]
+        },
+        {
+          "id": "ja-u3-l3",
+          "title": "People & Objects: watashi, hon, gakusei",
+          "type": "vocab",
+          "itemIds": ["word:watashi", "word:hon", "word:kuruma", "word:gakusei", "word:sensei"]
+        },
+        {
+          "id": "ja-u3-l4",
+          "title": "Sentence Building Practice",
+          "type": "review",
+          "itemIds": [
+            "word:kore", "word:sore", "word:are", "word:neko", "word:inu",
+            "word:hon", "word:kuruma", "word:watashi", "word:gakusei", "word:sensei",
+            "grammar:wa", "grammar:desu"
+          ],
+          "sentenceIds": ["s-u3-01", "s-u3-02", "s-u3-03", "s-u3-04", "s-u3-05"]
+        }
+      ]
+    }
+  ]
+}

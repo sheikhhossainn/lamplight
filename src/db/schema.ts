@@ -495,5 +495,36 @@ export const MIGRATIONS: string[] = [
   CREATE INDEX IF NOT EXISTS analytics_queue_occurred_idx
     ON analytics_queue (occurred_at ASC);
   `,
+  // v25 — Course progress. Tracks unit/lesson completion and in-progress exercise resume point.
+  `
+  CREATE TABLE IF NOT EXISTS course_progress (
+    lang TEXT NOT NULL,
+    lesson_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    exercise_index INTEGER NOT NULL DEFAULT 0,
+    best_accuracy REAL,
+    completed_at INTEGER,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (lang, lesson_id)
+  );
+  `,
+  // v26 — Course items spaced repetition (SRS). Tracks letters, vocabulary words, and grammar points learned.
+  `
+  CREATE TABLE IF NOT EXISTS course_items (
+    lang TEXT NOT NULL,
+    item_id TEXT NOT NULL,
+    srs_stage INTEGER NOT NULL DEFAULT 0,
+    srs_interval_days REAL NOT NULL DEFAULT 0,
+    srs_ease_factor REAL NOT NULL DEFAULT 2.5,
+    srs_due_date INTEGER NOT NULL DEFAULT 0,
+    srs_reps INTEGER NOT NULL DEFAULT 0,
+    srs_lapses INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (lang, item_id)
+  );
+
+  CREATE INDEX IF NOT EXISTS course_items_due_idx
+    ON course_items (lang, srs_due_date ASC);
+  `,
 ];
 
