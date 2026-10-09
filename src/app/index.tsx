@@ -1,7 +1,7 @@
 import { Redirect, router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Dimensions, ScrollView, StyleSheet, Text, View } from 'react-native';
-import Animated, { Easing, FadeIn, ReduceMotion } from 'react-native-reanimated';
+import Animated, { Easing, FadeIn, FadeInDown, ReduceMotion } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 
@@ -83,20 +83,19 @@ export default function SplashScreen() {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        <Animated.View
-          entering={FadeIn.duration(280).easing(EASE_OUT).reduceMotion(ReduceMotion.System)}
-          style={styles.brandHeader}
-        >
-          <FlameGlow size={56} variant="flicker" showTile={false} />
-          <Text
+        <View style={styles.brandHeader}>
+          <FlameGlow size={120} variant="flicker" showTile={false} ignite />
+          <Animated.Text
+            entering={FadeInDown.delay(900).duration(600).easing(EASE_OUT).reduceMotion(ReduceMotion.System)}
             style={[
               typography.wordmark,
-              { color: LamplightColor.parchment, fontSize: 32, letterSpacing: 0.8, marginTop: 8 },
+              { color: LamplightColor.parchment, fontSize: 32, letterSpacing: 0.8, marginTop: 4 },
             ]}
           >
             Lamplight
-          </Text>
-          <Text
+          </Animated.Text>
+          <Animated.Text
+            entering={FadeInDown.delay(1150).duration(600).easing(EASE_OUT).reduceMotion(ReduceMotion.System)}
             style={[
               typography.metadataCaption,
               {
@@ -110,11 +109,11 @@ export default function SplashScreen() {
             ]}
           >
             Read foreign literature in its original language with companion translations.
-          </Text>
-        </Animated.View>
+          </Animated.Text>
+        </View>
 
         <Animated.View
-          entering={FadeIn.delay(80).duration(260).easing(EASE_OUT).reduceMotion(ReduceMotion.System)}
+          entering={FadeIn.delay(1300).duration(400).easing(EASE_OUT).reduceMotion(ReduceMotion.System)}
           style={styles.cardContainer}
         >
           <AuthCard

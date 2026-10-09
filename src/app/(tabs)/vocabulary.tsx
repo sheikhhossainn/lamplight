@@ -1072,8 +1072,12 @@ export default function VocabularyScreen() {
                             style={[
                               styles.filterChip,
                               {
-                                backgroundColor: isSelected ? colors.primaryDark : colors.card,
-                                borderColor: isSelected ? colors.primaryDark : colors.hairline,
+                                backgroundColor: isSelected
+                                  ? isLamp ? colors.flameAmber : colors.primaryDark
+                                  : colors.card,
+                                borderColor: isSelected
+                                  ? isLamp ? colors.flameAmber : colors.primaryDark
+                                  : colors.hairline,
                                 borderRadius: radius.pill,
                               },
                             ]}
@@ -1082,7 +1086,9 @@ export default function VocabularyScreen() {
                               style={[
                                 typography.eyebrowLabel,
                                 {
-                                  color: isSelected ? colors.parchment : colors.umber,
+                                  color: isSelected
+                                    ? isLamp ? colors.primaryDark : colors.parchment
+                                    : colors.umber,
                                   fontSize: 10,
                                 },
                               ]}
