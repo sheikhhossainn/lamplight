@@ -18,6 +18,10 @@ import { CulturePatternBand } from '@/components/CulturePatternBand';
 import { CultureScene, hasCultureScene } from '@/components/CultureScene';
 import { SCENE_HEIGHT } from '@/components/cultureScenes';
 import { HomeGuideModal } from '@/components/HomeGuideModal';
+import { ModeSwitch } from '@/components/ModeSwitch';
+import { switchToLearn } from '@/features/learn/appMode';
+import { isLearnSpaceAvailable } from '@/features/learn/availability';
+import { getLearnerLevel } from '@/features/settings/learnerLevel';
 import { WordsIllustration } from '@/components/NotebookIllustrations';
 import {
   ChevronRightIcon,
@@ -390,6 +394,24 @@ export default function Homescreen() {
   useEffect(() => {
     void loadSpotlight();
   }, [loadSpotlight]);
+
+  // On cold start / fresh landing after onboarding, check if user should land in Learn space (§2.4, B7)
+  useEffect(() => {
+    void (async () => {
+      try {
+        const [savedMode, level] = await Promise.all([
+          getSetting('app_mode'),
+          getLearnerLevel(targetReadingLanguage),
+        ]);
+        const available = isLearnSpaceAvailable(targetReadingLanguage, motherTongue, level);
+        if (available && (savedMode === 'learn' || level === 'zero')) {
+          switchToLearn();
+        }
+      } catch {
+        // Non-fatal
+      }
+    })();
+  }, [targetReadingLanguage, motherTongue]);
 
   const userSparks = useMemo(() => {
     const list = LITERARY_SPARKS.filter(
@@ -898,6 +920,7 @@ export default function Homescreen() {
       >
         {/* Top Atmosphere Greeting */}
         <View style={styles.headerRow}>
+          <ModeSwitch active="read" />
           <View style={[styles.headerTitleRow, { flexDirection: headerRTL ? 'row-reverse' : 'row' }]}>
             <View style={{ flex: 1, paddingRight: headerRTL ? 0 : spacing.sm, paddingLeft: headerRTL ? spacing.sm : 0 }}>
               <Text

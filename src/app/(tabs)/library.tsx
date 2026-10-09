@@ -20,6 +20,7 @@ import Svg, { Path, Rect } from 'react-native-svg';
 
 import { BookSpine } from '@/components/BookSpine';
 import { CultureEditionBanner } from '@/components/CultureEditionBanner';
+import { ModeSwitch } from '@/components/ModeSwitch';
 import { BookmarkIcon, CloseIcon, FilterIcon, SearchIcon } from '@/components/icons';
 import { logEvent } from '@/features/analytics/analytics';
 import { BOOK_CATEGORIES, categoriesForBook } from '@/features/content-ingestion/bookCategories';
@@ -569,6 +570,7 @@ export default function LibraryScreen() {
         showsVerticalScrollIndicator={false}
         overScrollMode="never"
       >
+      <ModeSwitch active="read" />
       <View style={styles.titleRow}>
         <View style={{ flex: 1 }}>
           <Text style={[getNativeUiTextStyle(motherTongue, 'display'), { color: colors.ink }]}>

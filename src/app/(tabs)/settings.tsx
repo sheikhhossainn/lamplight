@@ -16,6 +16,7 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CheckIcon, ChevronRightIcon, MoonIcon as ThemeMoonIcon, SunIcon as ThemeSunIcon } from '@/components/icons';
 import { CultureEditionBanner } from '@/components/CultureEditionBanner';
+import { ModeSwitch } from '@/components/ModeSwitch';
 import {
   useAppUpdateBanner,
   type AppUpdateStatus,
@@ -747,6 +748,7 @@ export default function SettingsScreen() {
       }}
       showsVerticalScrollIndicator={false}
     >
+      <ModeSwitch active="read" />
       <Text style={[getNativeUiTextStyle(motherTongue, 'display'), { color: colors.ink, marginBottom: spacing.lg }]}>
         {getHomepageLabels(motherTongue).settingsTitle}
       </Text>

@@ -235,6 +235,13 @@ function AppShell() {
         <Stack.Screen name="reader/[bookId]" options={{ contentStyle: { backgroundColor: '#F4EBD9' } }} />
         <Stack.Screen name="book/[id]" options={{ contentStyle: { backgroundColor: colors.parchment } }} />
         <Stack.Screen name="saved-books" options={{ contentStyle: { backgroundColor: colors.parchment } }} />
+        <Stack.Screen
+          name="(learn)"
+          options={{
+            animation: 'fade',
+            contentStyle: { backgroundColor: colors.libraryBackground },
+          }}
+        />
         <Stack.Screen name="learn/[lang]" options={{ contentStyle: { backgroundColor: colors.libraryBackground } }} />
         <Stack.Screen name="bible/[bookId]" options={{ contentStyle: { backgroundColor: colors.parchment } }} />
         <Stack.Screen name="bible-nt/[bookId]" options={{ contentStyle: { backgroundColor: colors.parchment } }} />

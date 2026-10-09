@@ -22,6 +22,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { AccountProtectionModal, type AccountTriggerReason } from '@/components/AccountProtectionModal';
 import { BookSpine } from '@/components/BookSpine';
 import { CultureEditionBanner } from '@/components/CultureEditionBanner';
+import { ModeSwitch } from '@/components/ModeSwitch';
 import { ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, SpeakerIcon, TrashIcon } from '@/components/icons';
 import {
   FlashcardsIllustration,
@@ -487,6 +488,7 @@ export default function VocabularyScreen() {
         { backgroundColor: colors.parchment, paddingHorizontal: spacing.xl, paddingTop: insets.top + 16 },
       ]}
     >
+      <ModeSwitch active="read" />
       <View style={styles.headerRow}>
         <Text style={[getNativeUiTextStyle(motherTongue, 'display'), { color: colors.ink }]}>
           {getHomepageLabels(motherTongue).notebookTitle}

@@ -41,7 +41,9 @@ import Svg, { Circle, Defs, LinearGradient, Path, RadialGradient, Rect, Stop } f
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 
-import { BookmarkIcon, ChevronLeftIcon, CloseIcon, MenuIcon, MoonIcon, QuestionIcon, SearchIcon, SoundWaveIcon, SpeakerIcon, StarIcon, SunIcon, TranslateIcon } from '@/components/icons';
+import { BookmarkIcon, ChevronLeftIcon, CloseIcon, MenuIcon, MoonIcon, QuestionIcon, SearchIcon, SoundWaveIcon, SpeakerIcon, SparkleIcon, StarIcon, SunIcon, TranslateIcon } from '@/components/icons';
+import { useLearnSpaceAvailable } from '@/features/learn/availability';
+import { switchToLearn } from '@/features/learn/appMode';
 import { AmbiencePicker } from '@/features/ambience/AmbiencePicker';
 import { useAmbienceTrackId } from '@/features/ambience/ambiencePreference';
 import { ambienceTrackById } from '@/features/ambience/tracks';
@@ -1236,6 +1238,8 @@ export default function ReaderScreen() {
   const arrowAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: swipeArrowX.value }],
   }));
+
+  const isLearnSpaceAvailable = useLearnSpaceAvailable();
 
   const isBangla =
     book?.source === 'bangla_api' ||
@@ -3137,6 +3141,18 @@ export default function ReaderScreen() {
             <TranslateIcon color={currentTranslation?.status === 'ready' ? colors.flameAmber : isLamp ? READING_TEXT_DARK : READING_TEXT_LIGHT} size={18} />
             <Text style={[typography.uiRowTitle, styles.chromeMenuLabel, { color: isLamp ? READING_TEXT_DARK : READING_TEXT_LIGHT }]}>Translate Page</Text>
           </Pressable>
+          {isLearnSpaceAvailable ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Practice grammar"
+              testID="reader-practice-grammar-button"
+              onPress={() => closeChromeMenu(() => switchToLearn())}
+              style={styles.chromeMenuRow}
+            >
+              <SparkleIcon color={colors.flameAmber} size={18} />
+              <Text style={[typography.uiRowTitle, styles.chromeMenuLabel, { color: isLamp ? READING_TEXT_DARK : READING_TEXT_LIGHT }]}>Practice Grammar</Text>
+            </Pressable>
+          ) : null}
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Translation language"

@@ -14,7 +14,7 @@ type ThemeAwareTabVisualProps = {
   Icon: TabIcon;
 };
 
-function ThemeAwareTabIcon({ focused, Icon }: ThemeAwareTabVisualProps) {
+export function ThemeAwareTabIcon({ focused, Icon }: ThemeAwareTabVisualProps) {
   const { colors } = useTheme();
 
   return (
@@ -47,12 +47,12 @@ function SettingsTabVisual({ focused }: { focused: boolean }) {
   );
 }
 
-type ThemeAwareTabLabelProps = {
+export type ThemeAwareTabLabelProps = {
   focused: boolean;
   label: string;
 };
 
-function ThemeAwareTabLabel({ focused, label }: ThemeAwareTabLabelProps) {
+export function ThemeAwareTabLabel({ focused, label }: ThemeAwareTabLabelProps) {
   const { colors, typography } = useTheme();
 
   return (
@@ -74,7 +74,7 @@ function ThemeAwareTabLabel({ focused, label }: ThemeAwareTabLabelProps) {
   );
 }
 
-function ThemeAwareTabBarBackground() {
+export function ThemeAwareTabBarBackground() {
   const { colors } = useTheme();
 
   return (
@@ -92,39 +92,34 @@ function ThemeAwareTabBarBackground() {
   );
 }
 
+export function getSharedTabScreenOptions(theme: ReturnType<typeof useTheme>) {
+  const { colors, typography, layout } = theme;
+  return {
+    headerShown: false,
+    animation: 'none' as const,
+    freezeOnBlur: true,
+    sceneStyle: { backgroundColor: colors.libraryBackground },
+    tabBarActiveTintColor: colors.ink,
+    tabBarInactiveTintColor: colors.straw,
+    tabBarBackground: ThemeAwareTabBarBackground,
+    tabBarStyle: {
+      height: layout.tabBarHeight,
+      backgroundColor: 'transparent',
+      borderTopColor: 'transparent',
+      borderTopWidth: 0,
+    },
+    tabBarLabelStyle: {
+      fontFamily: typography.eyebrowLabel.fontFamily,
+      fontSize: 11,
+    },
+  };
+}
+
 export default function TabsLayout() {
-  const { colors, typography, layout } = useTheme();
+  const theme = useTheme();
 
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        // Tabs are peers: a theme change must not animate focus between them.
-        animation: 'none',
-        // Hidden tabs don't re-render until focused — keeps the theme swap (a
-        // whole-app re-render) down to the visible screen, so it lands fast.
-        freezeOnBlur: true,
-        // The tab scene container defaults to white — theme it so navigating
-        // into the tabs (e.g. from Onboarding) never flashes white before the
-        // screen paints.
-        sceneStyle: { backgroundColor: colors.libraryBackground },
-        // Custom icon/label layers below own the tint animation. Keeping these
-        // stable prevents the navigator from starting a second focus-tint animation.
-        tabBarActiveTintColor: colors.ink,
-        tabBarInactiveTintColor: colors.straw,
-        tabBarBackground: ThemeAwareTabBarBackground,
-        tabBarStyle: {
-          height: layout.tabBarHeight,
-          backgroundColor: 'transparent',
-          borderTopColor: 'transparent',
-          borderTopWidth: 0,
-        },
-        tabBarLabelStyle: {
-          fontFamily: typography.eyebrowLabel.fontFamily,
-          fontSize: 11,
-        },
-      }}
-    >
+    <Tabs screenOptions={getSharedTabScreenOptions(theme)}>
       <Tabs.Screen
         name="homescreen"
         options={{
