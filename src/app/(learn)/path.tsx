@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -7,7 +7,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 
 import { ModeSwitch } from '@/components/ModeSwitch';
@@ -29,26 +29,28 @@ export default function LearnPathScreen() {
   const [progressMap, setProgressMap] = useState<Map<string, CourseProgressRecord>>(new Map());
   const [dueCount, setDueCount] = useState(0);
 
-  useEffect(() => {
-    let mounted = true;
-    void Promise.all([
-      getAllCourseProgress('ja'),
-      getDueCourseItems('ja'),
-    ]).then(([progressList, dueItems]) => {
-      if (mounted) {
-        const map = new Map<string, CourseProgressRecord>();
-        for (const p of progressList) {
-          map.set(p.lessonId, p);
+  useFocusEffect(
+    useCallback(() => {
+      let mounted = true;
+      void Promise.all([
+        getAllCourseProgress('ja'),
+        getDueCourseItems('ja'),
+      ]).then(([progressList, dueItems]) => {
+        if (mounted) {
+          const map = new Map<string, CourseProgressRecord>();
+          for (const p of progressList) {
+            map.set(p.lessonId, p);
+          }
+          setProgressMap(map);
+          setDueCount(dueItems.length);
         }
-        setProgressMap(map);
-        setDueCount(dueItems.length);
-      }
-    }).catch(() => {});
+      }).catch(() => {});
 
-    return () => {
-      mounted = false;
-    };
-  }, []);
+      return () => {
+        mounted = false;
+      };
+    }, []),
+  );
 
   const manifest = coursePkg?.manifest;
   const allLessonsInOrder = (manifest?.units ?? []).flatMap((u) => u.lessons.map((l) => l.id));

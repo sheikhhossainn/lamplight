@@ -242,6 +242,13 @@ function AppShell() {
             contentStyle: { backgroundColor: colors.libraryBackground },
           }}
         />
+        <Stack.Screen
+          name="learn/lesson/[lessonId]"
+          options={{
+            animation: 'fade_from_bottom',
+            contentStyle: { backgroundColor: colors.libraryBackground },
+          }}
+        />
         <Stack.Screen name="learn/[lang]" options={{ contentStyle: { backgroundColor: colors.libraryBackground } }} />
         <Stack.Screen name="bible/[bookId]" options={{ contentStyle: { backgroundColor: colors.parchment } }} />
         <Stack.Screen name="bible-nt/[bookId]" options={{ contentStyle: { backgroundColor: colors.parchment } }} />
