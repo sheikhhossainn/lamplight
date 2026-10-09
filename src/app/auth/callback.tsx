@@ -60,7 +60,7 @@ export default function AuthCallbackScreen() {
           // If no credentials detected after 2 seconds, redirect to login
           const timer = setTimeout(() => {
             if (isMounted) {
-              router.replace('/login');
+              router.replace('/login' as any);
             }
           }, 2000);
           return () => clearTimeout(timer);
@@ -96,7 +96,7 @@ export default function AuthCallbackScreen() {
             {errorMessage}
           </Text>
           <Text
-            onPress={() => router.replace('/login')}
+            onPress={() => router.replace('/login' as any)}
             style={[
               typography.uiRowTitle,
               { color: colors.flameAmber, marginTop: spacing.lg, textDecorationLine: 'underline' },

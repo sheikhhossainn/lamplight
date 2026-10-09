@@ -40,7 +40,7 @@ import { hydrateTargetLanguage } from '@/features/settings/languagePair';
 import { hydrateTargetReadingLanguage } from '@/features/settings/targetReadingLanguage';
 import { hydrateLiteraryTheme } from '@/features/settings/literaryTheme';
 import { hydrateReadingTheme } from '@/features/settings/readingTheme';
-import { hydrateOnboardingStatus, setDevOnboardingOverride } from '@/features/settings/onboardingStatus';
+import { hydrateOnboardingStatus } from '@/features/settings/onboardingStatus';
 import { hydratePageStyle } from '@/features/settings/pageStylePrefs';
 import { hydrateReadingTypography } from '@/features/settings/readingPrefs';
 import { cleanupPartialDownloads } from '@/features/storage/storageManager';
@@ -110,8 +110,6 @@ export default function RootLayout() {
     ])
       .catch(() => {})
       .then(() => {
-        // TEMP (testing): force onboarding on every dev launch. Remove before commit.
-        setDevOnboardingOverride(true);
         setOnboardingChecked(true);
       });
   }, []);
