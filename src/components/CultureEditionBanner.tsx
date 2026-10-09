@@ -6,6 +6,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { CultureMotif } from '@/components/CultureMotif';
+import { CulturePatternBand } from '@/components/CulturePatternBand';
 import { LamplightClassicThemeIcon } from '@/components/icons';
 import {
   getLiteraryThemeOption,
@@ -17,6 +18,7 @@ import {
   type TargetReadingLanguageCode,
 } from '@/features/settings/targetReadingLanguage';
 import { useTheme } from '@/theme/ThemeProvider';
+import { getCultureCardShape } from '@/theme/cultureShape';
 import { getCultureMaterial, getCultureThemeColors } from '@/theme/tokens';
 import { getNativeUiTextStyle } from '@/theme/typography';
 
@@ -104,16 +106,18 @@ export function CultureEditionBanner({
         {
           borderLeftWidth: isRTL ? 0 : 4,
           borderRightWidth: isRTL ? 4 : 0,
-          borderRadius: radius.card,
+          ...getCultureCardShape(cultureTheme, radius.card),
           marginTop: spacing.xsm,
           paddingHorizontal: spacing.md,
           paddingVertical: spacing.sm,
+          paddingBottom: spacing.sm + 6,
           flexDirection: isRTL ? 'row-reverse' : 'row',
         },
       ]}
       accessibilityLabel={`${presentation.title} reading theme. ${presentation.nativeTitle}`}
     >
       <CultureMotif theme={cultureTheme} color={material.accent} />
+      <CulturePatternBand theme={cultureTheme} color={material.accent} opacity={0.45} style={{ bottom: 0 }} />
       <Animated.View
         style={[
           styles.monogram,

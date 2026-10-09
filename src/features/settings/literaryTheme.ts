@@ -583,16 +583,16 @@ function getModularSubtitle(
 ): string {
   if (motherTongue === 'bn') {
     if (targetLanguage === 'en') {
-      if (theme === 'japanese') return 'ওয়াশি কাগজ ও কালির শান্ততায় ইংরেজি ধ্রুপদী সাহিত্য';
-      if (theme === 'korean') return 'হাঁজি কাগজ ও কালির শান্ততায় ইংরেজি ধ্রুপদী সাহিত্য';
-      if (theme === 'bengali') return 'নদী ও কালির স্নিগ্ধতায় ইংরেজি ধ্রুপদী সাহিত্য';
-      if (theme === 'arabic') return 'আরবি নকশা ও স্বর্ণাভ আভার শান্ততায় ইংরেজি ধ্রুপদী সাহিত্য';
+      if (theme === 'japanese') return 'ওয়াশি কাগজ ও কালির শান্ত আবহে ইংরেজি ধ্রুপদী সাহিত্য পাঠ';
+      if (theme === 'korean') return 'হাঁজি কাগজ ও কালির শান্ত আবহে ইংরেজি ধ্রুপদী সাহিত্য পাঠ';
+      if (theme === 'bengali') return 'নদী ও কালির স্নিগ্ধ আবহে ইংরেজি ধ্রুপদী সাহিত্য পাঠ';
+      if (theme === 'arabic') return 'আরবি নকশা ও স্বর্ণাভ আভার আবহে ইংরেজি ধ্রুপদী সাহিত্য পাঠ';
       if (theme === 'classic') return 'উষ্ণ পার্চমেন্ট, চারকোল কালি ও শান্ত পাঠসংস্করণ';
       return 'মার্জিন ও ধ্রুপদী হরফে ইংরেজি সাহিত্য পাঠ';
     }
     if (targetLanguage === 'bn') {
-      if (theme === 'japanese') return 'ওয়াশি কাগজের শান্ততায় বাংলা সাহিত্য পাঠ';
-      if (theme === 'korean') return 'হাঁজি কাগজের স্নিগ্ধতায় বাংলা সাহিত্যের রূপ';
+      if (theme === 'japanese') return 'ওয়াশি কাগজের শান্ত আবহে বাংলা সাহিত্য পাঠ';
+      if (theme === 'korean') return 'হাঁজি কাগজের স্নিগ্ধ আবহে বাংলা সাহিত্য পাঠ';
       if (theme === 'bengali') return 'নদী, কাগজ ও কালির পাঠসংস্করণ';
       if (theme === 'classic') return 'উষ্ণ পার্চমেন্ট, চারকোল কালি ও শান্ত পাঠসংস্করণ';
       return 'শান্ত মার্জিন ও কালির পাঠসংস্করণ';

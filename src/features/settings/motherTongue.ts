@@ -3,6 +3,8 @@ import { useSyncExternalStore } from 'react';
 import { getSetting, setSetting } from '@/db/repositories/appSettings';
 import { setTargetLanguage, type TargetLanguage } from '@/features/settings/languagePair';
 
+import type { TargetReadingLanguageCode } from '@/features/settings/targetReadingLanguage';
+
 export type MotherTongueCode = 'bn' | 'ja' | 'ko' | 'ar' | 'en';
 
 export type MotherTongueOption = {
@@ -121,6 +123,12 @@ export function getScriptureLabels(code: MotherTongueCode = currentMotherTongue)
   return SCRIPTURE_LABELS[code];
 }
 
+/** Render ASCII digits as Bengali numerals for the bn locale; other locales unchanged. */
+export function localizeDigits(value: number | string, code: MotherTongueCode): string {
+  const s = String(value);
+  return code === 'bn' ? s.replace(/\d/g, (d) => '০১২৩৪৫৬৭৮৯'[Number(d)]) : s;
+}
+
 export type HomepageLabels = {
   greetingMorning: string;
   greetingMorningSub: string;
@@ -130,6 +138,15 @@ export type HomepageLabels = {
   greetingEveningSub: string;
   greetingNight: string;
   greetingNightSub: string;
+  libraryTitle: string;
+  searchBooks: string;
+  resumeShelfTitle: string;
+  importEpub: string;
+  importing: string;
+  favorites: string;
+  allBooks: string;
+  notebookTitle: string;
+  settingsTitle: string;
   currentlyReading: string;
   placeKept: string;
   continueReading: string;
@@ -157,6 +174,17 @@ export type HomepageLabels = {
   calibratedForYou: string;
   exploreLibrary: string;
   startReading: string;
+  percentComplete: (percent: number, chapter: number) => string;
+  wordsWaiting: (count: number) => string;
+  reviewBlurb: string;
+  allReviewed: string;
+  allReviewedBlurb: string;
+  readLink: string;
+  chaptersCount: (count: number) => string;
+  completeWork: string;
+  classicsTitle: string;
+  classicsAuthors: string;
+  shelfByTarget: Record<TargetReadingLanguageCode, string>;
 };
 
 const HOMEPAGE_LABELS: Record<MotherTongueCode, HomepageLabels> = {
@@ -167,14 +195,23 @@ const HOMEPAGE_LABELS: Record<MotherTongueCode, HomepageLabels> = {
     greetingAfternoonSub: 'দিনের ব্যস্ততায় এক মুহূর্তের প্রশান্তি',
     greetingEvening: 'শুভ সন্ধ্যা',
     greetingEveningSub: 'প্রদীপের আলো স্নিগ্ধ ও প্রস্তুত',
-    greetingNight: 'রাত্রিকালীন পাঠ',
+    greetingNight: 'শুভ রাত্রি',
     greetingNightSub: 'রাত একটি পাতা, আর প্রদীপ তার একমাত্র আলো',
+    libraryTitle: 'আপনার তাক',
+    searchBooks: 'বই বা লেখক খুঁজুন',
+    resumeShelfTitle: 'যেখান থেকে ছেড়েছেন',
+    importEpub: '+ EPUB যোগ করুন',
+    importing: 'যোগ হচ্ছে…',
+    favorites: 'প্রিয়',
+    allBooks: 'সব',
+    notebookTitle: 'আমার খাতা',
+    settingsTitle: 'সেটিংস',
     currentlyReading: 'পড়া চলছে',
-    placeKept: 'আপনার স্থান সংরক্ষিত',
+    placeKept: 'পড়ার জায়গা সংরক্ষিত',
     continueReading: 'পড়া চালিয়ে যান',
-    setTargetDays: 'লক্ষ্য দিন ও দৈনিক গতি নির্ধারণ',
-    cadenceStatus: (days, ch) => `পাঠ ছন্দ: ${days} দিন বাকি · ${ch} অধ্যায়/দিন`,
-    setGoal: 'লক্ষ্য নির্ধারণ →',
+    setTargetDays: 'দৈনিক পড়ার লক্ষ্য ঠিক করুন',
+    cadenceStatus: (days, ch) => `আর ${localizeDigits(days, 'bn')} দিন বাকি · দিনে ${localizeDigits(ch, 'bn')} অধ্যায়`,
+    setGoal: 'লক্ষ্য ঠিক করুন →',
     adjustGoal: 'পরিবর্তন →',
     readyToRead: 'পড়ার জন্য প্রস্তুত',
     downloadedOnDevice: 'ডিভাইসে সংরক্ষিত',
@@ -182,8 +219,8 @@ const HOMEPAGE_LABELS: Record<MotherTongueCode, HomepageLabels> = {
     beginJourney: 'যাত্রা শুরু করুন',
     exploreLibraries: 'গ্রন্থাগার দেখুন',
     dailyMemoryHabit: 'দৈনিক স্মৃতি অভ্যাস',
-    dailyFlameLit: 'দৈনিক শিখা প্রজ্বলিত',
-    reviewDueWords: 'পঠিত শব্দ অনুশীলন করুন',
+    dailyFlameLit: 'আজকের শিখা জ্বলছে',
+    reviewDueWords: 'শব্দগুলো ঝালিয়ে নিন',
     openFlashcardStudio: 'ফ্ল্যাশকার্ড স্টুডিও খুলুন',
     dailySpark: 'দৈনিক উদ্দীপনা',
     nextQuote: '✦ পরবর্তী উদ্ধৃতি',
@@ -196,6 +233,17 @@ const HOMEPAGE_LABELS: Record<MotherTongueCode, HomepageLabels> = {
     calibratedForYou: 'আপনার জন্য পরিমাপকৃত',
     exploreLibrary: 'গ্রন্থাগার দেখুন',
     startReading: 'পড়া শুরু করুন',
+    percentComplete: (p, ch) => `${localizeDigits(p, 'bn')}% সম্পন্ন · অধ্যায় ${localizeDigits(ch, 'bn')}`,
+    wordsWaiting: (n) => `${localizeDigits(n, 'bn')}টি শব্দ ঝালানোর অপেক্ষায়`,
+    reviewBlurb: 'মাত্র ২ মিনিটের অনুশীলনে এই শব্দগুলো স্থায়ীভাবে মনে গেঁথে নিন।',
+    allReviewed: 'আজকের সব শব্দ ঝালানো হয়েছে',
+    allReviewedBlurb: 'আপনার শব্দভান্ডার উজ্জ্বল। নতুন শব্দ পেতে পড়তে থাকুন।',
+    readLink: 'পড়ুন →',
+    chaptersCount: (n) => `${localizeDigits(n, 'bn')}টি অধ্যায়`,
+    completeWork: 'সম্পূর্ণ রচনা',
+    classicsTitle: 'ধ্রুপদী সাহিত্য',
+    classicsAuthors: 'অস্টেন, তলস্তয়, দস্তয়েভস্কি, সার্ভান্তেস',
+    shelfByTarget: { en: 'ইংরেজি ধ্রুপদী সাহিত্য', ja: 'জাপানি সাহিত্য', bn: 'বাংলা সাহিত্য', ko: 'কোরীয় সাহিত্য' },
   },
   en: {
     greetingMorning: 'Good morning',
@@ -206,6 +254,15 @@ const HOMEPAGE_LABELS: Record<MotherTongueCode, HomepageLabels> = {
     greetingEveningSub: 'The lamp is trimmed and glowing',
     greetingNight: 'Night reading',
     greetingNightSub: 'The night is a page, and the lamp its only light',
+    libraryTitle: 'Your shelf',
+    searchBooks: 'Search books or authors',
+    resumeShelfTitle: 'Pick up where you left off',
+    importEpub: '+ Import EPUB',
+    importing: 'Importing…',
+    favorites: 'Favorites',
+    allBooks: 'All',
+    notebookTitle: 'Notebook',
+    settingsTitle: 'Settings',
     currentlyReading: 'Currently Reading',
     placeKept: 'Your place is kept',
     continueReading: 'Continue Reading',
@@ -233,6 +290,17 @@ const HOMEPAGE_LABELS: Record<MotherTongueCode, HomepageLabels> = {
     calibratedForYou: 'CALIBRATED FOR YOU',
     exploreLibrary: 'Explore Library',
     startReading: 'Start Reading',
+    percentComplete: (p, ch) => `${p}% complete · Chapter ${ch}`,
+    wordsWaiting: (n) => `${n} word${n === 1 ? '' : 's'} waiting for review`,
+    reviewBlurb: 'Practice spaced recall for 2 minutes to lock these literary words into permanent memory.',
+    allReviewed: 'All memory cards reviewed for today',
+    allReviewedBlurb: 'Your language memory sanctuary is bright. Keep reading to discover new vocabulary.',
+    readLink: 'Read →',
+    chaptersCount: (n) => `${n} Chapters`,
+    completeWork: 'Complete Work',
+    classicsTitle: 'Classic Literature',
+    classicsAuthors: 'Austen, Tolstoy, Dostoyevsky, Cervantes',
+    shelfByTarget: { en: 'English Classics', ja: 'Japanese Literature', bn: 'Bengali Literature', ko: 'Korean Literature' },
   },
   ja: {
     greetingMorning: 'おはようございます',
@@ -243,6 +311,15 @@ const HOMEPAGE_LABELS: Record<MotherTongueCode, HomepageLabels> = {
     greetingEveningSub: '灯火が静かにともっています',
     greetingNight: '夜の読書',
     greetingNightSub: '夜は1つの頁、ランプはその唯一の光',
+    libraryTitle: 'あなたの本棚',
+    searchBooks: '本・著者を検索',
+    resumeShelfTitle: '続きから読む',
+    importEpub: '+ EPUBを取り込む',
+    importing: '取り込み中…',
+    favorites: 'お気に入り',
+    allBooks: 'すべて',
+    notebookTitle: 'ノート',
+    settingsTitle: '設定',
     currentlyReading: '読書中',
     placeKept: 'しおりを挟んでいます',
     continueReading: '続きを読む',
@@ -270,6 +347,17 @@ const HOMEPAGE_LABELS: Record<MotherTongueCode, HomepageLabels> = {
     calibratedForYou: 'あなたへのおすすめ',
     exploreLibrary: '書棚を見る',
     startReading: '読み始める',
+    percentComplete: (p, ch) => `${p}% 完了 · 第${ch}章`,
+    wordsWaiting: (n) => `復習待ちの単語が${n}語あります`,
+    reviewBlurb: '2分の反復学習で、これらの単語を長期記憶に定着させましょう。',
+    allReviewed: '今日の復習はすべて完了しました',
+    allReviewedBlurb: '記憶の灯は明るく灯っています。読み進めて新しい単語に出会いましょう。',
+    readLink: '読む →',
+    chaptersCount: (n) => `全${n}章`,
+    completeWork: '完全版',
+    classicsTitle: '西洋古典文学',
+    classicsAuthors: 'オースティン、トルストイ、ドストエフスキー、セルバンテス',
+    shelfByTarget: { en: '英文学の古典', ja: '日本文学', bn: 'ベンガル文学', ko: '韓国文学' },
   },
   ko: {
     greetingMorning: '좋은 아침입니다',
@@ -280,6 +368,15 @@ const HOMEPAGE_LABELS: Record<MotherTongueCode, HomepageLabels> = {
     greetingEveningSub: '등불이 따뜻하게 켜졌습니다',
     greetingNight: '밤의 독서',
     greetingNightSub: '밤은 한 페이지, 등불은 유일한 빛',
+    libraryTitle: '내 서재',
+    searchBooks: '책 또는 저자 검색',
+    resumeShelfTitle: '이어서 읽기',
+    importEpub: '+ EPUB 가져오기',
+    importing: '가져오는 중…',
+    favorites: '즐겨찾기',
+    allBooks: '전체',
+    notebookTitle: '노트',
+    settingsTitle: '설정',
     currentlyReading: '읽는 중',
     placeKept: '읽던 곳이 보관되어 있습니다',
     continueReading: '계속 읽기',
@@ -307,6 +404,17 @@ const HOMEPAGE_LABELS: Record<MotherTongueCode, HomepageLabels> = {
     calibratedForYou: '맞춤 추천',
     exploreLibrary: '서재 둘러보기',
     startReading: '읽기 시작',
+    percentComplete: (p, ch) => `${p}% 완료 · ${ch}장`,
+    wordsWaiting: (n) => `복습할 단어가 ${n}개 있습니다`,
+    reviewBlurb: '2분만 반복 학습하면 이 단어들이 오래 기억에 남습니다.',
+    allReviewed: '오늘 복습을 모두 마쳤습니다',
+    allReviewedBlurb: '기억의 등불이 환합니다. 계속 읽으며 새 단어를 만나 보세요.',
+    readLink: '읽기 →',
+    chaptersCount: (n) => `총 ${n}장`,
+    completeWork: '완결 작품',
+    classicsTitle: '고전 문학',
+    classicsAuthors: '오스틴, 톨스토이, 도스토옙스키, 세르반테스',
+    shelfByTarget: { en: '영미 고전', ja: '일본 문학', bn: '벵골 문학', ko: '한국 문학' },
   },
   ar: {
     greetingMorning: 'صباح الخير',
@@ -317,6 +425,15 @@ const HOMEPAGE_LABELS: Record<MotherTongueCode, HomepageLabels> = {
     greetingEveningSub: 'المصباح جاهز ومضيء',
     greetingNight: 'قراءة ليلية',
     greetingNightSub: 'الليل صفحة، والمصباح نوره الوحيد',
+    libraryTitle: 'رفّك',
+    searchBooks: 'ابحث عن كتاب أو مؤلف',
+    resumeShelfTitle: 'تابع من حيث توقفت',
+    importEpub: '+ استيراد EPUB',
+    importing: 'جارٍ الاستيراد…',
+    favorites: 'المفضلة',
+    allBooks: 'الكل',
+    notebookTitle: 'دفتري',
+    settingsTitle: 'الإعدادات',
     currentlyReading: 'قيد القراءة',
     placeKept: 'مكانك محفوظ',
     continueReading: 'تابع القراءة',
@@ -344,6 +461,17 @@ const HOMEPAGE_LABELS: Record<MotherTongueCode, HomepageLabels> = {
     calibratedForYou: 'مخصص لك',
     exploreLibrary: 'استكشف المكتبة',
     startReading: 'ابدأ القراءة',
+    percentComplete: (p, ch) => `اكتمل ${p}% · الفصل ${ch}`,
+    wordsWaiting: (n) => `${n} كلمات بانتظار المراجعة`,
+    reviewBlurb: 'راجع لدقيقتين لترسيخ هذه الكلمات في ذاكرتك للأبد.',
+    allReviewed: 'تمت مراجعة كل بطاقات اليوم',
+    allReviewedBlurb: 'ذاكرتك اللغوية مضيئة. واصل القراءة لاكتشاف كلمات جديدة.',
+    readLink: 'اقرأ ←',
+    chaptersCount: (n) => `${n} فصلًا`,
+    completeWork: 'عمل كامل',
+    classicsTitle: 'الأدب الكلاسيكي',
+    classicsAuthors: 'أوستن، تولستوي، دوستويفسكي، ثربانتس',
+    shelfByTarget: { en: 'الأدب الإنجليزي الكلاسيكي', ja: 'الأدب الياباني', bn: 'الأدب البنغالي', ko: 'الأدب الكوري' },
   },
 };
 
