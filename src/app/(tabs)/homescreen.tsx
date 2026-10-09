@@ -86,6 +86,7 @@ import {
 import { computeUserReadingStats } from '@/features/analytics/statsEngine';
 import { getUserProfile } from '@/lib/supabaseAuth';
 import { logEvent } from '@/features/analytics/analytics';
+import { BeginnerPathCard } from '@/components/BeginnerPathCard';
 import { LapseReturnCard } from '@/components/LapseReturnCard';
 import {
   dismissLapseRecovery,
@@ -932,6 +933,8 @@ export default function Homescreen() {
           </View>
           <CultureEditionBanner targetReadingLanguage={targetReadingLanguage} />
         </View>
+
+        <BeginnerPathCard language={targetReadingLanguage} />
 
         {/* Gentle Lapse Recovery Welcome Card */}
         {lapsePrompt && (

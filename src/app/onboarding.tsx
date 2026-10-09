@@ -42,6 +42,7 @@ import {
   type MotherTongueCode,
 } from '@/features/settings/motherTongue';
 import { markOnboardingComplete } from '@/features/settings/onboardingStatus';
+import { setLearnerLevel, type LearnerLevel } from '@/features/settings/learnerLevel';
 import {
   TARGET_READING_LANGUAGES,
   getTargetReadingLanguage,
@@ -101,6 +102,11 @@ const SLIDES: Slide[] = [
     headline: 'What do you wish to read?',
     subtext:
       'We will shape your starter shelf and word practice around the language you want to read.',
+  },
+  {
+    key: 'level',
+    headline: 'How well do you know this language?',
+    subtext: 'Be honest — we will start you where you are, even if that is the very first letter.',
   },
   {
     key: 'theme',
@@ -860,6 +866,87 @@ function TargetLanguageSlide({
   );
 }
 
+const LEVEL_OPTIONS: Array<{ key: LearnerLevel; title: string; detail: string; next: string }> = [
+  { key: 'zero', title: "I'm brand new", detail: "I can't read the script yet. Start from the very beginning.", next: 'Next: the letters and your first words. No test.' },
+  { key: 'some', title: 'I know some', detail: 'I can read a little and want help along the way.', next: 'Next: a quick word check, then a starter book that fits.' },
+  { key: 'fluent', title: 'I read it comfortably', detail: 'I want real books with light support.', next: 'Next: a short word check, then real books to start.' },
+];
+
+function LevelSlide({
+  selected,
+  onSelect,
+  headline,
+  subtext,
+}: {
+  selected: LearnerLevel;
+  onSelect: (level: LearnerLevel) => void;
+  headline: string;
+  subtext: string;
+}) {
+  const { colors, typography, radius } = useTheme();
+  return (
+    <View style={styles.motherTongueSection}>
+      <Animated.View
+        entering={FadeIn.delay(60).duration(260).easing(EASE_OUT).reduceMotion(ReduceMotion.System)}
+        style={[styles.copy, { marginBottom: 14 }]}
+      >
+        <Text style={[typography.onboardingHeadline, { color: colors.lampText, textAlign: 'center', fontSize: 23 }]}>
+          {headline}
+        </Text>
+        <Text style={[typography.metadataCaption, { color: colors.mutedOnDark, textAlign: 'center', marginTop: 4, fontSize: 12 }]}>
+          {subtext}
+        </Text>
+      </Animated.View>
+      <View style={styles.themeOptionsList}>
+        {LEVEL_OPTIONS.map((opt) => {
+          const isSelected = selected === opt.key;
+          return (
+            <Pressable
+              key={opt.key}
+              onPress={() => onSelect(opt.key)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: isSelected }}
+              style={({ pressed }) => [
+                styles.languageCard,
+                {
+                  backgroundColor: isSelected ? 'rgba(245, 166, 35, 0.08)' : colors.ember,
+                  borderColor: isSelected ? colors.flameAmber : colors.dotInactive,
+                  borderWidth: isSelected ? 1.5 : 1,
+                  borderRadius: radius.card,
+                  opacity: pressed ? 0.9 : 1,
+                },
+              ]}
+            >
+              <View style={styles.languageInfo}>
+                <Text style={[typography.uiRowTitle, { color: colors.lampText, fontSize: 15 }]}>{opt.title}</Text>
+                <Text style={[typography.metadataCaption, { color: colors.mutedOnDark, fontSize: 11.5, marginTop: 2 }]}>
+                  {opt.detail}
+                </Text>
+                {isSelected ? (
+                  <Text style={[typography.metadataCaption, { color: colors.flameAmber, fontSize: 11.5, marginTop: 6 }]}>
+                    {opt.next}
+                  </Text>
+                ) : null}
+              </View>
+              <View
+                style={[
+                  styles.radioIndicator,
+                  {
+                    borderColor: isSelected ? colors.flameAmber : colors.dotInactive,
+                    backgroundColor: isSelected ? colors.flameAmber : 'transparent',
+                  },
+                ]}
+              >
+                {isSelected ? <CheckIcon color={colors.primaryDark} size={11} /> : null}
+              </View>
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
 function ThemeSlide({
   selectedCode,
   motherTongue,
@@ -1195,6 +1282,7 @@ export default function OnboardingScreen() {
     return current ?? 'en';
   });
   const [selectedTheme, setSelectedTheme] = useState<LiteraryThemeCode>(() => getLiteraryTheme());
+  const [learnerLevel, setLearnerLevelState] = useState<LearnerLevel>('some');
 
   // Calibration state
   const [activePreset, setActivePreset] = useState<CalibrationPreset | null>('intermediate');
@@ -1202,7 +1290,12 @@ export default function OnboardingScreen() {
     return new Set(getPresetWordIds('en', 'intermediate'));
   });
 
-  const isLastSlide = activeIndex === SLIDES.length - 1;
+  // A complete beginner has no words to tick, so the lexicon test is dropped.
+  const slides = useMemo(
+    () => (learnerLevel === 'zero' ? SLIDES.filter((slide) => slide.key !== 'calibration') : SLIDES),
+    [learnerLevel],
+  );
+  const isLastSlide = activeIndex === slides.length - 1;
 
   // Real-time calculation of vocabulary estimate incorporating target language, words, and theme
   const vocabEstimate = useMemo(() => {
@@ -1222,10 +1315,10 @@ export default function OnboardingScreen() {
   const goToNext = useCallback(() => {
     Keyboard.dismiss();
     const nextIndex = activeIndexRef.current + 1;
-    if (nextIndex < SLIDES.length) {
+    if (nextIndex < slides.length) {
       listRef.current?.scrollToIndex({ index: nextIndex, animated: true });
     }
-  }, []);
+  }, [slides.length]);
 
   const handleGoBack = useCallback((targetIndex?: number) => {
     Keyboard.dismiss();
@@ -1262,9 +1355,21 @@ export default function OnboardingScreen() {
   // Update target language and sync calibration words
   const handleSelectTargetLanguage = useCallback((code: TargetReadingLanguageCode) => {
     setSelectedTargetLanguage(code);
+    setLearnerLevelState('some');
     setActivePreset('intermediate');
     setSelectedWordIds(new Set(getPresetWordIds(code, 'intermediate')));
   }, []);
+
+  // Level pick seeds the calibration words; a total beginner has none to tick.
+  const handleSelectLevel = useCallback(
+    (level: LearnerLevel) => {
+      setLearnerLevelState(level);
+      const preset: CalibrationPreset = level === 'fluent' ? 'advanced' : 'intermediate';
+      setActivePreset(level === 'zero' ? null : preset);
+      setSelectedWordIds(new Set(level === 'zero' ? [] : getPresetWordIds(selectedTargetLanguage, preset)));
+    },
+    [selectedTargetLanguage],
+  );
 
   // Select preset level in calibration
   const handleSelectPreset = useCallback(
@@ -1304,20 +1409,25 @@ export default function OnboardingScreen() {
       }
 
       // 2. Persist calibration & analytics in the background (never block navigation)
-      const wordsToSave = isSkipping
-        ? getPresetWordIds(selectedTargetLanguage, 'intermediate')
-        : Array.from(selectedWordIds);
-      const estimateToSave = isSkipping
-        ? calculateVocabularyEstimate(selectedTargetLanguage, wordsToSave, selectedTheme)
-        : vocabEstimate;
+      const isZero = learnerLevel === 'zero';
+      const wordsToSave = isZero
+        ? []
+        : isSkipping
+          ? getPresetWordIds(selectedTargetLanguage, 'intermediate')
+          : Array.from(selectedWordIds);
+      const estimateToSave =
+        isSkipping && !isZero
+          ? calculateVocabularyEstimate(selectedTargetLanguage, wordsToSave, selectedTheme)
+          : vocabEstimate;
 
+      void setLearnerLevel(selectedTargetLanguage, learnerLevel).catch(() => {});
       saveCalibrationData({
         targetReadingLanguage: selectedTargetLanguage,
-        estimatedWords: estimateToSave.count,
-        tierLabel: estimateToSave.tierLabel,
+        estimatedWords: isZero ? 0 : estimateToSave.count,
+        tierLabel: isZero ? 'Beginner' : estimateToSave.tierLabel,
         selectedWordIds: wordsToSave,
-        recommendedBookId: estimateToSave.startingBook.id,
-        isSkipped: isSkipping,
+        recommendedBookId: isZero ? undefined : estimateToSave.startingBook.id,
+        isSkipped: isSkipping && !isZero,
       }).catch((err) => {
         console.warn('[Onboarding] Error saving calibration data:', err);
       });
@@ -1326,7 +1436,8 @@ export default function OnboardingScreen() {
         mother_tongue: selectedMotherTongue,
         target_reading_language: selectedTargetLanguage,
         literary_theme: selectedTheme,
-        estimated_words: estimateToSave.count,
+        learner_level: learnerLevel,
+        estimated_words: isZero ? 0 : estimateToSave.count,
         recommended_book: estimateToSave.startingBook.id,
         skipped_calibration: isSkipping,
       });
@@ -1338,16 +1449,17 @@ export default function OnboardingScreen() {
         router.replace('/(tabs)/homescreen' as any);
       }
     },
-    [selectedMotherTongue, selectedTargetLanguage, selectedTheme, selectedWordIds, vocabEstimate],
+    [learnerLevel, selectedMotherTongue, selectedTargetLanguage, selectedTheme, selectedWordIds, vocabEstimate],
   );
 
   const renderSlide = useCallback(
     ({ item, index }: { item: Slide; index: number }) => {
       const isMotherTongue = item.key === 'mother_tongue';
       const isTargetLang = item.key === 'target_language';
+      const isLevel = item.key === 'level';
       const isTheme = item.key === 'theme';
       const isCalibration = item.key === 'calibration';
-      const isIntro = !isMotherTongue && !isTargetLang && !isTheme && !isCalibration;
+      const isIntro = !isMotherTongue && !isTargetLang && !isLevel && !isTheme && !isCalibration;
 
       return (
         <View
@@ -1409,6 +1521,13 @@ export default function OnboardingScreen() {
             <TargetLanguageSlide
               selectedCode={selectedTargetLanguage}
               onSelect={handleSelectTargetLanguage}
+              headline={item.headline}
+              subtext={item.subtext}
+            />
+          ) : isLevel ? (
+            <LevelSlide
+              selected={learnerLevel}
+              onSelect={handleSelectLevel}
               headline={item.headline}
               subtext={item.subtext}
             />
@@ -1663,12 +1782,14 @@ export default function OnboardingScreen() {
       colors,
       handleFinish,
       handleGoBack,
+      handleSelectLevel,
       handleSelectMotherTongue,
       handleSelectPreset,
       handleSelectTargetLanguage,
       handleSkipToIntroQuestions,
       handleToggleWord,
       insets.top,
+      learnerLevel,
       radius.card,
       selectedMotherTongue,
       selectedTargetLanguage,
@@ -1696,8 +1817,8 @@ export default function OnboardingScreen() {
 
       <FlatList
         ref={listRef}
-        data={SLIDES}
-        extraData={`${selectedMotherTongue}_${selectedTargetLanguage}_${selectedTheme}_${activePreset}_${selectedWordIds.size}`}
+        data={slides}
+        extraData={`${selectedMotherTongue}_${selectedTargetLanguage}_${selectedTheme}_${learnerLevel}_${activePreset}_${selectedWordIds.size}`}
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}
@@ -1716,9 +1837,9 @@ export default function OnboardingScreen() {
             animated: true,
           });
         }}
-        initialNumToRender={SLIDES.length}
-        maxToRenderPerBatch={SLIDES.length}
-        windowSize={SLIDES.length}
+        initialNumToRender={slides.length}
+        maxToRenderPerBatch={slides.length}
+        windowSize={slides.length}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
         overScrollMode="never"
@@ -1738,10 +1859,10 @@ export default function OnboardingScreen() {
         {/* Progress Dots */}
         <View>
           <Text style={[typography.metadataCaption, styles.stepLabel, { color: colors.mutedOnDark }]}>
-            Step {activeIndex + 1} of {SLIDES.length}
+            Step {activeIndex + 1} of {slides.length}
           </Text>
           <View style={styles.dots}>
-            {SLIDES.map((slide, index) => (
+            {slides.map((slide, index) => (
               <View
                 key={slide.key}
                 style={[
@@ -1780,7 +1901,7 @@ export default function OnboardingScreen() {
                 },
               ]}
             >
-              Begin Reading
+              {learnerLevel === 'zero' ? 'Start Learning' : 'Begin Reading'}
             </Text>
             <View style={{ marginLeft: 6 }}>
               <ChevronRightIcon color={colors.primaryDark} size={17} />

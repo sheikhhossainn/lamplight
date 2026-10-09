@@ -40,7 +40,7 @@ import { hydrateTargetLanguage } from '@/features/settings/languagePair';
 import { hydrateTargetReadingLanguage } from '@/features/settings/targetReadingLanguage';
 import { hydrateLiteraryTheme } from '@/features/settings/literaryTheme';
 import { hydrateReadingTheme } from '@/features/settings/readingTheme';
-import { hydrateOnboardingStatus } from '@/features/settings/onboardingStatus';
+import { hydrateOnboardingStatus, setDevOnboardingOverride } from '@/features/settings/onboardingStatus';
 import { hydratePageStyle } from '@/features/settings/pageStylePrefs';
 import { hydrateReadingTypography } from '@/features/settings/readingPrefs';
 import { cleanupPartialDownloads } from '@/features/storage/storageManager';
@@ -109,7 +109,11 @@ export default function RootLayout() {
       hydrateReadingTheme(),
     ])
       .catch(() => {})
-      .then(() => setOnboardingChecked(true));
+      .then(() => {
+        // TEMP (testing): force onboarding on every dev launch. Remove before commit.
+        setDevOnboardingOverride(true);
+        setOnboardingChecked(true);
+      });
   }, []);
 
   // Trigger local-first sync, flush offline analytics, and refresh remote app config on launch and when returning to foreground
@@ -233,6 +237,7 @@ function AppShell() {
         <Stack.Screen name="reader/[bookId]" options={{ contentStyle: { backgroundColor: '#F4EBD9' } }} />
         <Stack.Screen name="book/[id]" options={{ contentStyle: { backgroundColor: colors.parchment } }} />
         <Stack.Screen name="saved-books" options={{ contentStyle: { backgroundColor: colors.parchment } }} />
+        <Stack.Screen name="learn/[lang]" options={{ contentStyle: { backgroundColor: colors.libraryBackground } }} />
         <Stack.Screen name="bible/[bookId]" options={{ contentStyle: { backgroundColor: colors.parchment } }} />
         <Stack.Screen name="bible-nt/[bookId]" options={{ contentStyle: { backgroundColor: colors.parchment } }} />
         <Stack.Screen name="quran/[surahNumber]" options={{ contentStyle: { backgroundColor: colors.parchment } }} />

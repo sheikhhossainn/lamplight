@@ -124,6 +124,7 @@ const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 const READER_GUIDE_SEEN_KEY = 'reader_guide_shown_once';
+const READER_AUTO_TRANSLATE_KEY = 'reader_auto_translate';
 const READER_HINT_SETTING_KEY = 'reader_gesture_hint_v4';
 const READER_BACK_HINT_SETTING_KEY = 'reader_back_gesture_hint_v1';
 const NOOP_RANGE_DRAG = () => {};
@@ -2046,33 +2047,48 @@ export default function ReaderScreen() {
   // toggling on a different page always re-fetches (translation is per-page,
   // not cached across the session the way word lookups are).
   const currentPage = pages[currentIndex] ?? null;
-  const toggleTranslation = useCallback(async () => {
-    if (!currentPage) return;
-    if (translation && translation.pageGlobalIndex === currentPage.globalIndex) {
-      setTranslation(null);
+  // Once the reader turns page translation on it stays on for following pages
+  // (learner view) until they close it. Pages already fetched this session are
+  // kept so turning back costs neither a request nor a cap unit.
+  const [autoTranslate, setAutoTranslate] = useState(false);
+  const translatedPagesRef = useRef(new Map<number, { paragraphs: string[]; bilingualParagraphs: NonNullable<typeof translation>['bilingualParagraphs'] }>());
+  useEffect(() => {
+    void getSetting(READER_AUTO_TRANSLATE_KEY).then((v) => setAutoTranslate(v === '1')).catch(() => {});
+  }, []);
+  const persistAutoTranslate = useCallback((on: boolean) => {
+    setAutoTranslate(on);
+    void setSetting(READER_AUTO_TRANSLATE_KEY, on ? '1' : '0');
+  }, []);
+
+  const loadPageTranslation = useCallback(async (page: ReaderPage, isAuto: boolean) => {
+    const pageGlobalIndex = page.globalIndex;
+    const memo = translatedPagesRef.current.get(pageGlobalIndex);
+    if (memo) {
+      setTranslation({ pageGlobalIndex, status: 'ready', ...memo });
       return;
     }
-    const pageGlobalIndex = currentPage.globalIndex;
     setTranslation({ pageGlobalIndex, status: 'loading' });
     // Instantly fade away chrome icons so only the on-page spinner is active
-    if (hideTimer.current) {
-      clearTimeout(hideTimer.current);
-      hideTimer.current = null;
+    if (!isAuto) {
+      if (hideTimer.current) {
+        clearTimeout(hideTimer.current);
+        hideTimer.current = null;
+      }
+      chromeOpacity.value = withTiming(0, { duration: 150 }, (finished) => {
+        if (finished) runOnJS(hideChrome)();
+      });
     }
-    chromeOpacity.value = withTiming(0, { duration: 150 }, (finished) => {
-      if (finished) runOnJS(hideChrome)();
-    });
 
     const premium = canUse('unlimited_learning');
     const cap = await checkTranslationCap(premium);
     if (!cap.allowed) {
       setIsGuestUser(cap.isGuest);
       setTranslation({ pageGlobalIndex, status: 'capped' });
-      scheduleAutoHide();
+      if (!isAuto) scheduleAutoHide();
       return;
     }
     try {
-      const sentencesPerPara = currentPage.paragraphs.map((p, pIdx) => {
+      const sentencesPerPara = page.paragraphs.map((p, pIdx) => {
         const sList = splitSentences(p);
         return sList.map((s, sIdx) => ({
           pIdx,
@@ -2112,19 +2128,47 @@ export default function ReaderScreen() {
 
       await recordTranslationUsage(premium);
       logEvent('translate_page', { target_lang: targetLanguage });
+      translatedPagesRef.current.set(pageGlobalIndex, { paragraphs, bilingualParagraphs });
       setTranslation({
         pageGlobalIndex,
         status: 'ready',
         paragraphs,
         bilingualParagraphs,
       });
-      scheduleAutoHide();
+      if (!isAuto) scheduleAutoHide();
     } catch (err) {
       logEvent('reader_error', { book_id: book?.id ?? bookId, code: 'translation_failure' });
       setTranslation({ pageGlobalIndex, status: 'error' });
-      scheduleAutoHide();
+      if (!isAuto) scheduleAutoHide();
     }
-  }, [currentPage, translation, targetLanguage, book, bookId, scheduleAutoHide, chromeOpacity, hideChrome]);
+  }, [targetLanguage, book, bookId, scheduleAutoHide, chromeOpacity, hideChrome]);
+
+  // Cached pages are in the old target language once it changes.
+  useEffect(() => {
+    translatedPagesRef.current.clear();
+  }, [targetLanguage]);
+
+  const toggleTranslation = useCallback(async () => {
+    if (!currentPage) return;
+    if (translation && translation.pageGlobalIndex === currentPage.globalIndex) {
+      setTranslation(null);
+      persistAutoTranslate(false);
+      return;
+    }
+    persistAutoTranslate(true);
+    await loadPageTranslation(currentPage, false);
+  }, [currentPage, translation, loadPageTranslation, persistAutoTranslate]);
+
+  // Learner view: follow the reader onto each new page once translation is on.
+  // Debounced so flipping quickly through pages doesn't fire a request per page.
+  useEffect(() => {
+    if (!autoTranslate || !currentPage) return;
+    if (translation?.pageGlobalIndex === currentPage.globalIndex) return;
+    const t = setTimeout(() => {
+      void loadPageTranslation(currentPage, true);
+    }, 450);
+    return () => clearTimeout(t);
+  }, [autoTranslate, currentPage, translation?.pageGlobalIndex, loadPageTranslation]);
 
   const retryDownload = useCallback(async () => {
     const isBangla =
@@ -3271,7 +3315,7 @@ export default function ReaderScreen() {
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Dismiss translation error"
-                onPress={() => setTranslation(null)}
+                onPress={() => { setTranslation(null); persistAutoTranslate(false); }}
                 hitSlop={8}
                 style={{ paddingHorizontal: 6, paddingVertical: 4 }}
               >

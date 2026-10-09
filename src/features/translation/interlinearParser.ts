@@ -65,6 +65,49 @@ export async function batchTranslateSentences(
 ): Promise<string[]> {
   if (sentences.length === 0) return [];
 
+  const results: string[] = new Array(sentences.length).fill('');
+  const missIdx: number[] = [];
+
+  // Sentence-level persistent cache: turning back to a page, or re-reading a
+  // passage, must not re-bill the Edge Function. Cache trouble is never fatal.
+  try {
+    const { getCachedTranslation } = await import('@/db/repositories/translationCache');
+    await Promise.all(
+      sentences.map(async (s, i) => {
+        const hit = await getCachedTranslation(s, fromLang as any, toLang as any).catch(() => null);
+        if (hit?.translatedText) results[i] = hit.translatedText;
+        else missIdx.push(i);
+      }),
+    );
+  } catch {
+    missIdx.length = 0;
+    sentences.forEach((_, i) => missIdx.push(i));
+  }
+  if (missIdx.length === 0) return results;
+
+  const fetched = await fetchBatchTranslations(
+    missIdx.map((i) => sentences[i]),
+    fromLang,
+    toLang,
+  );
+
+  missIdx.forEach((origIdx, k) => {
+    const text = fetched[k];
+    results[origIdx] = text;
+    if (text) {
+      void import('@/db/repositories/translationCache')
+        .then((m) => m.setCachedTranslation(sentences[origIdx], text, fromLang as any, toLang as any))
+        .catch(() => {});
+    }
+  });
+  return results;
+}
+
+async function fetchBatchTranslations(
+  sentences: string[],
+  fromLang: string,
+  toLang: string,
+): Promise<string[]> {
   const edgeRes = await callLiteraryAi<{ success?: boolean; translations?: string[] }>('batch_translate', {
     sentences,
     fromLang,
