@@ -31,7 +31,15 @@ import {
 } from '@/features/content-ingestion/banglaApi';
 import { AOZORA_JAPANESE_BOOKS } from '@/features/content-ingestion/japaneseApi';
 import { GONGU_KOREAN_BOOKS } from '@/features/content-ingestion/koreanApi';
-import { getMotherTongueOption, getScriptureLabels, useMotherTongue } from '@/features/settings/motherTongue';
+import {
+  getHomepageLabels,
+  getMotherTongueOption,
+  getScriptureLabels,
+  useMotherTongue,
+} from '@/features/settings/motherTongue';
+import { getCultureDateLine } from '@/features/settings/cultureCalendar';
+import { CulturePatternBand } from '@/components/CulturePatternBand';
+import { getCultureCardShape } from '@/theme/cultureShape';
 import {
   getTargetReadingLanguageOption,
   useTargetReadingLanguage,
@@ -64,7 +72,6 @@ import { checkAndTriggerMilestone, type MilestoneConfig } from '@/features/miles
 import { getUserProfile } from '@/lib/supabaseAuth';
 import { isBookCached } from '@/features/content-ingestion/bookDownloader';
 import { importEpubFromFile } from '@/features/content-ingestion/epubImporter';
-import { targetLanguageLabel, useTargetLanguage } from '@/features/settings/languagePair';
 import { hapticOpenInquiry } from '@/lib/haptics';
 import { useTheme } from '@/theme/ThemeProvider';
 import { getCultureMaterial } from '@/theme/tokens';
@@ -159,14 +166,18 @@ function SkeletonShelf() {
 }
 
 export default function LibraryScreen() {
-  const { colors, typography, spacing, radius, scheme } = useTheme();
+  const { colors, typography, spacing, radius, scheme, cultureTheme } = useTheme();
   const isLamp = scheme === 'lamp';
   const insets = useSafeAreaInsets();
-  const targetLanguage = useTargetLanguage();
   const targetReadingLanguage = useTargetReadingLanguage();
   const targetReadingOption = getTargetReadingLanguageOption(targetReadingLanguage);
   const motherTongue = useMotherTongue();
   const motherTongueOption = getMotherTongueOption(motherTongue);
+  const labels = getHomepageLabels(motherTongue);
+  const cultureMaterial = getCultureMaterial(cultureTheme, scheme);
+  const cardShape = getCultureCardShape(cultureTheme, radius.card);
+  const cultureDateLine = getCultureDateLine(cultureTheme);
+  const eyebrow = getNativeUiTextStyle(motherTongue, 'eyebrow');
   const scriptureLabels = getScriptureLabels(motherTongue);
   const [books, setBooks] = useState<BookRow[]>([]);
   const [positions, setPositions] = useState<ReadingPosition[]>([]);
@@ -560,10 +571,14 @@ export default function LibraryScreen() {
       >
       <View style={styles.titleRow}>
         <View style={{ flex: 1 }}>
-          <Text style={[typography.screenTitle, { color: colors.ink }]}>Your shelf</Text>
-          <Text style={[typography.metadataCaption, { color: colors.fawn, marginTop: 4 }]}>
-            {getShelfSubtitle()}
+          <Text style={[getNativeUiTextStyle(motherTongue, 'display'), { color: colors.ink }]}>
+            {labels.libraryTitle}
           </Text>
+          {cultureDateLine || motherTongue === 'en' ? (
+            <Text style={[getNativeUiTextStyle(motherTongue, 'metadata'), { color: colors.umber, marginTop: 4 }]}>
+              {cultureDateLine ?? getShelfSubtitle()}
+            </Text>
+          ) : null}
         </View>
       </View>
       <CultureEditionBanner targetReadingLanguage={targetReadingLanguage} />
@@ -612,7 +627,7 @@ export default function LibraryScreen() {
           ref={searchRef}
           value={query}
           onChangeText={setQuery}
-          placeholder="Search books or authors"
+          placeholder={labels.searchBooks}
           placeholderTextColor={colors.fawn}
           style={[typography.uiRowTitle, { color: colors.ink, flex: 1, marginLeft: spacing.sm, paddingVertical: 0 }]}
           returnKeyType="search"
@@ -650,7 +665,7 @@ export default function LibraryScreen() {
                       {
                         backgroundColor: colors.card,
                         borderColor: colors.hairline,
-                        borderRadius: radius.card,
+                        ...cardShape,
                         alignItems: 'center',
                         justifyContent: 'space-between',
                       },
@@ -677,7 +692,7 @@ export default function LibraryScreen() {
                           style={[typography.metadataCaption, { color: colors.umber, marginTop: 2 }]}
                           numberOfLines={1}
                         >
-                          {book.author} · {book.sourceLanguage.toUpperCase()}
+                          {book.author}
                         </Text>
                       </View>
                     </View>
@@ -725,16 +740,17 @@ export default function LibraryScreen() {
             </View>
           ) : continueEntries.length > 0 ? (
         <>
-          <Text
-            style={[typography.eyebrowLabel, { color: colors.fawn, marginTop: spacing.xl, marginBottom: spacing.sm }]}
-          >
-            Continue reading
-          </Text>
+          <View style={[styles.sectionTitleRow, { marginTop: spacing.xl, marginBottom: spacing.sm }]}>
+            <View style={[styles.sectionRule, { backgroundColor: cultureMaterial.accent }]} />
+            <Text numberOfLines={1} style={[getNativeUiTextStyle(motherTongue, 'row'), { color: colors.ink, flexShrink: 1 }]}>
+              {labels.resumeShelfTitle}
+            </Text>
+          </View>
           {continueEntries.map(({ position, book }) => (
             <Pressable
               key={book.id}
               onPress={() => handleOpenContinueBook(book)}
-              style={[styles.continueCard, { backgroundColor: colors.card, borderRadius: radius.card, marginBottom: spacing.sm }]}
+              style={[styles.continueCard, { backgroundColor: colors.card, ...cardShape, marginBottom: spacing.sm }]}
             >
               <BookSpine
                 bookId={book.id}
@@ -750,7 +766,7 @@ export default function LibraryScreen() {
                   {book.title}
                 </Text>
                 <Text style={[typography.metadataCaption, { color: colors.umber, marginTop: 2 }]} numberOfLines={1}>
-                  {book.author} · {book.sourceLanguage.toUpperCase()} → {targetLanguageLabel(targetLanguage)}
+                  {book.author}
                 </Text>
                 <View
                   style={[
@@ -763,14 +779,17 @@ export default function LibraryScreen() {
                       styles.progressFill,
                       {
                         width: `${Math.max(4, Math.round(position.percentComplete * 100))}%`,
-                        backgroundColor: colors.flameAmber,
+                        backgroundColor: cultureMaterial.accent,
                         borderRadius: radius.pill,
                       },
                     ]}
                   />
                 </View>
-                <Text style={[typography.uiRowTitle, { color: colors.progressLabel, fontSize: 11, marginTop: 4 }]}>
-                  {Math.round(position.percentComplete * 100)}% · Chapter {position.chapterIndex + 1}
+                <Text
+                  numberOfLines={1}
+                  style={[getNativeUiTextStyle(motherTongue, 'metadata'), { color: colors.umber, fontSize: 12, marginTop: 4 }]}
+                >
+                  {labels.percentComplete(Math.round(position.percentComplete * 100), position.chapterIndex + 1)}
                 </Text>
               </View>
               {/* Clear from the list (keeps the bookmark — see repo). Own hit
@@ -784,6 +803,11 @@ export default function LibraryScreen() {
               </Pressable>
             </Pressable>
           ))}
+          {cultureTheme !== 'classic' ? (
+            <View style={{ height: 10, marginTop: spacing.sm }}>
+              <CulturePatternBand theme={cultureTheme} color={cultureMaterial.accent} style={{ top: 0 }} />
+            </View>
+          ) : null}
         </>
       ) : null}
 
@@ -792,9 +816,7 @@ export default function LibraryScreen() {
           <View style={[styles.shelfHeader, { marginBottom: spacing.sm }]}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               <BookmarkIcon color={colors.flameAmber} size={14} filled />
-              <Text style={[typography.eyebrowLabel, { color: colors.fawn }]}>
-                FAVORITES
-              </Text>
+              <Text style={[eyebrow, { color: colors.umber }]}>{labels.favorites}</Text>
             </View>
             <Text style={[typography.metadataCaption, { color: colors.umber, fontSize: 11 }]}>
               {favoriteBooks.length} {favoriteBooks.length === 1 ? 'book' : 'books'}
@@ -813,7 +835,7 @@ export default function LibraryScreen() {
         >
           <Text style={[getNativeUiTextStyle(motherTongue, 'row'), { color: activeCategory ? colors.progressLabel : colors.fawn }]}>
             {activeCategory === FAVORITES_FILTER
-              ? 'Favorites'
+              ? labels.favorites
               : targetReadingLanguage === 'en'
               ? motherTongueOption.libraryLabel
               : targetReadingOption.shelfTitle}
@@ -821,8 +843,8 @@ export default function LibraryScreen() {
           <FilterIcon color={activeCategory ? colors.flameAmber : colors.fawn} size={14} />
         </Pressable>
         <Pressable onPress={handleImportEpub} disabled={importing}>
-          <Text style={[typography.uiRowTitle, { color: colors.progressLabel, fontSize: 12 }]}>
-            {importing ? 'Importing…' : '+ Import EPUB'}
+          <Text style={[getNativeUiTextStyle(motherTongue, 'metadata'), { color: cultureMaterial.accent, fontSize: 13 }]}>
+            {importing ? labels.importing : labels.importEpub}
           </Text>
         </Pressable>
       </View>
@@ -837,8 +859,8 @@ export default function LibraryScreen() {
           style={{ marginBottom: spacing.md }}
         >
           {[
-            { id: null as string | null, label: 'All' },
-            ...(hasFavorites ? [{ id: FAVORITES_FILTER, label: 'Favorites' }] : []),
+            { id: null as string | null, label: labels.allBooks },
+            ...(hasFavorites ? [{ id: FAVORITES_FILTER, label: labels.favorites }] : []),
             ...availableCategories,
           ].map((cat) => {
             const on = cat.id === activeCategory;
@@ -1342,6 +1364,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 15,
     marginTop: 4,
+  },
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  sectionRule: {
+    width: 3,
+    height: 18,
+    borderRadius: 2,
+    marginRight: 10,
   },
   progressTrack: {
     height: 5,

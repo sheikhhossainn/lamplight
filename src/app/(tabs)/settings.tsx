@@ -87,8 +87,11 @@ import { LanguageBadge } from '@/components/LanguageBadge';
 import {
   getMotherTongueOption,
   setMotherTongue,
+  getHomepageLabels,
   useMotherTongue,
 } from '@/features/settings/motherTongue';
+import { getCultureCardShape } from '@/theme/cultureShape';
+import { getNativeUiTextStyle } from '@/theme/typography';
 import {
   getLiteraryThemeOption,
   setLiteraryTheme,
@@ -744,8 +747,8 @@ export default function SettingsScreen() {
       }}
       showsVerticalScrollIndicator={false}
     >
-      <Text style={[typography.screenTitle, { color: colors.ink, marginBottom: spacing.lg }]}>
-        Settings
+      <Text style={[getNativeUiTextStyle(motherTongue, 'display'), { color: colors.ink, marginBottom: spacing.lg }]}>
+        {getHomepageLabels(motherTongue).settingsTitle}
       </Text>
 
       <Text style={[typography.eyebrowLabel, { color: colors.fawn, marginBottom: spacing.sm }]}>
@@ -756,7 +759,7 @@ export default function SettingsScreen() {
           styles.card,
           animatedCardStyle,
           {
-            borderRadius: radius.card,
+            ...getCultureCardShape(cultureTheme, radius.card),
             marginBottom: spacing.xl,
           },
         ]}
@@ -798,7 +801,7 @@ export default function SettingsScreen() {
             styles.card,
             animatedCardStyle,
             {
-              borderRadius: radius.card,
+              ...getCultureCardShape(cultureTheme, radius.card),
               marginBottom: spacing.xl,
               borderColor: colors.flameAmber,
               borderWidth: 1.5,
@@ -896,7 +899,7 @@ export default function SettingsScreen() {
             styles.card,
             animatedCardStyle,
             {
-              borderRadius: radius.card,
+              ...getCultureCardShape(cultureTheme, radius.card),
               marginBottom: spacing.xl,
               padding: spacing.md,
             },

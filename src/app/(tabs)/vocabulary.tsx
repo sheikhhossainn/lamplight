@@ -99,7 +99,7 @@ import {
   type QuizMode,
 } from '@/features/vocabulary/quizGateService';
 import { speakWord, warmUpSpeechEngine } from '@/features/audio/pronunciationEngine';
-import { getMotherTongue, getScriptureLabels, useMotherTongue, type ScriptureLabels } from '@/features/settings/motherTongue';
+import { getHomepageLabels, getMotherTongue, getScriptureLabels, useMotherTongue, type ScriptureLabels } from '@/features/settings/motherTongue';
 import { hapticFlashcardAction } from '@/lib/haptics';
 import { logEvent } from '@/features/analytics/analytics';
 import { getAppFlag } from '@/features/config/appConfig';
@@ -488,7 +488,9 @@ export default function VocabularyScreen() {
       ]}
     >
       <View style={styles.headerRow}>
-        <Text style={[typography.screenTitle, { color: colors.ink }]}>Notebook</Text>
+        <Text style={[getNativeUiTextStyle(motherTongue, 'display'), { color: colors.ink }]}>
+          {getHomepageLabels(motherTongue).notebookTitle}
+        </Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
           {tab === 'notes' && readerNotes.length > 0 ? (
             <Pressable
